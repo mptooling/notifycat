@@ -1,0 +1,30 @@
+# Binaries
+/bin/
+/dist/
+notifycat-server
+notifycat-mapping
+notifycat-migrate
+
+# Go build cache / vendor
+/vendor/
+
+# Local env
+.env
+.env.local
+
+# SQLite databases (dev/test artifacts)
+*.db
+*.db-shm
+*.db-wal
+/data/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+
+# Test artifacts
+*.out
+coverage.out
