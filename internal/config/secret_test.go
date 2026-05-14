@@ -51,9 +51,9 @@ func TestSecret_FmtVerbsDoNotLeak(t *testing.T) {
 	s := config.Secret(raw)
 
 	cases := map[string]string{
-		"%v": "%v",
-		"%s": "%s",
-		"%q": "%q",
+		"%v":  "%v",
+		"%s":  "%s",
+		"%q":  "%q",
 		"%+v": "%+v",
 	}
 	for name, verb := range cases {
