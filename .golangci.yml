@@ -20,6 +20,17 @@ linters:
     - unconvert
     - unparam
   settings:
+    errcheck:
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintln
+        - fmt.Fprintf
+        - (io.Writer).Write
+    gosec:
+      excludes:
+        # G705 (XSS via taint) is HTML-rendering oriented; this is not a web
+        # template engine. We rely on G107 and HMAC for inbound trust.
+        - G705
     revive:
       rules:
         - name: var-naming

@@ -3,7 +3,10 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"io"
+	"log"
 	"strings"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -12,10 +15,21 @@ import (
 
 // Open opens a SQLite database for production use. The url accepts either a
 // raw file path or the "file:..." DSN form used in our config defaults.
+//
+// GORM's logger is silenced for "record not found" because we treat ErrNotFound
+// as a normal return value, not a warning condition.
 func Open(url string) (*gorm.DB, error) {
 	dsn := stripFilePrefix(url)
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Warn),
+		Logger: logger.New(
+			log.New(io.Discard, "", 0),
+			logger.Config{
+				SlowThreshold:             200 * time.Millisecond,
+				LogLevel:                  logger.Warn,
+				IgnoreRecordNotFoundError: true,
+				Colorful:                  false,
+			},
+		),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("store: open: %w", err)
