@@ -42,7 +42,11 @@ func Wire(cfg config.Config) (*http.Server, Cleanup, error) {
 	mappings := store.NewRepoMappings(db)
 
 	httpClient := &http.Client{Timeout: 10 * time.Second}
-	slackClient := slack.NewClient(httpClient, cfg.SlackBotToken.Reveal())
+	slackOpts := []slack.Option{}
+	if cfg.SlackBaseURL != "" && cfg.SlackBaseURL != "https://slack.com" {
+		slackOpts = append(slackOpts, slack.WithBaseURL(cfg.SlackBaseURL))
+	}
+	slackClient := slack.NewClient(httpClient, cfg.SlackBotToken.Reveal(), slackOpts...)
 	composer := slack.NewComposer(cfg.Reactions.NewPR)
 
 	dispatcher := pullrequest.NewDispatcher(

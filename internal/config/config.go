@@ -23,6 +23,10 @@ type Config struct {
 	GitHubWebhookSecret Secret `env:"GITHUB_WEBHOOK_SECRET,required,notEmpty"`
 	SlackBotToken       Secret `env:"SLACK_BOT_TOKEN,required,notEmpty"`
 
+	// SlackBaseURL is operator-overridable to point the client at a test
+	// double. Defaults to the real Slack API.
+	SlackBaseURL string `env:"SLACK_BASE_URL" envDefault:"https://slack.com"`
+
 	Reactions Reactions
 }
 
