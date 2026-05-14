@@ -1,9 +1,9 @@
-# Binaries
+# Binaries (root-only; do not match cmd/notifycat-*/ directories)
 /bin/
 /dist/
-notifycat-server
-notifycat-mapping
-notifycat-migrate
+/notifycat-server
+/notifycat-mapping
+/notifycat-migrate
 
 # Go build cache / vendor
 /vendor/
