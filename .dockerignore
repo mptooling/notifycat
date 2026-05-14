@@ -1,0 +1,36 @@
+# VCS
+.git
+.gitignore
+
+# Local state (don't bake into the image)
+.env
+.env.local
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Build artifacts
+/bin/
+/dist/
+/notifycat-server
+/notifycat-mapping
+/notifycat-migrate
+coverage.out
+*.out
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Docs / CI not needed inside the image
+docs/
+.github/
+README.md
+CONTRIBUTING.md
+LICENSE
+.editorconfig
+.golangci.yml
+.dockerignore
+Dockerfile
