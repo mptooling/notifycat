@@ -32,12 +32,16 @@ mkdir -p data
 On hosts with strict volume ownership, make sure UID `65532` can write to the
 mounted directory.
 
+The server applies embedded migrations at startup. You can still run migrations
+as a separate one-shot container if your deployment process prefers an explicit
+database step before the server starts.
+
 ## Run Migrations
 
 ```sh
 docker run --rm \
   -v "$PWD/data:/data" \
-  -e GITHUB_WEBHOOK_SECRET=your-webhook-secret \
+  -e GITHUB_WEBHOOK_SECRET=your-32-plus-character-random-secret \
   -e SLACK_BOT_TOKEN=xoxb-your-slack-bot-token \
   notifycat /usr/local/bin/notifycat-migrate up
 ```
@@ -47,7 +51,7 @@ Check migration status:
 ```sh
 docker run --rm \
   -v "$PWD/data:/data" \
-  -e GITHUB_WEBHOOK_SECRET=your-webhook-secret \
+  -e GITHUB_WEBHOOK_SECRET=your-32-plus-character-random-secret \
   -e SLACK_BOT_TOKEN=xoxb-your-slack-bot-token \
   notifycat /usr/local/bin/notifycat-migrate status
 ```
@@ -57,9 +61,9 @@ docker run --rm \
 ```sh
 docker run --rm \
   -v "$PWD/data:/data" \
-  -e GITHUB_WEBHOOK_SECRET=your-webhook-secret \
+  -e GITHUB_WEBHOOK_SECRET=your-32-plus-character-random-secret \
   -e SLACK_BOT_TOKEN=xoxb-your-slack-bot-token \
-  notifycat /usr/local/bin/notifycat-mapping add owner/repo C123ABCDE @alice,@bob
+  notifycat /usr/local/bin/notifycat-mapping add owner/repo C123ABCDE '<@U123456>,<!subteam^S123456>'
 ```
 
 ## Run the Server
@@ -68,7 +72,7 @@ docker run --rm \
 docker run --rm \
   -p 8080:8080 \
   -v "$PWD/data:/data" \
-  -e GITHUB_WEBHOOK_SECRET=your-webhook-secret \
+  -e GITHUB_WEBHOOK_SECRET=your-32-plus-character-random-secret \
   -e SLACK_BOT_TOKEN=xoxb-your-slack-bot-token \
   notifycat
 ```
@@ -81,13 +85,13 @@ curl -i http://localhost:8080/healthz
 
 ## Production Notes
 
-For production, run migrations as a one-shot job before starting the server.
-Keep `/data` on durable storage. Send logs to your container runtime's normal
+For production, keep `/data` on durable storage. Run migrations as a one-shot
+job if your platform expects that pattern; otherwise the server will apply
+pending migrations during startup. Send logs to your container runtime's normal
 log pipeline and set `LOG_FORMAT=json` if you prefer structured logs.
 
 If the container exits immediately, check:
 
 - Required env vars are present.
 - `/data` is writable by UID `65532`.
-- Migrations have been applied.
 - The Slack bot token and GitHub webhook secret are set in the target runtime.

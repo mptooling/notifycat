@@ -14,6 +14,8 @@ Do not put real tokens in committed files.
 | `SLACK_BOT_TOKEN` | Slack bot token, usually starting with `xoxb-`. |
 
 The server and CLIs fail fast when either value is missing.
+Use a long random `GITHUB_WEBHOOK_SECRET`; 32 characters or more is a good
+baseline.
 
 ## Server and Logging
 
@@ -64,7 +66,7 @@ Routing is stored in SQLite, not in environment variables. Use
 `notifycat-mapping`:
 
 ```sh
-notifycat-mapping add owner/repo C123ABCDE '<@U123>,<!subteam^S123>'
+notifycat-mapping add owner/repo C123ABCDE '<@U123456>,<!subteam^S123456>'
 notifycat-mapping list
 notifycat-mapping remove owner/repo
 ```

@@ -6,11 +6,29 @@ Use it when you want to test the full GitHub-to-Slack flow before deploying.
 ## Requirements
 
 - Go 1.25.10 or newer.
-- A Slack app with a bot token. See [Slack app setup](slack-app.md).
+- `sh` and `curl` for the setup helper scripts.
+- Permission to create a Slack app in your workspace. See
+  [Slack app setup](slack-app.md).
 - A GitHub repository where you can create webhooks. See
   [GitHub webhook setup](github-webhook.md).
 
-## Clone and Configure
+## Clone the Repository
+
+Clone notifycat and work from the repository root. The setup scripts use files
+from this repository.
+
+## Create the Slack App
+
+Create the Slack app from the committed manifest:
+
+```sh
+SLACK_APP_CONFIG_TOKEN=xoxe-your-token ./scripts/slack-app-create.sh
+```
+
+Install the Slack app from its app settings page, then copy the **Bot User OAuth
+Token**. You will use it as `SLACK_BOT_TOKEN`.
+
+## Configure Local Environment
 
 Create a local env file:
 
@@ -18,10 +36,16 @@ Create a local env file:
 cp .env.example .env
 ```
 
+Generate a GitHub webhook secret with your password manager, secret manager, or:
+
+```sh
+openssl rand -base64 32
+```
+
 Edit `.env` and set these values:
 
 ```sh
-GITHUB_WEBHOOK_SECRET=your-webhook-secret
+GITHUB_WEBHOOK_SECRET=your-32-plus-character-random-secret
 SLACK_BOT_TOKEN=xoxb-your-slack-bot-token
 ```
 
@@ -47,7 +71,7 @@ go run ./cmd/notifycat-migrate status
 Mappings tell notifycat where each repository should post in Slack.
 
 ```sh
-go run ./cmd/notifycat-mapping add owner/repo C123ABCDE @alice,@bob
+go run ./cmd/notifycat-mapping add owner/repo C123ABCDE '<@U123456>,<!subteam^S123456>'
 ```
 
 List mappings:
@@ -79,6 +103,8 @@ Or, if you use `just` (`brew install just` on macOS):
 just serve
 ```
 
+`just` is a local development shortcut. It is not needed for production setup.
+
 The server listens on `:8080` by default.
 
 Check health:
@@ -93,8 +119,21 @@ The webhook endpoint is:
 POST /webhook/github
 ```
 
-For local GitHub webhook testing, expose your local server with a tunnel such as
-ngrok or Cloudflare Tunnel, then register the public URL in GitHub.
+## Create the GitHub Webhook
+
+For local GitHub webhook testing, expose your running local server with a tunnel
+such as ngrok or Cloudflare Tunnel.
+
+Then use the tunnel base URL as `NOTIFYCAT_PUBLIC_URL`:
+
+```sh
+GITHUB_TOKEN=github_pat_your-token \
+GITHUB_WEBHOOK_SECRET=your-32-plus-character-random-secret \
+NOTIFYCAT_PUBLIC_URL=https://your-tunnel.example \
+./scripts/github-webhook-create.sh owner/repo
+```
+
+Use the same `GITHUB_WEBHOOK_SECRET` value in `.env` and in the GitHub webhook.
 
 ## Verify the Flow
 
