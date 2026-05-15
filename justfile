@@ -39,6 +39,10 @@ build:
 serve:
   go run ./cmd/notifycat-server
 
+# Create a Slack app from the committed manifest
+slack-app-create:
+  ./scripts/slack-app-create.sh
+
 # Apply database migrations
 migrate:
   go run ./cmd/notifycat-migrate up

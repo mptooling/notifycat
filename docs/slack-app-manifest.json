@@ -1,0 +1,27 @@
+{
+  "display_information": {
+    "name": "notifycat",
+    "description": "GitHub pull request notifications for Slack",
+    "background_color": "#2F6FED"
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "notifycat",
+      "always_online": false
+    }
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "chat:write",
+        "chat:write.public",
+        "reactions:write"
+      ]
+    }
+  },
+  "settings": {
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": false,
+    "token_rotation_enabled": false
+  }
+}
