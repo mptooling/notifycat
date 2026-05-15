@@ -72,7 +72,8 @@ For a Git tag such as `v0.1.0`, the version image tag is `0.1.0`.
 7. Start `notifycat-server`.
 8. Register the GitHub webhook with `./scripts/github-webhook-create.sh`.
 9. Open a test pull request and confirm Slack receives one message.
-10. Approve, comment, request changes, draft, close, or merge to confirm updates.
+10. Approve, comment, add a line-specific comment, request changes, draft,
+    close, or merge to confirm updates.
 
 ## CI Checks
 

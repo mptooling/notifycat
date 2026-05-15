@@ -88,13 +88,16 @@ scopes in **OAuth & Permissions**.
 
 ## Channel Access
 
-With `chat:write.public`, notifycat can post to public channels without a prior
-invite. For private channels, invite the bot to each channel used by
-`notifycat-mapping`:
+Invite the bot to every channel used by `notifycat-mapping`:
 
 ```text
 /invite @notifycat
 ```
+
+This is required for reaction updates. `chat:write.public` lets notifycat post
+the first message in public channels without joining them, but Slack may reject
+`reactions.add` unless the bot is a channel member. Inviting the bot keeps both
+message posting and reactions working for public and private channels.
 
 Use the channel ID in mappings, not the display name. In Slack, open channel
 details and copy the channel ID. It usually starts with `C`.

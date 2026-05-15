@@ -76,6 +76,26 @@ docker-migrate:
   mkdir -p data
   docker run --rm -v "$PWD/data:/data" --env-file .env {{app}}:test /usr/local/bin/notifycat-migrate up
 
+# Show Docker database migration status
+docker-migrate-status:
+  mkdir -p data
+  docker run --rm -v "$PWD/data:/data" --env-file .env {{app}}:test /usr/local/bin/notifycat-migrate status
+
+# Add a repo-to-Slack mapping in Docker against ./data
+docker-mapping-add repo channel mentions:
+  mkdir -p data
+  docker run --rm -v "$PWD/data:/data" --env-file .env {{app}}:test /usr/local/bin/notifycat-mapping add "{{repo}}" "{{channel}}" "{{mentions}}"
+
+# List repo-to-Slack mappings in Docker against ./data
+docker-mapping-list:
+  mkdir -p data
+  docker run --rm -v "$PWD/data:/data" --env-file .env {{app}}:test /usr/local/bin/notifycat-mapping list
+
+# Remove a repo-to-Slack mapping in Docker against ./data
+docker-mapping-remove repo:
+  mkdir -p data
+  docker run --rm -v "$PWD/data:/data" --env-file .env {{app}}:test /usr/local/bin/notifycat-mapping remove "{{repo}}"
+
 # Start the Docker image on localhost:8080
 docker-serve:
   mkdir -p data

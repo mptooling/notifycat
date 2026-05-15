@@ -1,8 +1,8 @@
 // Package pullrequest holds the domain model for GitHub pull-request events
-// and the six handlers that update Slack in response. Adding a new event
-// trigger means: write a new file in this package implementing EventHandler,
-// register it in the composition root, add a unit test. The dispatcher and
-// the rest of the pipeline do not change.
+// and the handlers that update Slack in response. Adding a new event trigger
+// means: write a new file in this package implementing EventHandler, register
+// it in the composition root, add a unit test. The dispatcher and the rest of
+// the pipeline do not change.
 package pullrequest
 
 import "context"
@@ -11,8 +11,9 @@ import "context"
 // detached from any HTTP payload type. Handlers receive Event and decide via
 // Applicable whether they should run.
 type Event struct {
-	Action     string
-	Repository string
+	GitHubEvent string
+	Action      string
+	Repository  string
 
 	PR PR
 

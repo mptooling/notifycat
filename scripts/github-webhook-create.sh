@@ -103,7 +103,8 @@ http_status=$(
   "active": true,
   "events": [
     "pull_request",
-    "pull_request_review"
+    "pull_request_review",
+    "pull_request_review_comment"
   ],
   "config": {
     "url": "$webhook_url",

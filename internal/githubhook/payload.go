@@ -10,6 +10,7 @@ import (
 // the fields the notifier uses. Adding a new event-type usually means
 // extending this struct rather than adding a new parser.
 type Payload struct {
+	Event      string
 	Action     string
 	Repository string
 

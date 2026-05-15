@@ -38,7 +38,7 @@ repository webhook with:
 | Content type | `application/json` |
 | Secret | `GITHUB_WEBHOOK_SECRET` |
 | SSL verification | enabled |
-| Events | `pull_request`, `pull_request_review` |
+| Events | `pull_request`, `pull_request_review`, `pull_request_review_comment` |
 
 The GitHub token is setup-only. Do not store it in notifycat production
 configuration.
@@ -78,6 +78,7 @@ If you cannot use the GitHub API, create the webhook in the repository settings:
 9. Enable:
    - **Pull requests**
    - **Pull request reviews**
+   - **Pull request review comments**
 10. Keep **Active** checked.
 11. Save the webhook.
 
@@ -113,6 +114,14 @@ notifycat handles these event states:
 | --- | --- |
 | `pull_request` | opened, closed, converted to draft |
 | `pull_request_review` | approved, commented, changes requested |
+| `pull_request_review_comment` | line-specific PR comments |
+
+GitHub uses different events for different comment surfaces:
+
+- A submitted review with "Comment" uses `pull_request_review`.
+- A line-specific comment on the diff uses `pull_request_review_comment`.
+- A comment in the PR conversation tab uses `issue_comment`, which notifycat
+  does not handle today.
 
 ## Signature Verification
 

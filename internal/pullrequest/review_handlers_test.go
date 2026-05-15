@@ -75,6 +75,8 @@ func TestCommentedHandler_Applicable(t *testing.T) {
 	}{
 		{"submitted+commented", pullrequest.Event{Action: "submitted", Review: &pullrequest.Review{State: "commented"}}, true},
 		{"edited+commented", pullrequest.Event{Action: "edited", Review: &pullrequest.Review{State: "commented"}}, true},
+		{"line comment created", pullrequest.Event{GitHubEvent: "pull_request_review_comment", Action: "created"}, true},
+		{"line comment edited", pullrequest.Event{GitHubEvent: "pull_request_review_comment", Action: "edited"}, false},
 		{"submitted+approved", pullrequest.Event{Action: "submitted", Review: &pullrequest.Review{State: "approved"}}, false},
 		{"submitted no review", pullrequest.Event{Action: "submitted"}, false},
 	}
@@ -94,6 +96,24 @@ func TestCommentedHandler_Handle_AddsReaction(t *testing.T) {
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
 		PR: pullrequest.PR{Number: 42}, Review: &pullrequest.Review{State: "commented"},
+	}
+	if err := h.Handle(context.Background(), e); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if len(client.calls) != 1 || client.calls[0].Name != "speech_balloon" {
+		t.Fatalf("calls = %+v", client.calls)
+	}
+}
+
+func TestCommentedHandler_Handle_LineCommentAddsReaction(t *testing.T) {
+	msgs, mappings, client := setupReviewFixture(t)
+	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), "speech_balloon")
+
+	e := pullrequest.Event{
+		GitHubEvent: "pull_request_review_comment",
+		Action:      "created",
+		Repository:  "octo/widget",
+		PR:          pullrequest.PR{Number: 42},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)

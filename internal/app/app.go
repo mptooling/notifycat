@@ -96,8 +96,9 @@ func Wire(cfg config.Config) (*http.Server, Cleanup, error) {
 func eventSink(d *pullrequest.Dispatcher, logger *slog.Logger) githubhook.EventSink {
 	return func(ctx context.Context, p githubhook.Payload) error {
 		event := pullrequest.Event{
-			Action:     p.Action,
-			Repository: p.Repository,
+			GitHubEvent: p.Event,
+			Action:      p.Action,
+			Repository:  p.Repository,
 			PR: pullrequest.PR{
 				Number: p.PullRequest.Number,
 				Title:  p.PullRequest.Title,
@@ -112,6 +113,7 @@ func eventSink(d *pullrequest.Dispatcher, logger *slog.Logger) githubhook.EventS
 		}
 		if err := d.Dispatch(ctx, event); err != nil {
 			logger.Error("dispatch failed",
+				slog.String("github_event", event.GitHubEvent),
 				slog.String("repository", event.Repository),
 				slog.Int("pr", event.PR.Number),
 				slog.String("action", event.Action),

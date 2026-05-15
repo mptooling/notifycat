@@ -96,6 +96,9 @@ func NewCommentedHandler(
 		emoji:    emoji,
 		messages: messages, mappings: mappings, slack: slackClient, logger: logger,
 		applicable: func(e Event) bool {
+			if e.GitHubEvent == "pull_request_review_comment" {
+				return e.Action == "created"
+			}
 			if e.Review == nil || e.Review.State != "commented" {
 				return false
 			}

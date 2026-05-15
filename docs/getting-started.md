@@ -142,7 +142,8 @@ After Slack and GitHub are configured:
 1. Open a pull request in the mapped repository.
 2. Confirm notifycat posts one Slack message in the mapped channel.
 3. Approve, comment, request changes, convert to draft, close, or merge the PR.
-4. Confirm the existing Slack message changes instead of a new message appearing
+4. Add a line-specific comment on the diff.
+5. Confirm the existing Slack message changes instead of a new message appearing
    for each event.
 
 If GitHub reports a failed delivery, check the response code in the GitHub
