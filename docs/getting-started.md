@@ -73,6 +73,12 @@ Run:
 go run ./cmd/notifycat-server
 ```
 
+Or, if you use `just` (`brew install just` on macOS):
+
+```sh
+just serve
+```
+
 The server listens on `:8080` by default.
 
 Check health:

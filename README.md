@@ -63,7 +63,19 @@ See [Getting started](docs/getting-started.md) for the full local setup.
 
 ## Development
 
-Run the checks before pushing:
+The project includes a `justfile` for common development commands. Install
+[`just`](https://github.com/casey/just) (`brew install just` on macOS), then run:
+
+```sh
+just
+just check
+just serve
+```
+
+`just` is a developer tool only. It is not part of the Go module, the Docker
+runtime image, or production dependencies.
+
+The underlying checks are:
 
 ```sh
 go vet ./...

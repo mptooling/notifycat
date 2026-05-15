@@ -85,3 +85,7 @@ go build ./...
 
 The Docker build uses a patched Go toolchain. Keep the Go patch version current
 when Go security releases land.
+
+For local development, the same checks are available through `just check`.
+`just` is only a task runner; it is not included in production builds or Go
+module dependencies.

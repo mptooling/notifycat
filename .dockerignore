@@ -32,5 +32,6 @@ CONTRIBUTING.md
 LICENSE
 .editorconfig
 .golangci.yml
+justfile
 .dockerignore
 Dockerfile
