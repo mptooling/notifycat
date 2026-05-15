@@ -41,6 +41,7 @@ func NewHandler(sink EventSink) http.Handler {
 			http.Error(w, "bad payload", http.StatusBadRequest)
 			return
 		}
+		payload.Event = r.Header.Get("X-GitHub-Event")
 		if err := sink(r.Context(), payload); err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return

@@ -1,7 +1,7 @@
 // Package githubhook authenticates and parses inbound GitHub webhook
 // requests. It exposes a constant-time HMAC verifier, an HTTP middleware that
-// gates a downstream handler, and a JSON parser for the pull_request /
-// pull_request_review payloads we care about.
+// gates a downstream handler, and a JSON parser for the pull request payloads
+// we care about.
 package githubhook
 
 import (

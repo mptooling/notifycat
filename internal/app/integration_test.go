@@ -177,6 +177,10 @@ func (f *integrationFixture) seedSlackMessage(t *testing.T, repository string, p
 // and returns the HTTP status. The response body is drained and closed inline
 // so callers never have to track it.
 func (f *integrationFixture) post(t *testing.T, payload string) int {
+	return f.postEvent(t, "", payload)
+}
+
+func (f *integrationFixture) postEvent(t *testing.T, event, payload string) int {
 	t.Helper()
 	body := []byte(payload)
 	mac := hmac.New(sha256.New, []byte("itsecret"))
@@ -190,6 +194,9 @@ func (f *integrationFixture) post(t *testing.T, payload string) int {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Hub-Signature-256", sig)
+	if event != "" {
+		req.Header.Set("X-GitHub-Event", event)
+	}
 	resp, err := f.server.Client().Do(req)
 	if err != nil {
 		t.Fatalf("Do: %v", err)
@@ -330,6 +337,30 @@ func TestIntegration_ReviewCommented(t *testing.T) {
 		"review": {"state": "commented"},
 		"repository": {"full_name": "octo/widget"},
 		"pull_request": {"number": 42, "title": "fix", "html_url": "u", "user": {"login": "bob"}}
+	}`)
+
+	if status != http.StatusOK {
+		t.Fatalf("status = %d", status)
+	}
+	call, ok := f.slack.findCall("/api/reactions.add")
+	if !ok {
+		t.Fatalf("reactions.add not called; methods = %v", f.slack.methods())
+	}
+	if call.Body["name"] != "speech_balloon" {
+		t.Errorf("reaction name = %v; want speech_balloon", call.Body["name"])
+	}
+}
+
+func TestIntegration_PullRequestReviewLineComment(t *testing.T) {
+	f := newIntegrationFixture(t)
+	f.seedMapping(t, "octo/widget", "C123ABCDE", nil)
+	f.seedSlackMessage(t, "octo/widget", 42, "prev-ts")
+
+	status := f.postEvent(t, "pull_request_review_comment", `{
+		"action": "created",
+		"repository": {"full_name": "octo/widget"},
+		"pull_request": {"number": 42, "title": "fix", "html_url": "u", "user": {"login": "bob"}},
+		"comment": {"body": "line comment"}
 	}`)
 
 	if status != http.StatusOK {

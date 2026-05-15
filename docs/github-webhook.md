@@ -1,6 +1,6 @@
 # GitHub Webhook Setup
 
-notifycat receives GitHub webhooks at:
+notifycat receives GitHub webhook requests at:
 
 ```text
 POST /webhook/github
@@ -9,31 +9,102 @@ POST /webhook/github
 GitHub must send JSON payloads and sign them with the same secret you set in
 `GITHUB_WEBHOOK_SECRET`.
 
-## Register the Webhook
+For production setup, use the shell script directly. It only needs `sh` and
+`curl`; `jq` is optional and only makes the output easier to read.
 
-In the GitHub repository:
+## Create the Webhook with the Script
 
-1. Open **Settings**.
-2. Open **Webhooks**.
-3. Click **Add webhook**.
-4. Set **Payload URL** to your public notifycat URL:
+Create a fine-grained GitHub token for the target repository with only:
+
+```text
+Repository permissions: Webhooks: Read and write
+```
+
+Then run:
+
+```sh
+GITHUB_TOKEN=github_pat_your-token \
+GITHUB_WEBHOOK_SECRET=your-32-plus-character-random-secret \
+NOTIFYCAT_PUBLIC_URL=https://notifycat.example.com \
+./scripts/github-webhook-create.sh owner/repo
+```
+
+The script validates the inputs before calling GitHub. It creates an active
+repository webhook with:
+
+| Field | Value |
+| --- | --- |
+| Payload URL | `${NOTIFYCAT_PUBLIC_URL}/webhook/github` |
+| Content type | `application/json` |
+| Secret | `GITHUB_WEBHOOK_SECRET` |
+| SSL verification | enabled |
+| Events | `pull_request`, `pull_request_review`, `pull_request_review_comment` |
+
+The GitHub token is setup-only. Do not store it in notifycat production
+configuration.
+
+## Local Development Shortcut
+
+If you use `just` while working on the repository, this recipe calls the same
+script:
+
+```sh
+GITHUB_TOKEN=github_pat_your-token \
+GITHUB_WEBHOOK_SECRET=your-32-plus-character-random-secret \
+NOTIFYCAT_PUBLIC_URL=https://notifycat.example.com \
+just github-webhook-create owner/repo
+```
+
+Production instructions should use `./scripts/github-webhook-create.sh`
+directly so operators do not need to install `just`.
+
+## Manual Fallback
+
+If you cannot use the GitHub API, create the webhook in the repository settings:
+
+1. Open the GitHub repository.
+2. Go to **Settings**.
+3. Open **Webhooks**.
+4. Click **Add webhook**.
+5. Set **Payload URL** to your public notifycat URL:
 
    ```text
-   https://your-domain.example/webhook/github
+   https://notifycat.example.com/webhook/github
    ```
 
-5. Set **Content type** to `application/json`.
-6. Set **Secret** to the same value as `GITHUB_WEBHOOK_SECRET`.
-7. Choose **Let me select individual events**.
-8. Enable:
+6. Set **Content type** to `application/json`.
+7. Set **Secret** to the same value as `GITHUB_WEBHOOK_SECRET`.
+8. Choose **Let me select individual events**.
+9. Enable:
    - **Pull requests**
    - **Pull request reviews**
-9. Keep **Active** checked.
-10. Save the webhook.
+   - **Pull request review comments**
+10. Keep **Active** checked.
+11. Save the webhook.
 
 GitHub sends a ping after creation. notifycat only handles pull request events,
 so use GitHub's delivery view to test a real PR event after the webhook is
 registered.
+
+## Security Notes
+
+Use a fine-grained GitHub token scoped to the target repository with
+**Webhooks: Read and write**. Avoid broad classic `repo` tokens unless your
+organization cannot use fine-grained tokens.
+
+Use HTTPS for `NOTIFYCAT_PUBLIC_URL`. The script rejects plain `http://` URLs
+and creates the webhook with SSL verification enabled.
+
+Use a long random `GITHUB_WEBHOOK_SECRET`. A good default is at least 32
+characters from your password manager or secret manager. Set the same value in
+notifycat and in the GitHub webhook.
+
+To rotate the secret:
+
+1. Generate a new random secret.
+2. Update `GITHUB_WEBHOOK_SECRET` in notifycat.
+3. Update the GitHub webhook secret to the same value.
+4. Restart notifycat if your runtime does not reload environment variables.
 
 ## Event Coverage
 
@@ -43,6 +114,14 @@ notifycat handles these event states:
 | --- | --- |
 | `pull_request` | opened, closed, converted to draft |
 | `pull_request_review` | approved, commented, changes requested |
+| `pull_request_review_comment` | line-specific PR comments |
+
+GitHub uses different events for different comment surfaces:
+
+- A submitted review with "Comment" uses `pull_request_review`.
+- A line-specific comment on the diff uses `pull_request_review_comment`.
+- A comment in the PR conversation tab uses `issue_comment`, which notifycat
+  does not handle today.
 
 ## Signature Verification
 
@@ -64,10 +143,13 @@ expose it with a tunnel:
 go run ./cmd/notifycat-server
 ```
 
-Then point GitHub at:
+Then use the tunnel base URL as `NOTIFYCAT_PUBLIC_URL`:
 
-```text
-https://your-tunnel.example/webhook/github
+```sh
+GITHUB_TOKEN=github_pat_your-token \
+GITHUB_WEBHOOK_SECRET=your-32-plus-character-random-secret \
+NOTIFYCAT_PUBLIC_URL=https://your-tunnel.example \
+./scripts/github-webhook-create.sh owner/repo
 ```
 
 Open or update a pull request to generate a delivery.

@@ -1,47 +1,103 @@
 # Slack App Setup
 
-notifycat talks to Slack through a bot token. Create one Slack app for the
-workspace where notifications should appear.
+notifycat posts to Slack with a bot token. You need one Slack app in the
+workspace where PR notifications should appear.
 
-## Create the App
+For production setup, use the shell script directly. It only needs `sh` and
+`curl`; `jq` is optional and only makes the output easier to read.
 
-1. Open [Slack API: Your Apps](https://api.slack.com/apps).
-2. Select **Create New App**.
-3. Choose **From scratch**.
-4. Pick a workspace and name the app.
+## Create the App from the Manifest
 
-## Add Bot Scopes
+The repository includes the Slack app manifest at
+`docs/slack-app-manifest.json`. The manifest defines the bot user and the
+Slack scopes notifycat needs.
 
-In **OAuth & Permissions**, add these bot token scopes:
+Create a Slack app configuration token from
+[Slack API: Your Apps](https://api.slack.com/apps), then run:
 
-| Scope | Why notifycat needs it |
-| --- | --- |
-| `chat:write` | Post and update PR messages. |
-| `reactions:read` | Read existing reactions before updating state. |
-| `reactions:write` | Add configured PR-state reactions. |
+```sh
+SLACK_APP_CONFIG_TOKEN=xoxe-your-token ./scripts/slack-app-create.sh
+```
 
-If you want the bot to post into public channels without being invited first,
-Slack may also require `chat:write.public`. The simpler setup is to invite the
-bot to each channel that will receive notifications.
+For Enterprise Grid or org-level configuration tokens, pass the workspace ID:
 
-## Install the App
+```sh
+SLACK_APP_CONFIG_TOKEN=xoxe-your-token \
+SLACK_TEAM_ID=T123 \
+./scripts/slack-app-create.sh
+```
 
-1. Click **Install to Workspace**.
-2. Approve the requested scopes.
-3. Copy the **Bot User OAuth Token**.
-4. Set it as `SLACK_BOT_TOKEN`.
+The script validates the required inputs before calling Slack. It does not store
+the configuration token, and it does not belong in notifycat production
+configuration.
+
+After the app is created:
+
+1. Open the app settings page printed by the script, or open
+   [Slack API: Your Apps](https://api.slack.com/apps) and select the new app.
+2. Go to **Install App**.
+3. Install the app to the workspace.
+4. Copy the **Bot User OAuth Token**.
+5. Set that token as `SLACK_BOT_TOKEN` in notifycat.
 
 ```sh
 SLACK_BOT_TOKEN=xoxb-your-token
 ```
 
-## Invite the Bot to Channels
+The Slack API response can include an `oauth_authorize_url`. Do not use that URL
+for notifycat setup. That URL starts a full OAuth callback flow, and notifycat
+does not implement the redirect handler or code exchange. Use **Install App** in
+the Slack app settings instead.
+
+## Local Development Shortcut
+
+If you use `just` while working on the repository, this recipe calls the same
+script:
+
+```sh
+SLACK_APP_CONFIG_TOKEN=xoxe-your-token just slack-app-create
+```
+
+Production instructions should use `./scripts/slack-app-create.sh` directly so
+operators do not need to install `just`.
+
+## Manual Fallback
+
+If the API-based setup is not available in your workspace, create the app in the
+Slack UI:
+
+1. Open [Slack API: Your Apps](https://api.slack.com/apps).
+2. Select **Create New App**.
+3. Choose **From scratch**.
+4. Pick the workspace and name the app `notifycat`.
+5. Open **OAuth & Permissions**.
+6. Add the bot scopes listed below.
+7. Click **Install to Workspace**.
+8. Copy the **Bot User OAuth Token** and set it as `SLACK_BOT_TOKEN`.
+
+## Bot Scopes
+
+| Scope | Why notifycat needs it |
+| --- | --- |
+| `chat:write` | Post, update, and delete PR messages. |
+| `chat:write.public` | Post into public channels without inviting the bot first. |
+| `reactions:write` | Add configured PR-state reactions. |
+
+The manifest includes these scopes. If you create the app manually, add the same
+scopes in **OAuth & Permissions**.
+
+## Channel Access
 
 Invite the bot to every channel used by `notifycat-mapping`:
 
 ```text
 /invite @notifycat
 ```
+
+This is required for reaction updates. `chat:write.public` lets notifycat post
+the first message in public channels without joining them, but Slack may reject
+`reactions.add` unless the bot is a channel member. Inviting the bot keeps both
+message posting and reactions working for public and private channels.
 
 Use the channel ID in mappings, not the display name. In Slack, open channel
 details and copy the channel ID. It usually starts with `C`.

@@ -16,6 +16,7 @@ mapping GitHub repositories to Slack channels.
 - `pull_request` webhooks for opened, closed, and converted-to-draft PRs.
 - `pull_request_review` webhooks for approved, commented, and
   changes-requested reviews.
+- `pull_request_review_comment` webhooks for line-specific PR comments.
 - GitHub HMAC-SHA256 verification through `X-Hub-Signature-256`.
 - Repository mappings in SQLite: `owner/repo -> Slack channel + mentions`.
 - Slack message updates instead of repeated new messages for the same PR.

@@ -50,26 +50,30 @@ secrets.
 
 ## Deploying a Release Image
 
-The release workflow publishes images to:
+The release workflow runs on `v*` tags and publishes images to:
 
 ```text
-ghcr.io/mptooling/notifycat:<tag>
+ghcr.io/mptooling/notifycat:<version>
 ghcr.io/mptooling/notifycat:latest
 ```
 
-Tag names should use the `v*` format, for example `v0.1.0`.
+For a Git tag such as `v0.1.0`, the version image tag is `0.1.0`.
 
 ## Deployment Checklist
 
-1. Create the Slack app and install the bot.
+1. Create the Slack app with `./scripts/slack-app-create.sh`, install the bot,
+   and copy the bot token.
 2. Create durable storage for `/data`.
-3. Set `GITHUB_WEBHOOK_SECRET` and `SLACK_BOT_TOKEN`.
-4. Run `notifycat-migrate up`.
-5. Add repository mappings with `notifycat-mapping`.
-6. Start `notifycat-server`.
-7. Register the GitHub webhook.
-8. Open a test pull request and confirm Slack receives one message.
-9. Approve, comment, request changes, draft, close, or merge to confirm updates.
+3. Generate a long random `GITHUB_WEBHOOK_SECRET`.
+4. Set `GITHUB_WEBHOOK_SECRET` and `SLACK_BOT_TOKEN`.
+5. Run `notifycat-migrate up` if your deployment uses an explicit migration
+   step. The server also applies pending migrations at startup.
+6. Add repository mappings with `notifycat-mapping`.
+7. Start `notifycat-server`.
+8. Register the GitHub webhook with `./scripts/github-webhook-create.sh`.
+9. Open a test pull request and confirm Slack receives one message.
+10. Approve, comment, add a line-specific comment, request changes, draft,
+    close, or merge to confirm updates.
 
 ## CI Checks
 
