@@ -15,8 +15,8 @@ Optional:
   SLACK_APP_MANIFEST      Manifest path, defaults to docs/slack-app-manifest.json
 
 Examples:
-  SLACK_APP_CONFIG_TOKEN=xoxe-your-token just slack-app-create
-  SLACK_APP_CONFIG_TOKEN=xoxe-your-token SLACK_TEAM_ID=T123 just slack-app-create
+  SLACK_APP_CONFIG_TOKEN=xoxe-your-token ./scripts/slack-app-create.sh
+  SLACK_APP_CONFIG_TOKEN=xoxe-your-token SLACK_TEAM_ID=T123 ./scripts/slack-app-create.sh
 USAGE
 }
 

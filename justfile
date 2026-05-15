@@ -43,6 +43,10 @@ serve:
 slack-app-create:
   ./scripts/slack-app-create.sh
 
+# Create the GitHub repository webhook for notifycat
+github-webhook-create repo:
+  ./scripts/github-webhook-create.sh "{{repo}}"
+
 # Apply database migrations
 migrate:
   go run ./cmd/notifycat-migrate up

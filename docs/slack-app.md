@@ -1,51 +1,81 @@
 # Slack App Setup
 
-notifycat talks to Slack through a bot token. Create one Slack app for the
-workspace where notifications should appear.
+notifycat posts to Slack with a bot token. You need one Slack app in the
+workspace where PR notifications should appear.
 
-## Recommended: Create from Manifest
+For production setup, use the shell script directly. It only needs `sh` and
+`curl`; `jq` is optional and only makes the output easier to read.
 
-The repository includes a Slack app manifest at
-`docs/slack-app-manifest.json`. Use it as the source of truth for the app's bot
-user, OAuth scopes, and basic settings.
+## Create the App from the Manifest
 
-To create the app from the manifest, generate a Slack app configuration token
-from [Slack API: Your Apps](https://api.slack.com/apps), then run:
+The repository includes the Slack app manifest at
+`docs/slack-app-manifest.json`. The manifest defines the bot user and the
+Slack scopes notifycat needs.
+
+Create a Slack app configuration token from
+[Slack API: Your Apps](https://api.slack.com/apps), then run:
 
 ```sh
-SLACK_APP_CONFIG_TOKEN=xoxe-your-token just slack-app-create
+SLACK_APP_CONFIG_TOKEN=xoxe-your-token ./scripts/slack-app-create.sh
 ```
 
 For Enterprise Grid or org-level configuration tokens, pass the workspace ID:
 
 ```sh
-SLACK_APP_CONFIG_TOKEN=xoxe-your-token SLACK_TEAM_ID=T123 just slack-app-create
+SLACK_APP_CONFIG_TOKEN=xoxe-your-token \
+SLACK_TEAM_ID=T123 \
+./scripts/slack-app-create.sh
 ```
 
-After the app is created, open the app settings page, go to **Install App**,
-install it to the workspace, then copy the **Bot User OAuth Token**.
+The script validates the required inputs before calling Slack. It does not store
+the configuration token, and it does not belong in notifycat production
+configuration.
 
-The API response may include an `oauth_authorize_url`. Do not use that URL for
-this setup unless notifycat grows a full OAuth callback flow. Slack's OAuth URL
-requires a configured redirect URL and an app-side code exchange, while
-notifycat currently expects a bot token that an operator copies from the app
-settings page.
+After the app is created:
 
-App configuration tokens are setup-only credentials. Do not store them in
-production configuration. The helper script only requires `sh` and `curl`; if
-`jq` is installed, it also prints the app ID and app settings URL in a shorter
-form.
+1. Open the app settings page printed by the script, or open
+   [Slack API: Your Apps](https://api.slack.com/apps) and select the new app.
+2. Go to **Install App**.
+3. Install the app to the workspace.
+4. Copy the **Bot User OAuth Token**.
+5. Set that token as `SLACK_BOT_TOKEN` in notifycat.
 
-## Fallback: Create Manually
+```sh
+SLACK_BOT_TOKEN=xoxb-your-token
+```
+
+The Slack API response can include an `oauth_authorize_url`. Do not use that URL
+for notifycat setup. That URL starts a full OAuth callback flow, and notifycat
+does not implement the redirect handler or code exchange. Use **Install App** in
+the Slack app settings instead.
+
+## Local Development Shortcut
+
+If you use `just` while working on the repository, this recipe calls the same
+script:
+
+```sh
+SLACK_APP_CONFIG_TOKEN=xoxe-your-token just slack-app-create
+```
+
+Production instructions should use `./scripts/slack-app-create.sh` directly so
+operators do not need to install `just`.
+
+## Manual Fallback
+
+If the API-based setup is not available in your workspace, create the app in the
+Slack UI:
 
 1. Open [Slack API: Your Apps](https://api.slack.com/apps).
 2. Select **Create New App**.
 3. Choose **From scratch**.
-4. Pick a workspace and name the app.
+4. Pick the workspace and name the app `notifycat`.
+5. Open **OAuth & Permissions**.
+6. Add the bot scopes listed below.
+7. Click **Install to Workspace**.
+8. Copy the **Bot User OAuth Token** and set it as `SLACK_BOT_TOKEN`.
 
-## Add Bot Scopes
-
-In **OAuth & Permissions**, add these bot token scopes:
+## Bot Scopes
 
 | Scope | Why notifycat needs it |
 | --- | --- |
@@ -53,24 +83,13 @@ In **OAuth & Permissions**, add these bot token scopes:
 | `chat:write.public` | Post into public channels without inviting the bot first. |
 | `reactions:write` | Add configured PR-state reactions. |
 
-The manifest includes all scopes above. If you create the app manually, add the
-same scopes in **OAuth & Permissions**.
+The manifest includes these scopes. If you create the app manually, add the same
+scopes in **OAuth & Permissions**.
 
-## Install the App
-
-1. Click **Install to Workspace**.
-2. Approve the requested scopes.
-3. Copy the **Bot User OAuth Token**.
-4. Set it as `SLACK_BOT_TOKEN`.
-
-```sh
-SLACK_BOT_TOKEN=xoxb-your-token
-```
-
-## Invite the Bot to Channels
+## Channel Access
 
 With `chat:write.public`, notifycat can post to public channels without a prior
-invite. For private channels, invite the bot to every channel used by
+invite. For private channels, invite the bot to each channel used by
 `notifycat-mapping`:
 
 ```text
