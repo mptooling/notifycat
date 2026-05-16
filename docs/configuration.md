@@ -45,6 +45,13 @@ Mount `/data` if you want the database to survive container restarts.
 | --- | --- | --- |
 | `SLACK_BASE_URL` | `https://slack.com` | Mostly useful for tests. |
 
+## GitHub (validation only)
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `GITHUB_TOKEN` | _(unset)_ | Optional PAT used only by `notifycat-mapping validate` to read repo webhook config. Required scope: `admin:repo_hook` (or `repo` for private repos). The server does not need this; if unset, the webhook-coverage check is skipped. |
+| `GITHUB_BASE_URL` | `https://api.github.com` | Override for GitHub Enterprise or tests. |
+
 ## Reactions
 
 | Variable | Default | Notes |
@@ -69,7 +76,16 @@ Routing is stored in SQLite, not in environment variables. Use
 notifycat-mapping add owner/repo C123ABCDE '<@U123456>,<!subteam^S123456>'
 notifycat-mapping list
 notifycat-mapping remove owner/repo
+notifycat-mapping validate            # all mappings
+notifycat-mapping validate owner/repo # single mapping
 ```
+
+`validate` checks each mapping end-to-end: the row exists, the Slack channel
+ID is well-formed, the bot token works with the required scopes, the bot is a
+member of the channel, and (when `GITHUB_TOKEN` is set) the GitHub webhook is
+subscribed to `pull_request`, `pull_request_review`, and
+`pull_request_review_comment`. See `docs/operations.md` for the failure-mode
+remediation table.
 
 Mentions are stored as plain Slack mention strings and joined into the message
 body. User mentions look like `<@U123456>`. User group mentions look like

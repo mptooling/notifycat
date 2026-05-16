@@ -117,21 +117,72 @@ func (c *Client) GetReactions(ctx context.Context, channel, ts string) ([]Reacti
 		"channel":   {channel},
 		"timestamp": {ts},
 	}
-	if err := c.getJSON(ctx, "reactions.get", q, &resp); err != nil {
+	if err := c.getJSON(ctx, "reactions.get", q, &resp, nil); err != nil {
 		return nil, err
 	}
 	return resp.Message.Reactions, nil
 }
 
-// AuthTest returns the bot's user_id (used to filter our own reactions).
-func (c *Client) AuthTest(ctx context.Context) (string, error) {
+// AuthTest returns the bot's user_id and the OAuth scopes Slack reports as
+// granted to the token. Scopes are read from the X-OAuth-Scopes response
+// header (comma-separated) and used by validation to verify required scopes
+// are present.
+func (c *Client) AuthTest(ctx context.Context) (userID string, scopes []string, err error) {
 	var resp struct {
 		UserID string `json:"user_id"`
 	}
-	if err := c.getJSON(ctx, "auth.test", nil, &resp); err != nil {
-		return "", err
+	var hdr http.Header
+	if err := c.getJSON(ctx, "auth.test", nil, &resp, &hdr); err != nil {
+		return "", nil, err
 	}
-	return resp.UserID, nil
+	return resp.UserID, parseScopes(hdr.Get("X-OAuth-Scopes")), nil
+}
+
+// ChannelInfo is the subset of conversations.info we need for validation.
+type ChannelInfo struct {
+	ID         string
+	Name       string
+	IsMember   bool
+	IsArchived bool
+}
+
+// ConversationsInfo returns metadata about a channel, including whether the
+// bot is a member. The channel argument must be a Slack channel ID.
+func (c *Client) ConversationsInfo(ctx context.Context, channel string) (ChannelInfo, error) {
+	var resp struct {
+		Channel struct {
+			ID         string `json:"id"`
+			Name       string `json:"name"`
+			IsMember   bool   `json:"is_member"`
+			IsArchived bool   `json:"is_archived"`
+		} `json:"channel"`
+	}
+	q := url.Values{"channel": {channel}}
+	if err := c.getJSON(ctx, "conversations.info", q, &resp, nil); err != nil {
+		return ChannelInfo{}, err
+	}
+	return ChannelInfo{
+		ID:         resp.Channel.ID,
+		Name:       resp.Channel.Name,
+		IsMember:   resp.Channel.IsMember,
+		IsArchived: resp.Channel.IsArchived,
+	}, nil
+}
+
+// parseScopes splits a comma-separated OAuth scopes header value into trimmed
+// non-empty entries.
+func parseScopes(header string) []string {
+	if header == "" {
+		return nil
+	}
+	parts := strings.Split(header, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // ----- internals -----
@@ -154,14 +205,18 @@ func (c *Client) postJSON(
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-	return c.do(req, method, out, allowErrCodes)
+	return c.do(req, method, out, allowErrCodes, nil)
 }
 
+// getJSON issues a GET against the Slack API. When outHeader is non-nil the
+// response Header is copied into it before the call returns — used by
+// AuthTest to read X-OAuth-Scopes.
 func (c *Client) getJSON(
 	ctx context.Context,
 	method string,
 	query url.Values,
 	out any,
+	outHeader *http.Header,
 ) error {
 	u := c.baseURL + "/api/" + method
 	if len(query) > 0 {
@@ -173,10 +228,10 @@ func (c *Client) getJSON(
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Accept", "application/json")
-	return c.do(req, method, out, nil)
+	return c.do(req, method, out, nil, outHeader)
 }
 
-func (c *Client) do(req *http.Request, method string, out any, allowErrCodes []string) error {
+func (c *Client) do(req *http.Request, method string, out any, allowErrCodes []string, outHeader *http.Header) error {
 	// The URL is composed from c.baseURL (operator-configured) and a hard-coded
 	// method name; there is no user-controlled taint, so gosec G107/G704 do
 	// not apply here.
@@ -185,6 +240,9 @@ func (c *Client) do(req *http.Request, method string, out any, allowErrCodes []s
 		return fmt.Errorf("slack: %s: %w", method, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if outHeader != nil {
+		*outHeader = resp.Header.Clone()
+	}
 
 	const maxBytes int64 = defaultMaxRespMiB << 20
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes))

@@ -27,6 +27,14 @@ type Config struct {
 	// double. Defaults to the real Slack API.
 	SlackBaseURL string `env:"SLACK_BASE_URL" envDefault:"https://slack.com"`
 
+	// GitHubToken is consumed only by `notifycat-mapping validate` to query the
+	// repository's webhook configuration. Optional; without it the webhook
+	// coverage check is skipped.
+	GitHubToken Secret `env:"GITHUB_TOKEN"`
+
+	// GitHubBaseURL is operator-overridable, paralleling SlackBaseURL.
+	GitHubBaseURL string `env:"GITHUB_BASE_URL" envDefault:"https://api.github.com"`
+
 	Reactions Reactions
 }
 
