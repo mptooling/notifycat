@@ -36,15 +36,16 @@ func main() {
 	}
 	defer closeDB(db)
 
-	os.Exit(dispatch(os.Args[1:], db, os.Stdout, os.Stderr, mappingcli.NewProductionValidator(cfg)))
+	repo := store.NewRepoMappings(db)
+	validator := mappingcli.NewMappingsValidator(repo, cfg)
+	os.Exit(dispatch(os.Args[1:], repo, validator, os.Stdout, os.Stderr))
 }
 
-func dispatch(args []string, db *gorm.DB, stdout, stderr io.Writer, newValidator mappingcli.ValidatorFactory) int {
+func dispatch(args []string, repo *store.RepoMappings, validator mappingcli.MappingsValidator, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, usage())
 		return 2
 	}
-	repo := store.NewRepoMappings(db)
 	ctx := context.Background()
 	switch args[0] {
 	case "add":
@@ -54,7 +55,7 @@ func dispatch(args []string, db *gorm.DB, stdout, stderr io.Writer, newValidator
 	case "remove":
 		return runRemove(ctx, args[1:], repo, stdout, stderr)
 	case "validate":
-		return runValidate(ctx, args[1:], repo, newValidator, stdout, stderr)
+		return runValidate(ctx, args[1:], validator, stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown subcommand %q\n%s\n", args[0], usage())
 		return 2
@@ -98,18 +99,12 @@ func runRemove(ctx context.Context, args []string, repo *store.RepoMappings, std
 	return mappingcli.Remove(ctx, repo, args[0], stdout, stderr)
 }
 
-func runValidate(
-	ctx context.Context,
-	args []string,
-	repo *store.RepoMappings,
-	newValidator mappingcli.ValidatorFactory,
-	stdout, stderr io.Writer,
-) int {
+func runValidate(ctx context.Context, args []string, validator mappingcli.MappingsValidator, stdout, stderr io.Writer) int {
 	target, code, ok := parseValidateArgs(args, stderr)
 	if !ok {
 		return code
 	}
-	return mappingcli.Validate(ctx, repo, target, newValidator, stdout, stderr)
+	return validator.Validate(ctx, target, stdout, stderr)
 }
 
 func parseValidateArgs(args []string, stderr io.Writer) (string, int, bool) {

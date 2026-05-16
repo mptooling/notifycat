@@ -3,32 +3,49 @@ package main
 import (
 	"bytes"
 	"context"
+	"io"
 	"strings"
 	"testing"
 
 	"github.com/mptooling/notifycat/internal/mappingcli"
 	"github.com/mptooling/notifycat/internal/store"
-	"github.com/mptooling/notifycat/internal/validate"
 )
 
-func noopFactory() mappingcli.ValidatorFactory {
-	return func(_ *store.RepoMappings) (mappingcli.Validator, error) {
-		return stubValidator{}, nil
-	}
+// fakeMappingsValidator is the mock dispatch tests hand to runValidate. It
+// satisfies mappingcli.MappingsValidator and records the inputs it sees so
+// tests can assert dispatch routed correctly.
+type fakeMappingsValidator struct {
+	called    bool
+	gotTarget string
+	code      int
 }
 
-type stubValidator struct{}
-
-func (stubValidator) Validate(_ context.Context, repository string) validate.Report {
-	return validate.Report{Repository: repository}
+func (f *fakeMappingsValidator) Validate(_ context.Context, target string, _, _ io.Writer) int {
+	f.called = true
+	f.gotTarget = target
+	return f.code
 }
-func (stubValidator) ValidateAll(_ context.Context) ([]validate.Report, error) { return nil, nil }
+
+// panickingValidator fails the test if dispatch ever routes a non-validate
+// subcommand through it. Useful for asserting routing isolation.
+type panickingValidator struct{ t *testing.T }
+
+func (p panickingValidator) Validate(_ context.Context, _ string, _, _ io.Writer) int {
+	p.t.Helper()
+	p.t.Fatal("validator.Validate must not be called for non-validate subcommands")
+	return 0
+}
+
+func testRepo(t *testing.T) *store.RepoMappings {
+	t.Helper()
+	return store.NewRepoMappings(store.NewTestDB(t))
+}
 
 func TestDispatch_Add_InvalidRepositoryRejected(t *testing.T) {
-	db := store.NewTestDB(t)
+	repo := testRepo(t)
 	var out, errOut bytes.Buffer
 
-	code := dispatch([]string{"add", "invalid-repo-format", "C123", "@a"}, db, &out, &errOut, noopFactory())
+	code := dispatch([]string{"add", "invalid-repo-format", "C123", "@a"}, repo, panickingValidator{t}, &out, &errOut)
 	if code == 0 {
 		t.Fatalf("add with invalid repo accepted; stderr=%s", errOut.String())
 	}
@@ -38,10 +55,10 @@ func TestDispatch_Add_InvalidRepositoryRejected(t *testing.T) {
 }
 
 func TestDispatch_Add_InvalidChannelRejected(t *testing.T) {
-	db := store.NewTestDB(t)
+	repo := testRepo(t)
 	var out, errOut bytes.Buffer
 
-	code := dispatch([]string{"add", "octo/widget", "not-a-channel", "@a"}, db, &out, &errOut, noopFactory())
+	code := dispatch([]string{"add", "octo/widget", "not-a-channel", "@a"}, repo, panickingValidator{t}, &out, &errOut)
 	if code == 0 {
 		t.Fatalf("add with invalid channel accepted; stderr=%s", errOut.String())
 	}
@@ -51,20 +68,20 @@ func TestDispatch_Add_InvalidChannelRejected(t *testing.T) {
 }
 
 func TestDispatch_Add_EmptyMentionsAllowed(t *testing.T) {
-	db := store.NewTestDB(t)
+	repo := testRepo(t)
 	var out, errOut bytes.Buffer
 
-	code := dispatch([]string{"add", "octo/widget", "C123ABCDE", ""}, db, &out, &errOut, noopFactory())
+	code := dispatch([]string{"add", "octo/widget", "C123ABCDE", ""}, repo, panickingValidator{t}, &out, &errOut)
 	if code != 0 {
 		t.Fatalf("add with empty mentions exit = %d; stderr=%s", code, errOut.String())
 	}
 }
 
 func TestDispatch_NoArgs(t *testing.T) {
-	db := store.NewTestDB(t)
+	repo := testRepo(t)
 	var out, errOut bytes.Buffer
 
-	code := dispatch(nil, db, &out, &errOut, noopFactory())
+	code := dispatch(nil, repo, panickingValidator{t}, &out, &errOut)
 	if code == 0 {
 		t.Fatal("no-args dispatch returned 0")
 	}
@@ -74,10 +91,10 @@ func TestDispatch_NoArgs(t *testing.T) {
 }
 
 func TestDispatch_UnknownSubcommand(t *testing.T) {
-	db := store.NewTestDB(t)
+	repo := testRepo(t)
 	var out, errOut bytes.Buffer
 
-	code := dispatch([]string{"unknown"}, db, &out, &errOut, noopFactory())
+	code := dispatch([]string{"unknown"}, repo, panickingValidator{t}, &out, &errOut)
 	if code == 0 {
 		t.Fatal("unknown subcommand returned 0")
 	}
@@ -86,11 +103,53 @@ func TestDispatch_UnknownSubcommand(t *testing.T) {
 	}
 }
 
-func TestDispatch_Validate_TooManyArgs(t *testing.T) {
-	db := store.NewTestDB(t)
+func TestDispatch_Validate_RoutesTargetToValidator(t *testing.T) {
+	repo := testRepo(t)
+	fv := &fakeMappingsValidator{code: 0}
 	var out, errOut bytes.Buffer
 
-	code := dispatch([]string{"validate", "a/b", "c/d"}, db, &out, &errOut, noopFactory())
+	code := dispatch([]string{"validate", "acme/widgets"}, repo, fv, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("validate exit = %d; stderr=%s", code, errOut.String())
+	}
+	if !fv.called {
+		t.Fatal("validator.Validate was not called")
+	}
+	if fv.gotTarget != "acme/widgets" {
+		t.Errorf("validator got target %q; want %q", fv.gotTarget, "acme/widgets")
+	}
+}
+
+func TestDispatch_Validate_NoTargetForwardsEmpty(t *testing.T) {
+	repo := testRepo(t)
+	fv := &fakeMappingsValidator{code: 0}
+	var out, errOut bytes.Buffer
+
+	code := dispatch([]string{"validate"}, repo, fv, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("validate (no target) exit = %d; stderr=%s", code, errOut.String())
+	}
+	if !fv.called || fv.gotTarget != "" {
+		t.Errorf("expected validator called with empty target, got called=%v target=%q", fv.called, fv.gotTarget)
+	}
+}
+
+func TestDispatch_Validate_PropagatesExitCode(t *testing.T) {
+	repo := testRepo(t)
+	fv := &fakeMappingsValidator{code: 1}
+	var out, errOut bytes.Buffer
+
+	code := dispatch([]string{"validate", "a/b"}, repo, fv, &out, &errOut)
+	if code != 1 {
+		t.Fatalf("validate exit = %d; want 1", code)
+	}
+}
+
+func TestDispatch_Validate_TooManyArgs(t *testing.T) {
+	repo := testRepo(t)
+	var out, errOut bytes.Buffer
+
+	code := dispatch([]string{"validate", "a/b", "c/d"}, repo, panickingValidator{t}, &out, &errOut)
 	if code != 2 {
 		t.Fatalf("validate too-many-args exit = %d; want 2", code)
 	}
@@ -120,3 +179,10 @@ func TestSplitMentions(t *testing.T) {
 		}
 	}
 }
+
+// Compile-time guarantees that the test doubles stay in sync with the
+// MappingsValidator interface they pretend to implement.
+var (
+	_ mappingcli.MappingsValidator = (*fakeMappingsValidator)(nil)
+	_ mappingcli.MappingsValidator = panickingValidator{}
+)

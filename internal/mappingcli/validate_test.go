@@ -7,29 +7,22 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mptooling/notifycat/internal/store"
 	"github.com/mptooling/notifycat/internal/validate"
 )
 
-// fakeValidator is the test double the use case sees through the Validator
-// interface. The factory wiring matches NewProductionValidator's seam.
-type fakeValidator struct {
+// stubChecker is the in-package test double for the Checker interface, so
+// the mappingsValidator struct can be exercised without real clients.
+type stubChecker struct {
 	validate    func(ctx context.Context, repository string) validate.Report
 	validateAll func(ctx context.Context) ([]validate.Report, error)
 }
 
-func (f *fakeValidator) Validate(ctx context.Context, repository string) validate.Report {
-	return f.validate(ctx, repository)
+func (s *stubChecker) Validate(ctx context.Context, repository string) validate.Report {
+	return s.validate(ctx, repository)
 }
 
-func (f *fakeValidator) ValidateAll(ctx context.Context) ([]validate.Report, error) {
-	return f.validateAll(ctx)
-}
-
-func factoryFor(v *fakeValidator) ValidatorFactory {
-	return func(_ *store.RepoMappings) (Validator, error) {
-		return v, nil
-	}
+func (s *stubChecker) ValidateAll(ctx context.Context) ([]validate.Report, error) {
+	return s.validateAll(ctx)
 }
 
 func okReport(repository string) validate.Report {
@@ -42,15 +35,14 @@ func okReport(repository string) validate.Report {
 	}
 }
 
-func TestValidate_AllPass(t *testing.T) {
-	fv := &fakeValidator{
+func TestMappingsValidator_AllPass(t *testing.T) {
+	v := newMappingsValidator(&stubChecker{
 		validate: func(_ context.Context, repository string) validate.Report {
 			return okReport(repository)
 		},
-	}
-	repo := store.NewRepoMappings(store.NewTestDB(t))
+	})
 	var out, errOut bytes.Buffer
-	code := Validate(context.Background(), repo, "acme/widgets", factoryFor(fv), &out, &errOut)
+	code := v.Validate(context.Background(), "acme/widgets", &out, &errOut)
 	if code != 0 {
 		t.Fatalf("validate exit = %d; stderr=%s", code, errOut.String())
 	}
@@ -59,8 +51,8 @@ func TestValidate_AllPass(t *testing.T) {
 	}
 }
 
-func TestValidate_FailsExits1(t *testing.T) {
-	fv := &fakeValidator{
+func TestMappingsValidator_FailsExits1(t *testing.T) {
+	v := newMappingsValidator(&stubChecker{
 		validate: func(_ context.Context, repository string) validate.Report {
 			return validate.Report{
 				Repository: repository,
@@ -69,10 +61,9 @@ func TestValidate_FailsExits1(t *testing.T) {
 				},
 			}
 		},
-	}
-	repo := store.NewRepoMappings(store.NewTestDB(t))
+	})
 	var out, errOut bytes.Buffer
-	code := Validate(context.Background(), repo, "acme/widgets", factoryFor(fv), &out, &errOut)
+	code := v.Validate(context.Background(), "acme/widgets", &out, &errOut)
 	if code != 1 {
 		t.Fatalf("validate exit = %d; want 1; stdout=%s", code, out.String())
 	}
@@ -81,15 +72,14 @@ func TestValidate_FailsExits1(t *testing.T) {
 	}
 }
 
-func TestValidate_NoTarget_IteratesAllMappings(t *testing.T) {
-	fv := &fakeValidator{
+func TestMappingsValidator_NoTarget_IteratesAllMappings(t *testing.T) {
+	v := newMappingsValidator(&stubChecker{
 		validateAll: func(_ context.Context) ([]validate.Report, error) {
 			return []validate.Report{okReport("a/b"), okReport("c/d")}, nil
 		},
-	}
-	repo := store.NewRepoMappings(store.NewTestDB(t))
+	})
 	var out, errOut bytes.Buffer
-	code := Validate(context.Background(), repo, "", factoryFor(fv), &out, &errOut)
+	code := v.Validate(context.Background(), "", &out, &errOut)
 	if code != 0 {
 		t.Fatalf("validate exit = %d; stderr=%s", code, errOut.String())
 	}
@@ -98,13 +88,12 @@ func TestValidate_NoTarget_IteratesAllMappings(t *testing.T) {
 	}
 }
 
-func TestValidate_NoTarget_EmptyMappings(t *testing.T) {
-	fv := &fakeValidator{
+func TestMappingsValidator_NoTarget_EmptyMappings(t *testing.T) {
+	v := newMappingsValidator(&stubChecker{
 		validateAll: func(_ context.Context) ([]validate.Report, error) { return nil, nil },
-	}
-	repo := store.NewRepoMappings(store.NewTestDB(t))
+	})
 	var out, errOut bytes.Buffer
-	code := Validate(context.Background(), repo, "", factoryFor(fv), &out, &errOut)
+	code := v.Validate(context.Background(), "", &out, &errOut)
 	if code != 0 {
 		t.Fatalf("validate empty exit = %d", code)
 	}
@@ -113,29 +102,18 @@ func TestValidate_NoTarget_EmptyMappings(t *testing.T) {
 	}
 }
 
-func TestValidate_FactoryError(t *testing.T) {
-	factory := func(_ *store.RepoMappings) (Validator, error) {
-		return nil, errors.New("boom")
-	}
-	repo := store.NewRepoMappings(store.NewTestDB(t))
+func TestMappingsValidator_NoTarget_CheckerError(t *testing.T) {
+	v := newMappingsValidator(&stubChecker{
+		validateAll: func(_ context.Context) ([]validate.Report, error) {
+			return nil, errors.New("boom")
+		},
+	})
 	var out, errOut bytes.Buffer
-	code := Validate(context.Background(), repo, "", factory, &out, &errOut)
+	code := v.Validate(context.Background(), "", &out, &errOut)
 	if code != 1 {
-		t.Fatalf("validate factory-error exit = %d; want 1", code)
+		t.Fatalf("validate checker-error exit = %d; want 1", code)
 	}
 	if !strings.Contains(errOut.String(), "boom") {
-		t.Errorf("stderr should surface factory error, got %q", errOut.String())
-	}
-}
-
-func TestValidate_NilFactory(t *testing.T) {
-	repo := store.NewRepoMappings(store.NewTestDB(t))
-	var out, errOut bytes.Buffer
-	code := Validate(context.Background(), repo, "", nil, &out, &errOut)
-	if code != 1 {
-		t.Fatalf("validate nil-factory exit = %d; want 1", code)
-	}
-	if !strings.Contains(errOut.String(), "not configured") {
-		t.Errorf("stderr should explain misconfiguration, got %q", errOut.String())
+		t.Errorf("stderr should surface checker error, got %q", errOut.String())
 	}
 }

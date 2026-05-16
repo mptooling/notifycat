@@ -14,65 +14,56 @@ import (
 	"github.com/mptooling/notifycat/internal/validate"
 )
 
-// Validator is the narrow surface Validate needs. Tests inject a stub;
-// production callers use NewProductionValidator.
-type Validator interface {
+// MappingsValidator is the validate use case. The cmd binary holds an
+// instance; tests in main_test.go swap it for a fake that satisfies this
+// interface.
+type MappingsValidator interface {
+	Validate(ctx context.Context, target string, stdout, stderr io.Writer) int
+}
+
+// Checker is the narrow validation surface the use case needs.
+// *validate.Validator satisfies it; in-package tests inject a stub here.
+type Checker interface {
 	Validate(ctx context.Context, repository string) validate.Report
 	ValidateAll(ctx context.Context) ([]validate.Report, error)
 }
 
-// ValidatorFactory builds a Validator for one Validate invocation.
-type ValidatorFactory func(repo *store.RepoMappings) (Validator, error)
-
-// NewProductionValidator wires real Slack and (optionally) GitHub clients.
-func NewProductionValidator(cfg config.Config) ValidatorFactory {
-	return func(repo *store.RepoMappings) (Validator, error) {
-		hc := &http.Client{Timeout: 10 * time.Second}
-		s := slack.NewClient(hc, cfg.SlackBotToken.Reveal(), slack.WithBaseURL(cfg.SlackBaseURL))
-		var gh validate.GitHubChecker
-		if cfg.GitHubToken.Reveal() != "" {
-			gh = github.NewClient(hc, cfg.GitHubToken.Reveal(), github.WithBaseURL(cfg.GitHubBaseURL))
-		}
-		return validate.NewValidator(repo, s, gh), nil
-	}
+// mappingsValidator is the production implementation of MappingsValidator.
+type mappingsValidator struct {
+	checker Checker
 }
 
-// Validate runs validation for target (empty means all mappings) and renders
-// the reports. Exit codes: 0 OK, 1 failure, 2 misuse.
-func Validate(
-	ctx context.Context,
-	repo *store.RepoMappings,
-	target string,
-	newValidator ValidatorFactory,
-	stdout, stderr io.Writer,
-) int {
-	v, code := buildValidator(repo, newValidator, stderr)
-	if v == nil {
-		return code
+// NewMappingsValidator wires the production validator from cfg, including
+// Slack and (optionally) GitHub clients.
+func NewMappingsValidator(repo *store.RepoMappings, cfg config.Config) MappingsValidator {
+	hc := &http.Client{Timeout: 10 * time.Second}
+	s := slack.NewClient(hc, cfg.SlackBotToken.Reveal(), slack.WithBaseURL(cfg.SlackBaseURL))
+	var gh validate.GitHubChecker
+	if cfg.GitHubToken.Reveal() != "" {
+		gh = github.NewClient(hc, cfg.GitHubToken.Reveal(), github.WithBaseURL(cfg.GitHubBaseURL))
 	}
-	reports, code := collectReports(ctx, v, target, stdout, stderr)
+	return newMappingsValidator(validate.NewValidator(repo, s, gh))
+}
+
+// newMappingsValidator is the package-internal constructor tests use to
+// wrap a stub Checker without touching real clients.
+func newMappingsValidator(c Checker) *mappingsValidator {
+	return &mappingsValidator{checker: c}
+}
+
+// Validate runs validation for target (empty = all mappings), renders the
+// report(s), and returns the CLI exit code: 0 OK, 1 failure.
+func (v *mappingsValidator) Validate(ctx context.Context, target string, stdout, stderr io.Writer) int {
+	reports, code := v.collect(ctx, target, stdout, stderr)
 	if reports == nil {
 		return code
 	}
 	return renderReports(reports, stdout)
 }
 
-func buildValidator(repo *store.RepoMappings, newValidator ValidatorFactory, stderr io.Writer) (Validator, int) {
-	if newValidator == nil {
-		fmt.Fprintln(stderr, "validate: not configured (missing validator wiring)")
-		return nil, 1
-	}
-	v, err := newValidator(repo)
-	if err != nil {
-		fmt.Fprintln(stderr, "validate:", err)
-		return nil, 1
-	}
-	return v, 0
-}
-
-func collectReports(ctx context.Context, v Validator, target string, stdout, stderr io.Writer) ([]validate.Report, int) {
+func (v *mappingsValidator) collect(ctx context.Context, target string, stdout, stderr io.Writer) ([]validate.Report, int) {
 	if target == "" {
-		reports, err := v.ValidateAll(ctx)
+		reports, err := v.checker.ValidateAll(ctx)
 		if err != nil {
 			fmt.Fprintln(stderr, "validate:", err)
 			return nil, 1
@@ -83,7 +74,7 @@ func collectReports(ctx context.Context, v Validator, target string, stdout, std
 		}
 		return reports, 0
 	}
-	return []validate.Report{v.Validate(ctx, target)}, 0
+	return []validate.Report{v.checker.Validate(ctx, target)}, 0
 }
 
 func renderReports(reports []validate.Report, stdout io.Writer) int {
