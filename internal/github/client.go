@@ -99,6 +99,9 @@ func (c *Client) ListHookEvents(ctx context.Context, owner, repo, urlSuffix stri
 func (c *Client) listHooks(ctx context.Context, owner, repo string) ([]Hook, error) {
 	path := fmt.Sprintf("/repos/%s/%s/hooks", url.PathEscape(owner), url.PathEscape(repo))
 	req, err := c.createRequest(ctx, path)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create a request to get a list of hooks: %w", err)
+	}
 
 	// baseURL is operator-controlled and path is internally composed from
 	// validated owner/repo strings; gosec G107 does not apply.
