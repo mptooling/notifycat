@@ -14,20 +14,18 @@ import (
 	"github.com/mptooling/notifycat/internal/validate"
 )
 
-// Validator is the narrow surface cmdValidate needs from a validator
-// implementation. Tests inject a stub via ValidatorFactory; production main()
-// supplies the real validator wired against live Slack/GitHub clients.
+// Validator is the narrow surface Validate needs. Tests inject a stub;
+// production callers use NewProductionValidator.
 type Validator interface {
 	Validate(ctx context.Context, repository string) validate.Report
 	ValidateAll(ctx context.Context) ([]validate.Report, error)
 }
 
-// ValidatorFactory builds a Validator for one invocation of cmdValidate.
+// ValidatorFactory builds a Validator for one Validate invocation.
 type ValidatorFactory func(repo *store.RepoMappings) (Validator, error)
 
-// newProductionValidator returns a factory that wires real Slack and
-// (optionally) GitHub clients against cfg.
-func newProductionValidator(cfg config.Config) ValidatorFactory {
+// NewProductionValidator wires real Slack and (optionally) GitHub clients.
+func NewProductionValidator(cfg config.Config) ValidatorFactory {
 	return func(repo *store.RepoMappings) (Validator, error) {
 		hc := &http.Client{Timeout: 10 * time.Second}
 		s := slack.NewClient(hc, cfg.SlackBotToken.Reveal(), slack.WithBaseURL(cfg.SlackBaseURL))
@@ -39,10 +37,12 @@ func newProductionValidator(cfg config.Config) ValidatorFactory {
 	}
 }
 
-func cmdValidate(
+// Validate runs validation for target (empty means all mappings) and renders
+// the reports. Exit codes: 0 OK, 1 failure, 2 misuse.
+func Validate(
 	ctx context.Context,
-	args []string,
 	repo *store.RepoMappings,
+	target string,
 	newValidator ValidatorFactory,
 	stdout, stderr io.Writer,
 ) int {
@@ -50,7 +50,7 @@ func cmdValidate(
 	if v == nil {
 		return code
 	}
-	reports, code := collectReports(ctx, v, args, stdout, stderr)
+	reports, code := collectReports(ctx, v, target, stdout, stderr)
 	if reports == nil {
 		return code
 	}
@@ -70,11 +70,8 @@ func buildValidator(repo *store.RepoMappings, newValidator ValidatorFactory, std
 	return v, 0
 }
 
-// collectReports returns the reports to render, or (nil, exitCode) to short
-// out (including the empty-mappings "no work" case, which exits 0).
-func collectReports(ctx context.Context, v Validator, args []string, stdout, stderr io.Writer) ([]validate.Report, int) {
-	switch len(args) {
-	case 0:
+func collectReports(ctx context.Context, v Validator, target string, stdout, stderr io.Writer) ([]validate.Report, int) {
+	if target == "" {
 		reports, err := v.ValidateAll(ctx)
 		if err != nil {
 			fmt.Fprintln(stderr, "validate:", err)
@@ -85,12 +82,8 @@ func collectReports(ctx context.Context, v Validator, args []string, stdout, std
 			return nil, 0
 		}
 		return reports, 0
-	case 1:
-		return []validate.Report{v.Validate(ctx, args[0])}, 0
-	default:
-		fmt.Fprintln(stderr, "usage: validate [owner/repo]")
-		return nil, 2
 	}
+	return []validate.Report{v.Validate(ctx, target)}, 0
 }
 
 func renderReports(reports []validate.Report, stdout io.Writer) int {

@@ -10,7 +10,8 @@ import (
 	"github.com/mptooling/notifycat/internal/store"
 )
 
-func cmdList(ctx context.Context, repo *store.RepoMappings, stdout, stderr io.Writer) int {
+// List prints all mappings in a tab-aligned table.
+func List(ctx context.Context, repo *store.RepoMappings, stdout, stderr io.Writer) int {
 	rows, err := repo.List(ctx)
 	if err != nil {
 		fmt.Fprintln(stderr, "list:", err)

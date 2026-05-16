@@ -11,9 +11,8 @@ import (
 	"github.com/mptooling/notifycat/internal/validate"
 )
 
-// fakeValidator is the test double the CLI sees through the Validator
-// interface. The factory wiring matches main()'s seam, so cmdValidate is
-// exercised without touching real Slack/GitHub clients.
+// fakeValidator is the test double the use case sees through the Validator
+// interface. The factory wiring matches NewProductionValidator's seam.
 type fakeValidator struct {
 	validate    func(ctx context.Context, repository string) validate.Report
 	validateAll func(ctx context.Context) ([]validate.Report, error)
@@ -43,14 +42,15 @@ func okReport(repository string) validate.Report {
 	}
 }
 
-func TestRun_Validate_AllPass(t *testing.T) {
+func TestValidate_AllPass(t *testing.T) {
 	fv := &fakeValidator{
 		validate: func(_ context.Context, repository string) validate.Report {
 			return okReport(repository)
 		},
 	}
+	repo := store.NewRepoMappings(store.NewTestDB(t))
 	var out, errOut bytes.Buffer
-	code := run([]string{"validate", "acme/widgets"}, store.NewTestDB(t), &out, &errOut, factoryFor(fv))
+	code := Validate(context.Background(), repo, "acme/widgets", factoryFor(fv), &out, &errOut)
 	if code != 0 {
 		t.Fatalf("validate exit = %d; stderr=%s", code, errOut.String())
 	}
@@ -59,7 +59,7 @@ func TestRun_Validate_AllPass(t *testing.T) {
 	}
 }
 
-func TestRun_Validate_FailsExits1(t *testing.T) {
+func TestValidate_FailsExits1(t *testing.T) {
 	fv := &fakeValidator{
 		validate: func(_ context.Context, repository string) validate.Report {
 			return validate.Report{
@@ -70,8 +70,9 @@ func TestRun_Validate_FailsExits1(t *testing.T) {
 			}
 		},
 	}
+	repo := store.NewRepoMappings(store.NewTestDB(t))
 	var out, errOut bytes.Buffer
-	code := run([]string{"validate", "acme/widgets"}, store.NewTestDB(t), &out, &errOut, factoryFor(fv))
+	code := Validate(context.Background(), repo, "acme/widgets", factoryFor(fv), &out, &errOut)
 	if code != 1 {
 		t.Fatalf("validate exit = %d; want 1; stdout=%s", code, out.String())
 	}
@@ -80,14 +81,15 @@ func TestRun_Validate_FailsExits1(t *testing.T) {
 	}
 }
 
-func TestRun_Validate_NoArg_IteratesAllMappings(t *testing.T) {
+func TestValidate_NoTarget_IteratesAllMappings(t *testing.T) {
 	fv := &fakeValidator{
 		validateAll: func(_ context.Context) ([]validate.Report, error) {
 			return []validate.Report{okReport("a/b"), okReport("c/d")}, nil
 		},
 	}
+	repo := store.NewRepoMappings(store.NewTestDB(t))
 	var out, errOut bytes.Buffer
-	code := run([]string{"validate"}, store.NewTestDB(t), &out, &errOut, factoryFor(fv))
+	code := Validate(context.Background(), repo, "", factoryFor(fv), &out, &errOut)
 	if code != 0 {
 		t.Fatalf("validate exit = %d; stderr=%s", code, errOut.String())
 	}
@@ -96,12 +98,13 @@ func TestRun_Validate_NoArg_IteratesAllMappings(t *testing.T) {
 	}
 }
 
-func TestRun_Validate_NoArg_EmptyMappings(t *testing.T) {
+func TestValidate_NoTarget_EmptyMappings(t *testing.T) {
 	fv := &fakeValidator{
 		validateAll: func(_ context.Context) ([]validate.Report, error) { return nil, nil },
 	}
+	repo := store.NewRepoMappings(store.NewTestDB(t))
 	var out, errOut bytes.Buffer
-	code := run([]string{"validate"}, store.NewTestDB(t), &out, &errOut, factoryFor(fv))
+	code := Validate(context.Background(), repo, "", factoryFor(fv), &out, &errOut)
 	if code != 0 {
 		t.Fatalf("validate empty exit = %d", code)
 	}
@@ -110,12 +113,13 @@ func TestRun_Validate_NoArg_EmptyMappings(t *testing.T) {
 	}
 }
 
-func TestRun_Validate_FactoryError(t *testing.T) {
+func TestValidate_FactoryError(t *testing.T) {
 	factory := func(_ *store.RepoMappings) (Validator, error) {
 		return nil, errors.New("boom")
 	}
+	repo := store.NewRepoMappings(store.NewTestDB(t))
 	var out, errOut bytes.Buffer
-	code := run([]string{"validate"}, store.NewTestDB(t), &out, &errOut, factory)
+	code := Validate(context.Background(), repo, "", factory, &out, &errOut)
 	if code != 1 {
 		t.Fatalf("validate factory-error exit = %d; want 1", code)
 	}
@@ -124,10 +128,14 @@ func TestRun_Validate_FactoryError(t *testing.T) {
 	}
 }
 
-func TestRun_Validate_TooManyArgs(t *testing.T) {
+func TestValidate_NilFactory(t *testing.T) {
+	repo := store.NewRepoMappings(store.NewTestDB(t))
 	var out, errOut bytes.Buffer
-	code := run([]string{"validate", "a/b", "c/d"}, store.NewTestDB(t), &out, &errOut, factoryFor(&fakeValidator{}))
-	if code != 2 {
-		t.Fatalf("validate too-many-args exit = %d; want 2", code)
+	code := Validate(context.Background(), repo, "", nil, &out, &errOut)
+	if code != 1 {
+		t.Fatalf("validate nil-factory exit = %d; want 1", code)
+	}
+	if !strings.Contains(errOut.String(), "not configured") {
+		t.Errorf("stderr should explain misconfiguration, got %q", errOut.String())
 	}
 }
