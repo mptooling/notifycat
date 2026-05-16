@@ -1,27 +1,20 @@
 // Command notifycat-mapping manages repository → Slack-channel mappings.
-//
-// Subcommands:
-//
-//	notifycat-mapping add <owner/repo> <channel-id> <comma-separated mentions>
-//	notifycat-mapping list
-//	notifycat-mapping remove <owner/repo>
-//
-// DATABASE_URL controls the target database (default file:./data/notifycat.db).
+// This file owns input parsing/validation and dispatches to the use cases
+// in internal/mappingcli.
 package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"regexp"
 	"strings"
-	"text/tabwriter"
 
 	"gorm.io/gorm"
 
 	"github.com/mptooling/notifycat/internal/config"
+	"github.com/mptooling/notifycat/internal/mappingcli"
 	"github.com/mptooling/notifycat/internal/store"
 )
 
@@ -36,105 +29,104 @@ func main() {
 		fmt.Fprintln(os.Stderr, "notifycat-mapping:", err)
 		os.Exit(1)
 	}
-
 	db, err := store.Open(cfg.DatabaseURL)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "notifycat-mapping:", err)
 		os.Exit(1)
 	}
-	defer func() {
-		if sqlDB, err := store.SQLDB(db); err == nil {
-			_ = sqlDB.Close()
-		}
-	}()
+	defer closeDB(db)
 
-	os.Exit(run(os.Args[1:], db, os.Stdout, os.Stderr))
+	repo := store.NewRepoMappings(db)
+	validator := mappingcli.NewMappingsValidator(repo, cfg)
+	os.Exit(dispatch(os.Args[1:], repo, validator, os.Stdout, os.Stderr))
 }
 
-// run is the testable entry point. It writes user-facing output to stdout and
-// errors to stderr, and returns a process exit code.
-func run(args []string, db *gorm.DB, stdout, stderr io.Writer) int {
+func dispatch(args []string, repo *store.RepoMappings, validator mappingcli.MappingsValidator, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, usage())
 		return 2
 	}
-	repo := store.NewRepoMappings(db)
 	ctx := context.Background()
-
 	switch args[0] {
 	case "add":
-		return cmdAdd(ctx, args[1:], repo, stdout, stderr)
+		return runAdd(ctx, args[1:], repo, stdout, stderr)
 	case "list":
-		return cmdList(ctx, repo, stdout, stderr)
+		return mappingcli.List(ctx, repo, stdout, stderr)
 	case "remove":
-		return cmdRemove(ctx, args[1:], repo, stdout, stderr)
+		return runRemove(ctx, args[1:], repo, stdout, stderr)
+	case "validate":
+		return runValidate(ctx, args[1:], validator, stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown subcommand %q\n%s\n", args[0], usage())
 		return 2
 	}
 }
 
-func cmdAdd(ctx context.Context, args []string, repo *store.RepoMappings, stdout, stderr io.Writer) int {
+func runAdd(ctx context.Context, args []string, repo *store.RepoMappings, stdout, stderr io.Writer) int {
+	mapping, code, ok := parseAddArgs(args, stderr)
+	if !ok {
+		return code
+	}
+	return mappingcli.Add(ctx, repo, mapping, stdout, stderr)
+}
+
+func parseAddArgs(args []string, stderr io.Writer) (store.RepoMapping, int, bool) {
 	if len(args) < 3 {
 		fmt.Fprintln(stderr, "usage: add <owner/repo> <channel-id> <comma-separated mentions>")
-		return 2
+		return store.RepoMapping{}, 2, false
 	}
 	repository, channel, rawMentions := args[0], args[1], args[2]
-
 	if !repoPattern.MatchString(repository) {
 		fmt.Fprintf(stderr, "invalid repository %q: expected owner/name format\n", repository)
-		return 2
+		return store.RepoMapping{}, 2, false
 	}
 	if !channelPattern.MatchString(channel) {
 		fmt.Fprintf(stderr, "invalid channel %q: expected Slack channel ID (e.g. C123ABCDE)\n", channel)
-		return 2
+		return store.RepoMapping{}, 2, false
 	}
-
-	mentions := splitMentions(rawMentions)
-	out, err := repo.Upsert(ctx, store.RepoMapping{
+	return store.RepoMapping{
 		Repository:   repository,
 		SlackChannel: channel,
-		Mentions:     mentions,
-	})
-	if err != nil {
-		fmt.Fprintln(stderr, "upsert:", err)
-		return 1
-	}
-	fmt.Fprintf(stdout, "saved %s → %s (id=%d, mentions=%d)\n", out.Repository, out.SlackChannel, out.ID, len(out.Mentions))
-	return 0
+		Mentions:     splitMentions(rawMentions),
+	}, 0, true
 }
 
-func cmdList(ctx context.Context, repo *store.RepoMappings, stdout, stderr io.Writer) int {
-	rows, err := repo.List(ctx)
-	if err != nil {
-		fmt.Fprintln(stderr, "list:", err)
-		return 1
-	}
-	tw := tabwriter.NewWriter(stdout, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tREPOSITORY\tCHANNEL\tMENTIONS")
-	for _, m := range rows {
-		fmt.Fprintf(tw, "%d\t%s\t%s\t%s\n", m.ID, m.Repository, m.SlackChannel, strings.Join(m.Mentions, ","))
-	}
-	_ = tw.Flush()
-	return 0
-}
-
-func cmdRemove(ctx context.Context, args []string, repo *store.RepoMappings, stdout, stderr io.Writer) int {
+func runRemove(ctx context.Context, args []string, repo *store.RepoMappings, stdout, stderr io.Writer) int {
 	if len(args) < 1 {
 		fmt.Fprintln(stderr, "usage: remove <owner/repo>")
 		return 2
 	}
-	err := repo.Delete(ctx, args[0])
-	if errors.Is(err, store.ErrNotFound) {
-		fmt.Fprintf(stderr, "no mapping for %q\n", args[0])
-		return 1
+	return mappingcli.Remove(ctx, repo, args[0], stdout, stderr)
+}
+
+func runValidate(ctx context.Context, args []string, validator mappingcli.MappingsValidator, stdout, stderr io.Writer) int {
+	target, code, ok := parseValidateArgs(args, stderr)
+	if !ok {
+		return code
 	}
-	if err != nil {
-		fmt.Fprintln(stderr, "remove:", err)
-		return 1
+	return validator.Validate(ctx, target, stdout, stderr)
+}
+
+func parseValidateArgs(args []string, stderr io.Writer) (string, int, bool) {
+	switch len(args) {
+	case 0:
+		return "", 0, true
+	case 1:
+		return args[0], 0, true
+	default:
+		fmt.Fprintln(stderr, "usage: validate [owner/repo]")
+		return "", 2, false
 	}
-	fmt.Fprintf(stdout, "removed %s\n", args[0])
-	return 0
+}
+
+func usage() string {
+	return strings.TrimSpace(`
+usage:
+  notifycat-mapping add <owner/repo> <channel-id> <comma-separated mentions>
+  notifycat-mapping list
+  notifycat-mapping remove <owner/repo>
+  notifycat-mapping validate [owner/repo]
+`)
 }
 
 func splitMentions(raw string) []string {
@@ -152,11 +144,8 @@ func splitMentions(raw string) []string {
 	return out
 }
 
-func usage() string {
-	return strings.TrimSpace(`
-usage:
-  notifycat-mapping add <owner/repo> <channel-id> <comma-separated mentions>
-  notifycat-mapping list
-  notifycat-mapping remove <owner/repo>
-`)
+func closeDB(db *gorm.DB) {
+	if sqlDB, err := store.SQLDB(db); err == nil {
+		_ = sqlDB.Close()
+	}
 }

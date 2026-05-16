@@ -116,6 +116,13 @@ notifycat handles these event states:
 | `pull_request_review` | approved, commented, changes requested |
 | `pull_request_review_comment` | line-specific PR comments |
 
+To verify the webhook is subscribed to all three events after setup, run
+`notifycat-mapping validate owner/repo` with `GITHUB_TOKEN` exported. The
+validator queries the repository's webhook configuration and reports any
+missing event. The PAT needs `admin:repo_hook` (or `repo` for private
+repositories) — the same token used by `scripts/github-webhook-create.sh` is
+sufficient.
+
 GitHub uses different events for different comment surfaces:
 
 - A submitted review with "Comment" uses `pull_request_review`.

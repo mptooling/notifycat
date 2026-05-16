@@ -222,17 +222,60 @@ func TestClient_GetReactions_NoReactionsField(t *testing.T) {
 }
 
 func TestClient_AuthTest(t *testing.T) {
-	fake := newFakeSlack(t, func(_ string, _ []byte, _ map[string][]string) (int, string) {
-		return 200, `{"ok":true,"user_id":"UBOT123","team":"T1"}`
-	})
-	c := slack.NewClient(fake.Client(), "xoxb-test", slack.WithBaseURL(fake.URL))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-OAuth-Scopes", "chat:write, reactions:write,channels:read")
+		_, _ = io.WriteString(w, `{"ok":true,"user_id":"UBOT123","team":"T1"}`)
+	}))
+	defer srv.Close()
+	c := slack.NewClient(srv.Client(), "xoxb-test", slack.WithBaseURL(srv.URL))
 
-	id, err := c.AuthTest(context.Background())
+	id, scopes, err := c.AuthTest(context.Background())
 	if err != nil {
 		t.Fatalf("AuthTest: %v", err)
 	}
 	if id != "UBOT123" {
 		t.Fatalf("AuthTest user_id = %q; want UBOT123", id)
+	}
+	want := []string{"chat:write", "reactions:write", "channels:read"}
+	if len(scopes) != len(want) {
+		t.Fatalf("scopes = %v; want %v", scopes, want)
+	}
+	for i, s := range want {
+		if scopes[i] != s {
+			t.Fatalf("scopes[%d] = %q; want %q", i, scopes[i], s)
+		}
+	}
+}
+
+func TestClient_ConversationsInfo(t *testing.T) {
+	fake := newFakeSlack(t, func(_ string, _ []byte, q map[string][]string) (int, string) {
+		if got := q["channel"]; len(got) != 1 || got[0] != "C123" {
+			t.Errorf("channel query = %v; want [C123]", got)
+		}
+		return 200, `{"ok":true,"channel":{"id":"C123","name":"general","is_member":true,"is_archived":false}}`
+	})
+	c := slack.NewClient(fake.Client(), "xoxb-test", slack.WithBaseURL(fake.URL))
+
+	info, err := c.ConversationsInfo(context.Background(), "C123")
+	if err != nil {
+		t.Fatalf("ConversationsInfo: %v", err)
+	}
+	if info.ID != "C123" || info.Name != "general" || !info.IsMember || info.IsArchived {
+		t.Fatalf("info = %+v", info)
+	}
+}
+
+func TestClient_ConversationsInfo_NotFound(t *testing.T) {
+	fake := newFakeSlack(t, func(_ string, _ []byte, _ map[string][]string) (int, string) {
+		return 200, `{"ok":false,"error":"channel_not_found"}`
+	})
+	c := slack.NewClient(fake.Client(), "xoxb-test", slack.WithBaseURL(fake.URL))
+
+	_, err := c.ConversationsInfo(context.Background(), "C999")
+	var apiErr *slack.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != "channel_not_found" {
+		t.Fatalf("err = %v; want channel_not_found APIError", err)
 	}
 }
 

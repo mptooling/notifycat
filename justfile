@@ -96,6 +96,11 @@ docker-mapping-remove repo:
   mkdir -p data
   docker run --rm -v "$PWD/data:/data" --env-file .env {{app}}:test /usr/local/bin/notifycat-mapping remove "{{repo}}"
 
+# Run the `notifycat-mapping` command with any number of args
+docker-mapping +args:
+  mkdir -p data
+  docker run --rm -v "$PWD/data:/data" --env-file .env {{app}}:test /usr/local/bin/notifycat-mapping {{args}}
+
 # Start the Docker image on localhost:8080
 docker-serve:
   mkdir -p data
