@@ -125,7 +125,7 @@ func (c *Client) listHooks(ctx context.Context, owner, repo string) ([]Hook, err
 	return hooks, nil
 }
 
-func (c *Client) createRequest(ctx context.Context, path string) (*http.Request, error){
+func (c *Client) createRequest(ctx context.Context, path string) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
 		return nil, fmt.Errorf("github: build list-hooks request: %w", err)
