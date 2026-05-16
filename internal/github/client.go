@@ -98,15 +98,7 @@ func (c *Client) ListHookEvents(ctx context.Context, owner, repo, urlSuffix stri
 
 func (c *Client) listHooks(ctx context.Context, owner, repo string) ([]Hook, error) {
 	path := fmt.Sprintf("/repos/%s/%s/hooks", url.PathEscape(owner), url.PathEscape(repo))
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
-	if err != nil {
-		return nil, fmt.Errorf("github: build list-hooks request: %w", err)
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
+	req, err := c.createRequest(ctx, path)
 
 	// baseURL is operator-controlled and path is internally composed from
 	// validated owner/repo strings; gosec G107 does not apply.
@@ -131,6 +123,20 @@ func (c *Client) listHooks(ctx context.Context, owner, repo string) ([]Hook, err
 		return nil, fmt.Errorf("github: list-hooks: decode: %w (body=%q)", err, string(body))
 	}
 	return hooks, nil
+}
+
+func (c *Client) createRequest(ctx context.Context, path string) (*http.Request, error){
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("github: build list-hooks request: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+
+	return req, nil
 }
 
 // extractMessage pulls the "message" field from a GitHub error envelope if it
