@@ -87,3 +87,9 @@ func (r Report) OK() bool {
 	}
 	return true
 }
+
+// OrgRepoLister enumerates a GitHub org's repositories. Used to expand "*"
+// at validate time. May be nil; the runner reports a skip in that case.
+type OrgRepoLister interface {
+	ListOrgRepos(ctx context.Context, org string) ([]string, error)
+}
