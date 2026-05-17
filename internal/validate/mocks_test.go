@@ -11,16 +11,11 @@ import (
 // Each method is wired through a function value so individual tests can
 // install behavior per-case without subclassing.
 type mockMappingLookup struct {
-	get  func(ctx context.Context, repository string) (store.RepoMapping, error)
-	list func(ctx context.Context) ([]store.RepoMapping, error)
+	get func(ctx context.Context, repository string) (store.RepoMapping, error)
 }
 
 func (m *mockMappingLookup) Get(ctx context.Context, repository string) (store.RepoMapping, error) {
 	return m.get(ctx, repository)
-}
-
-func (m *mockMappingLookup) List(ctx context.Context) ([]store.RepoMapping, error) {
-	return m.list(ctx)
 }
 
 type mockSlackChecker struct {

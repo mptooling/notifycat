@@ -20,6 +20,11 @@ type Config struct {
 	LogFormat   string `env:"LOG_FORMAT" envDefault:"text"`
 	DatabaseURL string `env:"DATABASE_URL" envDefault:"file:./data/notifycat.db"`
 
+	// MappingsFile is the path to the declarative mappings.yaml file.
+	// The sibling lock file lives at the same path with the .yaml/.yml
+	// extension swapped for .lock (or appended when there is no such ext).
+	MappingsFile string `env:"NOTIFYCAT_MAPPINGS_FILE" envDefault:"./mappings.yaml"`
+
 	GitHubWebhookSecret Secret `env:"GITHUB_WEBHOOK_SECRET,required,notEmpty"`
 	SlackBotToken       Secret `env:"SLACK_BOT_TOKEN,required,notEmpty"`
 

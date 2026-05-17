@@ -16,9 +16,27 @@ type RepoValidator interface {
 
 var _ RepoValidator = (*Validator)(nil)
 
+// EntryResult bundles every report produced for a single mapping entry,
+// so callers can update the lock per-entry: an entry is "validated" only
+// when every report it produced is OK.
+type EntryResult struct {
+	Entry   mappings.Entry
+	Reports []Report
+}
+
+// OK reports whether every contributed report passed.
+func (r EntryResult) OK() bool {
+	for _, rep := range r.Reports {
+		if !rep.OK() {
+			return false
+		}
+	}
+	return true
+}
+
 // RunForEntries validates a slice of mapping entries, expanding wildcard
 // entries against lister. It never short-circuits: per-repo failures and
-// lister errors surface as their own report so the operator sees every
+// lister errors surface as the entry's reports so the operator sees every
 // mapping's outcome in one run.
 //
 // lister may be nil; wildcard entries then produce a single Skip report.
@@ -27,16 +45,19 @@ func RunForEntries(
 	entries []mappings.Entry,
 	lister OrgRepoLister,
 	v RepoValidator,
-) []Report {
-	reports := make([]Report, 0, len(entries))
+) []EntryResult {
+	out := make([]EntryResult, 0, len(entries))
 	for _, e := range entries {
-		if !e.Wildcard {
-			reports = append(reports, v.Validate(ctx, e.Org+"/"+e.Repo))
-			continue
-		}
-		reports = append(reports, expandWildcard(ctx, e, lister, v)...)
+		out = append(out, EntryResult{Entry: e, Reports: reportsFor(ctx, e, lister, v)})
 	}
-	return reports
+	return out
+}
+
+func reportsFor(ctx context.Context, e mappings.Entry, lister OrgRepoLister, v RepoValidator) []Report {
+	if !e.Wildcard {
+		return []Report{v.Validate(ctx, e.Org+"/"+e.Repo)}
+	}
+	return expandWildcard(ctx, e, lister, v)
 }
 
 // expandWildcard turns one wildcard entry into per-repo reports, or a

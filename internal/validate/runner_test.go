@@ -36,12 +36,15 @@ func TestRunForEntries_ExplicitOnly(t *testing.T) {
 		{Org: "acme", Repo: "web", Channel: "C1", Mentions: []string{}},
 	}
 	sv := &stubValidator{}
-	reports := RunForEntries(context.Background(), entries, nil, sv)
-	if len(reports) != 2 {
-		t.Fatalf("reports = %d; want 2", len(reports))
+	results := RunForEntries(context.Background(), entries, nil, sv)
+	if len(results) != 2 || len(results[0].Reports) != 1 || len(results[1].Reports) != 1 {
+		t.Fatalf("results=%d reports=%d/%d; want 2/1/1", len(results), len(results[0].Reports), len(results[1].Reports))
 	}
 	if sv.calls[0] != "acme/api" || sv.calls[1] != "acme/web" {
 		t.Errorf("calls = %v", sv.calls)
+	}
+	if !results[0].OK() || !results[1].OK() {
+		t.Errorf("expected both OK; got %+v", results)
 	}
 }
 
@@ -49,9 +52,9 @@ func TestRunForEntries_WildcardExpansion(t *testing.T) {
 	entries := []mappings.Entry{{Org: "beta", Wildcard: true, Channel: "C2", Mentions: []string{}}}
 	lister := &stubLister{repos: []string{"r1", "r2", "r3"}}
 	sv := &stubValidator{}
-	reports := RunForEntries(context.Background(), entries, lister, sv)
-	if len(reports) != 3 {
-		t.Fatalf("reports = %d; want 3", len(reports))
+	results := RunForEntries(context.Background(), entries, lister, sv)
+	if len(results) != 1 || len(results[0].Reports) != 3 {
+		t.Fatalf("results=%d reports[0]=%d; want 1/3", len(results), len(results[0].Reports))
 	}
 	want := []string{"beta/r1", "beta/r2", "beta/r3"}
 	for i, w := range want {
@@ -59,36 +62,42 @@ func TestRunForEntries_WildcardExpansion(t *testing.T) {
 			t.Errorf("call[%d] = %q; want %q", i, sv.calls[i], w)
 		}
 	}
+	if !results[0].OK() {
+		t.Errorf("expected OK on full expansion; got %+v", results[0])
+	}
 }
 
 func TestRunForEntries_WildcardWithoutLister_SkipsButReports(t *testing.T) {
 	entries := []mappings.Entry{{Org: "beta", Wildcard: true, Channel: "C2", Mentions: []string{}}}
-	reports := RunForEntries(context.Background(), entries, nil, &stubValidator{})
-	if len(reports) != 1 {
-		t.Fatalf("reports = %d; want 1", len(reports))
+	results := RunForEntries(context.Background(), entries, nil, &stubValidator{})
+	if len(results) != 1 || len(results[0].Reports) != 1 {
+		t.Fatalf("results=%d reports=%d; want 1/1", len(results), len(results[0].Reports))
 	}
-	r := reports[0]
-	if r.Repository != "beta/*" || len(r.Checks) != 1 || r.Checks[0].Status != StatusSkip {
+	r := results[0].Reports[0]
+	if r.Repository != "beta/*" || r.Checks[0].Status != StatusSkip {
 		t.Errorf("expected single skip on beta/*; got %+v", r)
+	}
+	if !results[0].OK() {
+		t.Errorf("a skip is not a failure; OK() should be true; got %+v", results[0])
 	}
 }
 
-func TestRunForEntries_ListerError_BecomesFailingReportAndContinues(t *testing.T) {
+func TestRunForEntries_ListerError_BecomesFailingEntryAndContinues(t *testing.T) {
 	entries := []mappings.Entry{
 		{Org: "beta", Wildcard: true, Channel: "C2", Mentions: []string{}},
 		{Org: "acme", Repo: "api", Channel: "C1", Mentions: []string{}},
 	}
 	lister := &stubLister{err: errors.New("rate-limited")}
 	sv := &stubValidator{}
-	reports := RunForEntries(context.Background(), entries, lister, sv)
-	if len(reports) != 2 {
-		t.Fatalf("reports = %d; want 2", len(reports))
+	results := RunForEntries(context.Background(), entries, lister, sv)
+	if len(results) != 2 {
+		t.Fatalf("results = %d; want 2", len(results))
 	}
-	if reports[0].Repository != "beta/*" || reports[0].OK() {
-		t.Errorf("first report should be failing beta/*; got %+v", reports[0])
+	if results[0].OK() || results[0].Reports[0].Repository != "beta/*" {
+		t.Errorf("first result should be failing beta/*; got %+v", results[0])
 	}
-	if reports[1].Repository != "acme/api" || !reports[1].OK() {
-		t.Errorf("second report should be OK acme/api; got %+v", reports[1])
+	if !results[1].OK() || results[1].Reports[0].Repository != "acme/api" {
+		t.Errorf("second result should be OK acme/api; got %+v", results[1])
 	}
 }
 
@@ -98,11 +107,11 @@ func TestRunForEntries_PerRepoFailureDoesNotAbort(t *testing.T) {
 		{Org: "acme", Repo: "web", Channel: "C1", Mentions: []string{}},
 	}
 	sv := &stubValidator{err: func(r string) bool { return r == "acme/api" }}
-	reports := RunForEntries(context.Background(), entries, nil, sv)
-	if len(reports) != 2 {
-		t.Fatalf("reports = %d; want 2", len(reports))
+	results := RunForEntries(context.Background(), entries, nil, sv)
+	if len(results) != 2 {
+		t.Fatalf("results = %d; want 2", len(results))
 	}
-	if reports[0].OK() || !reports[1].OK() {
-		t.Errorf("expected first fail, second ok: %+v", reports)
+	if results[0].OK() || !results[1].OK() {
+		t.Errorf("expected first fail, second ok: %+v", results)
 	}
 }
