@@ -157,3 +157,80 @@ func extractMessage(body []byte) string {
 	}
 	return s
 }
+
+// ListOrgRepos returns the names of every repository in the org, following
+// GitHub's Link header for pagination. Empty result is a normal outcome
+// (org with no repos or all repos filtered by token scope).
+func (c *Client) ListOrgRepos(ctx context.Context, org string) ([]string, error) {
+	next := fmt.Sprintf("/orgs/%s/repos?per_page=100", url.PathEscape(org))
+	var names []string
+	for next != "" {
+		page, nextURL, err := c.listOrgReposPage(ctx, next)
+		if err != nil {
+			return nil, err
+		}
+		names = append(names, page...)
+		next = nextURL
+	}
+	return names, nil
+}
+
+func (c *Client) listOrgReposPage(ctx context.Context, target string) ([]string, string, error) {
+	reqURL := target
+	if strings.HasPrefix(target, "/") {
+		reqURL = c.baseURL + target
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("github: build list-org-repos request: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+
+	resp, err := c.httpClient.Do(req) //nolint:gosec // baseURL operator-controlled
+	if err != nil {
+		return nil, "", fmt.Errorf("github: list-org-repos: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	const maxBytes int64 = defaultMaxRespMiB << 20
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes))
+	if err != nil {
+		return nil, "", fmt.Errorf("github: list-org-repos: read body: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, "", &APIError{Method: "list-org-repos", Status: resp.StatusCode, Message: extractMessage(body)}
+	}
+
+	var page []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(body, &page); err != nil {
+		return nil, "", fmt.Errorf("github: list-org-repos: decode: %w", err)
+	}
+	out := make([]string, 0, len(page))
+	for _, r := range page {
+		out = append(out, r.Name)
+	}
+	return out, parseNextLink(resp.Header.Get("Link")), nil
+}
+
+// parseNextLink extracts the rel="next" URL from a GitHub Link header.
+// Returns "" when no next page is advertised.
+func parseNextLink(header string) string {
+	for _, segment := range strings.Split(header, ",") {
+		segment = strings.TrimSpace(segment)
+		if !strings.Contains(segment, `rel="next"`) {
+			continue
+		}
+		open := strings.IndexByte(segment, '<')
+		closeIdx := strings.IndexByte(segment, '>')
+		if open >= 0 && closeIdx > open {
+			return segment[open+1 : closeIdx]
+		}
+	}
+	return ""
+}
