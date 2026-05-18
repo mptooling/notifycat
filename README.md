@@ -95,6 +95,30 @@ go build ./...
 See [CONTRIBUTING.md](CONTRIBUTING.md) for contributor setup, pull request
 expectations, and issue reporting guidance.
 
+## Release Process
+
+Releases are automated by
+[release-please](https://github.com/googleapis/release-please) and follow
+[Semantic Versioning](https://semver.org/) driven by
+[Conventional Commits](https://www.conventionalcommits.org/).
+
+1. Merge a PR into `main` with a Conventional Commits title (`feat:`,
+   `fix:`, …). The PR-title lint workflow blocks non-conforming titles.
+2. release-please opens — and keeps up-to-date — a single "release PR"
+   that bumps the version in `.release-please-manifest.json` and writes
+   the new section of `CHANGELOG.md`.
+3. Merging the release PR creates a Git tag (e.g. `v0.2.0`) and publishes
+   a GitHub Release with release notes.
+4. The release event triggers the Docker workflow, which builds the
+   `Dockerfile` and pushes
+   `ghcr.io/mptooling/notifycat:<semver>`, `:<major>.<minor>`, `:<major>`,
+   and `:latest` to GHCR.
+5. Documentation under `docs/` and `mkdocs.yml` is published to GitHub
+   Pages on every push to `main` that changes those paths.
+
+Pre-1.0 caveat: while the project is on `0.x`, a breaking change bumps the
+minor version (`0.1.0` → `0.2.0`). Major bumps begin after `1.0.0`.
+
 ## Community
 
 - [Code of conduct](CODE_OF_CONDUCT.md)

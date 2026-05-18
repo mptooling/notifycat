@@ -1,0 +1,54 @@
+site_name: notifycat
+site_description: GitHub pull request webhooks to a single, updating Slack message.
+site_url: https://mptooling.github.io/notifycat/
+repo_url: https://github.com/mptooling/notifycat
+repo_name: mptooling/notifycat
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - content.action.edit
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Configuration: configuration.md
+  - Mappings: mappings.md
+  - Slack app: slack-app.md
+  - GitHub webhook: github-webhook.md
+  - Docker: docker.md
+  - Operations: operations.md
