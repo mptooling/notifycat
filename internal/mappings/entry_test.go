@@ -2,11 +2,12 @@ package mappings
 
 import "testing"
 
-func TestEntry_Hash_StableAcrossMentionReorder(t *testing.T) {
+func TestEntry_Hash_IgnoresMentions(t *testing.T) {
 	a := Entry{Org: "acme", Repo: "api", Channel: "C1", Mentions: []string{"@x", "@y"}}
-	b := Entry{Org: "acme", Repo: "api", Channel: "C1", Mentions: []string{"@y", "@x"}}
-	if a.Hash() != b.Hash() {
-		t.Errorf("hash should be stable across mention reorder: %s vs %s", a.Hash(), b.Hash())
+	b := Entry{Org: "acme", Repo: "api", Channel: "C1", Mentions: nil}
+	c := Entry{Org: "acme", Repo: "api", Channel: "C1", Mentions: []string{"@z"}}
+	if a.Hash() != b.Hash() || a.Hash() != c.Hash() {
+		t.Errorf("mentions must not affect hash: %s / %s / %s", a.Hash(), b.Hash(), c.Hash())
 	}
 }
 
@@ -23,13 +24,5 @@ func TestEntry_Hash_DiffersOnWildcardVsExplicit(t *testing.T) {
 	b := Entry{Org: "acme", Wildcard: true, Channel: "C1", Mentions: []string{}}
 	if a.Hash() == b.Hash() {
 		t.Errorf("wildcard hash must differ from explicit hash")
-	}
-}
-
-func TestEntry_Hash_DiffersOnMentions(t *testing.T) {
-	a := Entry{Org: "acme", Repo: "api", Channel: "C1", Mentions: []string{"@x"}}
-	b := Entry{Org: "acme", Repo: "api", Channel: "C1", Mentions: []string{"@x", "@y"}}
-	if a.Hash() == b.Hash() {
-		t.Errorf("hash must differ when mentions change")
 	}
 }

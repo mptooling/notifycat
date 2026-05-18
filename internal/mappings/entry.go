@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"sort"
 )
 
 // Entry is one validation unit: an explicit (org, repo) pair or an
@@ -25,21 +24,21 @@ func (e Entry) Key() string {
 	return e.Org + "/" + e.Repo
 }
 
-// Hash is the cache key for an entry: sha256 over canonical JSON, with
-// mentions sorted so reordering in YAML is a no-op for the cache.
+// Hash is the cache key for an entry: sha256 over canonical JSON of the
+// validation-relevant fields. Mentions are deliberately excluded — they
+// only affect message formatting at Slack-send time, not anything the
+// validator checks (channel membership, bot scopes, webhook events). A
+// mention edit shouldn't invalidate the entry's cache.
 func (e Entry) Hash() string {
-	mentions := append([]string(nil), e.Mentions...)
-	sort.Strings(mentions)
 	repo := e.Repo
 	if e.Wildcard {
 		repo = "*"
 	}
 	payload := struct {
-		Org      string   `json:"org"`
-		Repo     string   `json:"repo"`
-		Channel  string   `json:"channel"`
-		Mentions []string `json:"mentions"`
-	}{e.Org, repo, e.Channel, mentions}
+		Org     string `json:"org"`
+		Repo    string `json:"repo"`
+		Channel string `json:"channel"`
+	}{e.Org, repo, e.Channel}
 	// json.Marshal cannot fail for a fixed struct of supported types.
 	b, _ := json.Marshal(payload)
 	sum := sha256.Sum256(b)
