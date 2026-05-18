@@ -1,0 +1,68 @@
+name: Bug report
+description: Report behavior that is broken or surprising.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Remove secrets before attaching logs, payloads, or config.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+      placeholder: notifycat updated the wrong Slack message when...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect notifycat to do?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What did notifycat do instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include commands, webhook event types, and relevant setup details.
+      placeholder: |
+        1. Configure mapping for...
+        2. Send pull_request opened webhook...
+        3. Observe...
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment mode
+      options:
+        - Local binary
+        - Docker
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: v0.1.0 or commit SHA
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or redacted payload/config
+      description: Remove Slack tokens, webhook secrets, private repo names, and private channel names.
+      render: text
+    validations:
+      required: false

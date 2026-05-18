@@ -1,0 +1,9 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://github.com/mptooling/notifycat/tree/main/docs
+    about: Read setup, configuration, mappings, Docker, and operations docs.
+  - name: Security report
+    url: https://github.com/mptooling/notifycat/security/advisories/new
+    about: Privately report a suspected vulnerability.
+

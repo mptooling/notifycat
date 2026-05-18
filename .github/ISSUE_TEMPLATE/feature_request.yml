@@ -1,0 +1,36 @@
+name: Feature request
+description: Propose a new capability or workflow improvement.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or workflow
+      description: What workflow is hard, noisy, missing, or confusing today?
+      placeholder: When a pull request is ready for review, our team needs...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the behavior you want notifycat to provide.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other ways you tried or considered solving this.
+    validations:
+      required: false
+  - type: textarea
+    id: fit
+    attributes:
+      label: Fit with notifycat
+      description: How does this fit the core purpose of routing GitHub PR activity into clear Slack updates?
+    validations:
+      required: false
+

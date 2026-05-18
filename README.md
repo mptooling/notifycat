@@ -92,6 +92,15 @@ go test -race ./...
 go build ./...
 ```
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contributor setup, pull request
+expectations, and issue reporting guidance.
+
+## Community
+
+- [Code of conduct](CODE_OF_CONDUCT.md)
+- [Support](SUPPORT.md)
+- [Security policy](SECURITY.md)
+
 ## License
 
 MIT. See [`LICENSE`](LICENSE).
