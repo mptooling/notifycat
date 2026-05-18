@@ -40,6 +40,11 @@ type Config struct {
 	// GitHubBaseURL is operator-overridable, paralleling SlackBaseURL.
 	GitHubBaseURL string `env:"GITHUB_BASE_URL" envDefault:"https://api.github.com"`
 
+	// MessageTTLDays is the age, in days, after which a slack_messages row
+	// with no further activity becomes eligible for the scheduled cleanup.
+	// Must be > 0; Load() rejects 0 or negative values.
+	MessageTTLDays int `env:"NOTIFYCAT_MESSAGE_TTL_DAYS" envDefault:"30"`
+
 	Reactions Reactions
 }
 
@@ -72,6 +77,9 @@ func Load() (Config, error) {
 	var cfg Config
 	if err := env.Parse(&cfg); err != nil {
 		return Config{}, translateParseError(err)
+	}
+	if cfg.MessageTTLDays <= 0 {
+		return Config{}, fmt.Errorf("config: NOTIFYCAT_MESSAGE_TTL_DAYS must be > 0, got %d", cfg.MessageTTLDays)
 	}
 	return cfg, nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -19,16 +20,30 @@ func NewSlackMessages(db *gorm.DB) *SlackMessages {
 	return &SlackMessages{db: db}
 }
 
-// Save upserts the message by composite key (pr_number, gh_repository).
+// Save upserts the message by composite key (pr_number, gh_repository). The
+// `updated_at` column is bumped on every Save (both insert and update paths)
+// to drive stale-row cleanup.
 func (r *SlackMessages) Save(ctx context.Context, m SlackMessage) error {
 	err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "pr_number"}, {Name: "gh_repository"}},
-		DoUpdates: clause.AssignmentColumns([]string{"ts"}),
+		DoUpdates: clause.AssignmentColumns([]string{"ts", "updated_at"}),
 	}).Create(&m).Error
 	if err != nil {
 		return fmt.Errorf("store: save slack message: %w", err)
 	}
 	return nil
+}
+
+// DeleteStaleBefore removes every row whose updated_at is strictly older than
+// cutoff. Returns the number of rows deleted. An empty table returns (0, nil).
+func (r *SlackMessages) DeleteStaleBefore(ctx context.Context, cutoff time.Time) (int64, error) {
+	res := r.db.WithContext(ctx).
+		Where("updated_at < ?", cutoff).
+		Delete(&SlackMessage{})
+	if res.Error != nil {
+		return 0, fmt.Errorf("store: delete stale slack messages: %w", res.Error)
+	}
+	return res.RowsAffected, nil
 }
 
 // Get returns the message for the given (repository, prNumber), or ErrNotFound.
