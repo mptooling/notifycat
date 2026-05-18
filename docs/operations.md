@@ -54,6 +54,42 @@ LOG_FORMAT=json
 for production log aggregation. Logs avoid raw webhook payloads, signatures, and
 secrets.
 
+### Debugging a 200 OK with no Slack change
+
+GitHub records a successful delivery whenever notifycat returns 200 — including
+when the event is intentionally ignored. Every silent no-op leaves a structured
+log line with the message `ignored webhook event` and a `reason` field, so an
+operator can answer *"why didn't Slack change for delivery X?"* from logs alone.
+
+Standard field set (all six fields appear on every `ignored webhook event` line):
+
+| Field | Example |
+| --- | --- |
+| `reason` | `no_handler`, `no_mapping`, `no_stored_message`, `already_sent` |
+| `handler` | `open`, `close`, `draft`, `approve`, `commented`, `request_change` (empty for the dispatcher) |
+| `github_event` | `pull_request`, `pull_request_review`, `pull_request_review_comment` |
+| `action` | `opened`, `closed`, `synchronize`, `labeled`, `submitted`, … |
+| `repository` | `owner/repo` |
+| `pr` | PR number (int) |
+
+Reasons and their levels:
+
+| `reason` | Level | What it means | Typical fix |
+| --- | --- | --- | --- |
+| `no_handler` | **Debug** | No registered handler matched this `(github_event, action)` pair. Volumetric — fires for `synchronize`, `labeled`, `edited`, etc. | Expected; set `LOG_LEVEL=debug` to see it. |
+| `no_mapping` | **Warn** | Webhook arrived for a repo no `mappings.yaml` entry covers. | Add the repo to `mappings.yaml` (or remove the webhook from that repo). |
+| `no_stored_message` | **Info** | Handler ran but found no Slack message row for this PR. Common when the PR predates notifycat. | Re-open the PR (or wait for the next applicable event) so `OpenHandler` can re-announce. |
+| `already_sent` | **Info** | `OpenHandler` saw an existing message row — idempotency kicks in. | Expected on `ready_for_review` after a prior `opened`. |
+
+To surface `no_handler` lines during triage:
+
+```sh
+LOG_LEVEL=debug
+```
+
+`grep` for the `reason` value (or filter on it in your log aggregator) to slice
+silent deliveries by class.
+
 ## Deploying a Release Image
 
 The release workflow runs on `v*` tags and publishes images to:

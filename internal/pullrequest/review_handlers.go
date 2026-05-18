@@ -27,8 +27,11 @@ func (h *reactionHandler) Applicable(e Event) bool { return h.applicable(e) }
 func (h *reactionHandler) Handle(ctx context.Context, e Event) error {
 	stored, err := h.messages.Get(ctx, e.Repository, e.PR.Number)
 	if errors.Is(err, store.ErrNotFound) {
-		h.logger.Info("no stored message for review event",
+		h.logger.Info("ignored webhook event",
+			slog.String("reason", "no_stored_message"),
 			slog.String("handler", h.name),
+			slog.String("github_event", e.GitHubEvent),
+			slog.String("action", e.Action),
 			slog.String("repository", e.Repository),
 			slog.Int("pr", e.PR.Number),
 		)
@@ -40,9 +43,13 @@ func (h *reactionHandler) Handle(ctx context.Context, e Event) error {
 
 	mapping, err := h.mappings.Get(ctx, e.Repository)
 	if errors.Is(err, store.ErrNotFound) {
-		h.logger.Warn("no slack mapping for repository",
+		h.logger.Warn("ignored webhook event",
+			slog.String("reason", "no_mapping"),
 			slog.String("handler", h.name),
+			slog.String("github_event", e.GitHubEvent),
+			slog.String("action", e.Action),
 			slog.String("repository", e.Repository),
+			slog.Int("pr", e.PR.Number),
 		)
 		return nil
 	}
