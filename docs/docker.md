@@ -58,13 +58,24 @@ docker run --rm \
 
 ## Configure Mappings
 
+Mappings live in `mappings.yaml`; the lock cache lives next to it as
+`mappings.lock`. Bake both into the image, or mount them at runtime.
+Override `NOTIFYCAT_MAPPINGS_FILE` to point at wherever they land.
+
 ```sh
+# Validate against Slack/GitHub before starting the server (writes mappings.lock):
 docker run --rm \
-  -v "$PWD/data:/data" \
+  -v "$PWD/mappings.yaml:/etc/notifycat/mappings.yaml:ro" \
+  -v "$PWD:/etc/notifycat:rw" \
+  -e NOTIFYCAT_MAPPINGS_FILE=/etc/notifycat/mappings.yaml \
   -e GITHUB_WEBHOOK_SECRET=your-32-plus-character-random-secret \
   -e SLACK_BOT_TOKEN=xoxb-your-slack-bot-token \
-  notifycat /usr/local/bin/notifycat-mapping add owner/repo C123ABCDE '<@U123456>,<!subteam^S123456>'
+  -e GITHUB_TOKEN=ghp-your-token \
+  notifycat /usr/local/bin/notifycat-mapping validate
 ```
+
+See `mappings.example.yaml` at the repo root and
+[Mappings file](mappings.md) for the schema.
 
 ## Run the Server
 
@@ -72,6 +83,9 @@ docker run --rm \
 docker run --rm \
   -p 8080:8080 \
   -v "$PWD/data:/data" \
+  -v "$PWD/mappings.yaml:/etc/notifycat/mappings.yaml:ro" \
+  -v "$PWD/mappings.lock:/etc/notifycat/mappings.lock:ro" \
+  -e NOTIFYCAT_MAPPINGS_FILE=/etc/notifycat/mappings.yaml \
   -e GITHUB_WEBHOOK_SECRET=your-32-plus-character-random-secret \
   -e SLACK_BOT_TOKEN=xoxb-your-slack-bot-token \
   notifycat

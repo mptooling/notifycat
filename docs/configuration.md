@@ -29,7 +29,7 @@ baseline.
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `DATABASE_URL` | `file:./data/notifycat.db` | SQLite path or `file:` DSN. |
+| `DATABASE_URL` | `file:./data/notifycat.db` | SQLite path or `file:` DSN. Stores the per-PR Slack message timestamps. Mappings live in YAML, not the database. |
 
 In Docker, the image sets:
 
@@ -38,6 +38,17 @@ DATABASE_URL=file:/data/notifycat.db
 ```
 
 Mount `/data` if you want the database to survive container restarts.
+
+## Mappings File
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `NOTIFYCAT_MAPPINGS_FILE` | `./mappings.yaml` | Path to the declarative mappings file. The sibling lock file (e.g. `./mappings.lock`) is derived by swapping the `.yaml`/`.yml` extension for `.lock`. |
+
+Both `notifycat-server` and `notifycat-mapping` read this file. See
+[Mappings file](mappings.md) for the schema and
+[`mappings.example.yaml`](../mappings.example.yaml) for a copy-paste
+starting point.
 
 ## Slack
 
@@ -67,26 +78,22 @@ Mount `/data` if you want the database to survive container restarts.
 Use Slack emoji names without surrounding colons. For example, set
 `SLACK_REACTION_PR_APPROVED=shipit`, not `:shipit:`.
 
-## Mapping Data
+## Mapping CLI
 
-Routing is stored in SQLite, not in environment variables. Use
-`notifycat-mapping`:
+Mappings are defined in [`mappings.yaml`](mappings.md), not in environment
+variables. The `notifycat-mapping` binary has two subcommands:
 
 ```sh
-notifycat-mapping add owner/repo C123ABCDE '<@U123456>,<!subteam^S123456>'
-notifycat-mapping list
-notifycat-mapping remove owner/repo
-notifycat-mapping validate            # all mappings
-notifycat-mapping validate owner/repo # single mapping
+notifycat-mapping list                    # print the parsed file (no network)
+notifycat-mapping validate                # validate every entry, cache-aware
+notifycat-mapping validate owner/repo     # validate a single entry, ignore cache for it
+notifycat-mapping validate --force        # ignore the lock entirely; revalidate everything
 ```
 
-`validate` checks each mapping end-to-end: the row exists, the Slack channel
-ID is well-formed, the bot token works with the required scopes, the bot is a
-member of the channel, and (when `GITHUB_TOKEN` is set) the GitHub webhook is
+`validate` checks each entry end-to-end: the Slack channel ID is
+well-formed, the bot token has the required scopes, the bot is a member
+of the channel, and (when `GITHUB_TOKEN` is set) the GitHub webhook is
 subscribed to `pull_request`, `pull_request_review`, and
-`pull_request_review_comment`. See `docs/operations.md` for the failure-mode
-remediation table.
-
-Mentions are stored as plain Slack mention strings and joined into the message
-body. User mentions look like `<@U123456>`. User group mentions look like
-`<!subteam^S123456>`.
+`pull_request_review_comment`. See `docs/operations.md` for the
+failure-mode remediation table. The server runs the same validation at
+boot and refuses to start on failure.

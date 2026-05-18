@@ -28,14 +28,20 @@ finish within the configured shutdown window.
 
 ## Persistence
 
-SQLite stores:
+State lives in two places:
 
-- Repository-to-channel mappings.
-- Pull request to Slack message timestamps.
+- **`mappings.yaml`** — the declarative source of truth for routing. Edit
+  it in version control and deploy it alongside the binary. The sibling
+  `mappings.lock` caches successful validation so steady-state boots
+  don't re-contact Slack/GitHub.
+- **SQLite** — stores per-PR Slack message timestamps so notifycat can
+  update the same message across the PR lifecycle.
 
-Back up the SQLite file if losing notification state would be painful. If the
-database is lost, notifycat can still receive webhooks, but existing PRs may get
-new Slack messages because the old Slack timestamp mapping is gone.
+Back up the SQLite file if losing notification state would be painful. If
+the database is lost, notifycat can still receive webhooks, but existing
+PRs may get new Slack messages because the old Slack timestamp mapping is
+gone. `mappings.yaml` and `mappings.lock` live in your repo, so losing
+the container's local copy is harmless on the next deploy.
 
 ## Logging
 
@@ -68,11 +74,14 @@ For a Git tag such as `v0.1.0`, the version image tag is `0.1.0`.
 4. Set `GITHUB_WEBHOOK_SECRET` and `SLACK_BOT_TOKEN`.
 5. Run `notifycat-migrate up` if your deployment uses an explicit migration
    step. The server also applies pending migrations at startup.
-6. Add repository mappings with `notifycat-mapping`.
+6. Edit `mappings.yaml` (start from `mappings.example.yaml`) and point
+   `NOTIFYCAT_MAPPINGS_FILE` at it. See [Mappings file](mappings.md).
 7. Run `notifycat-mapping validate` to confirm the Slack side is wired
    correctly. With `GITHUB_TOKEN` exported, this also checks webhook event
-   coverage.
-8. Start `notifycat-server`.
+   coverage. Commit `mappings.yaml` **and** the resulting `mappings.lock`.
+8. Start `notifycat-server`. It re-runs the same validation on boot — a
+   lock that matches the YAML means no network round-trip; a mismatch
+   means only the changed entries are revalidated.
 9. Register the GitHub webhook with `./scripts/github-webhook-create.sh`.
 10. Open a test pull request and confirm Slack receives one message.
 11. Approve, comment, add a line-specific comment, request changes, draft,
@@ -94,8 +103,8 @@ are plain ASCII so the output is greppable in CI logs.
 
 | Check | What it verifies | How to fix a `FAIL` |
 | --- | --- | --- |
-| `mapping` | A row exists for `owner/repo` in SQLite. | `notifycat-mapping add owner/repo <channel-id> <mentions>` |
-| `channel-format` | Stored channel ID matches `[CGD][A-Z0-9]{2,}`. | Re-run `add` with a valid channel ID copied from Slack. |
+| `mapping` | An entry exists in `mappings.yaml` for `owner/repo` (explicit or wildcard). | Add the repo to that org's `repositories` list, or set `repositories: "*"`. See [Mappings file](mappings.md). |
+| `channel-format` | The entry's channel ID matches `[CGD][A-Z0-9]{2,}`. | Edit `mappings.yaml` and use the real Slack channel ID, not the display name. |
 | `slack-auth` | `auth.test` succeeds and `X-OAuth-Scopes` includes `chat:write` and `reactions:write`. | Rotate `SLACK_BOT_TOKEN`, or reinstall the app after updating the manifest scopes. |
 | `slack-channel` | `conversations.info` reports the channel exists, is not archived, and the bot is a member. | `/invite @notifycat` in the channel; unarchive if needed; correct the channel ID. |
 | `github-webhook` | When `GITHUB_TOKEN` is set, an active webhook on the repo points at `/webhook/github` and subscribes to `pull_request`, `pull_request_review`, `pull_request_review_comment`. Skipped when `GITHUB_TOKEN` is unset. | Create the webhook with `./scripts/github-webhook-create.sh`, or edit the existing webhook to add the missing events. |
