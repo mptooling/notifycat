@@ -17,8 +17,8 @@ var (
 // Parse reads + validates the YAML document. Unknown keys and shape errors
 // are returned as errors (the server fails fast at startup).
 //
-// Mentions must be a non-nil list (use [] for empty) so "absent" vs "empty"
-// stays explicit.
+// `mentions:` is optional: an absent key means "ping @channel"; `mentions: []`
+// means "ping nobody"; `mentions: null` is rejected (ambiguous).
 func Parse(r io.Reader) (File, error) {
 	dec := yaml.NewDecoder(r)
 	dec.KnownFields(true)
@@ -40,9 +40,6 @@ func (f File) validate() error {
 		}
 		if !channelPattern.MatchString(o.Channel) {
 			return fmt.Errorf("mappings: org %q: invalid channel %q", org, o.Channel)
-		}
-		if o.Mentions == nil {
-			return fmt.Errorf("mappings: org %q: mentions is required (use [] for empty)", org)
 		}
 		if !o.Repositories.All {
 			seen := make(map[string]struct{}, len(o.Repositories.List))

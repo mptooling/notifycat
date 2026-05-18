@@ -86,16 +86,74 @@ mappings:
 	}
 }
 
-func TestParse_NilMentionsRejected(t *testing.T) {
-	_, err := Parse(strings.NewReader(`
+func TestParse_AbsentMentionsAccepted(t *testing.T) {
+	f, err := Parse(strings.NewReader(`
+mappings:
+  acme:
+    channel: C0123ABCDE
+    repositories: ["x"]
+`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	acme := f.Mappings["acme"]
+	if acme.MentionsPresent {
+		t.Errorf("MentionsPresent = true; want false for absent key")
+	}
+	if acme.Mentions != nil {
+		t.Errorf("Mentions = %v; want nil for absent key", acme.Mentions)
+	}
+}
+
+func TestParse_EmptyMentionsAccepted(t *testing.T) {
+	f, err := Parse(strings.NewReader(`
+mappings:
+  acme:
+    channel: C0123ABCDE
+    mentions: []
+    repositories: ["x"]
+`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	acme := f.Mappings["acme"]
+	if !acme.MentionsPresent {
+		t.Errorf("MentionsPresent = false; want true for empty list")
+	}
+	if acme.Mentions == nil || len(acme.Mentions) != 0 {
+		t.Errorf("Mentions = %v; want non-nil empty slice", acme.Mentions)
+	}
+}
+
+func TestParse_NullMentionsRejected(t *testing.T) {
+	cases := []string{
+		`
 mappings:
   acme:
     channel: C0123ABCDE
     mentions:
     repositories: ["x"]
-`))
-	if err == nil || !strings.Contains(err.Error(), "mentions") {
-		t.Fatalf("expected mentions error; got %v", err)
+`,
+		`
+mappings:
+  acme:
+    channel: C0123ABCDE
+    mentions: null
+    repositories: ["x"]
+`,
+		`
+mappings:
+  acme:
+    channel: C0123ABCDE
+    mentions: ~
+    repositories: ["x"]
+`,
+	}
+	for i, body := range cases {
+		_, err := Parse(strings.NewReader(body))
+		if err == nil || !strings.Contains(err.Error(), "mentions") {
+			t.Errorf("case %d: expected mentions error; got %v", i, err)
+		}
 	}
 }
 
