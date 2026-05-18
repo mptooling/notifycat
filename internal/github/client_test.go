@@ -104,7 +104,7 @@ func TestListOrgRepos_SinglePage(t *testing.T) {
 func TestListOrgRepos_FollowsLinkHeader(t *testing.T) {
 	var page atomic.Int32
 	var base string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		switch page.Add(1) {
 		case 1:
 			w.Header().Set("Link", `<`+base+`/orgs/acme/repos?page=2>; rel="next"`)
@@ -127,7 +127,7 @@ func TestListOrgRepos_FollowsLinkHeader(t *testing.T) {
 }
 
 func TestListOrgRepos_Non2xxIsAPIError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = w.Write([]byte(`{"message":"Not Found"}`))
 	}))

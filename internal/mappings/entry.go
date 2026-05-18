@@ -40,7 +40,8 @@ func (e Entry) Hash() string {
 		Channel  string   `json:"channel"`
 		Mentions []string `json:"mentions"`
 	}{e.Org, repo, e.Channel, mentions}
-	b, _ := json.Marshal(payload) //nolint:errcheck // marshaling fixed struct cannot fail
+	// json.Marshal cannot fail for a fixed struct of supported types.
+	b, _ := json.Marshal(payload)
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
 }
