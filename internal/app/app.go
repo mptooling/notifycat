@@ -64,6 +64,7 @@ func Wire(cfg config.Config) (*http.Server, Cleanup, error) {
 	messages := store.NewSlackMessages(db)
 
 	dispatcher := pullrequest.NewDispatcher(
+		logger,
 		pullrequest.NewOpenHandler(messages, provider, slackClient, composer, logger),
 		pullrequest.NewCloseHandler(messages, provider, slackClient, composer, logger,
 			pullrequest.CloseOptions{

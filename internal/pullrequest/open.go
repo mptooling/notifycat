@@ -51,7 +51,11 @@ func (h *OpenHandler) Applicable(e Event) bool {
 // key) the handler returns silently — we never post twice for the same PR.
 func (h *OpenHandler) Handle(ctx context.Context, e Event) error {
 	if _, err := h.messages.Get(ctx, e.Repository, e.PR.Number); err == nil {
-		h.logger.Info("message already sent",
+		h.logger.Info("ignored webhook event",
+			slog.String("reason", "already_sent"),
+			slog.String("handler", "open"),
+			slog.String("github_event", e.GitHubEvent),
+			slog.String("action", e.Action),
 			slog.String("repository", e.Repository),
 			slog.Int("pr", e.PR.Number),
 		)
@@ -62,7 +66,14 @@ func (h *OpenHandler) Handle(ctx context.Context, e Event) error {
 
 	mapping, err := h.mappings.Get(ctx, e.Repository)
 	if errors.Is(err, store.ErrNotFound) {
-		h.logger.Warn("no slack mapping for repository", slog.String("repository", e.Repository))
+		h.logger.Warn("ignored webhook event",
+			slog.String("reason", "no_mapping"),
+			slog.String("handler", "open"),
+			slog.String("github_event", e.GitHubEvent),
+			slog.String("action", e.Action),
+			slog.String("repository", e.Repository),
+			slog.Int("pr", e.PR.Number),
+		)
 		return nil
 	}
 	if err != nil {

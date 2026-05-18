@@ -1,9 +1,9 @@
 package pullrequest_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
-	"io"
 	"log/slog"
 	"testing"
 
@@ -13,10 +13,12 @@ import (
 
 func newDraftHandler(t *testing.T, msgs *fakeSlackMessages, mappings *fakeRepoMappings, client *fakeSlackClient) *pullrequest.DraftHandler {
 	t.Helper()
-	return pullrequest.NewDraftHandler(
-		msgs, mappings, client,
-		slog.New(slog.NewTextHandler(io.Discard, nil)),
-	)
+	return pullrequest.NewDraftHandler(msgs, mappings, client, discardLogger())
+}
+
+func newDraftHandlerWithLogger(t *testing.T, msgs *fakeSlackMessages, mappings *fakeRepoMappings, client *fakeSlackClient, logger *slog.Logger) *pullrequest.DraftHandler {
+	t.Helper()
+	return pullrequest.NewDraftHandler(msgs, mappings, client, logger)
 }
 
 func TestDraftHandler_Applicable(t *testing.T) {
@@ -62,12 +64,16 @@ func TestDraftHandler_Handle_NoStoredMessageIsNoop(t *testing.T) {
 	msgs := newFakeSlackMessages()
 	mappings := newFakeRepoMappings(store.RepoMapping{Repository: "octo/widget", SlackChannel: "C123"})
 	client := &fakeSlackClient{}
-	h := newDraftHandler(t, msgs, mappings, client)
+
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	h := newDraftHandlerWithLogger(t, msgs, mappings, client, logger)
 
 	e := pullrequest.Event{
-		Action:     "converted_to_draft",
-		Repository: "octo/widget",
-		PR:         pullrequest.PR{Number: 42},
+		GitHubEvent: "pull_request",
+		Action:      "converted_to_draft",
+		Repository:  "octo/widget",
+		PR:          pullrequest.PR{Number: 42},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -75,4 +81,16 @@ func TestDraftHandler_Handle_NoStoredMessageIsNoop(t *testing.T) {
 	if len(client.calls) != 0 {
 		t.Errorf("Slack called when no message stored: %v", client.methods())
 	}
+
+	rec := decodeLog(t, buf.Bytes())
+	wantFields(t, rec, map[string]any{
+		"level":        "INFO",
+		"msg":          "ignored webhook event",
+		"reason":       "no_stored_message",
+		"handler":      "draft",
+		"github_event": "pull_request",
+		"action":       "converted_to_draft",
+		"repository":   "octo/widget",
+		"pr":           float64(42),
+	})
 }
