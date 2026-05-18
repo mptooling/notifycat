@@ -62,10 +62,32 @@ go test ./internal/githubhook
 - Include manual verification notes when the change touches GitHub webhooks,
   Slack API behavior, Docker, or release packaging.
 
-## Commit Style
+## Commit Messages
 
-Use short, imperative commit messages. Conventional prefixes such as `feat:`,
-`fix:`, `docs:`, `test:`, and `chore:` are welcome but not required.
+notifycat uses [Conventional Commits](https://www.conventionalcommits.org/)
+together with [release-please](https://github.com/googleapis/release-please)
+to automate versioning and the changelog. Squash-merge keeps the PR title as
+the commit on `main`, and the PR-title lint workflow enforces the format —
+so **your PR title is the commit message that release-please reads**.
+
+| Type | Use for |
+| --- | --- |
+| `feat:` | new user-visible features (minor bump) |
+| `fix:` | bug fixes (patch bump) |
+| `docs:` | documentation only |
+| `chore:` | maintenance / tooling |
+| `refactor:` | internal change with no behavior change |
+| `perf:` | performance improvement |
+| `test:` | tests only |
+| `build:` / `ci:` | build system or CI configuration |
+| `feat!:` or a `BREAKING CHANGE:` footer | breaking change |
+
+Pre-1.0 caveat: while the project is still on `0.x`, a breaking change bumps
+the minor version (`0.1.0` → `0.2.0`). Once `1.0.0` ships, breaking changes
+bump the major version per SemVer.
+
+Keep the subject short and imperative. A scope is optional —
+`feat(slack): …` is fine, `feat: …` is fine too.
 
 ## Reporting Bugs
 
