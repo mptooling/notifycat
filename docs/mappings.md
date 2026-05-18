@@ -25,7 +25,7 @@ and `/etc/notifycat/m.yaml` produces `/etc/notifycat/m.lock`.
 mappings:
   <org>:                       # GitHub org name; map key
     channel: <slack-channel-id>
-    mentions: [<string>, ...]  # required (use [] for none); null rejected
+    mentions: [<string>, ...]  # optional; see "Mention states" below
     repositories: <"*" | [<repo>, ...]>
 ```
 
@@ -35,11 +35,29 @@ mappings:
 | --- | --- |
 | `mappings` | Map keyed by GitHub org. Org keys match `^[A-Za-z0-9_.-]+$`. |
 | `channel` | Required. Slack channel ID, matches `^[CGD][A-Z0-9]{2,}$` (must be the ID, not `#display-name`). |
-| `mentions` | Required list. Empty (`[]`) means "post without pinging anyone". `null` is rejected so absent-vs-empty stays explicit. |
+| `mentions` | Optional. See [Mention states](#mention-states) for the three accepted shapes. `null` is rejected so the operator's intent stays explicit. |
 | `repositories` | Required. Either the literal string `"*"` (every repo in the org) or a non-empty list of bare repo names matching `^[A-Za-z0-9_.-]+$`. Names cannot contain `/`. |
 | `repositories: ["*", ...]` | Rejected. `"*"` is exclusive of named entries. |
 | Duplicate repo within an org | Rejected at parse time. |
 | Unknown keys anywhere | Rejected at parse time. Typos surface immediately. |
+
+### Mention states
+
+`mentions:` has three accepted shapes; pick the one that matches operator
+intent for that org.
+
+| YAML | Slack message prefix | Meaning |
+| --- | --- | --- |
+| key omitted | `<!channel> ` (renders as `@channel`) | Broadcast to everyone in the channel. Default for entries that don't opt out. |
+| `mentions: []` | _(no prefix; message starts with `please review …`)_ | Post silently — no ping. |
+| `mentions: ["<@U…>", "<!subteam^S…>"]` | `<@U…>,<!subteam^S…>, ` | Ping the listed handles. |
+| `mentions: null` / `mentions: ~` | _rejected at parse time_ | Ambiguous. Omit the key for `@channel`, or use `[]` for no ping. |
+
+The absent-vs-`[]` distinction flows through `Provider.Get` and
+`Provider.Entries`: the absent state is materialized as
+`Mentions: ["<!channel>"]` so downstream consumers (composer, list CLI) see a
+uniform slice. Entry hashes ignore mentions entirely, so toggling between
+absent and `[]` does **not** invalidate the validation cache.
 
 ### Mention Formats
 

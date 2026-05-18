@@ -85,3 +85,61 @@ func TestProvider_Load_BadFile(t *testing.T) {
 		t.Fatal("expected error on missing file")
 	}
 }
+
+const absentMentionsYAML = `
+mappings:
+  acme:
+    channel: C0123ABCDE
+    repositories: ["api"]
+  beta:
+    channel: C0456FGHIJ
+    mentions: []
+    repositories: ["web"]
+`
+
+func TestProvider_Get_AbsentMentions_FallsBackToChannel(t *testing.T) {
+	p, err := Load(writeMappingsFile(t, absentMentionsYAML))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	got, err := p.Get(context.Background(), "acme/api")
+	if err != nil {
+		t.Fatalf("get acme/api: %v", err)
+	}
+	if len(got.Mentions) != 1 || got.Mentions[0] != ChannelMention {
+		t.Errorf("absent mentions = %v; want [%q]", got.Mentions, ChannelMention)
+	}
+}
+
+func TestProvider_Get_EmptyMentions_StaysEmpty(t *testing.T) {
+	p, err := Load(writeMappingsFile(t, absentMentionsYAML))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	got, err := p.Get(context.Background(), "beta/web")
+	if err != nil {
+		t.Fatalf("get beta/web: %v", err)
+	}
+	if len(got.Mentions) != 0 {
+		t.Errorf("empty mentions = %v; want empty", got.Mentions)
+	}
+}
+
+func TestProvider_Entries_AbsentMentionsMaterialized(t *testing.T) {
+	p, err := Load(writeMappingsFile(t, absentMentionsYAML))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	for _, e := range p.Entries() {
+		switch e.Key() {
+		case "acme/api":
+			if len(e.Mentions) != 1 || e.Mentions[0] != ChannelMention {
+				t.Errorf("acme/api mentions = %v; want [%q]", e.Mentions, ChannelMention)
+			}
+		case "beta/web":
+			if len(e.Mentions) != 0 {
+				t.Errorf("beta/web mentions = %v; want empty", e.Mentions)
+			}
+		}
+	}
+}

@@ -31,8 +31,25 @@ func TestComposer_NewMessage_NoMentions(t *testing.T) {
 		Repository: "octo/widget", Number: 1, Title: "t", URL: "u", Author: "a",
 	}, nil)
 
-	if !strings.HasPrefix(got, ":rocket: , please review ") {
-		t.Fatalf("NewMessage with empty mentions = %q; want leading ':rocket: , please review '", got)
+	want := ":rocket: please review <u|PR #1: t> by a"
+	if got != want {
+		t.Fatalf("NewMessage with empty mentions =\n  %q\nwant\n  %q", got, want)
+	}
+	if strings.Contains(got, ": ,") || strings.Contains(got, " ,") {
+		t.Errorf("stranded comma in %q", got)
+	}
+}
+
+func TestComposer_NewMessage_ChannelFallback(t *testing.T) {
+	c := slack.NewComposer("rocket")
+
+	got := c.NewMessage(slack.PRDetails{
+		Repository: "octo/widget", Number: 1, Title: "t", URL: "u", Author: "a",
+	}, []string{"<!channel>"})
+
+	want := ":rocket: <!channel>, please review <u|PR #1: t> by a"
+	if got != want {
+		t.Fatalf("NewMessage with @channel fallback =\n  %q\nwant\n  %q", got, want)
 	}
 }
 

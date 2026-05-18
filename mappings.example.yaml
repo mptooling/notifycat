@@ -28,23 +28,30 @@ mappings:
       - api
       - web
 
-  # ── Wildcard ─────────────────────────────────────────────────────────────
-  # `repositories: "*"` matches every repo in the org. At validate time the
-  # CLI expands "*" against the GitHub API (needs GITHUB_TOKEN); at server
-  # webhook time the lookup is in-memory — no network call. Useful when you
-  # want one channel for a whole org and don't want to maintain a per-repo
-  # list.
+  # ── Wildcard + @channel fallback ─────────────────────────────────────────
+  # `repositories: "*"` matches every repo in the org. Omitting the
+  # `mentions:` key entirely means "ping @channel" (Slack wire: <!channel>).
+  # Useful for whole-org rollups where every PR should reach the room.
   beta:
     channel: C0456FGHIJ
-    mentions:
-      - "<!channel>"                          # Slack wire format for @channel (broadcast)
-      # Also valid: "<!here>" for @here, "<!subteam^S…>" for a user group.
     repositories: "*"
 
+  # ── Explicit @channel ────────────────────────────────────────────────────
+  # Equivalent to omitting `mentions:` for this entry. Listed here for
+  # operators who prefer the explicit wire token over the absent-key
+  # shortcut — both render the same message.
+  gamma:
+    channel: C0234PQRST
+    mentions:
+      - "<!channel>"                          # Slack wire format for @channel
+      # Also valid: "<!here>" for @here, "<!subteam^S…>" for a user group.
+    repositories:
+      - platform
+
   # ── Empty mentions ───────────────────────────────────────────────────────
-  # An empty list means "post without pinging anyone". Issue #10 changes the
-  # absent-key case (no `mentions:` line at all) to mean "@channel"; until
-  # that ships, every entry needs a `mentions:` key.
+  # `mentions: []` posts without pinging anyone (no stranded comma in the
+  # message). Use this when you want a silent post; omit the key entirely
+  # for an @channel ping instead.
   legacy:
     channel: C0789KLMNO
     mentions: []
@@ -53,9 +60,13 @@ mappings:
 
 # Rules
 # ─────
-# • The org key (acme, beta, legacy, …) matches `^[A-Za-z0-9_.-]+$`.
+# • The org key (acme, beta, gamma, legacy, …) matches `^[A-Za-z0-9_.-]+$`.
 # • `channel` must look like a Slack ID: `^[CGD][A-Z0-9]{2,}$` (C…, G…, D…).
-# • `mentions` is required (use `[]` for none) — `null` is rejected.
+# • `mentions` is optional — three states:
+#     - key absent     → fall back to @channel (<!channel>)
+#     - `mentions: []` → ping nobody (no stranded artifacts in the message)
+#     - `[<...>]`      → ping those handles
+#   `mentions: null` (or `~`) is rejected — pick one of the three above.
 # • `repositories` is either the literal string "*" or a list of bare repo
 #   names. Names cannot contain "/". A list cannot mix "*" with names.
 # • Duplicate repos in the same org are rejected at parse time.

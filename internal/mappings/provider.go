@@ -57,8 +57,18 @@ func (p *Provider) Get(_ context.Context, repository string) (store.RepoMapping,
 	return store.RepoMapping{
 		Repository:   repository,
 		SlackChannel: o.Channel,
-		Mentions:     append([]string(nil), o.Mentions...),
+		Mentions:     resolveMentions(o),
 	}, nil
+}
+
+// resolveMentions materializes the absent-mentions case as @channel so
+// downstream consumers (composer, list CLI) don't need to know about
+// MentionsPresent. Returns a fresh slice to keep the parsed file immutable.
+func resolveMentions(o Org) []string {
+	if !o.MentionsPresent {
+		return []string{ChannelMention}
+	}
+	return append([]string(nil), o.Mentions...)
 }
 
 // Entries returns validation units in deterministic order: orgs sorted A→Z,
@@ -73,10 +83,11 @@ func (p *Provider) Entries() []Entry {
 	var out []Entry
 	for _, org := range orgs {
 		o := p.file.Mappings[org]
+		mentions := resolveMentions(o)
 		if o.Repositories.All {
 			out = append(out, Entry{
 				Org: org, Wildcard: true,
-				Channel: o.Channel, Mentions: o.Mentions,
+				Channel: o.Channel, Mentions: mentions,
 			})
 			continue
 		}
@@ -85,7 +96,7 @@ func (p *Provider) Entries() []Entry {
 		for _, r := range repos {
 			out = append(out, Entry{
 				Org: org, Repo: r,
-				Channel: o.Channel, Mentions: o.Mentions,
+				Channel: o.Channel, Mentions: mentions,
 			})
 		}
 	}

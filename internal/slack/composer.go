@@ -31,12 +31,18 @@ func NewComposer(newPREmoji string) *Composer {
 }
 
 // NewMessage renders the initial Slack message for a PR. Mentions are joined
-// with commas (matching the legacy PHP composer's wire format).
+// with commas (matching the legacy PHP composer's wire format). When the
+// mentions list is empty, the prefix is omitted entirely so the message has
+// no stranded ", ".
 func (c *Composer) NewMessage(pr PRDetails, mentions []string) string {
+	prefix := ""
+	if len(mentions) > 0 {
+		prefix = strings.Join(mentions, ",") + ", "
+	}
 	return fmt.Sprintf(
-		":%s: %s, please review <%s|PR #%d: %s> by %s",
+		":%s: %splease review <%s|PR #%d: %s> by %s",
 		c.newPREmoji,
-		strings.Join(mentions, ","),
+		prefix,
 		pr.URL,
 		pr.Number,
 		pr.Title,
