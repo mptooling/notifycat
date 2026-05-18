@@ -8,8 +8,9 @@ reviewed, merges, or closes, notifycat updates that message and adds the
 configured reactions. The result is a quieter channel: reviewers can follow the
 state of a PR without digging through repeated notifications.
 
-It is intentionally small: one HTTP endpoint, a SQLite database, and a CLI for
-mapping GitHub repositories to Slack channels.
+It is intentionally small: one HTTP endpoint, a SQLite database (for Slack
+message timestamps), and a declarative `mappings.yaml` that decides which
+PRs route to which Slack channels.
 
 ## What It Handles
 
@@ -18,7 +19,9 @@ mapping GitHub repositories to Slack channels.
   changes-requested reviews.
 - `pull_request_review_comment` webhooks for line-specific PR comments.
 - GitHub HMAC-SHA256 verification through `X-Hub-Signature-256`.
-- Repository mappings in SQLite: `owner/repo -> Slack channel + mentions`.
+- Repository routing from a declarative `mappings.yaml` — explicit lists
+  or `repositories: "*"` for a whole org. See
+  [`mappings.example.yaml`](mappings.example.yaml).
 - Slack message updates instead of repeated new messages for the same PR.
 
 ## Binaries
@@ -26,12 +29,13 @@ mapping GitHub repositories to Slack channels.
 | Binary | Purpose |
 | --- | --- |
 | `notifycat-server` | HTTP server for GitHub webhooks |
-| `notifycat-mapping` | CLI for repo-to-Slack mappings |
+| `notifycat-mapping` | CLI for listing and validating the mappings file |
 | `notifycat-migrate` | Applies embedded SQLite migrations |
 
 ## Documentation
 
 - [Getting started](docs/getting-started.md)
+- [Mappings file](docs/mappings.md)
 - [Configuration](docs/configuration.md)
 - [Slack app setup](docs/slack-app.md)
 - [GitHub webhook setup](docs/github-webhook.md)
@@ -40,17 +44,19 @@ mapping GitHub repositories to Slack channels.
 
 ## Quickstart
 
-Create a local env file and set the two required secrets:
+Create a local env file and the mappings file from the bundled examples:
 
 ```sh
 cp .env.example .env
+cp mappings.example.yaml mappings.yaml
 ```
 
-Then migrate, add your first repository mapping, and start the server:
+Edit `mappings.yaml` to point your repos at real Slack channels, then
+migrate, validate, and start the server:
 
 ```sh
 go run ./cmd/notifycat-migrate up
-go run ./cmd/notifycat-mapping add owner/repo C123ABCDE @alice,@bob
+go run ./cmd/notifycat-mapping validate
 go run ./cmd/notifycat-server
 ```
 

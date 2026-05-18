@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sort"
+	"sync/atomic"
 	"testing"
 
 	"github.com/mptooling/notifycat/internal/github"
@@ -78,5 +79,64 @@ func TestListHookEvents_APIError(t *testing.T) {
 	}
 	if apiErr.Status != http.StatusNotFound || apiErr.Message != "Not Found" {
 		t.Fatalf("apiErr = %+v", apiErr)
+	}
+}
+
+func TestListOrgRepos_SinglePage(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/orgs/acme/repos" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`[{"name":"api"},{"name":"web"}]`))
+	}))
+	defer srv.Close()
+
+	c := github.NewClient(srv.Client(), "tok", github.WithBaseURL(srv.URL))
+	got, err := c.ListOrgRepos(context.Background(), "acme")
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(got) != 2 || got[0] != "api" || got[1] != "web" {
+		t.Errorf("got %v", got)
+	}
+}
+
+func TestListOrgRepos_FollowsLinkHeader(t *testing.T) {
+	var page atomic.Int32
+	var base string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		switch page.Add(1) {
+		case 1:
+			w.Header().Set("Link", `<`+base+`/orgs/acme/repos?page=2>; rel="next"`)
+			_, _ = w.Write([]byte(`[{"name":"api"}]`))
+		default:
+			_, _ = w.Write([]byte(`[{"name":"web"}]`))
+		}
+	}))
+	defer srv.Close()
+	base = srv.URL
+
+	c := github.NewClient(srv.Client(), "tok", github.WithBaseURL(srv.URL))
+	got, err := c.ListOrgRepos(context.Background(), "acme")
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(got) != 2 || got[0] != "api" || got[1] != "web" {
+		t.Errorf("expected [api, web]; got %v", got)
+	}
+}
+
+func TestListOrgRepos_Non2xxIsAPIError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"message":"Not Found"}`))
+	}))
+	defer srv.Close()
+
+	c := github.NewClient(srv.Client(), "tok", github.WithBaseURL(srv.URL))
+	_, err := c.ListOrgRepos(context.Background(), "acme")
+	var apiErr *github.APIError
+	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusNotFound {
+		t.Fatalf("want APIError 404; got %T %v", err, err)
 	}
 }

@@ -4,84 +4,70 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/mptooling/notifycat/internal/mappingcli"
-	"github.com/mptooling/notifycat/internal/store"
+	"github.com/mptooling/notifycat/internal/mappings"
 )
 
-// fakeMappingsValidator is the mock dispatch tests hand to runValidate. It
-// satisfies mappingcli.MappingsValidator and records the inputs it sees so
-// tests can assert dispatch routed correctly.
+const testYAML = `mappings:
+  acme:
+    channel: C0123ABCDE
+    mentions: ["@a"]
+    repositories: ["api", "web"]
+`
+
+func testProvider(t *testing.T) *mappings.Provider {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mappings.yaml")
+	if err := os.WriteFile(path, []byte(testYAML), 0o600); err != nil {
+		t.Fatalf("write yaml: %v", err)
+	}
+	p, err := mappings.Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	return p
+}
+
+// fakeMappingsValidator records inputs so dispatch tests can assert the
+// routing layer forwarded target + force unchanged.
 type fakeMappingsValidator struct {
 	called    bool
 	gotTarget string
+	gotForce  bool
 	code      int
 }
 
-func (f *fakeMappingsValidator) Validate(_ context.Context, target string, _, _ io.Writer) int {
+func (f *fakeMappingsValidator) Validate(_ context.Context, target string, force bool, _, _ io.Writer) int {
 	f.called = true
 	f.gotTarget = target
+	f.gotForce = force
 	return f.code
 }
 
 // panickingValidator fails the test if dispatch ever routes a non-validate
-// subcommand through it. Useful for asserting routing isolation.
+// subcommand through it.
 type panickingValidator struct{ t *testing.T }
 
-func (p panickingValidator) Validate(_ context.Context, _ string, _, _ io.Writer) int {
+func (p panickingValidator) Validate(_ context.Context, _ string, _ bool, _, _ io.Writer) int {
 	p.t.Helper()
 	p.t.Fatal("validator.Validate must not be called for non-validate subcommands")
 	return 0
 }
 
-func testRepo(t *testing.T) *store.RepoMappings {
-	t.Helper()
-	return store.NewRepoMappings(store.NewTestDB(t))
-}
-
-func TestDispatch_Add_InvalidRepositoryRejected(t *testing.T) {
-	repo := testRepo(t)
-	var out, errOut bytes.Buffer
-
-	code := dispatch([]string{"add", "invalid-repo-format", "C123", "@a"}, repo, panickingValidator{t}, &out, &errOut)
-	if code == 0 {
-		t.Fatalf("add with invalid repo accepted; stderr=%s", errOut.String())
-	}
-	if !strings.Contains(errOut.String(), "repository") {
-		t.Errorf("stderr should mention 'repository': %q", errOut.String())
-	}
-}
-
-func TestDispatch_Add_InvalidChannelRejected(t *testing.T) {
-	repo := testRepo(t)
-	var out, errOut bytes.Buffer
-
-	code := dispatch([]string{"add", "octo/widget", "not-a-channel", "@a"}, repo, panickingValidator{t}, &out, &errOut)
-	if code == 0 {
-		t.Fatalf("add with invalid channel accepted; stderr=%s", errOut.String())
-	}
-	if !strings.Contains(errOut.String(), "channel") {
-		t.Errorf("stderr should mention 'channel': %q", errOut.String())
-	}
-}
-
-func TestDispatch_Add_EmptyMentionsAllowed(t *testing.T) {
-	repo := testRepo(t)
-	var out, errOut bytes.Buffer
-
-	code := dispatch([]string{"add", "octo/widget", "C123ABCDE", ""}, repo, panickingValidator{t}, &out, &errOut)
-	if code != 0 {
-		t.Fatalf("add with empty mentions exit = %d; stderr=%s", code, errOut.String())
-	}
-}
+var (
+	_ mappingcli.MappingsValidator = (*fakeMappingsValidator)(nil)
+	_ mappingcli.MappingsValidator = panickingValidator{}
+)
 
 func TestDispatch_NoArgs(t *testing.T) {
-	repo := testRepo(t)
 	var out, errOut bytes.Buffer
-
-	code := dispatch(nil, repo, panickingValidator{t}, &out, &errOut)
+	code := dispatch(nil, testProvider(t), panickingValidator{t}, &out, &errOut)
 	if code == 0 {
 		t.Fatal("no-args dispatch returned 0")
 	}
@@ -91,10 +77,8 @@ func TestDispatch_NoArgs(t *testing.T) {
 }
 
 func TestDispatch_UnknownSubcommand(t *testing.T) {
-	repo := testRepo(t)
 	var out, errOut bytes.Buffer
-
-	code := dispatch([]string{"unknown"}, repo, panickingValidator{t}, &out, &errOut)
+	code := dispatch([]string{"unknown"}, testProvider(t), panickingValidator{t}, &out, &errOut)
 	if code == 0 {
 		t.Fatal("unknown subcommand returned 0")
 	}
@@ -103,86 +87,88 @@ func TestDispatch_UnknownSubcommand(t *testing.T) {
 	}
 }
 
-func TestDispatch_Validate_RoutesTargetToValidator(t *testing.T) {
-	repo := testRepo(t)
+func TestDispatch_List_RendersProvider(t *testing.T) {
+	var out, errOut bytes.Buffer
+	code := dispatch([]string{"list"}, testProvider(t), panickingValidator{t}, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("list exit = %d; stderr=%s", code, errOut.String())
+	}
+	for _, want := range []string{"acme", "api", "web", "C0123ABCDE", "@a"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("list output missing %q: %q", want, out.String())
+		}
+	}
+}
+
+func TestDispatch_Validate_RoutesTarget(t *testing.T) {
 	fv := &fakeMappingsValidator{code: 0}
 	var out, errOut bytes.Buffer
-
-	code := dispatch([]string{"validate", "acme/widgets"}, repo, fv, &out, &errOut)
+	code := dispatch([]string{"validate", "acme/api"}, testProvider(t), fv, &out, &errOut)
 	if code != 0 {
 		t.Fatalf("validate exit = %d; stderr=%s", code, errOut.String())
 	}
-	if !fv.called {
-		t.Fatal("validator.Validate was not called")
-	}
-	if fv.gotTarget != "acme/widgets" {
-		t.Errorf("validator got target %q; want %q", fv.gotTarget, "acme/widgets")
+	if !fv.called || fv.gotTarget != "acme/api" || fv.gotForce {
+		t.Errorf("validator got called=%v target=%q force=%v", fv.called, fv.gotTarget, fv.gotForce)
 	}
 }
 
 func TestDispatch_Validate_NoTargetForwardsEmpty(t *testing.T) {
-	repo := testRepo(t)
 	fv := &fakeMappingsValidator{code: 0}
 	var out, errOut bytes.Buffer
-
-	code := dispatch([]string{"validate"}, repo, fv, &out, &errOut)
+	code := dispatch([]string{"validate"}, testProvider(t), fv, &out, &errOut)
 	if code != 0 {
-		t.Fatalf("validate (no target) exit = %d; stderr=%s", code, errOut.String())
+		t.Fatalf("validate exit = %d; stderr=%s", code, errOut.String())
 	}
-	if !fv.called || fv.gotTarget != "" {
-		t.Errorf("expected validator called with empty target, got called=%v target=%q", fv.called, fv.gotTarget)
+	if !fv.called || fv.gotTarget != "" || fv.gotForce {
+		t.Errorf("expected validator called with empty target, no force; got %+v", fv)
+	}
+}
+
+func TestDispatch_Validate_ForceFlag(t *testing.T) {
+	fv := &fakeMappingsValidator{code: 0}
+	var out, errOut bytes.Buffer
+	code := dispatch([]string{"validate", "--force"}, testProvider(t), fv, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("validate --force exit = %d; stderr=%s", code, errOut.String())
+	}
+	if !fv.called || fv.gotTarget != "" || !fv.gotForce {
+		t.Errorf("expected force=true, empty target; got %+v", fv)
+	}
+}
+
+func TestDispatch_Validate_ForceWithTarget(t *testing.T) {
+	fv := &fakeMappingsValidator{code: 0}
+	var out, errOut bytes.Buffer
+	code := dispatch([]string{"validate", "--force", "acme/api"}, testProvider(t), fv, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("exit = %d; stderr=%s", code, errOut.String())
+	}
+	if !fv.called || fv.gotTarget != "acme/api" || !fv.gotForce {
+		t.Errorf("expected target+force; got %+v", fv)
 	}
 }
 
 func TestDispatch_Validate_PropagatesExitCode(t *testing.T) {
-	repo := testRepo(t)
 	fv := &fakeMappingsValidator{code: 1}
 	var out, errOut bytes.Buffer
-
-	code := dispatch([]string{"validate", "a/b"}, repo, fv, &out, &errOut)
+	code := dispatch([]string{"validate", "a/b"}, testProvider(t), fv, &out, &errOut)
 	if code != 1 {
 		t.Fatalf("validate exit = %d; want 1", code)
 	}
 }
 
-func TestDispatch_Validate_TooManyArgs(t *testing.T) {
-	repo := testRepo(t)
+func TestDispatch_Validate_TooManyPositional(t *testing.T) {
 	var out, errOut bytes.Buffer
-
-	code := dispatch([]string{"validate", "a/b", "c/d"}, repo, panickingValidator{t}, &out, &errOut)
+	code := dispatch([]string{"validate", "a/b", "c/d"}, testProvider(t), panickingValidator{t}, &out, &errOut)
 	if code != 2 {
-		t.Fatalf("validate too-many-args exit = %d; want 2", code)
+		t.Fatalf("too-many-args exit = %d; want 2", code)
 	}
 }
 
-func TestSplitMentions(t *testing.T) {
-	cases := []struct {
-		in   string
-		want []string
-	}{
-		{"", []string{}},
-		{"   ", []string{}},
-		{"@a", []string{"@a"}},
-		{"@a, @b , @c", []string{"@a", "@b", "@c"}},
-		{",,@a,,", []string{"@a"}},
-	}
-	for _, c := range cases {
-		got := splitMentions(c.in)
-		if len(got) != len(c.want) {
-			t.Errorf("splitMentions(%q) = %v; want %v", c.in, got, c.want)
-			continue
-		}
-		for i := range got {
-			if got[i] != c.want[i] {
-				t.Errorf("splitMentions(%q)[%d] = %q; want %q", c.in, i, got[i], c.want[i])
-			}
-		}
+func TestDispatch_Validate_UnknownFlag(t *testing.T) {
+	var out, errOut bytes.Buffer
+	code := dispatch([]string{"validate", "--bogus"}, testProvider(t), panickingValidator{t}, &out, &errOut)
+	if code != 2 {
+		t.Fatalf("unknown-flag exit = %d; want 2", code)
 	}
 }
-
-// Compile-time guarantees that the test doubles stay in sync with the
-// MappingsValidator interface they pretend to implement.
-var (
-	_ mappingcli.MappingsValidator = (*fakeMappingsValidator)(nil)
-	_ mappingcli.MappingsValidator = panickingValidator{}
-)

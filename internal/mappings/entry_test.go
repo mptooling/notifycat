@@ -1,0 +1,28 @@
+package mappings
+
+import "testing"
+
+func TestEntry_Hash_IgnoresMentions(t *testing.T) {
+	a := Entry{Org: "acme", Repo: "api", Channel: "C1", Mentions: []string{"@x", "@y"}}
+	b := Entry{Org: "acme", Repo: "api", Channel: "C1", Mentions: nil}
+	c := Entry{Org: "acme", Repo: "api", Channel: "C1", Mentions: []string{"@z"}}
+	if a.Hash() != b.Hash() || a.Hash() != c.Hash() {
+		t.Errorf("mentions must not affect hash: %s / %s / %s", a.Hash(), b.Hash(), c.Hash())
+	}
+}
+
+func TestEntry_Hash_DiffersOnChannel(t *testing.T) {
+	a := Entry{Org: "acme", Repo: "api", Channel: "C1", Mentions: []string{}}
+	b := Entry{Org: "acme", Repo: "api", Channel: "C2", Mentions: []string{}}
+	if a.Hash() == b.Hash() {
+		t.Errorf("hash must differ across channel change")
+	}
+}
+
+func TestEntry_Hash_DiffersOnWildcardVsExplicit(t *testing.T) {
+	a := Entry{Org: "acme", Repo: "api", Channel: "C1", Mentions: []string{}}
+	b := Entry{Org: "acme", Wildcard: true, Channel: "C1", Mentions: []string{}}
+	if a.Hash() == b.Hash() {
+		t.Errorf("wildcard hash must differ from explicit hash")
+	}
+}

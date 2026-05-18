@@ -6,18 +6,31 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/mptooling/notifycat/internal/app"
 	"github.com/mptooling/notifycat/internal/config"
+	"github.com/mptooling/notifycat/internal/mappings"
 	"github.com/mptooling/notifycat/internal/store"
 )
+
+// mappingSeed describes one explicit org/repo entry the integration fixture
+// should bake into the YAML (and the lock) before Wire runs. Mentions may
+// be nil.
+type mappingSeed struct {
+	repository string
+	channel    string
+	mentions   []string
+}
 
 // slackFake records every API call made by the wired notifycat server. The
 // integration tests assert on the recorded calls rather than mocking individual
@@ -96,15 +109,20 @@ type integrationFixture struct {
 	slack  *slackFake
 }
 
-func newIntegrationFixture(t *testing.T) *integrationFixture {
+func newIntegrationFixture(t *testing.T, seeds ...mappingSeed) *integrationFixture {
 	t.Helper()
 	slack := newSlackFake(t)
+	dir := t.TempDir()
+	mappingsPath := filepath.Join(dir, "mappings.yaml")
+	writeSeedYAML(t, mappingsPath, seeds)
+	primeLock(t, mappingsPath)
 
 	cfg := config.Config{
 		Addr:                ":0",
 		LogLevel:            "error",
 		LogFormat:           "text",
-		DatabaseURL:         "file:" + filepath.Join(t.TempDir(), "int.db"),
+		DatabaseURL:         "file:" + filepath.Join(dir, "int.db"),
+		MappingsFile:        mappingsPath,
 		GitHubWebhookSecret: config.Secret("itsecret"),
 		SlackBotToken:       config.Secret("xoxb-int"),
 		SlackBaseURL:        slack.URL,
@@ -131,25 +149,93 @@ func newIntegrationFixture(t *testing.T) *integrationFixture {
 	return &integrationFixture{server: ts, cfg: cfg, slack: slack}
 }
 
-// seedMapping inserts a repo→channel mapping directly via the store.
-func (f *integrationFixture) seedMapping(t *testing.T, repository, channel string, mentions []string) {
+// writeSeedYAML renders the seed slice into a valid mappings.yaml. Seeds
+// sharing an org are merged channel/mentions are not de-duplicated; if you
+// pass two seeds in the same org with different channels the second wins
+// (write your tests accordingly).
+func writeSeedYAML(t *testing.T, path string, seeds []mappingSeed) {
 	t.Helper()
-	db, err := store.Open(f.cfg.DatabaseURL)
-	if err != nil {
-		t.Fatalf("seed open: %v", err)
-	}
-	defer func() {
-		if sqlDB, err := store.SQLDB(db); err == nil {
-			_ = sqlDB.Close()
+	orgs := map[string]struct {
+		channel  string
+		mentions []string
+		repos    []string
+	}{}
+	var order []string
+	for _, s := range seeds {
+		org, repo, ok := splitRepository(s.repository)
+		if !ok {
+			t.Fatalf("seed repository %q must be org/repo", s.repository)
 		}
-	}()
-	repo := store.NewRepoMappings(db)
-	if _, err := repo.Upsert(context.Background(), store.RepoMapping{
-		Repository:   repository,
-		SlackChannel: channel,
-		Mentions:     mentions,
-	}); err != nil {
-		t.Fatalf("seed Upsert: %v", err)
+		entry, exists := orgs[org]
+		if !exists {
+			order = append(order, org)
+		}
+		entry.channel = s.channel
+		entry.mentions = s.mentions
+		entry.repos = append(entry.repos, repo)
+		orgs[org] = entry
+	}
+
+	var sb strings.Builder
+	sb.WriteString("mappings:\n")
+	if len(order) == 0 {
+		sb.WriteString("  {}\n")
+	}
+	for _, org := range order {
+		e := orgs[org]
+		fmt.Fprintf(&sb, "  %s:\n", org)
+		fmt.Fprintf(&sb, "    channel: %s\n", e.channel)
+		fmt.Fprintf(&sb, "    mentions: [%s]\n", quoteMentions(e.mentions))
+		fmt.Fprintf(&sb, "    repositories: [%s]\n", quoteRepos(e.repos))
+	}
+	if err := os.WriteFile(path, []byte(sb.String()), 0o600); err != nil {
+		t.Fatalf("write mappings.yaml: %v", err)
+	}
+}
+
+func splitRepository(s string) (org, repo string, ok bool) {
+	i := strings.IndexByte(s, '/')
+	if i < 1 || i == len(s)-1 {
+		return "", "", false
+	}
+	return s[:i], s[i+1:], true
+}
+
+func quoteMentions(ms []string) string {
+	if len(ms) == 0 {
+		return ""
+	}
+	parts := make([]string, len(ms))
+	for i, m := range ms {
+		parts[i] = fmt.Sprintf("%q", m)
+	}
+	return strings.Join(parts, ", ")
+}
+
+func quoteRepos(rs []string) string {
+	parts := make([]string, len(rs))
+	for i, r := range rs {
+		parts[i] = fmt.Sprintf("%q", r)
+	}
+	return strings.Join(parts, ", ")
+}
+
+// primeLock writes a lock file whose hashes match the parsed entries, so
+// startup validation finds nothing to revalidate. The integration suite is
+// testing post-startup behavior, not validation.
+func primeLock(t *testing.T, mappingsPath string) {
+	t.Helper()
+	p, err := mappings.Load(mappingsPath)
+	if err != nil {
+		t.Fatalf("prime: load mappings: %v", err)
+	}
+	now := time.Now()
+	lock := mappings.Lock{Version: mappings.LockVersion, Entries: map[string]mappings.LockEntry{}}
+	for _, e := range p.Entries() {
+		lock.Entries[e.Key()] = mappings.LockEntry{SHA256: e.Hash(), ValidatedAt: now}
+	}
+	if err := mappings.WriteLock(mappings.LockPath(mappingsPath), lock); err != nil {
+		t.Fatalf("prime: write lock: %v", err)
 	}
 }
 
@@ -224,8 +310,7 @@ func (f *integrationFixture) loadMessage(t *testing.T, repository string, prNumb
 // ---------- the 6 event-type tests ----------
 
 func TestIntegration_OpenedPR(t *testing.T) {
-	f := newIntegrationFixture(t)
-	f.seedMapping(t, "octo/widget", "C123ABCDE", []string{"@alice"})
+	f := newIntegrationFixture(t, mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: []string{"@alice"}})
 
 	status := f.post(t, `{
 		"action": "opened",
@@ -252,8 +337,7 @@ func TestIntegration_OpenedPR(t *testing.T) {
 }
 
 func TestIntegration_ClosedMerged(t *testing.T) {
-	f := newIntegrationFixture(t)
-	f.seedMapping(t, "octo/widget", "C123ABCDE", []string{"@alice"})
+	f := newIntegrationFixture(t, mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: []string{"@alice"}})
 	f.seedSlackMessage(t, "octo/widget", 42, "prev-ts")
 
 	status := f.post(t, `{
@@ -282,8 +366,7 @@ func TestIntegration_ClosedMerged(t *testing.T) {
 }
 
 func TestIntegration_ConvertedToDraft(t *testing.T) {
-	f := newIntegrationFixture(t)
-	f.seedMapping(t, "octo/widget", "C123ABCDE", []string{"@alice"})
+	f := newIntegrationFixture(t, mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: []string{"@alice"}})
 	f.seedSlackMessage(t, "octo/widget", 42, "prev-ts")
 
 	status := f.post(t, `{
@@ -304,8 +387,7 @@ func TestIntegration_ConvertedToDraft(t *testing.T) {
 }
 
 func TestIntegration_ReviewApproved(t *testing.T) {
-	f := newIntegrationFixture(t)
-	f.seedMapping(t, "octo/widget", "C123ABCDE", nil)
+	f := newIntegrationFixture(t, mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: nil})
 	f.seedSlackMessage(t, "octo/widget", 42, "prev-ts")
 
 	status := f.post(t, `{
@@ -328,8 +410,7 @@ func TestIntegration_ReviewApproved(t *testing.T) {
 }
 
 func TestIntegration_ReviewCommented(t *testing.T) {
-	f := newIntegrationFixture(t)
-	f.seedMapping(t, "octo/widget", "C123ABCDE", nil)
+	f := newIntegrationFixture(t, mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: nil})
 	f.seedSlackMessage(t, "octo/widget", 42, "prev-ts")
 
 	status := f.post(t, `{
@@ -352,8 +433,7 @@ func TestIntegration_ReviewCommented(t *testing.T) {
 }
 
 func TestIntegration_PullRequestReviewLineComment(t *testing.T) {
-	f := newIntegrationFixture(t)
-	f.seedMapping(t, "octo/widget", "C123ABCDE", nil)
+	f := newIntegrationFixture(t, mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: nil})
 	f.seedSlackMessage(t, "octo/widget", 42, "prev-ts")
 
 	status := f.postEvent(t, "pull_request_review_comment", `{
@@ -376,8 +456,7 @@ func TestIntegration_PullRequestReviewLineComment(t *testing.T) {
 }
 
 func TestIntegration_ReviewRequestChange(t *testing.T) {
-	f := newIntegrationFixture(t)
-	f.seedMapping(t, "octo/widget", "C123ABCDE", nil)
+	f := newIntegrationFixture(t, mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: nil})
 	f.seedSlackMessage(t, "octo/widget", 42, "prev-ts")
 
 	status := f.post(t, `{

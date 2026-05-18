@@ -68,22 +68,44 @@ go run ./cmd/notifycat-migrate status
 
 ## Add a Repository Mapping
 
-Mappings tell notifycat where each repository should post in Slack.
+Mappings tell notifycat where each repository should post in Slack. They
+live in a declarative YAML file (default `./mappings.yaml`, override with
+`NOTIFYCAT_MAPPINGS_FILE`). Start from the bundled example:
 
 ```sh
-go run ./cmd/notifycat-mapping add owner/repo C123ABCDE '<@U123456>,<!subteam^S123456>'
+cp mappings.example.yaml mappings.yaml
 ```
 
-List mappings:
+Edit `mappings.yaml` so each org points at the right Slack channel:
 
-```sh
-go run ./cmd/notifycat-mapping list
+```yaml
+mappings:
+  owner:
+    channel: C123ABCDE             # the Slack channel ID, not "#name"
+    mentions:
+      - "<@U123456>"               # user
+      - "<!subteam^S123456>"       # user group
+    repositories:
+      - repo
 ```
 
-Remove a mapping:
+For a whole-org rule, use a wildcard:
+
+```yaml
+mappings:
+  owner:
+    channel: C123ABCDE
+    mentions: ["<!channel>"]
+    repositories: "*"
+```
+
+See [Mappings file](mappings.md) for the full schema, lookup rules, and
+the lock-file cache. Validate what you wrote against the live workspace
+before starting the server:
 
 ```sh
-go run ./cmd/notifycat-mapping remove owner/repo
+go run ./cmd/notifycat-mapping list      # show what's parsed
+go run ./cmd/notifycat-mapping validate  # check each entry end-to-end
 ```
 
 Repository names must use `owner/name` format. Slack channel IDs should be real

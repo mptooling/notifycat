@@ -9,13 +9,19 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
+	"gorm.io/gorm"
+
 	"github.com/mptooling/notifycat/internal/config"
+	"github.com/mptooling/notifycat/internal/github"
 	"github.com/mptooling/notifycat/internal/githubhook"
+	"github.com/mptooling/notifycat/internal/mappings"
 	"github.com/mptooling/notifycat/internal/pullrequest"
 	"github.com/mptooling/notifycat/internal/slack"
 	"github.com/mptooling/notifycat/internal/store"
+	"github.com/mptooling/notifycat/internal/validate"
 )
 
 // Cleanup releases resources acquired by Wire (database connections, ...).
@@ -24,11 +30,15 @@ type Cleanup func()
 // Wire builds the HTTP server (and its dependencies) from cfg. Callers run
 // the returned server and invoke cleanup on shutdown.
 //
-// Server hardening defaults live here (timeouts, body limits). Adding a new
-// event trigger means: write a new pullrequest.EventHandler, then add it to
-// the dispatcher slice below — no other change in this file.
+// Mappings come from the declarative cfg.MappingsFile; the server refuses
+// to start if any entry fails validation (against the per-entry lock cache).
 func Wire(cfg config.Config) (*http.Server, Cleanup, error) {
 	logger := newLogger(cfg)
+
+	provider, err := mappings.Load(cfg.MappingsFile)
+	if err != nil {
+		return nil, nil, fmt.Errorf("app: load mappings: %w", err)
+	}
 
 	db, err := store.Open(cfg.DatabaseURL)
 	if err != nil {
@@ -38,9 +48,6 @@ func Wire(cfg config.Config) (*http.Server, Cleanup, error) {
 		return nil, nil, fmt.Errorf("app: migrate: %w", err)
 	}
 
-	messages := store.NewSlackMessages(db)
-	mappings := store.NewRepoMappings(db)
-
 	httpClient := &http.Client{Timeout: 10 * time.Second}
 	slackOpts := []slack.Option{}
 	if cfg.SlackBaseURL != "" && cfg.SlackBaseURL != "https://slack.com" {
@@ -49,19 +56,26 @@ func Wire(cfg config.Config) (*http.Server, Cleanup, error) {
 	slackClient := slack.NewClient(httpClient, cfg.SlackBotToken.Reveal(), slackOpts...)
 	composer := slack.NewComposer(cfg.Reactions.NewPR)
 
+	if err := startupValidate(provider, cfg, slackClient, httpClient, logger); err != nil {
+		closeDB(db)
+		return nil, nil, err
+	}
+
+	messages := store.NewSlackMessages(db)
+
 	dispatcher := pullrequest.NewDispatcher(
-		pullrequest.NewOpenHandler(messages, mappings, slackClient, composer, logger),
-		pullrequest.NewCloseHandler(messages, mappings, slackClient, composer, logger,
+		pullrequest.NewOpenHandler(messages, provider, slackClient, composer, logger),
+		pullrequest.NewCloseHandler(messages, provider, slackClient, composer, logger,
 			pullrequest.CloseOptions{
 				ReactionsEnabled: cfg.Reactions.Enabled,
 				MergedEmoji:      cfg.Reactions.MergedPR,
 				ClosedEmoji:      cfg.Reactions.ClosedPR,
 			},
 		),
-		pullrequest.NewDraftHandler(messages, mappings, slackClient, logger),
-		pullrequest.NewApproveHandler(messages, mappings, slackClient, logger, cfg.Reactions.Approved),
-		pullrequest.NewCommentedHandler(messages, mappings, slackClient, logger, cfg.Reactions.Commented),
-		pullrequest.NewRequestChangeHandler(messages, mappings, slackClient, logger, cfg.Reactions.RequestChange),
+		pullrequest.NewDraftHandler(messages, provider, slackClient, logger),
+		pullrequest.NewApproveHandler(messages, provider, slackClient, logger, cfg.Reactions.Approved),
+		pullrequest.NewCommentedHandler(messages, provider, slackClient, logger, cfg.Reactions.Commented),
+		pullrequest.NewRequestChangeHandler(messages, provider, slackClient, logger, cfg.Reactions.RequestChange),
 	)
 
 	mux := http.NewServeMux()
@@ -85,12 +99,103 @@ func Wire(cfg config.Config) (*http.Server, Cleanup, error) {
 		MaxHeaderBytes:    1 << 14, // 16 KiB
 	}
 
-	cleanup := func() {
-		if sqlDB, err := store.SQLDB(db); err == nil {
-			_ = sqlDB.Close()
+	return server, func() { closeDB(db) }, nil
+}
+
+// startupValidate runs the cache-aware validation pipeline before the
+// server begins serving. It validates only entries whose hash differs
+// from the lock, writes the lock on success (failures keep their old
+// hashes), and refuses to start if any entry fails.
+func startupValidate(
+	provider *mappings.Provider,
+	cfg config.Config,
+	slackClient *slack.Client,
+	httpClient *http.Client,
+	logger *slog.Logger,
+) error {
+	entries := provider.Entries()
+	if len(entries) == 0 {
+		return nil
+	}
+	lockPath := mappings.LockPath(cfg.MappingsFile)
+	lock, err := mappings.ReadLock(lockPath)
+	if err != nil {
+		logger.Warn("startup validate: lock unreadable; rebuilding", slog.Any("err", err))
+		lock = mappings.Lock{Version: mappings.LockVersion, Entries: map[string]mappings.LockEntry{}}
+	}
+	diff := mappings.DiffEntries(entries, lock)
+	if len(diff.Needs) == 0 {
+		return persistLock(lockPath, lock, nil, diff.Stale, logger)
+	}
+
+	checker, lister := newValidationDeps(provider, cfg, slackClient, httpClient)
+	results := validate.RunForEntries(context.Background(), diff.Needs, lister, checker)
+	successes, failed := splitResults(results, time.Now)
+	_ = persistLock(lockPath, lock, successes, diff.Stale, logger)
+	if len(failed) == 0 {
+		return nil
+	}
+	logFailures(results, logger)
+	return fmt.Errorf("app: startup validation failed for %d entries: %s", len(failed), strings.Join(failed, ", "))
+}
+
+func newValidationDeps(provider *mappings.Provider, cfg config.Config, slackClient *slack.Client, httpClient *http.Client) (validate.RepoValidator, validate.OrgRepoLister) {
+	var ghChecker validate.GitHubChecker
+	var lister validate.OrgRepoLister
+	if cfg.GitHubToken.Reveal() != "" {
+		gh := github.NewClient(httpClient, cfg.GitHubToken.Reveal(), github.WithBaseURL(cfg.GitHubBaseURL))
+		ghChecker = gh
+		lister = gh
+	}
+	return validate.NewValidator(provider, slackClient, ghChecker), lister
+}
+
+func splitResults(results []validate.EntryResult, clock func() time.Time) (map[string]mappings.LockEntry, []string) {
+	successes := map[string]mappings.LockEntry{}
+	var failed []string
+	for _, r := range results {
+		if r.OK() {
+			successes[r.Entry.Key()] = mappings.LockEntry{SHA256: r.Entry.Hash(), ValidatedAt: clock()}
+			continue
+		}
+		failed = append(failed, r.Entry.Key())
+	}
+	return successes, failed
+}
+
+func persistLock(lockPath string, lock mappings.Lock, ok map[string]mappings.LockEntry, stale []string, logger *slog.Logger) error {
+	merged := mappings.MergeLock(lock, ok, stale)
+	if err := mappings.WriteLock(lockPath, merged); err != nil {
+		logger.Warn("startup validate: write lock failed", slog.Any("err", err))
+		return nil
+	}
+	return nil
+}
+
+func logFailures(results []validate.EntryResult, logger *slog.Logger) {
+	for _, r := range results {
+		if r.OK() {
+			continue
+		}
+		for _, rep := range r.Reports {
+			for _, c := range rep.Checks {
+				if c.Status != validate.StatusFail {
+					continue
+				}
+				logger.Error("startup validate failure",
+					slog.String("entry", r.Entry.Key()),
+					slog.String("repository", rep.Repository),
+					slog.String("check", c.Name),
+					slog.String("detail", c.Detail))
+			}
 		}
 	}
-	return server, cleanup, nil
+}
+
+func closeDB(db *gorm.DB) {
+	if sqlDB, err := store.SQLDB(db); err == nil {
+		_ = sqlDB.Close()
+	}
 }
 
 func eventSink(d *pullrequest.Dispatcher, logger *slog.Logger) githubhook.EventSink {

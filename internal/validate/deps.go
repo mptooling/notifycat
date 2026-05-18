@@ -16,10 +16,11 @@ import (
 	"github.com/mptooling/notifycat/internal/store"
 )
 
-// MappingLookup reads repository → channel mappings from persistence.
+// MappingLookup reads a single repository → channel mapping. The runner
+// iterates entries explicitly (see RunForEntries), so no bulk-list method
+// is needed here.
 type MappingLookup interface {
 	Get(ctx context.Context, repository string) (store.RepoMapping, error)
-	List(ctx context.Context) ([]store.RepoMapping, error)
 }
 
 // SlackChecker exposes the Slack endpoints the validator needs.
@@ -86,4 +87,10 @@ func (r Report) OK() bool {
 		}
 	}
 	return true
+}
+
+// OrgRepoLister enumerates a GitHub org's repositories. Used to expand "*"
+// at validate time. May be nil; the runner reports a skip in that case.
+type OrgRepoLister interface {
+	ListOrgRepos(ctx context.Context, org string) ([]string, error)
 }

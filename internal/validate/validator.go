@@ -23,19 +23,6 @@ func NewValidator(m MappingLookup, s SlackChecker, gh GitHubChecker) *Validator 
 	return &Validator{mappings: m, slack: s, github: gh}
 }
 
-// ValidateAll runs Validate for every persisted mapping, in storage order.
-func (v *Validator) ValidateAll(ctx context.Context) ([]Report, error) {
-	rows, err := v.mappings.List(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("validate: list mappings: %w", err)
-	}
-	reports := make([]Report, 0, len(rows))
-	for _, m := range rows {
-		reports = append(reports, v.validateMapping(ctx, m))
-	}
-	return reports, nil
-}
-
 // Validate runs every check for a single repository.
 func (v *Validator) Validate(ctx context.Context, repository string) Report {
 	m, err := v.mappings.Get(ctx, repository)
@@ -48,7 +35,7 @@ func (v *Validator) Validate(ctx context.Context, repository string) Report {
 func (v *Validator) mappingLookupFailure(repository string, err error) Report {
 	detail := fmt.Sprintf("could not load mapping for %q: %v", repository, err)
 	if errors.Is(err, store.ErrNotFound) {
-		detail = fmt.Sprintf("no mapping found for %q; add one with `notifycat-mapping add %s <channel-id> <mentions>`", repository, repository)
+		detail = fmt.Sprintf("no mapping found for %q; add an entry to mappings.yaml under the org that owns it", repository)
 	}
 	return Report{
 		Repository: repository,

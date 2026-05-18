@@ -93,7 +93,7 @@ is missing.
 
 ## Channel Access
 
-Invite the bot to every channel used by `notifycat-mapping`:
+Invite the bot to every channel listed in `mappings.yaml`:
 
 ```text
 /invite @notifycat
@@ -109,10 +109,17 @@ details and copy the channel ID. It usually starts with `C`.
 
 ## Mentions
 
-The mapping CLI accepts a comma-separated mention string:
+Each `mappings.yaml` entry lists the Slack mentions that prefix the PR
+notification:
 
-```sh
-notifycat-mapping add owner/repo C123ABCDE '<@U123456>,<!subteam^S123456>'
+```yaml
+mappings:
+  owner:
+    channel: C123ABCDE
+    mentions:
+      - "<@U123456>"
+      - "<!subteam^S123456>"
+    repositories: ["repo"]
 ```
 
 Common formats:
@@ -121,6 +128,8 @@ Common formats:
 | --- | --- |
 | User | `<@U123456>` |
 | User group | `<!subteam^S123456>` |
+| Channel broadcast | `<!channel>` |
+| Online-only broadcast | `<!here>` |
 
 For a user ID, open the user profile menu in Slack and use **Copy member ID**.
 For a user group ID, inspect the user group mention in Slack or use Slack's

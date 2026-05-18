@@ -24,9 +24,6 @@ func happyMappingLookup() *mockMappingLookup {
 			}
 			return store.RepoMapping{Repository: "acme/widgets", SlackChannel: "C1234567"}, nil
 		},
-		list: func(_ context.Context) ([]store.RepoMapping, error) {
-			return []store.RepoMapping{{Repository: "acme/widgets", SlackChannel: "C1234567"}}, nil
-		},
 	}
 }
 
@@ -82,27 +79,5 @@ func TestValidate_MappingNotFound(t *testing.T) {
 	c := findCheck(t, r, "mapping")
 	if c.Status != validate.StatusFail || !strings.Contains(c.Detail, "no mapping found") {
 		t.Fatalf("mapping check = %+v", c)
-	}
-}
-
-func TestValidateAll_IteratesEveryMapping(t *testing.T) {
-	m, s, gh := happy()
-	m.list = func(_ context.Context) ([]store.RepoMapping, error) {
-		return []store.RepoMapping{
-			{Repository: "acme/widgets", SlackChannel: "C1234567"},
-			{Repository: "acme/other", SlackChannel: "C7654321"},
-		}, nil
-	}
-	v := validate.NewValidator(m, s, gh)
-
-	reports, err := v.ValidateAll(context.Background())
-	if err != nil {
-		t.Fatalf("ValidateAll: %v", err)
-	}
-	if len(reports) != 2 {
-		t.Fatalf("len(reports) = %d; want 2", len(reports))
-	}
-	if reports[0].Repository != "acme/widgets" || reports[1].Repository != "acme/other" {
-		t.Fatalf("report order = [%s, %s]", reports[0].Repository, reports[1].Repository)
 	}
 }

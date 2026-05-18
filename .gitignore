@@ -28,3 +28,7 @@
 # Test artifacts
 *.out
 coverage.out
+
+# Internal project's files
+mappings.lock
+mappings.yaml

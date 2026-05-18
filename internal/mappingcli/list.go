@@ -1,27 +1,27 @@
 package mappingcli
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"strings"
 	"text/tabwriter"
 
-	"github.com/mptooling/notifycat/internal/store"
+	"github.com/mptooling/notifycat/internal/mappings"
 )
 
-// List prints all mappings in a tab-aligned table.
-func List(ctx context.Context, repo *store.RepoMappings, stdout, stderr io.Writer) int {
-	rows, err := repo.List(ctx)
-	if err != nil {
-		fmt.Fprintln(stderr, "list:", err)
-		return 1
-	}
+// List prints provider entries in a tab-aligned table, in the deterministic
+// order Entries() returns (org A→Z, then repo A→Z; wildcards render as "*").
+// No network calls.
+func List(provider *mappings.Provider, stdout io.Writer) int {
 	tw := tabwriter.NewWriter(stdout, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tREPOSITORY\tCHANNEL\tMENTIONS")
-	for _, m := range rows {
-		fmt.Fprintf(tw, "%d\t%s\t%s\t%s\n",
-			m.ID, m.Repository, m.SlackChannel, strings.Join(m.Mentions, ","))
+	fmt.Fprintln(tw, "ORG\tREPO\tCHANNEL\tMENTIONS")
+	for _, e := range provider.Entries() {
+		repo := e.Repo
+		if e.Wildcard {
+			repo = "*"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
+			e.Org, repo, e.Channel, strings.Join(e.Mentions, ","))
 	}
 	_ = tw.Flush()
 	return 0

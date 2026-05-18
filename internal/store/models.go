@@ -22,14 +22,12 @@ type SlackMessage struct {
 // pluralisation heuristics.
 func (SlackMessage) TableName() string { return "slack_messages" }
 
-// RepoMapping maps a GitHub repository to a Slack channel and a list of
-// mentions to prepend to the notification message.
+// RepoMapping is the value object handlers and validators consume — a GitHub
+// repository routed to a Slack channel with an optional mentions list. The
+// source of truth lives in mappings.yaml (loaded by internal/mappings); the
+// type stays here so consumers don't have to know who produced it.
 type RepoMapping struct {
-	ID           uint     `gorm:"column:id;primaryKey;autoIncrement"`
-	Repository   string   `gorm:"column:repository;uniqueIndex;not null"`
-	SlackChannel string   `gorm:"column:slack_channel;not null"`
-	Mentions     []string `gorm:"column:mentions;serializer:json;not null"`
+	Repository   string
+	SlackChannel string
+	Mentions     []string
 }
-
-// TableName pins the table name to match the migration.
-func (RepoMapping) TableName() string { return "github_slack_mapping" }
