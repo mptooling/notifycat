@@ -6,7 +6,7 @@ deployment mounts it), commit it, and `notifycat-server` picks it up on the
 next restart.
 
 The full schema and a runnable starting point live in
-[`mappings.example.yaml`](../mappings.example.yaml) at the repo root. Copy
+[`mappings.example.yaml`](https://github.com/mptooling/notifycat/blob/main/mappings.example.yaml) at the repo root. Copy
 it and edit it.
 
 ## File Location

@@ -47,7 +47,7 @@ Mount `/data` if you want the database to survive container restarts.
 
 Both `notifycat-server` and `notifycat-mapping` read this file. See
 [Mappings file](mappings.md) for the schema and
-[`mappings.example.yaml`](../mappings.example.yaml) for a copy-paste
+[`mappings.example.yaml`](https://github.com/mptooling/notifycat/blob/main/mappings.example.yaml) for a copy-paste
 starting point.
 
 ## Slack
