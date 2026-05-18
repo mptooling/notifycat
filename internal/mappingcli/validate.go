@@ -4,13 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"time"
 
-	"github.com/mptooling/notifycat/internal/config"
-	"github.com/mptooling/notifycat/internal/github"
 	"github.com/mptooling/notifycat/internal/mappings"
-	"github.com/mptooling/notifycat/internal/slack"
 	"github.com/mptooling/notifycat/internal/validate"
 )
 
@@ -29,35 +25,18 @@ type mappingsValidator struct {
 	clock    func() time.Time
 }
 
-// NewMappingsValidator wires the production validator from cfg, including
-// Slack and (optionally) GitHub clients.
-func NewMappingsValidator(provider *mappings.Provider, cfg config.Config) MappingsValidator {
-	hc := &http.Client{Timeout: 10 * time.Second}
-	s := slack.NewClient(hc, cfg.SlackBotToken.Reveal(), slack.WithBaseURL(cfg.SlackBaseURL))
-	var gh *github.Client
-	if cfg.GitHubToken.Reveal() != "" {
-		gh = github.NewClient(hc, cfg.GitHubToken.Reveal(), github.WithBaseURL(cfg.GitHubBaseURL))
-	}
-	var ghChecker validate.GitHubChecker
-	var lister validate.OrgRepoLister
-	if gh != nil {
-		ghChecker = gh
-		lister = gh
-	}
-	checker := validate.NewValidator(provider, s, ghChecker)
-	return newMappingsValidator(provider, checker, lister, mappings.LockPath(cfg.MappingsFile), time.Now)
-}
-
-// newMappingsValidator is the package-internal constructor tests use to
-// wrap stubs without touching real clients.
-func newMappingsValidator(
-	p *mappings.Provider,
-	c validate.RepoValidator,
-	l validate.OrgRepoLister,
+// NewMappingsValidator builds the validate use case from its dependencies.
+// Callers (cmd/notifycat-mapping, tests) construct provider/checker/lister/
+// clock themselves and pass them in — there is no production-wiring façade
+// in this package. `lister` may be nil when no GitHub credentials exist.
+func NewMappingsValidator(
+	provider *mappings.Provider,
+	checker validate.RepoValidator,
+	lister validate.OrgRepoLister,
 	lockPath string,
 	clock func() time.Time,
-) *mappingsValidator {
-	return &mappingsValidator{provider: p, checker: c, lister: l, lockPath: lockPath, clock: clock}
+) MappingsValidator {
+	return &mappingsValidator{provider: provider, checker: checker, lister: lister, lockPath: lockPath, clock: clock}
 }
 
 // Validate dispatches on target / force. Exit codes: 0 OK, 1 failure.

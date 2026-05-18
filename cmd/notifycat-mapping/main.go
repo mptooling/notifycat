@@ -9,12 +9,17 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/mptooling/notifycat/internal/config"
+	"github.com/mptooling/notifycat/internal/github"
 	"github.com/mptooling/notifycat/internal/mappingcli"
 	"github.com/mptooling/notifycat/internal/mappings"
+	"github.com/mptooling/notifycat/internal/slack"
+	"github.com/mptooling/notifycat/internal/validate"
 )
 
 func main() {
@@ -28,8 +33,34 @@ func main() {
 		fmt.Fprintln(os.Stderr, "notifycat-mapping:", err)
 		os.Exit(1)
 	}
-	validator := mappingcli.NewMappingsValidator(provider, cfg)
+	checker, lister := buildValidationDeps(cfg, provider)
+	validator := mappingcli.NewMappingsValidator(
+		provider,
+		checker,
+		lister,
+		mappings.LockPath(cfg.MappingsFile),
+		time.Now,
+	)
 	os.Exit(dispatch(os.Args[1:], provider, validator, os.Stdout, os.Stderr))
+}
+
+// buildValidationDeps wires the production checker (Slack always, GitHub
+// when a token is configured) and the org-repo lister (the same GitHub
+// client, or nil when there is no token).
+func buildValidationDeps(cfg config.Config, provider *mappings.Provider) (validate.RepoValidator, validate.OrgRepoLister) {
+	hc := &http.Client{Timeout: 10 * time.Second}
+	slackClient := slack.NewClient(hc, cfg.SlackBotToken.Reveal(), slack.WithBaseURL(cfg.SlackBaseURL))
+	var gh *github.Client
+	if cfg.GitHubToken.Reveal() != "" {
+		gh = github.NewClient(hc, cfg.GitHubToken.Reveal(), github.WithBaseURL(cfg.GitHubBaseURL))
+	}
+	var ghChecker validate.GitHubChecker
+	var lister validate.OrgRepoLister
+	if gh != nil {
+		ghChecker = gh
+		lister = gh
+	}
+	return validate.NewValidator(provider, slackClient, ghChecker), lister
 }
 
 func dispatch(args []string, provider *mappings.Provider, validator mappingcli.MappingsValidator, stdout, stderr io.Writer) int {

@@ -84,7 +84,7 @@ const wildcardYAML = `mappings:
 func TestMappingsValidator_Targeted_AllPass_WritesLock(t *testing.T) {
 	p, lockPath := loadProvider(t, explicitYAML)
 	sc := &stubChecker{}
-	v := newMappingsValidator(p, sc, nil, lockPath, fixedClock())
+	v := NewMappingsValidator(p, sc, nil, lockPath, fixedClock())
 	var out, errOut bytes.Buffer
 
 	if code := v.Validate(context.Background(), "acme/api", false, &out, &errOut); code != 0 {
@@ -105,7 +105,7 @@ func TestMappingsValidator_Targeted_AllPass_WritesLock(t *testing.T) {
 func TestMappingsValidator_Targeted_Failure_DoesNotWriteLock(t *testing.T) {
 	p, lockPath := loadProvider(t, explicitYAML)
 	sc := &stubChecker{fn: func(_ context.Context, r string) validate.Report { return failingReport(r) }}
-	v := newMappingsValidator(p, sc, nil, lockPath, fixedClock())
+	v := NewMappingsValidator(p, sc, nil, lockPath, fixedClock())
 	var out, errOut bytes.Buffer
 
 	if code := v.Validate(context.Background(), "acme/api", false, &out, &errOut); code != 1 {
@@ -119,7 +119,7 @@ func TestMappingsValidator_Targeted_Failure_DoesNotWriteLock(t *testing.T) {
 func TestMappingsValidator_Targeted_WildcardOrg_SkipsLockUpdate(t *testing.T) {
 	p, lockPath := loadProvider(t, wildcardYAML)
 	sc := &stubChecker{}
-	v := newMappingsValidator(p, sc, nil, lockPath, fixedClock())
+	v := NewMappingsValidator(p, sc, nil, lockPath, fixedClock())
 	var out, errOut bytes.Buffer
 
 	if code := v.Validate(context.Background(), "beta/anything", false, &out, &errOut); code != 0 {
@@ -133,7 +133,7 @@ func TestMappingsValidator_Targeted_WildcardOrg_SkipsLockUpdate(t *testing.T) {
 func TestMappingsValidator_Full_EmptyMappings(t *testing.T) {
 	p, lockPath := loadProvider(t, "mappings: {}\n")
 	sc := &stubChecker{}
-	v := newMappingsValidator(p, sc, nil, lockPath, fixedClock())
+	v := NewMappingsValidator(p, sc, nil, lockPath, fixedClock())
 	var out, errOut bytes.Buffer
 
 	if code := v.Validate(context.Background(), "", false, &out, &errOut); code != 0 {
@@ -150,7 +150,7 @@ func TestMappingsValidator_Full_EmptyMappings(t *testing.T) {
 func TestMappingsValidator_Full_NoLock_ValidatesAll_WritesLock(t *testing.T) {
 	p, lockPath := loadProvider(t, explicitYAML)
 	sc := &stubChecker{}
-	v := newMappingsValidator(p, sc, nil, lockPath, fixedClock())
+	v := NewMappingsValidator(p, sc, nil, lockPath, fixedClock())
 	var out, errOut bytes.Buffer
 
 	if code := v.Validate(context.Background(), "", false, &out, &errOut); code != 0 {
@@ -185,7 +185,7 @@ func TestMappingsValidator_Full_UpToDateLock_SkipsValidation(t *testing.T) {
 		t.Fatalf("seed lock: %v", err)
 	}
 
-	v := newMappingsValidator(p, sc, nil, lockPath, clock)
+	v := NewMappingsValidator(p, sc, nil, lockPath, clock)
 	var out, errOut bytes.Buffer
 
 	if code := v.Validate(context.Background(), "", false, &out, &errOut); code != 0 {
@@ -213,7 +213,7 @@ func TestMappingsValidator_Full_Force_IgnoresLock(t *testing.T) {
 	}
 
 	sc := &stubChecker{}
-	v := newMappingsValidator(p, sc, nil, lockPath, clock)
+	v := NewMappingsValidator(p, sc, nil, lockPath, clock)
 	var out, errOut bytes.Buffer
 
 	if code := v.Validate(context.Background(), "", true, &out, &errOut); code != 0 {
@@ -232,7 +232,7 @@ func TestMappingsValidator_Full_PartialFailure_OnlySuccessesEnterLock(t *testing
 		}
 		return passingReport(r)
 	}}
-	v := newMappingsValidator(p, sc, nil, lockPath, fixedClock())
+	v := NewMappingsValidator(p, sc, nil, lockPath, fixedClock())
 	var out, errOut bytes.Buffer
 
 	if code := v.Validate(context.Background(), "", false, &out, &errOut); code != 1 {
