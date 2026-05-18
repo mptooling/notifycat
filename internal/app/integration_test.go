@@ -123,6 +123,7 @@ func newIntegrationFixture(t *testing.T, seeds ...mappingSeed) *integrationFixtu
 		LogFormat:           "text",
 		DatabaseURL:         "file:" + filepath.Join(dir, "int.db"),
 		MappingsFile:        mappingsPath,
+		MessageTTLDays:      30,
 		GitHubWebhookSecret: config.Secret("itsecret"),
 		SlackBotToken:       config.Secret("xoxb-int"),
 		SlackBaseURL:        slack.URL,
@@ -137,7 +138,7 @@ func newIntegrationFixture(t *testing.T, seeds ...mappingSeed) *integrationFixtu
 		},
 	}
 
-	server, cleanup, err := app.Wire(cfg)
+	server, _, cleanup, err := app.Wire(cfg)
 	if err != nil {
 		t.Fatalf("Wire: %v", err)
 	}

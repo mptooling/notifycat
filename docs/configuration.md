@@ -63,6 +63,12 @@ starting point.
 | `GITHUB_TOKEN` | _(unset)_ | Optional PAT used only by `notifycat-mapping validate` to read repo webhook config. Required scope: `admin:repo_hook` (or `repo` for private repos). The server does not need this; if unset, the webhook-coverage check is skipped. |
 | `GITHUB_BASE_URL` | `https://api.github.com` | Override for GitHub Enterprise or tests. |
 
+## Cleanup
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `NOTIFYCAT_MESSAGE_TTL_DAYS` | `30` | Days a `slack_messages` row may go without an update before the in-process cleanup removes it. Must be `> 0`. The cleanup runs once at startup and then once every 24 hours; it only deletes the DB row, never the actual Slack message. |
+
 ## Reactions
 
 | Variable | Default | Notes |

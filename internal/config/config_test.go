@@ -26,6 +26,7 @@ func clearAll(t *testing.T) {
 		"SLACK_REACTION_NEW_PR", "SLACK_REACTION_MERGED_PR",
 		"SLACK_REACTION_CLOSED_PR", "SLACK_REACTION_PR_APPROVED",
 		"SLACK_REACTION_PR_COMMENTED", "SLACK_REACTION_PR_REQUEST_CHANGE",
+		"NOTIFYCAT_MESSAGE_TTL_DAYS",
 	}
 	for _, k := range keys {
 		t.Setenv(k, "")
@@ -94,6 +95,7 @@ func TestLoad_AppliesDefaults(t *testing.T) {
 		{"Reactions.Approved", cfg.Reactions.Approved, "white_check_mark"},
 		{"Reactions.Commented", cfg.Reactions.Commented, "speech_balloon"},
 		{"Reactions.RequestChange", cfg.Reactions.RequestChange, "exclamation"},
+		{"MessageTTLDays", cfg.MessageTTLDays, 30},
 	}
 	for _, c := range checks {
 		if c.got != c.want {
@@ -130,6 +132,46 @@ func TestLoad_OverridesDefaults(t *testing.T) {
 	}
 	if cfg.Reactions.NewPR != "rocket" {
 		t.Errorf("Reactions.NewPR = %q", cfg.Reactions.NewPR)
+	}
+}
+
+func TestLoad_MessageTTLDays_Override(t *testing.T) {
+	clearAll(t)
+	setEnv(t, map[string]string{
+		"GITHUB_WEBHOOK_SECRET":      "shh",
+		"SLACK_BOT_TOKEN":            "xoxb-x",
+		"NOTIFYCAT_MESSAGE_TTL_DAYS": "7",
+	})
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.MessageTTLDays != 7 {
+		t.Fatalf("MessageTTLDays = %d; want 7", cfg.MessageTTLDays)
+	}
+}
+
+func TestLoad_MessageTTLDays_RejectsZero(t *testing.T) {
+	clearAll(t)
+	setEnv(t, map[string]string{
+		"GITHUB_WEBHOOK_SECRET":      "shh",
+		"SLACK_BOT_TOKEN":            "xoxb-x",
+		"NOTIFYCAT_MESSAGE_TTL_DAYS": "0",
+	})
+	if _, err := config.Load(); err == nil {
+		t.Fatal("Load() succeeded with NOTIFYCAT_MESSAGE_TTL_DAYS=0; want error")
+	}
+}
+
+func TestLoad_MessageTTLDays_RejectsNegative(t *testing.T) {
+	clearAll(t)
+	setEnv(t, map[string]string{
+		"GITHUB_WEBHOOK_SECRET":      "shh",
+		"SLACK_BOT_TOKEN":            "xoxb-x",
+		"NOTIFYCAT_MESSAGE_TTL_DAYS": "-1",
+	})
+	if _, err := config.Load(); err == nil {
+		t.Fatal("Load() succeeded with NOTIFYCAT_MESSAGE_TTL_DAYS=-1; want error")
 	}
 }
 

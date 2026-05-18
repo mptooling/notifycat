@@ -14,6 +14,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/mptooling/notifycat/internal/cleanup"
 	"github.com/mptooling/notifycat/internal/config"
 	"github.com/mptooling/notifycat/internal/github"
 	"github.com/mptooling/notifycat/internal/githubhook"
@@ -27,25 +28,26 @@ import (
 // Cleanup releases resources acquired by Wire (database connections, ...).
 type Cleanup func()
 
-// Wire builds the HTTP server (and its dependencies) from cfg. Callers run
-// the returned server and invoke cleanup on shutdown.
+// Wire builds the HTTP server, the stale-row cleanup scheduler, and the
+// shared cleanup func from cfg. Callers run the server and the scheduler in
+// separate goroutines and invoke cleanup on shutdown.
 //
 // Mappings come from the declarative cfg.MappingsFile; the server refuses
 // to start if any entry fails validation (against the per-entry lock cache).
-func Wire(cfg config.Config) (*http.Server, Cleanup, error) {
+func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, Cleanup, error) {
 	logger := newLogger(cfg)
 
 	provider, err := mappings.Load(cfg.MappingsFile)
 	if err != nil {
-		return nil, nil, fmt.Errorf("app: load mappings: %w", err)
+		return nil, nil, nil, fmt.Errorf("app: load mappings: %w", err)
 	}
 
 	db, err := store.Open(cfg.DatabaseURL)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if err := store.MigrateUp(context.Background(), db); err != nil {
-		return nil, nil, fmt.Errorf("app: migrate: %w", err)
+		return nil, nil, nil, fmt.Errorf("app: migrate: %w", err)
 	}
 
 	httpClient := &http.Client{Timeout: 10 * time.Second}
@@ -58,10 +60,16 @@ func Wire(cfg config.Config) (*http.Server, Cleanup, error) {
 
 	if err := startupValidate(provider, cfg, slackClient, httpClient, logger); err != nil {
 		closeDB(db)
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	messages := store.NewSlackMessages(db)
+	scheduler := cleanup.NewScheduler(
+		messages,
+		time.Duration(cfg.MessageTTLDays)*24*time.Hour,
+		cleanup.Interval,
+		logger,
+	)
 
 	dispatcher := pullrequest.NewDispatcher(
 		logger,
@@ -100,7 +108,7 @@ func Wire(cfg config.Config) (*http.Server, Cleanup, error) {
 		MaxHeaderBytes:    1 << 14, // 16 KiB
 	}
 
-	return server, func() { closeDB(db) }, nil
+	return server, scheduler, func() { closeDB(db) }, nil
 }
 
 // startupValidate runs the cache-aware validation pipeline before the

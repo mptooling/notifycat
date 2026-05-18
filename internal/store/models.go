@@ -4,7 +4,10 @@
 // know about GORM.
 package store
 
-import "errors"
+import (
+	"errors"
+	"time"
+)
 
 // ErrNotFound is returned when a lookup matches no row.
 var ErrNotFound = errors.New("store: not found")
@@ -12,10 +15,14 @@ var ErrNotFound = errors.New("store: not found")
 // SlackMessage tracks the Slack message thread-timestamp for one PR in one
 // repository. (PRNumber, Repository) is the composite primary key — replaying
 // the same PR event simply updates the TS.
+//
+// UpdatedAt is bumped by GORM on every Save (autoUpdateTime) and drives the
+// scheduled cleanup of stale rows.
 type SlackMessage struct {
-	PRNumber   int    `gorm:"column:pr_number;primaryKey"`
-	Repository string `gorm:"column:gh_repository;primaryKey"`
-	TS         string `gorm:"column:ts;not null"`
+	PRNumber   int       `gorm:"column:pr_number;primaryKey"`
+	Repository string    `gorm:"column:gh_repository;primaryKey"`
+	TS         string    `gorm:"column:ts;not null"`
+	UpdatedAt  time.Time `gorm:"column:updated_at;autoUpdateTime;not null"`
 }
 
 // TableName pins the table name to match the migration; do not rely on GORM's
