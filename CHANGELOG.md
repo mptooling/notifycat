@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/mptooling/notifycat/compare/v0.2.0...v0.2.1) (2026-05-18)
+
+
+### 🐛 Bug fixes
+
+* align release-please manifest and CHANGELOG with v0.2.0 tag ([#25](https://github.com/mptooling/notifycat/issues/25)) ([ce9ca98](https://github.com/mptooling/notifycat/commit/ce9ca9867d76c4e3d4c989214f68ceb70f3bda00))
+
 ## 0.2.0 (2026-05-18)
 
 
