@@ -3,7 +3,6 @@
   "release-type": "go",
   "include-component-in-tag": false,
   "include-v-in-tag": true,
-  "bootstrap-sha": "da8e1e736a005c16395311c7c557ef40ec0ea717",
   "changelog-sections": [
     { "type": "feat", "section": "🚀 Features" },
     { "type": "fix", "section": "🐛 Bug fixes" },
@@ -13,8 +12,8 @@
     { "type": "chore", "section": "🧹 Maintenance" },
     { "type": "build", "section": "🧹 Maintenance" },
     { "type": "ci", "section": "🧹 Maintenance" },
-    { "type": "test", "section": "✅ Tests", "hidden": true },
-    { "type": "style", "section": "💄 Style", "hidden": true },
+    { "type": "test", "section": "✅ Tests" },
+    { "type": "style", "section": "💄 Style" },
     { "type": "revert", "section": "⏪ Reverts" }
   ],
   "packages": {
