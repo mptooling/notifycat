@@ -1,10 +1,21 @@
-# notifycat
+# Notifycat
 
-`notifycat` listens for GitHub pull request webhooks and keeps Slack up to
+<p align="center">
+  <img src="docs/assets/logo.png" alt="Notifycat logo" width="160">
+</p>
+
+[![CI](https://github.com/mptooling/notifycat/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mptooling/notifycat/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/mptooling/notifycat?display_name=tag&sort=semver)](https://github.com/mptooling/notifycat/releases/latest)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/mptooling/notifycat)](go.mod)
+[![Go Report Card](https://goreportcard.com/badge/github.com/mptooling/notifycat)](https://goreportcard.com/report/github.com/mptooling/notifycat)
+[![License: MIT](https://img.shields.io/github/license/mptooling/notifycat)](LICENSE)
+[![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow.svg)](https://www.conventionalcommits.org)
+
+Notifycat listens for GitHub pull request webhooks and keeps Slack up to
 date.
 
 One pull request gets one Slack message. As the PR opens, moves to draft, gets
-reviewed, merges, or closes, notifycat updates that message and adds the
+reviewed, merges, or closes, Notifycat updates that message and adds the
 configured reactions. The result is a quieter channel: reviewers can follow the
 state of a PR without digging through repeated notifications.
 
@@ -31,42 +42,20 @@ PRs route to which Slack channels.
 | `notifycat-server` | HTTP server for GitHub webhooks |
 | `notifycat-mapping` | CLI for listing and validating the mappings file |
 | `notifycat-migrate` | Applies embedded SQLite migrations |
+| `notifycat-doctor` | Preflight diagnostics (config, database, mappings, optional per-repo Slack/GitHub) |
 
 ## Documentation
 
-- [Getting started](docs/getting-started.md)
-- [Mappings file](docs/mappings.md)
-- [Configuration](docs/configuration.md)
-- [Slack app setup](docs/slack-app.md)
-- [GitHub webhook setup](docs/github-webhook.md)
-- [Docker](docs/docker.md)
-- [Operations](docs/operations.md)
+Full documentation is published at <https://mptooling.github.io/notifycat/>.
 
-## Quickstart
-
-Create a local env file and the mappings file from the bundled examples:
-
-```sh
-cp .env.example .env
-cp mappings.example.yaml mappings.yaml
-```
-
-Edit `mappings.yaml` to point your repos at real Slack channels, then
-migrate, validate, and start the server:
-
-```sh
-go run ./cmd/notifycat-migrate up
-go run ./cmd/notifycat-mapping validate
-go run ./cmd/notifycat-server
-```
-
-Health check:
-
-```sh
-curl -i http://localhost:8080/healthz
-```
-
-See [Getting started](docs/getting-started.md) for the full local setup.
+- [Getting started](https://mptooling.github.io/notifycat/getting-started/)
+- [Mappings file](https://mptooling.github.io/notifycat/mappings/)
+- [Configuration](https://mptooling.github.io/notifycat/configuration/)
+- [Slack app setup](https://mptooling.github.io/notifycat/slack-app/)
+- [GitHub webhook setup](https://mptooling.github.io/notifycat/github-webhook/)
+- [Docker](https://mptooling.github.io/notifycat/docker/)
+- [Operations](https://mptooling.github.io/notifycat/operations/)
+- [Doctor](https://mptooling.github.io/notifycat/doctor/)
 
 ## Development
 
@@ -94,30 +83,6 @@ go build ./...
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for contributor setup, pull request
 expectations, and issue reporting guidance.
-
-## Release Process
-
-Releases are automated by
-[release-please](https://github.com/googleapis/release-please) and follow
-[Semantic Versioning](https://semver.org/) driven by
-[Conventional Commits](https://www.conventionalcommits.org/).
-
-1. Merge a PR into `main` with a Conventional Commits title (`feat:`,
-   `fix:`, …). The PR-title lint workflow blocks non-conforming titles.
-2. release-please opens — and keeps up-to-date — a single "release PR"
-   that bumps the version in `.release-please-manifest.json` and writes
-   the new section of `CHANGELOG.md`.
-3. Merging the release PR creates a Git tag (e.g. `v0.2.0`) and publishes
-   a GitHub Release with release notes.
-4. The release event triggers the Docker workflow, which builds the
-   `Dockerfile` and pushes
-   `ghcr.io/mptooling/notifycat:<semver>`, `:<major>.<minor>`, `:<major>`,
-   and `:latest` to GHCR.
-5. Documentation under `docs/` and `mkdocs.yml` is published to GitHub
-   Pages on every push to `main` that changes those paths.
-
-Pre-1.0 caveat: while the project is on `0.x`, a breaking change bumps the
-minor version (`0.1.0` → `0.2.0`). Major bumps begin after `1.0.0`.
 
 ## Community
 

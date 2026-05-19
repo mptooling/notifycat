@@ -1,6 +1,6 @@
-# Contributing to notifycat
+# Contributing to Notifycat
 
-Thanks for helping make notifycat better. This project is intentionally small,
+Thanks for helping make Notifycat better. This project is intentionally small,
 so the best contributions are focused, tested, and easy to review.
 
 ## Before You Start
@@ -64,7 +64,7 @@ go test ./internal/githubhook
 
 ## Commit Messages
 
-notifycat uses [Conventional Commits](https://www.conventionalcommits.org/)
+Notifycat uses [Conventional Commits](https://www.conventionalcommits.org/)
 together with [release-please](https://github.com/googleapis/release-please)
 to automate versioning and the changelog. Squash-merge keeps the PR title as
 the commit on `main`, and the PR-title lint workflow enforces the format —
@@ -93,7 +93,7 @@ Keep the subject short and imperative. A scope is optional —
 
 Use the bug report issue template and include:
 
-- notifycat version or commit SHA.
+- Notifycat version or commit SHA.
 - Deployment mode: local binary, Docker, or another environment.
 - Relevant configuration with secrets removed.
 - GitHub webhook event type and a redacted payload excerpt if helpful.
@@ -101,7 +101,7 @@ Use the bug report issue template and include:
 
 ## Proposing Features
 
-Use the feature request template and describe the workflow first. notifycat
+Use the feature request template and describe the workflow first. Notifycat
 should stay small, so new features should fit its core purpose: routing GitHub
 pull request activity into clear Slack updates.
 

@@ -1,11 +1,12 @@
 # Docker
 
-The Docker image is a small scratch-based runtime image. It contains three
+The Docker image is a small scratch-based runtime image. It contains four
 binaries:
 
 - `/usr/local/bin/notifycat-server`
 - `/usr/local/bin/notifycat-mapping`
 - `/usr/local/bin/notifycat-migrate`
+- `/usr/local/bin/notifycat-doctor`
 
 The default command runs `notifycat-server`.
 
@@ -96,6 +97,37 @@ Health check:
 ```sh
 curl -i http://localhost:8080/healthz
 ```
+
+## Preflight with `notifycat-doctor`
+
+Run the doctor against the same image and environment before exposing
+the server to GitHub:
+
+```sh
+docker run --rm \
+  -v "$PWD/data:/data" \
+  -v "$PWD/mappings.yaml:/etc/notifycat/mappings.yaml:ro" \
+  -e NOTIFYCAT_MAPPINGS_FILE=/etc/notifycat/mappings.yaml \
+  -e GITHUB_WEBHOOK_SECRET=your-32-plus-character-random-secret \
+  -e SLACK_BOT_TOKEN=xoxb-your-slack-bot-token \
+  notifycat /usr/local/bin/notifycat-doctor
+```
+
+Add a positional `owner/repo` to also probe Slack auth, channel
+membership, and (with `GITHUB_TOKEN` set) GitHub webhook coverage for
+that repo. See [Doctor](doctor.md) for the full check matrix.
+
+## Healthcheck
+
+The server exposes `GET /healthz`. Wire it into your orchestrator:
+
+- **Kubernetes** — point `livenessProbe` and `readinessProbe` at the
+  HTTP path `/healthz` on the container port.
+- **ALB / nginx / Caddy upstream** — use `/healthz` as the target-group
+  health check.
+- **Docker `HEALTHCHECK`** — add a simple `wget`/`curl` line in your
+  own image layer if you don't have one upstream. The base scratch
+  image ships neither, so this is intentionally left to the deployer.
 
 ## Production Notes
 

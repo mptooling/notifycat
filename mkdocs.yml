@@ -1,4 +1,4 @@
-site_name: notifycat
+site_name: Notifycat
 site_description: GitHub pull request webhooks to a single, updating Slack message.
 site_url: https://mptooling.github.io/notifycat/
 repo_url: https://github.com/mptooling/notifycat
@@ -7,6 +7,8 @@ edit_uri: edit/main/docs/
 
 theme:
   name: material
+  logo: assets/logo.png
+  favicon: assets/logo.png
   features:
     - navigation.instant
     - navigation.tracking
@@ -39,7 +41,11 @@ markdown_extensions:
       permalink: true
   - pymdownx.details
   - pymdownx.highlight
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
 

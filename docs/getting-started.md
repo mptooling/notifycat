@@ -1,7 +1,10 @@
 # Getting Started
 
-This guide gets notifycat running on your machine with a local SQLite database.
+This guide gets Notifycat running on your machine with a local SQLite database.
 Use it when you want to test the full GitHub-to-Slack flow before deploying.
+For the production path, follow the
+[Deployment Checklist](operations.md#deployment-checklist) instead — it
+covers the same dependencies without the local tunnel.
 
 ## Requirements
 
@@ -14,7 +17,7 @@ Use it when you want to test the full GitHub-to-Slack flow before deploying.
 
 ## Clone the Repository
 
-Clone notifycat and work from the repository root. The setup scripts use files
+Clone Notifycat and work from the repository root. The setup scripts use files
 from this repository.
 
 ## Create the Slack App
@@ -68,7 +71,7 @@ go run ./cmd/notifycat-migrate status
 
 ## Add a Repository Mapping
 
-Mappings tell notifycat where each repository should post in Slack. They
+Mappings tell Notifycat where each repository should post in Slack. They
 live in a declarative YAML file (default `./mappings.yaml`, override with
 `NOTIFYCAT_MAPPINGS_FILE`). Start from the bundled example:
 
@@ -110,6 +113,27 @@ go run ./cmd/notifycat-mapping validate  # check each entry end-to-end
 
 Repository names must use `owner/name` format. Slack channel IDs should be real
 Slack IDs such as `C123ABCDE`, not display names like `#engineering`.
+
+## Preflight with the Doctor
+
+Before starting the server, run the doctor to surface any remaining
+configuration, database, or mappings issues:
+
+```sh
+go run ./cmd/notifycat-doctor                 # config + database + mappings file
+go run ./cmd/notifycat-doctor owner/repo      # + Slack + GitHub webhook for one repo
+```
+
+Exit code is `0` on success and `1` on the first failure. See
+[Doctor](doctor.md) for the full check matrix.
+
+On a first-time local setup the `github-webhook` check is **expected
+to fail or skip** here — the webhook is created later in
+[Create the GitHub Webhook](#create-the-github-webhook). With
+`GITHUB_TOKEN` unset, the check reports `SKIP`; with it set, the check
+reports `FAIL` because no webhook is registered yet. The same caveat
+applies to `notifycat-mapping validate` above. Both flip to `OK` once
+you re-run them after the webhook step.
 
 ## Start the Server
 
@@ -157,16 +181,24 @@ NOTIFYCAT_PUBLIC_URL=https://your-tunnel.example \
 
 Use the same `GITHUB_WEBHOOK_SECRET` value in `.env` and in the GitHub webhook.
 
+Re-run the doctor with `GITHUB_TOKEN` exported now that the webhook
+exists — the `github-webhook` check should flip to `OK`:
+
+```sh
+GITHUB_TOKEN=github_pat_your-token \
+  go run ./cmd/notifycat-doctor owner/repo
+```
+
 ## Verify the Flow
 
 After Slack and GitHub are configured:
 
 1. Open a pull request in the mapped repository.
-2. Confirm notifycat posts one Slack message in the mapped channel.
+2. Confirm Notifycat posts one Slack message in the mapped channel.
 3. Approve, comment, request changes, convert to draft, close, or merge the PR.
 4. Add a line-specific comment on the diff.
 5. Confirm the existing Slack message changes instead of a new message appearing
    for each event.
 
 If GitHub reports a failed delivery, check the response code in the GitHub
-webhook delivery page and the notifycat logs.
+webhook delivery page and the Notifycat logs.

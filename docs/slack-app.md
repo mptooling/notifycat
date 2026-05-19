@@ -1,6 +1,6 @@
 # Slack App Setup
 
-notifycat posts to Slack with a bot token. You need one Slack app in the
+Notifycat posts to Slack with a bot token. You need one Slack app in the
 workspace where PR notifications should appear.
 
 For production setup, use the shell script directly. It only needs `sh` and
@@ -10,10 +10,13 @@ For production setup, use the shell script directly. It only needs `sh` and
 
 The repository includes the Slack app manifest at
 `docs/slack-app-manifest.json`. The manifest defines the bot user and the
-Slack scopes notifycat needs.
+Slack scopes Notifycat needs.
 
 Create a Slack app configuration token from
-[Slack API: Your Apps](https://api.slack.com/apps), then run:
+[Slack API: Your Apps](https://api.slack.com/apps). The token lives
+under the workspace-level **Your App Configuration Tokens** panel on
+that page — scroll past the apps list, generate a new token, and copy
+the `xoxe-…` value. Then run:
 
 ```sh
 SLACK_APP_CONFIG_TOKEN=xoxe-your-token ./scripts/slack-app-create.sh
@@ -28,7 +31,7 @@ SLACK_TEAM_ID=T123 \
 ```
 
 The script validates the required inputs before calling Slack. It does not store
-the configuration token, and it does not belong in notifycat production
+the configuration token, and it does not belong in Notifycat production
 configuration.
 
 After the app is created:
@@ -38,14 +41,14 @@ After the app is created:
 2. Go to **Install App**.
 3. Install the app to the workspace.
 4. Copy the **Bot User OAuth Token**.
-5. Set that token as `SLACK_BOT_TOKEN` in notifycat.
+5. Set that token as `SLACK_BOT_TOKEN` in Notifycat.
 
 ```sh
 SLACK_BOT_TOKEN=xoxb-your-token
 ```
 
 The Slack API response can include an `oauth_authorize_url`. Do not use that URL
-for notifycat setup. That URL starts a full OAuth callback flow, and notifycat
+for Notifycat setup. That URL starts a full OAuth callback flow, and Notifycat
 does not implement the redirect handler or code exchange. Use **Install App** in
 the Slack app settings instead.
 
@@ -77,7 +80,7 @@ Slack UI:
 
 ## Bot Scopes
 
-| Scope | Why notifycat needs it |
+| Scope | Why Notifycat needs it |
 | --- | --- |
 | `chat:write` | Post, update, and delete PR messages. |
 | `chat:write.public` | Post into public channels without inviting the bot first. |
@@ -99,7 +102,7 @@ Invite the bot to every channel listed in `mappings.yaml`:
 /invite @notifycat
 ```
 
-This is required for reaction updates. `chat:write.public` lets notifycat post
+This is required for reaction updates. `chat:write.public` lets Notifycat post
 the first message in public channels without joining them, but Slack may reject
 `reactions.add` unless the bot is a channel member. Inviting the bot keeps both
 message posting and reactions working for public and private channels.
