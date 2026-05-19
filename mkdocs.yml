@@ -52,3 +52,4 @@ nav:
   - GitHub webhook: github-webhook.md
   - Docker: docker.md
   - Operations: operations.md
+  - Doctor: doctor.md
