@@ -1,6 +1,6 @@
 # Mappings
 
-notifycat reads its repository → Slack-channel routing from a single
+Notifycat reads its repository → Slack-channel routing from a single
 declarative YAML file. Edit the file in your repository (or wherever your
 deployment mounts it), commit it, and `notifycat-server` picks it up on the
 next restart.
@@ -109,7 +109,7 @@ check after editing.
 Runs end-to-end checks per entry: the channel ID is well-formed, the bot
 has the required Slack scopes and is a member of the channel, and (when
 `GITHUB_TOKEN` is set) the GitHub webhook on each repo subscribes to the
-events notifycat needs. See [Operations](operations.md#validating-a-mapping)
+events Notifycat needs. See [Operations](operations.md#validating-a-mapping)
 for the full check list and remediation table.
 
 **Full mode** (`validate` with no positional arg) consults `mappings.lock`
@@ -134,10 +134,14 @@ failures are visible immediately, not after a webhook arrives. An empty
 entry. The hash covers `(org, repo, channel)` only — **mentions are
 excluded** so editing a `@`-handle doesn't bust the cache.
 
-Commit the lock alongside `mappings.yaml`. On every boot, the server
-re-hashes the parsed entries; if every hash matches the lock, the server
-boots without contacting Slack or GitHub. If any hash differs (or is new),
-only those entries are validated, and the lock is updated.
+Commit the lock alongside `mappings.yaml` **in the operations
+repository that owns your deployment** — wherever you keep your real
+`mappings.yaml`. The Notifycat source tree gitignores both files
+(see `CONTRIBUTING.md`); they are operator state, not project state.
+On every boot, the server re-hashes the parsed entries; if every hash
+matches the lock, the server boots without contacting Slack or GitHub.
+If any hash differs (or is new), only those entries are validated, and
+the lock is updated.
 
 Deletes are handled the same way — entries removed from the YAML drop
 out of the lock on the next successful write.

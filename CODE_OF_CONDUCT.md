@@ -2,7 +2,7 @@
 
 ## Our Standard
 
-notifycat should be a practical and welcoming project for maintainers, users,
+Notifycat should be a practical and welcoming project for maintainers, users,
 and contributors. We expect participants to act with respect, assume good
 intent, and focus disagreement on ideas and tradeoffs rather than people.
 

@@ -1,7 +1,7 @@
 # Doctor
 
 `notifycat-doctor` is the preflight diagnostics binary. Run it in your
-deployment environment to verify that notifycat is wired correctly **before**
+deployment environment to verify that Notifycat is wired correctly **before**
 GitHub fires a real webhook. It complements `notifycat-mapping validate`:
 the mapping validator only checks per-entry Slack/GitHub coverage, while the
 doctor adds runtime config, database, and mappings-file health on top.

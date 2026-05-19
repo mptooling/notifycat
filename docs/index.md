@@ -1,6 +1,6 @@
-# notifycat Docs
+# Notifycat Docs
 
-These docs are written for engineers deploying or integrating notifycat.
+These docs are written for engineers deploying or integrating Notifycat.
 
 - [Getting started](getting-started.md): local setup and first end-to-end run.
 - [Mappings file](mappings.md): the declarative `mappings.yaml` schema,

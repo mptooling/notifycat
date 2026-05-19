@@ -1,4 +1,4 @@
-site_name: notifycat
+site_name: Notifycat
 site_description: GitHub pull request webhooks to a single, updating Slack message.
 site_url: https://mptooling.github.io/notifycat/
 repo_url: https://github.com/mptooling/notifycat

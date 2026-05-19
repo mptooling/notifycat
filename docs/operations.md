@@ -1,19 +1,19 @@
 # Operations
 
-notifycat is designed to be operated as a single process plus a SQLite file.
+Notifycat is designed to be operated as a single process plus a SQLite file.
 There are no background workers and no external queue.
 
 ## Process Model
 
 Run one `notifycat-server` process behind your normal HTTPS ingress. GitHub
-posts webhooks to `/webhook/github`, and notifycat makes outbound HTTPS calls to
+posts webhooks to `/webhook/github`, and Notifycat makes outbound HTTPS calls to
 Slack.
 
 The server exposes:
 
 | Route | Purpose |
 | --- | --- |
-| `GET /healthz` | Liveness/readiness check. |
+| `GET /healthz` | Liveness/readiness check. Returns `200 OK` once the HTTP listener is up — wire it as the target-group health check (ALB, nginx upstream, Cloud Run) or the `livenessProbe`/`readinessProbe` path in Kubernetes. Because startup validation and migrations run before the listener opens, a `200` means the process is healthy in both senses. |
 | `POST /webhook/github` | GitHub webhook receiver. |
 
 ## Startup and Shutdown
@@ -34,11 +34,11 @@ State lives in two places:
   it in version control and deploy it alongside the binary. The sibling
   `mappings.lock` caches successful validation so steady-state boots
   don't re-contact Slack/GitHub.
-- **SQLite** — stores per-PR Slack message timestamps so notifycat can
+- **SQLite** — stores per-PR Slack message timestamps so Notifycat can
   update the same message across the PR lifecycle.
 
 Back up the SQLite file if losing notification state would be painful. If
-the database is lost, notifycat can still receive webhooks, but existing
+the database is lost, Notifycat can still receive webhooks, but existing
 PRs may get new Slack messages because the old Slack timestamp mapping is
 gone. `mappings.yaml` and `mappings.lock` live in your repo, so losing
 the container's local copy is harmless on the next deploy.
@@ -56,7 +56,7 @@ secrets.
 
 ### Debugging a 200 OK with no Slack change
 
-GitHub records a successful delivery whenever notifycat returns 200 — including
+GitHub records a successful delivery whenever Notifycat returns 200 — including
 when the event is intentionally ignored. Every silent no-op leaves a structured
 log line with the message `ignored webhook event` and a `reason` field, so an
 operator can answer *"why didn't Slack change for delivery X?"* from logs alone.
@@ -78,7 +78,7 @@ Reasons and their levels:
 | --- | --- | --- | --- |
 | `no_handler` | **Debug** | No registered handler matched this `(github_event, action)` pair. Volumetric — fires for `synchronize`, `labeled`, `edited`, etc. | Expected; set `LOG_LEVEL=debug` to see it. |
 | `no_mapping` | **Warn** | Webhook arrived for a repo no `mappings.yaml` entry covers. | Add the repo to `mappings.yaml` (or remove the webhook from that repo). |
-| `no_stored_message` | **Info** | Handler ran but found no Slack message row for this PR. Common when the PR predates notifycat. | Re-open the PR (or wait for the next applicable event) so `OpenHandler` can re-announce. |
+| `no_stored_message` | **Info** | Handler ran but found no Slack message row for this PR. Common when the PR predates Notifycat. | Re-open the PR (or wait for the next applicable event) so `OpenHandler` can re-announce. |
 | `already_sent` | **Info** | `OpenHandler` saw an existing message row — idempotency kicks in. | Expected on `ready_for_review` after a prior `opened`. |
 
 To surface `no_handler` lines during triage:
@@ -103,6 +103,10 @@ For a Git tag such as `v0.1.0`, the version image tag is `0.1.0`.
 
 ## Deployment Checklist
 
+This checklist is the production path. For first-time local setup,
+follow [Getting started](getting-started.md) — it covers the same
+ground with the tunnel-based local-testing variant.
+
 1. Create the Slack app with `./scripts/slack-app-create.sh`, install the bot,
    and copy the bot token.
 2. Create durable storage for `/data`.
@@ -115,12 +119,16 @@ For a Git tag such as `v0.1.0`, the version image tag is `0.1.0`.
 7. Run `notifycat-mapping validate` to confirm the Slack side is wired
    correctly. With `GITHUB_TOKEN` exported, this also checks webhook event
    coverage. Commit `mappings.yaml` **and** the resulting `mappings.lock`.
-8. Start `notifycat-server`. It re-runs the same validation on boot — a
+8. Run `notifycat-doctor` as a preflight in the target environment to
+   surface config, database, and mappings-file issues before the server
+   starts. Add `notifycat-doctor owner/repo` to also probe Slack and the
+   GitHub webhook for that repo. See [Doctor](doctor.md).
+9. Start `notifycat-server`. It re-runs the same validation on boot — a
    lock that matches the YAML means no network round-trip; a mismatch
    means only the changed entries are revalidated.
-9. Register the GitHub webhook with `./scripts/github-webhook-create.sh`.
-10. Open a test pull request and confirm Slack receives one message.
-11. Approve, comment, add a line-specific comment, request changes, draft,
+10. Register the GitHub webhook with `./scripts/github-webhook-create.sh`.
+11. Open a test pull request and confirm Slack receives one message.
+12. Approve, comment, add a line-specific comment, request changes, draft,
     close, or merge to confirm updates.
 
 ## Validating a Mapping

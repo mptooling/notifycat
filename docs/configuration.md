@@ -1,6 +1,6 @@
 # Configuration
 
-notifycat reads configuration from environment variables. For local development,
+Notifycat reads configuration from environment variables. For local development,
 it also loads `.env` if the file exists.
 
 Secrets should stay in environment variables or your deployment secret manager.
@@ -60,8 +60,14 @@ starting point.
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `GITHUB_TOKEN` | _(unset)_ | Optional PAT used only by `notifycat-mapping validate` to read repo webhook config. Required scope: `admin:repo_hook` (or `repo` for private repos). The server does not need this; if unset, the webhook-coverage check is skipped. |
+| `GITHUB_TOKEN` | _(unset)_ | Optional PAT used by `notifycat-mapping validate` and `notifycat-doctor` to read repo webhook config. Required scope: `admin:repo_hook` (or `repo` for private repos). The server does not need this; if unset, the webhook-coverage check is skipped. |
 | `GITHUB_BASE_URL` | `https://api.github.com` | Override for GitHub Enterprise or tests. |
+
+`GITHUB_TOKEN` is also read by `scripts/github-webhook-create.sh`, but
+that script *creates* the webhook and only needs the
+`Webhooks: Read and write` permission on a fine-grained PAT. The
+validate/doctor reading path needs `admin:repo_hook` / `repo`. A single
+token that has both works everywhere; otherwise issue separate PATs.
 
 ## Cleanup
 
