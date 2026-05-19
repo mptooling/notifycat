@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/mptooling/notifycat/compare/v0.2.1...v0.3.0) (2026-05-19)
+
+
+### 🚀 Features
+
+* add notifycat-doctor preflight diagnostics (closes [#2](https://github.com/mptooling/notifycat/issues/2)) ([#27](https://github.com/mptooling/notifycat/issues/27)) ([1b53335](https://github.com/mptooling/notifycat/commit/1b53335016193a5702ae2cabd8b963dd3a544f6f))
+
 ## [0.2.1](https://github.com/mptooling/notifycat/compare/v0.2.0...v0.2.1) (2026-05-18)
 
 
