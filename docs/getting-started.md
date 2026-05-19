@@ -127,6 +127,14 @@ go run ./cmd/notifycat-doctor owner/repo      # + Slack + GitHub webhook for one
 Exit code is `0` on success and `1` on the first failure. See
 [Doctor](doctor.md) for the full check matrix.
 
+On a first-time local setup the `github-webhook` check is **expected
+to fail or skip** here — the webhook is created later in
+[Create the GitHub Webhook](#create-the-github-webhook). With
+`GITHUB_TOKEN` unset, the check reports `SKIP`; with it set, the check
+reports `FAIL` because no webhook is registered yet. The same caveat
+applies to `notifycat-mapping validate` above. Both flip to `OK` once
+you re-run them after the webhook step.
+
 ## Start the Server
 
 Run:
@@ -172,6 +180,14 @@ NOTIFYCAT_PUBLIC_URL=https://your-tunnel.example \
 ```
 
 Use the same `GITHUB_WEBHOOK_SECRET` value in `.env` and in the GitHub webhook.
+
+Re-run the doctor with `GITHUB_TOKEN` exported now that the webhook
+exists — the `github-webhook` check should flip to `OK`:
+
+```sh
+GITHUB_TOKEN=github_pat_your-token \
+  go run ./cmd/notifycat-doctor owner/repo
+```
 
 ## Verify the Flow
 

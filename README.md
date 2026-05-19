@@ -42,14 +42,16 @@ PRs route to which Slack channels.
 
 ## Documentation
 
-- [Getting started](docs/getting-started.md)
-- [Mappings file](docs/mappings.md)
-- [Configuration](docs/configuration.md)
-- [Slack app setup](docs/slack-app.md)
-- [GitHub webhook setup](docs/github-webhook.md)
-- [Docker](docs/docker.md)
-- [Operations](docs/operations.md)
-- [Doctor](docs/doctor.md)
+Full documentation is published at <https://mptooling.github.io/notifycat/>.
+
+- [Getting started](https://mptooling.github.io/notifycat/getting-started/)
+- [Mappings file](https://mptooling.github.io/notifycat/mappings/)
+- [Configuration](https://mptooling.github.io/notifycat/configuration/)
+- [Slack app setup](https://mptooling.github.io/notifycat/slack-app/)
+- [GitHub webhook setup](https://mptooling.github.io/notifycat/github-webhook/)
+- [Docker](https://mptooling.github.io/notifycat/docker/)
+- [Operations](https://mptooling.github.io/notifycat/operations/)
+- [Doctor](https://mptooling.github.io/notifycat/doctor/)
 
 ## Quickstart
 
@@ -79,7 +81,8 @@ curl -i http://localhost:8080/healthz
 
 Exercising the full GitHub → Slack flow against a locally running
 server needs a public URL (ngrok, Cloudflare Tunnel, …) so GitHub can
-reach `/webhook/github`. See [Getting started](docs/getting-started.md)
+reach `/webhook/github`. See
+[Getting started](https://mptooling.github.io/notifycat/getting-started/)
 for the end-to-end setup.
 
 ## Development
