@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/mptooling/notifycat/compare/v0.3.0...v0.3.1) (2026-05-19)
+
+
+### 📝 Documentation
+
+* refresh project overview ([#35](https://github.com/mptooling/notifycat/issues/35)) ([4f7cdce](https://github.com/mptooling/notifycat/commit/4f7cdce7d2984a4e999d8d54f37aa41fea373f98))
+
 ## [0.3.0](https://github.com/mptooling/notifycat/compare/v0.2.1...v0.3.0) (2026-05-19)
 
 
