@@ -123,3 +123,63 @@ func TestParsePayload_InvalidJSONIsError(t *testing.T) {
 		t.Fatal("ParsePayload(invalid) returned nil; want error")
 	}
 }
+
+func TestParsePayload_SenderBot(t *testing.T) {
+	body := []byte(`{
+		"action": "submitted",
+		"review": {"state": "approved"},
+		"sender": {"login": "copilot[bot]", "type": "Bot"},
+		"repository": {"full_name": "octo/widget"},
+		"pull_request": {
+			"number": 7, "title": "feat", "html_url": "u", "user": {"login": "alice"}
+		}
+	}`)
+	p, err := githubhook.ParsePayload(body)
+	if err != nil {
+		t.Fatalf("ParsePayload: %v", err)
+	}
+	if p.Sender.Type != "Bot" {
+		t.Errorf("Sender.Type = %q; want %q", p.Sender.Type, "Bot")
+	}
+	if p.Sender.Login != "copilot[bot]" {
+		t.Errorf("Sender.Login = %q; want %q", p.Sender.Login, "copilot[bot]")
+	}
+}
+
+func TestParsePayload_SenderUser(t *testing.T) {
+	body := []byte(`{
+		"action": "submitted",
+		"review": {"state": "approved"},
+		"sender": {"login": "alice", "type": "User"},
+		"repository": {"full_name": "octo/widget"},
+		"pull_request": {
+			"number": 7, "title": "feat", "html_url": "u", "user": {"login": "alice"}
+		}
+	}`)
+	p, err := githubhook.ParsePayload(body)
+	if err != nil {
+		t.Fatalf("ParsePayload: %v", err)
+	}
+	if p.Sender.Type != "User" || p.Sender.Login != "alice" {
+		t.Errorf("Sender = %+v; want {Login: alice, Type: User}", p.Sender)
+	}
+}
+
+func TestParsePayload_SenderAbsentIsZeroValue(t *testing.T) {
+	// Pre-existing tests omit sender; the field must remain optional and
+	// parse to the zero value rather than failing.
+	body := []byte(`{
+		"action": "opened",
+		"repository": {"full_name": "octo/widget"},
+		"pull_request": {
+			"number": 42, "title": "fix", "html_url": "u", "user": {"login": "alice"}
+		}
+	}`)
+	p, err := githubhook.ParsePayload(body)
+	if err != nil {
+		t.Fatalf("ParsePayload: %v", err)
+	}
+	if p.Sender.Type != "" || p.Sender.Login != "" {
+		t.Errorf("Sender = %+v; want zero value when omitted", p.Sender)
+	}
+}

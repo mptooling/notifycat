@@ -154,6 +154,62 @@ are plain ASCII so the output is greppable in CI logs.
   repository is private). Only the validate CLI consumes this; the server
   ignores it.
 
+## Bot-reviewer suppression
+
+When `NOTIFYCAT_IGNORE_AI_REVIEWS=true`, notifycat skips the
+`reactions.add` call for any review event whose `sender.type == "Bot"`. The
+initial PR-open message and all human-reviewer events are unaffected.
+
+### What it covers
+
+The toggle silences every GitHub App and legacy bot account on review and
+review-comment events. That includes, but is not limited to:
+
+| Category | Examples |
+| --- | --- |
+| AI reviewers | Copilot review, Claude review, Codex, Goose, CodeRabbit, Reviewpad. |
+| Scripted bots | `dependabot[bot]`, `renovate[bot]`, `github-actions[bot]` auto-approve workflows, `release-please[bot]` self-approvals. |
+| Custom CI bots | Anything whose `sender.type` GitHub reports as `Bot`. |
+
+### Bots ≠ AI agents — the explicit trade-off
+
+GitHub's payload does not distinguish AI reviewers from scripted bots. The
+only signal available is `sender.type == "Bot"`. We deliberately do **not**
+maintain a curated AI-agent allowlist — vendor GitHub Apps get renamed
+(Copilot's review bot has already been renamed twice) and such a list rots
+faster than the operator value it provides.
+
+If you enable `NOTIFYCAT_IGNORE_AI_REVIEWS`, you are opting into a
+**uniform** rule: every non-human reviewer is silenced. If a team wants
+their `github-actions[bot]` auto-approve green checkmark to surface in
+Slack, they should leave the flag off.
+
+This is also intentionally narrow:
+
+- It only affects `reactions.add`. The initial `chat.postMessage` (with
+  mentions / `@channel` fallback) is unchanged.
+- It does not look at the PR **author** — a bot-authored PR (e.g.
+  dependabot-created) still posts a new Slack message when it opens.
+- It does not touch `mappings.yaml`. No schema change, no migration, no
+  per-mapping override.
+
+### Failure-mode guide
+
+> "I expected a green checkmark / speech bubble / red flag on my PR's
+> Slack message, but nothing happened."
+
+1. Check `notifycat-server` logs at debug level. A line like
+   `level=DEBUG msg="skipped bot reviewer reaction" login=copilot[bot] …`
+   confirms the suppression fired.
+2. If you see that log, `NOTIFYCAT_IGNORE_AI_REVIEWS` is on and the
+   reviewer's GitHub account is a Bot/App. Either:
+   - Disable the flag (`NOTIFYCAT_IGNORE_AI_REVIEWS=false`) — every bot
+     reviewer will react again, AI or not.
+   - Or accept the trade-off and leave the flag on.
+3. If you do **not** see that log, the suppression did not fire; the
+   missing reaction has a different cause — work through the regular
+   "silent 200 OK" debug checklist above.
+
 ## CI Checks
 
 The repository CI runs:

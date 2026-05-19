@@ -45,6 +45,11 @@ type Config struct {
 	// Must be > 0; Load() rejects 0 or negative values.
 	MessageTTLDays int `env:"NOTIFYCAT_MESSAGE_TTL_DAYS" envDefault:"30"`
 
+	// IgnoreAIReviews, when true, suppresses Slack reaction emojis for any
+	// review event whose sender.type == "Bot" (GitHub Apps, including AI
+	// reviewers and scripted bots alike). Default false — current behavior.
+	IgnoreAIReviews bool `env:"NOTIFYCAT_IGNORE_AI_REVIEWS" envDefault:"false"`
+
 	Reactions Reactions
 }
 

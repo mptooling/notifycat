@@ -69,6 +69,12 @@ starting point.
 | --- | --- | --- |
 | `NOTIFYCAT_MESSAGE_TTL_DAYS` | `30` | Days a `slack_messages` row may go without an update before the in-process cleanup removes it. Must be `> 0`. The cleanup runs once at startup and then once every 24 hours; it only deletes the DB row, never the actual Slack message. |
 
+## Reviewer suppression
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `NOTIFYCAT_IGNORE_AI_REVIEWS` | `false` | When `true`, suppress `reactions.add` for any review event whose `sender.type == "Bot"` — Copilot, Claude, Codex, dependabot, github-actions, release-please, and any other GitHub App or legacy bot account. Detection is intentionally coarse: notifycat does **not** distinguish AI reviewers from scripted bots. See [Operations → Bot-reviewer suppression](operations.md#bot-reviewer-suppression) for the trade-off and failure-mode guide. |
+
 ## Reactions
 
 | Variable | Default | Notes |
