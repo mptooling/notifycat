@@ -1,7 +1,6 @@
 # Changelog
 
-## [1.0.0](https://github.com/mptooling/notifycat/compare/v0.3.1...v1.0.0) (2026-05-20)
-
+## [0.4.0](https://github.com/mptooling/notifycat/compare/v0.3.1...v0.4.0) (2026-05-20)
 
 ### ⚠ BREAKING CHANGES
 
@@ -13,13 +12,11 @@
 
 ## [0.3.1](https://github.com/mptooling/notifycat/compare/v0.3.0...v0.3.1) (2026-05-19)
 
-
 ### 📝 Documentation
 
 * refresh project overview ([#35](https://github.com/mptooling/notifycat/issues/35)) ([4f7cdce](https://github.com/mptooling/notifycat/commit/4f7cdce7d2984a4e999d8d54f37aa41fea373f98))
 
 ## [0.3.0](https://github.com/mptooling/notifycat/compare/v0.2.1...v0.3.0) (2026-05-19)
-
 
 ### 🚀 Features
 
@@ -27,13 +24,11 @@
 
 ## [0.2.1](https://github.com/mptooling/notifycat/compare/v0.2.0...v0.2.1) (2026-05-18)
 
-
 ### 🐛 Bug fixes
 
 * align release-please manifest and CHANGELOG with v0.2.0 tag ([#25](https://github.com/mptooling/notifycat/issues/25)) ([ce9ca98](https://github.com/mptooling/notifycat/commit/ce9ca9867d76c4e3d4c989214f68ceb70f3bda00))
 
 ## 0.2.0 (2026-05-18)
-
 
 ### 🚀 Features
 
@@ -54,13 +49,11 @@
 * structured logs for ignored webhook events (closes [#4](https://github.com/mptooling/notifycat/issues/4)) ([#16](https://github.com/mptooling/notifycat/issues/16)) ([da8e1e7](https://github.com/mptooling/notifycat/commit/da8e1e736a005c16395311c7c557ef40ec0ea717))
 * validate mapping setup before runtime ([#6](https://github.com/mptooling/notifycat/issues/6)) ([462b2c4](https://github.com/mptooling/notifycat/commit/462b2c420c6caf902b8d85feee0fe4a5763caf49))
 
-
 ### 📝 Documentation
 
 * add public documentation ([81e18c1](https://github.com/mptooling/notifycat/commit/81e18c1f4680c59d60f853a32f3ac4b918b94785))
 * add quickstart and operations guide ([c83b6e7](https://github.com/mptooling/notifycat/commit/c83b6e77c640a90838464a58e072b5bef0113b43))
 * link to mappings.example.yaml on GitHub so mkdocs --strict resolves it ([#20](https://github.com/mptooling/notifycat/issues/20)) ([52d55f1](https://github.com/mptooling/notifycat/commit/52d55f1fca8262b0d7b7474cd65235c04d203fc8))
-
 
 ### 🧹 Maintenance
 
@@ -71,7 +64,6 @@
 * initial project skeleton ([9d430e3](https://github.com/mptooling/notifycat/commit/9d430e3bc73c4ec329ace0ab784dedfcc3c4366d))
 * pin docs deps in docs/requirements.txt so pip cache works ([#19](https://github.com/mptooling/notifycat/issues/19)) ([24d8065](https://github.com/mptooling/notifycat/commit/24d80659f7f5be27fe597ad82abd140281dcc4ed))
 * set up release-please, GHCR publish, and Pages docs (closes [#13](https://github.com/mptooling/notifycat/issues/13)) ([#17](https://github.com/mptooling/notifycat/issues/17)) ([82c16fc](https://github.com/mptooling/notifycat/commit/82c16fc5ae783e28331050eec020498b69f8ae30))
-
 
 ### ✅ Tests
 
