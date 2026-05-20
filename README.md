@@ -44,6 +44,66 @@ PRs route to which Slack channels.
 | `notifycat-migrate` | Applies embedded SQLite migrations |
 | `notifycat-doctor` | Preflight diagnostics (config, database, mappings, optional per-repo Slack/GitHub) |
 
+## Quickstart
+
+### Docker
+
+**Requires:** Docker. Nothing else — no Go toolchain, no SQLite client.
+The published image carries all four binaries and a self-contained
+runtime.
+
+Five Docker commands get Notifycat from "nothing" to "running":
+
+```sh
+mkdir -p ~/notifycat && cd ~/notifycat
+curl -fsSL https://raw.githubusercontent.com/mptooling/notifycat/main/.env.example     -o .env
+curl -fsSL https://raw.githubusercontent.com/mptooling/notifycat/main/mappings.example.yaml -o mappings.yaml
+# edit .env and mappings.yaml, then:
+
+docker run --rm --user $(id -u):$(id -g) -v "$PWD:/app" --env-file .env \
+  ghcr.io/mptooling/notifycat:latest notifycat-mapping validate
+
+docker run --rm --user $(id -u):$(id -g) -v "$PWD:/app" --env-file .env \
+  ghcr.io/mptooling/notifycat:latest notifycat-doctor
+
+docker run -d --name notifycat --restart unless-stopped \
+  -p 127.0.0.1:8080:8080 \
+  --user $(id -u):$(id -g) -v "$PWD:/app" --env-file .env \
+  ghcr.io/mptooling/notifycat:latest
+```
+
+For a real production deploy with HTTPS (Caddy + Let's Encrypt
+auto-renewal), see
+[Docker → Production deploy on a single VM](https://mptooling.github.io/notifycat/docker/#production-deploy-on-a-single-vm-ec2-example).
+
+### Local (Go source)
+
+**Requires:**
+
+- Go 1.25.10 or newer (`go version` to check).
+- `git` to clone the repository.
+- `sh` and `curl` for the helper scripts under `scripts/`.
+- A public URL (ngrok or Cloudflare Tunnel) only if you want GitHub
+  to deliver real webhooks to your laptop. Local CLI commands
+  (validate / doctor) don't need one.
+
+Six commands from "nothing" to "running":
+
+```sh
+git clone https://github.com/mptooling/notifycat.git && cd notifycat
+cp .env.example .env                       # then edit: set GITHUB_WEBHOOK_SECRET, SLACK_BOT_TOKEN
+cp mappings.example.yaml mappings.yaml     # then edit: real Slack channel IDs
+
+go run ./cmd/notifycat-mapping validate
+go run ./cmd/notifycat-doctor
+go run ./cmd/notifycat-server
+```
+
+The binaries pick up `.env` from the current working directory and
+default to `./mappings.yaml` and `./data/notifycat.db`. See
+[Getting started](https://mptooling.github.io/notifycat/getting-started/)
+for the end-to-end walkthrough including the tunnel + webhook setup.
+
 ## Documentation
 
 Full documentation is published at <https://mptooling.github.io/notifycat/>.
