@@ -71,37 +71,38 @@ mapping-remove repo:
 docker-build:
   docker build -t {{app}}:test .
 
-# Run migrations in Docker against ./data
+# Run migrations in Docker against ./
 docker-migrate:
-  mkdir -p data
-  docker run --rm -v "$PWD/data:/data" --env-file .env {{app}}:test /usr/local/bin/notifycat-migrate up
+  docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/app" --env-file .env {{app}}:test /usr/local/bin/notifycat-migrate up
 
 # Show Docker database migration status
 docker-migrate-status:
-  mkdir -p data
-  docker run --rm -v "$PWD/data:/data" --env-file .env {{app}}:test /usr/local/bin/notifycat-migrate status
+  docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/app" --env-file .env {{app}}:test /usr/local/bin/notifycat-migrate status
 
-# Add a repo-to-Slack mapping in Docker against ./data
-docker-mapping-add repo channel mentions:
-  mkdir -p data
-  docker run --rm -v "$PWD/data:/data" --env-file .env {{app}}:test /usr/local/bin/notifycat-mapping add "{{repo}}" "{{channel}}" "{{mentions}}"
-
-# List repo-to-Slack mappings in Docker against ./data
+# List repo-to-Slack mappings in Docker
 docker-mapping-list:
-  mkdir -p data
-  docker run --rm -v "$PWD/data:/data" --env-file .env {{app}}:test /usr/local/bin/notifycat-mapping list
-
-# Remove a repo-to-Slack mapping in Docker against ./data
-docker-mapping-remove repo:
-  mkdir -p data
-  docker run --rm -v "$PWD/data:/data" --env-file .env {{app}}:test /usr/local/bin/notifycat-mapping remove "{{repo}}"
+  docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/app" --env-file .env {{app}}:test /usr/local/bin/notifycat-mapping list
 
 # Run the `notifycat-mapping` command with any number of args
 docker-mapping +args:
-  mkdir -p data
-  docker run --rm -v "$PWD/data:/data" --env-file .env {{app}}:test /usr/local/bin/notifycat-mapping {{args}}
+  docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/app" --env-file .env {{app}}:test /usr/local/bin/notifycat-mapping {{args}}
 
-# Start the Docker image on localhost:8080
+# Validate mappings.yaml in Docker (against live Slack/GitHub)
+docker-validate:
+  docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/app" --env-file .env {{app}}:test /usr/local/bin/notifycat-mapping validate
+
+# Run preflight diagnostics in Docker
+docker-doctor +args="":
+  docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/app" --env-file .env {{app}}:test /usr/local/bin/notifycat-doctor {{args}}
+
+# Start the Docker image on localhost:8080 (foreground; for development)
 docker-serve:
-  mkdir -p data
-  docker run --rm -p 8080:8080 -v "$PWD/data:/data" --env-file .env {{app}}:test
+  docker run --rm -p 8080:8080 --user "$(id -u):$(id -g)" -v "$PWD:/app" --env-file .env {{app}}:test
+
+# Start the Docker image detached with restart-on-crash (closer to production)
+docker-up:
+  docker run -d --name notifycat --restart unless-stopped -p 127.0.0.1:8080:8080 --user "$(id -u):$(id -g)" -v "$PWD:/app" --env-file .env {{app}}:test
+
+# Stop and remove the detached container started by docker-up
+docker-down:
+  -docker rm -f notifycat

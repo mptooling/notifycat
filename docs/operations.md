@@ -101,35 +101,22 @@ ghcr.io/mptooling/notifycat:latest
 
 For a Git tag such as `v0.1.0`, the version image tag is `0.1.0`.
 
-## Deployment Checklist
+## Deployment
 
-This checklist is the production path. For first-time local setup,
-follow [Getting started](getting-started.md) — it covers the same
-ground with the tunnel-based local-testing variant.
+For end-to-end deploy instructions, see
+[Docker → Production deploy on a single VM](docker.md#production-deploy-on-a-single-vm-ec2-example).
+That page covers the five-command Docker run, the Caddy install for
+HTTPS + Let's Encrypt auto-renewal, the security-group / DNS
+prerequisites, and the migration path from pre-0.4.0 `/data`
+deployments. For local first-time setup against a tunnel, see
+[Getting started](getting-started.md).
 
-1. Create the Slack app with `./scripts/slack-app-create.sh`, install the bot,
-   and copy the bot token.
-2. Create durable storage for `/data`.
-3. Generate a long random `GITHUB_WEBHOOK_SECRET`.
-4. Set `GITHUB_WEBHOOK_SECRET` and `SLACK_BOT_TOKEN`.
-5. Run `notifycat-migrate up` if your deployment uses an explicit migration
-   step. The server also applies pending migrations at startup.
-6. Edit `mappings.yaml` (start from `mappings.example.yaml`) and point
-   `NOTIFYCAT_MAPPINGS_FILE` at it. See [Mappings file](mappings.md).
-7. Run `notifycat-mapping validate` to confirm the Slack side is wired
-   correctly. With `GITHUB_TOKEN` exported, this also checks webhook event
-   coverage. Commit `mappings.yaml` **and** the resulting `mappings.lock`.
-8. Run `notifycat-doctor` as a preflight in the target environment to
-   surface config, database, and mappings-file issues before the server
-   starts. Add `notifycat-doctor owner/repo` to also probe Slack and the
-   GitHub webhook for that repo. See [Doctor](doctor.md).
-9. Start `notifycat-server`. It re-runs the same validation on boot — a
-   lock that matches the YAML means no network round-trip; a mismatch
-   means only the changed entries are revalidated.
-10. Register the GitHub webhook with `./scripts/github-webhook-create.sh`.
-11. Open a test pull request and confirm Slack receives one message.
-12. Approve, comment, add a line-specific comment, request changes, draft,
-    close, or merge to confirm updates.
+The remainder of this page is operations-time reference: what each
+log line means, what the validate / doctor checks cover, and how to
+trace a silent 200-OK delivery.
+
+<!-- Stale anchor preserved for old links to operations.md#deployment-checklist -->
+<a id="deployment-checklist"></a>
 
 ## Validating a Mapping
 
