@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.0](https://github.com/mptooling/notifycat/compare/v0.3.1...v1.0.0) (2026-05-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* docker image with /app workdir and bundled doctor ([#38](https://github.com/mptooling/notifycat/issues/38))
+
+### 🐛 Bug fixes
+
+* docker image with /app workdir and bundled doctor ([#38](https://github.com/mptooling/notifycat/issues/38)) ([906d9b7](https://github.com/mptooling/notifycat/commit/906d9b731978b2d7dc3e9bedb3923af77fb9223e))
+
 ## [0.3.1](https://github.com/mptooling/notifycat/compare/v0.3.0...v0.3.1) (2026-05-19)
 
 
