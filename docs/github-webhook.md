@@ -1,6 +1,6 @@
 # GitHub Webhook Setup
 
-notifycat receives GitHub webhook requests at:
+Notifycat receives GitHub webhook requests at:
 
 ```text
 POST /webhook/github
@@ -40,8 +40,14 @@ repository webhook with:
 | SSL verification | enabled |
 | Events | `pull_request`, `pull_request_review`, `pull_request_review_comment` |
 
-The GitHub token is setup-only. Do not store it in notifycat production
+The GitHub token is setup-only. Do not store it in Notifycat production
 configuration.
+
+`NOTIFYCAT_PUBLIC_URL` is **script-only**. It is the public address you
+want GitHub to deliver to (your reverse proxy, your tunnel, the
+`*.example.com` you have in DNS) and is never read by the running
+server. Setting it as an environment variable on `notifycat-server`
+has no effect.
 
 ## Local Development Shortcut
 
@@ -66,7 +72,7 @@ If you cannot use the GitHub API, create the webhook in the repository settings:
 2. Go to **Settings**.
 3. Open **Webhooks**.
 4. Click **Add webhook**.
-5. Set **Payload URL** to your public notifycat URL:
+5. Set **Payload URL** to your public Notifycat URL:
 
    ```text
    https://notifycat.example.com/webhook/github
@@ -82,7 +88,7 @@ If you cannot use the GitHub API, create the webhook in the repository settings:
 10. Keep **Active** checked.
 11. Save the webhook.
 
-GitHub sends a ping after creation. notifycat only handles pull request events,
+GitHub sends a ping after creation. Notifycat only handles pull request events,
 so use GitHub's delivery view to test a real PR event after the webhook is
 registered.
 
@@ -97,18 +103,18 @@ and creates the webhook with SSL verification enabled.
 
 Use a long random `GITHUB_WEBHOOK_SECRET`. A good default is at least 32
 characters from your password manager or secret manager. Set the same value in
-notifycat and in the GitHub webhook.
+Notifycat and in the GitHub webhook.
 
 To rotate the secret:
 
 1. Generate a new random secret.
-2. Update `GITHUB_WEBHOOK_SECRET` in notifycat.
+2. Update `GITHUB_WEBHOOK_SECRET` in Notifycat.
 3. Update the GitHub webhook secret to the same value.
-4. Restart notifycat if your runtime does not reload environment variables.
+4. Restart Notifycat if your runtime does not reload environment variables.
 
 ## Event Coverage
 
-notifycat handles these event states:
+Notifycat handles these event states:
 
 | GitHub event | Actions or states |
 | --- | --- |
@@ -127,23 +133,23 @@ GitHub uses different events for different comment surfaces:
 
 - A submitted review with "Comment" uses `pull_request_review`.
 - A line-specific comment on the diff uses `pull_request_review_comment`.
-- A comment in the PR conversation tab uses `issue_comment`, which notifycat
+- A comment in the PR conversation tab uses `issue_comment`, which Notifycat
   does not handle today.
 
 ## Signature Verification
 
-notifycat verifies `X-Hub-Signature-256` with HMAC-SHA256. Requests without a
+Notifycat verifies `X-Hub-Signature-256` with HMAC-SHA256. Requests without a
 valid signature are rejected before the JSON payload is processed.
 
 If deliveries fail with `401` or `403`, check that:
 
-- GitHub and notifycat use the same webhook secret.
+- GitHub and Notifycat use the same webhook secret.
 - The payload is sent as `application/json`.
-- No proxy rewrites the request body before it reaches notifycat.
+- No proxy rewrites the request body before it reaches Notifycat.
 
 ## Local Testing
 
-GitHub needs a public URL. For local testing, run notifycat on your machine and
+GitHub needs a public URL. For local testing, run Notifycat on your machine and
 expose it with a tunnel:
 
 ```sh

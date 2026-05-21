@@ -10,7 +10,7 @@ GitHub profile and ask for a private reporting channel.
 
 Include as much of the following as you can:
 
-- Affected notifycat version or commit SHA.
+- Affected Notifycat version or commit SHA.
 - Deployment mode and relevant environment details.
 - Steps to reproduce.
 - Expected and actual impact.

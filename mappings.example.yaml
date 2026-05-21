@@ -1,4 +1,4 @@
-# notifycat mappings file — example
+# Notifycat mappings file — example
 #
 # Copy this to mappings.yaml (next to .env or wherever NOTIFYCAT_MAPPINGS_FILE
 # points) and edit the entries below. Then run:
