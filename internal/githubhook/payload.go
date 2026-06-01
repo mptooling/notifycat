@@ -18,6 +18,17 @@ type Payload struct {
 
 	// Review is non-nil only for pull_request_review events.
 	Review *Review
+
+	// Sender is the actor who fired the event (GitHub's `sender` object).
+	// Zero value when the field is absent in the payload.
+	Sender Sender
+}
+
+// Sender identifies the actor that fired the webhook. Type is "User" for
+// humans and "Bot" for GitHub Apps or legacy bot accounts.
+type Sender struct {
+	Login string
+	Type  string
 }
 
 // PullRequest holds the PR fields extracted from the payload.
@@ -57,6 +68,10 @@ type rawPayload struct {
 	Review *struct {
 		State string `json:"state"`
 	} `json:"review"`
+	Sender struct {
+		Login string `json:"login"`
+		Type  string `json:"type"`
+	} `json:"sender"`
 }
 
 // ParsePayload decodes a raw GitHub webhook body into a Payload. It validates
@@ -82,6 +97,7 @@ func ParsePayload(body []byte) (Payload, error) {
 			Merged: raw.PullRequest.Merged,
 			Draft:  raw.PullRequest.Draft,
 		},
+		Sender: Sender{Login: raw.Sender.Login, Type: raw.Sender.Type},
 	}
 	if raw.Review != nil {
 		p.Review = &Review{State: raw.Review.State}

@@ -27,6 +27,7 @@ func clearAll(t *testing.T) {
 		"SLACK_REACTION_CLOSED_PR", "SLACK_REACTION_PR_APPROVED",
 		"SLACK_REACTION_PR_COMMENTED", "SLACK_REACTION_PR_REQUEST_CHANGE",
 		"NOTIFYCAT_MESSAGE_TTL_DAYS",
+		"NOTIFYCAT_IGNORE_AI_REVIEWS",
 	}
 	for _, k := range keys {
 		t.Setenv(k, "")
@@ -96,6 +97,7 @@ func TestLoad_AppliesDefaults(t *testing.T) {
 		{"Reactions.Commented", cfg.Reactions.Commented, "speech_balloon"},
 		{"Reactions.RequestChange", cfg.Reactions.RequestChange, "exclamation"},
 		{"MessageTTLDays", cfg.MessageTTLDays, 30},
+		{"IgnoreAIReviews", cfg.IgnoreAIReviews, false},
 	}
 	for _, c := range checks {
 		if c.got != c.want {
@@ -172,6 +174,37 @@ func TestLoad_MessageTTLDays_RejectsNegative(t *testing.T) {
 	})
 	if _, err := config.Load(); err == nil {
 		t.Fatal("Load() succeeded with NOTIFYCAT_MESSAGE_TTL_DAYS=-1; want error")
+	}
+}
+
+func TestLoad_IgnoreAIReviewsDefaultsFalse(t *testing.T) {
+	clearAll(t)
+	setEnv(t, map[string]string{
+		"GITHUB_WEBHOOK_SECRET": "shh",
+		"SLACK_BOT_TOKEN":       "xoxb-x",
+	})
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.IgnoreAIReviews {
+		t.Errorf("IgnoreAIReviews = true; want default false")
+	}
+}
+
+func TestLoad_IgnoreAIReviewsOverride(t *testing.T) {
+	clearAll(t)
+	setEnv(t, map[string]string{
+		"GITHUB_WEBHOOK_SECRET":       "shh",
+		"SLACK_BOT_TOKEN":             "xoxb-x",
+		"NOTIFYCAT_IGNORE_AI_REVIEWS": "true",
+	})
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.IgnoreAIReviews {
+		t.Errorf("IgnoreAIReviews = false; want true")
 	}
 }
 

@@ -110,6 +110,13 @@ type integrationFixture struct {
 }
 
 func newIntegrationFixture(t *testing.T, seeds ...mappingSeed) *integrationFixture {
+	return newIntegrationFixtureCfg(t, nil, seeds...)
+}
+
+// newIntegrationFixtureCfg is the same as newIntegrationFixture but invokes
+// mutate(cfg) just before app.Wire — used by tests that need to flip a flag
+// (e.g. IgnoreAIReviews) without duplicating fixture setup.
+func newIntegrationFixtureCfg(t *testing.T, mutate func(*config.Config), seeds ...mappingSeed) *integrationFixture {
 	t.Helper()
 	slack := newSlackFake(t)
 	dir := t.TempDir()
@@ -136,6 +143,10 @@ func newIntegrationFixture(t *testing.T, seeds ...mappingSeed) *integrationFixtu
 			Commented:     "speech_balloon",
 			RequestChange: "exclamation",
 		},
+	}
+
+	if mutate != nil {
+		mutate(&cfg)
 	}
 
 	server, _, cleanup, err := app.Wire(cfg)
@@ -476,6 +487,97 @@ func TestIntegration_ReviewRequestChange(t *testing.T) {
 	}
 	if call.Body["name"] != "exclamation" {
 		t.Errorf("reaction name = %v; want exclamation", call.Body["name"])
+	}
+}
+
+// ---------- bot-reviewer suppression ----------
+
+func TestIntegration_IgnoreAIReviews_BotReviewSuppressesReaction(t *testing.T) {
+	f := newIntegrationFixtureCfg(t,
+		func(c *config.Config) { c.IgnoreAIReviews = true },
+		mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: nil},
+	)
+	f.seedSlackMessage(t, "octo/widget", 42, "prev-ts")
+
+	status := f.post(t, `{
+		"action": "submitted",
+		"review": {"state": "approved"},
+		"sender": {"login": "copilot[bot]", "type": "Bot"},
+		"repository": {"full_name": "octo/widget"},
+		"pull_request": {"number": 42, "title": "fix", "html_url": "u", "user": {"login": "bob"}}
+	}`)
+
+	if status != http.StatusOK {
+		t.Fatalf("status = %d", status)
+	}
+	if contains(f.slack.methods(), "/api/reactions.add") {
+		t.Errorf("reactions.add called for bot reviewer; methods = %v", f.slack.methods())
+	}
+}
+
+func TestIntegration_IgnoreAIReviews_BotLineCommentSuppressesReaction(t *testing.T) {
+	f := newIntegrationFixtureCfg(t,
+		func(c *config.Config) { c.IgnoreAIReviews = true },
+		mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: nil},
+	)
+	f.seedSlackMessage(t, "octo/widget", 42, "prev-ts")
+
+	status := f.postEvent(t, "pull_request_review_comment", `{
+		"action": "created",
+		"sender": {"login": "dependabot[bot]", "type": "Bot"},
+		"repository": {"full_name": "octo/widget"},
+		"pull_request": {"number": 42, "title": "fix", "html_url": "u", "user": {"login": "bob"}}
+	}`)
+
+	if status != http.StatusOK {
+		t.Fatalf("status = %d", status)
+	}
+	if contains(f.slack.methods(), "/api/reactions.add") {
+		t.Errorf("reactions.add called for bot line-commenter; methods = %v", f.slack.methods())
+	}
+}
+
+func TestIntegration_IgnoreAIReviews_HumanReviewerStillReacts(t *testing.T) {
+	f := newIntegrationFixtureCfg(t,
+		func(c *config.Config) { c.IgnoreAIReviews = true },
+		mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: nil},
+	)
+	f.seedSlackMessage(t, "octo/widget", 42, "prev-ts")
+
+	status := f.post(t, `{
+		"action": "submitted",
+		"review": {"state": "approved"},
+		"sender": {"login": "alice", "type": "User"},
+		"repository": {"full_name": "octo/widget"},
+		"pull_request": {"number": 42, "title": "fix", "html_url": "u", "user": {"login": "bob"}}
+	}`)
+
+	if status != http.StatusOK {
+		t.Fatalf("status = %d", status)
+	}
+	if !contains(f.slack.methods(), "/api/reactions.add") {
+		t.Errorf("reactions.add not called for human reviewer; methods = %v", f.slack.methods())
+	}
+}
+
+func TestIntegration_IgnoreAIReviewsDisabled_BotReviewerStillReacts(t *testing.T) {
+	// Flag defaults to false — bot reviewers behave exactly like humans.
+	f := newIntegrationFixture(t, mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: nil})
+	f.seedSlackMessage(t, "octo/widget", 42, "prev-ts")
+
+	status := f.post(t, `{
+		"action": "submitted",
+		"review": {"state": "approved"},
+		"sender": {"login": "github-actions[bot]", "type": "Bot"},
+		"repository": {"full_name": "octo/widget"},
+		"pull_request": {"number": 42, "title": "fix", "html_url": "u", "user": {"login": "bob"}}
+	}`)
+
+	if status != http.StatusOK {
+		t.Fatalf("status = %d", status)
+	}
+	if !contains(f.slack.methods(), "/api/reactions.add") {
+		t.Errorf("reactions.add not called for bot reviewer with flag off; methods = %v", f.slack.methods())
 	}
 }
 

@@ -19,6 +19,17 @@ type Event struct {
 
 	// Review is non-nil only for pull_request_review events.
 	Review *Review
+
+	// Sender identifies the actor that fired the webhook. Type is "User"
+	// for humans and "Bot" for GitHub Apps (Copilot, dependabot, …).
+	Sender Sender
+}
+
+// Sender identifies the actor on the webhook payload (the reviewer for
+// review events, the PR author for `pull_request` opened events, etc.).
+type Sender struct {
+	Login string
+	Type  string
 }
 
 // PR holds the PR fields needed across handlers and the message composer.

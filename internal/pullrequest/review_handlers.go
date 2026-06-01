@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 
+	"github.com/mptooling/notifycat/internal/aireview"
 	"github.com/mptooling/notifycat/internal/store"
 )
 
@@ -20,6 +21,7 @@ type reactionHandler struct {
 	mappings RepoMappings
 	slack    SlackClient
 	logger   *slog.Logger
+	detector *aireview.Detector
 }
 
 func (h *reactionHandler) Applicable(e Event) bool { return h.applicable(e) }
@@ -57,6 +59,17 @@ func (h *reactionHandler) Handle(ctx context.Context, e Event) error {
 		return err
 	}
 
+	if h.detector.ShouldSuppress(e.Sender.Type) {
+		h.logger.Debug("skipped bot reviewer reaction",
+			slog.String("login", e.Sender.Login),
+			slog.String("event", e.GitHubEvent),
+			slog.String("handler", h.name),
+			slog.String("repository", e.Repository),
+			slog.Int("pr", e.PR.Number),
+		)
+		return nil
+	}
+
 	// The slack.Client treats Slack's "already_reacted" error as a non-error,
 	// so AddReaction is naturally idempotent. We don't need a GetReactions
 	// pre-check (the PHP service did one, but it's redundant once the client
@@ -68,18 +81,20 @@ func (h *reactionHandler) Handle(ctx context.Context, e Event) error {
 // "approved".
 type ApproveHandler struct{ reactionHandler }
 
-// NewApproveHandler builds an ApproveHandler.
+// NewApproveHandler builds an ApproveHandler. detector must be non-nil; pass
+// aireview.NewDetector(false) for the disabled state.
 func NewApproveHandler(
 	messages SlackMessages,
 	mappings RepoMappings,
 	slackClient SlackClient,
 	logger *slog.Logger,
 	emoji string,
+	detector *aireview.Detector,
 ) *ApproveHandler {
 	return &ApproveHandler{reactionHandler{
 		name:     "approve",
 		emoji:    emoji,
-		messages: messages, mappings: mappings, slack: slackClient, logger: logger,
+		messages: messages, mappings: mappings, slack: slackClient, logger: logger, detector: detector,
 		applicable: func(e Event) bool {
 			return e.Action == "submitted" && e.Review != nil && e.Review.State == "approved"
 		},
@@ -90,18 +105,20 @@ func NewApproveHandler(
 // state "commented".
 type CommentedHandler struct{ reactionHandler }
 
-// NewCommentedHandler builds a CommentedHandler.
+// NewCommentedHandler builds a CommentedHandler. detector must be non-nil;
+// pass aireview.NewDetector(false) for the disabled state.
 func NewCommentedHandler(
 	messages SlackMessages,
 	mappings RepoMappings,
 	slackClient SlackClient,
 	logger *slog.Logger,
 	emoji string,
+	detector *aireview.Detector,
 ) *CommentedHandler {
 	return &CommentedHandler{reactionHandler{
 		name:     "commented",
 		emoji:    emoji,
-		messages: messages, mappings: mappings, slack: slackClient, logger: logger,
+		messages: messages, mappings: mappings, slack: slackClient, logger: logger, detector: detector,
 		applicable: func(e Event) bool {
 			if e.GitHubEvent == "pull_request_review_comment" {
 				return e.Action == "created"
@@ -118,18 +135,20 @@ func NewCommentedHandler(
 // "changes_requested".
 type RequestChangeHandler struct{ reactionHandler }
 
-// NewRequestChangeHandler builds a RequestChangeHandler.
+// NewRequestChangeHandler builds a RequestChangeHandler. detector must be
+// non-nil; pass aireview.NewDetector(false) for the disabled state.
 func NewRequestChangeHandler(
 	messages SlackMessages,
 	mappings RepoMappings,
 	slackClient SlackClient,
 	logger *slog.Logger,
 	emoji string,
+	detector *aireview.Detector,
 ) *RequestChangeHandler {
 	return &RequestChangeHandler{reactionHandler{
 		name:     "request_change",
 		emoji:    emoji,
-		messages: messages, mappings: mappings, slack: slackClient, logger: logger,
+		messages: messages, mappings: mappings, slack: slackClient, logger: logger, detector: detector,
 		applicable: func(e Event) bool {
 			return e.Action == "submitted" && e.Review != nil && e.Review.State == "changes_requested"
 		},

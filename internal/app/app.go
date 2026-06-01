@@ -14,6 +14,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/mptooling/notifycat/internal/aireview"
 	"github.com/mptooling/notifycat/internal/cleanup"
 	"github.com/mptooling/notifycat/internal/config"
 	"github.com/mptooling/notifycat/internal/github"
@@ -64,6 +65,7 @@ func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, Cleanup, error) 
 	}
 
 	messages := store.NewSlackMessages(db)
+	aiDetector := aireview.NewDetector(cfg.IgnoreAIReviews)
 	scheduler := cleanup.NewScheduler(
 		messages,
 		time.Duration(cfg.MessageTTLDays)*24*time.Hour,
@@ -82,9 +84,9 @@ func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, Cleanup, error) 
 			},
 		),
 		pullrequest.NewDraftHandler(messages, provider, slackClient, logger),
-		pullrequest.NewApproveHandler(messages, provider, slackClient, logger, cfg.Reactions.Approved),
-		pullrequest.NewCommentedHandler(messages, provider, slackClient, logger, cfg.Reactions.Commented),
-		pullrequest.NewRequestChangeHandler(messages, provider, slackClient, logger, cfg.Reactions.RequestChange),
+		pullrequest.NewApproveHandler(messages, provider, slackClient, logger, cfg.Reactions.Approved, aiDetector),
+		pullrequest.NewCommentedHandler(messages, provider, slackClient, logger, cfg.Reactions.Commented, aiDetector),
+		pullrequest.NewRequestChangeHandler(messages, provider, slackClient, logger, cfg.Reactions.RequestChange, aiDetector),
 	)
 
 	mux := http.NewServeMux()
@@ -221,6 +223,7 @@ func eventSink(d *pullrequest.Dispatcher, logger *slog.Logger) githubhook.EventS
 				Merged: p.PullRequest.Merged,
 				Draft:  p.PullRequest.Draft,
 			},
+			Sender: pullrequest.Sender{Login: p.Sender.Login, Type: p.Sender.Type},
 		}
 		if p.Review != nil {
 			event.Review = &pullrequest.Review{State: p.Review.State}
