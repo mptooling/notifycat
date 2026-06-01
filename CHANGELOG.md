@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/mptooling/notifycat/compare/v0.6.0...v0.6.1) (2026-06-01)
+
+
+### 📝 Documentation
+
+* docker compose install guide with HTTPS and troubleshooting ([#53](https://github.com/mptooling/notifycat/issues/53)) ([086d6e2](https://github.com/mptooling/notifycat/commit/086d6e26ff977626f7f335b1fe6e8b6deb8eb662))
+
 ## [0.6.0](https://github.com/mptooling/notifycat/compare/v0.5.0...v0.6.0) (2026-06-01)
 
 
