@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/mptooling/notifycat/compare/v0.4.0...v0.5.0) (2026-06-01)
+
+
+### 🚀 Features
+
+* opt-in suppression of Slack reactions from bot reviewers (closes [#14](https://github.com/mptooling/notifycat/issues/14)) ([#29](https://github.com/mptooling/notifycat/issues/29)) ([f375bb2](https://github.com/mptooling/notifycat/commit/f375bb2a872d3163f1a97e4026f7b6cc15604384))
+
 ## [0.4.0](https://github.com/mptooling/notifycat/compare/v0.3.1...v0.4.0) (2026-05-20)
 
 ### ⚠ BREAKING CHANGES
