@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/mptooling/notifycat/compare/v0.5.0...v0.6.0) (2026-06-01)
+
+
+### 🚀 Features
+
+* docker-compose.yml with Caddy HTTPS reverse proxy ([#51](https://github.com/mptooling/notifycat/issues/51)) ([06cbbe9](https://github.com/mptooling/notifycat/commit/06cbbe91a6e560e55143621ca785bc9f0533b35c))
+
 ## [0.5.0](https://github.com/mptooling/notifycat/compare/v0.4.0...v0.5.0) (2026-06-01)
 
 
