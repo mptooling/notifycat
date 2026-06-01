@@ -1,6 +1,6 @@
 services:
   notifycat:
-    image: ghcr.io/mptooling/notifycat:0.5.0
+    image: ghcr.io/mptooling/notifycat:latest
     command: ["/usr/local/bin/notifycat-server"]
     env_file: ./.env
     volumes:
