@@ -5,6 +5,11 @@ directory holding all state. The same image powers local Docker
 testing on a dev machine and production HTTPS deployments on a single
 VM (EC2, Hetzner, DO droplet — anything systemd-based).
 
+!!! tip "Recommended production path: Docker Compose"
+    For a production HTTPS install, use [Install with Docker Compose](compose.md) instead.
+    It brings up Notifycat and Caddy together with one command and handles TLS automatically.
+    The `docker run` flows on this page are the manual alternative when you manage Caddy yourself.
+
 ## Quick reference
 
 | | |
@@ -82,7 +87,12 @@ Then register the webhook against the tunnel's HTTPS URL using
 `scripts/github-webhook-create.sh` — see
 [GitHub webhook setup](github-webhook.md).
 
-## Production deploy on a single VM (EC2 example)
+## Production deploy on a single VM (manual Caddy, EC2 example)
+
+!!! note
+    The [Docker Compose install](compose.md) is the recommended production path.
+    Use this section only if you need to manage Caddy as a host service rather than
+    running it as a container.
 
 End-state: the EC2 box runs Notifycat in Docker and Caddy on the host
 for TLS termination + Let's Encrypt cert auto-renewal. Caddy proxies
