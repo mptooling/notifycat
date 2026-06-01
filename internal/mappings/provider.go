@@ -2,7 +2,6 @@ package mappings
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"sort"
 	"strings"
@@ -20,13 +19,13 @@ type Provider struct {
 func Load(path string) (*Provider, error) {
 	f, err := os.Open(path) //nolint:gosec // path is operator-supplied configuration
 	if err != nil {
-		return nil, fmt.Errorf("mappings: open %s: %w", path, err)
+		return nil, &FileNotFoundError{Path: path, Err: err}
 	}
 	defer func() { _ = f.Close() }()
 
 	file, err := Parse(f)
 	if err != nil {
-		return nil, err
+		return nil, &ParseError{Path: path, Err: err}
 	}
 	return &Provider{file: file}, nil
 }

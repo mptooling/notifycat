@@ -21,7 +21,7 @@ const shutdownTimeout = 15 * time.Second
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, "notifycat-server:", err)
+		fmt.Fprintln(os.Stderr, "notifycat-server:", startupError(err))
 		os.Exit(1)
 	}
 }

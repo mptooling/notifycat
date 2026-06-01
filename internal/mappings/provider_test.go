@@ -10,6 +10,11 @@ import (
 	"github.com/mptooling/notifycat/internal/store"
 )
 
+const badYAML = `
+mappings:
+  acme: !!invalid
+`
+
 func writeMappingsFile(t *testing.T, body string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -79,10 +84,38 @@ func TestProvider_Entries(t *testing.T) {
 	}
 }
 
-func TestProvider_Load_BadFile(t *testing.T) {
+func TestProvider_Load_MissingFile_ReturnsFileNotFoundError(t *testing.T) {
 	_, err := Load("/no/such/path/mappings.yaml")
 	if err == nil {
-		t.Fatal("expected error on missing file")
+		t.Fatal("Load() succeeded with missing file; want error")
+	}
+	var nfe *FileNotFoundError
+	if !errors.As(err, &nfe) {
+		t.Fatalf("Load() error = %T(%v); want *FileNotFoundError", err, err)
+	}
+	if nfe.Path != "/no/such/path/mappings.yaml" {
+		t.Errorf("FileNotFoundError.Path = %q; want /no/such/path/mappings.yaml", nfe.Path)
+	}
+	if !errors.Is(nfe.Err, os.ErrNotExist) {
+		t.Errorf("FileNotFoundError.Err = %v; want os.ErrNotExist", nfe.Err)
+	}
+}
+
+func TestProvider_Load_MalformedFile_ReturnsParseError(t *testing.T) {
+	path := writeMappingsFile(t, badYAML)
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("Load() succeeded with malformed YAML; want error")
+	}
+	var pe *ParseError
+	if !errors.As(err, &pe) {
+		t.Fatalf("Load() error = %T(%v); want *ParseError", err, err)
+	}
+	if pe.Path != path {
+		t.Errorf("ParseError.Path = %q; want %q", pe.Path, path)
+	}
+	if pe.Err == nil {
+		t.Error("ParseError.Err is nil")
 	}
 }
 
