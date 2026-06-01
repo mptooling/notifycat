@@ -1,0 +1,34 @@
+services:
+  notifycat:
+    image: ghcr.io/mptooling/notifycat:latest
+    command: ["/usr/local/bin/notifycat-server"]
+    env_file: ./.env
+    volumes:
+      # Named volume owns writable state: SQLite DB and mappings.lock.
+      # Docker initialises the volume from the image's /app (UID 65532), so
+      # the server can write without a chown step.
+      - notifycat_data:/app
+      # mappings.yaml is operator config; mount read-only over the volume so
+      # the lock (sibling file) stays on the writable named volume.
+      - ./mappings.yaml:/app/mappings.yaml:ro
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    env_file: ./.env
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3 / QUIC
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+    depends_on:
+      - notifycat
+
+volumes:
+  notifycat_data:
+  caddy_data:
+  caddy_config:
