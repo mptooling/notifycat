@@ -1,6 +1,6 @@
 module github.com/mptooling/notifycat
 
-go 1.25.10
+go 1.25.11
 
 require (
 	github.com/caarlos0/env/v11 v11.4.1
