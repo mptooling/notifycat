@@ -10,7 +10,9 @@ _saved_stty=""
 _restore_stty() {
   [ -n "$_saved_stty" ] && stty "$_saved_stty" 2>/dev/null || stty echo 2>/dev/null || true
 }
-trap _restore_stty EXIT HUP INT TERM
+_handle_signal() { _restore_stty; exit 130; }
+trap _restore_stty EXIT
+trap _handle_signal INT HUP TERM
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
