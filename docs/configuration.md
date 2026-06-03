@@ -1,10 +1,10 @@
 # Configuration
 
-Notifycat reads configuration from environment variables. For local development,
-it also loads `.env` if the file exists.
+Notifycat reads configuration from environment variables. For local development, it also loads `.env` if the file
+exists.
 
-Secrets should stay in environment variables or your deployment secret manager.
-Do not put real tokens in committed files.
+Secrets should stay in environment variables or your deployment secret manager. Do not put real tokens in committed
+files.
 
 ## Required Variables
 
@@ -13,9 +13,8 @@ Do not put real tokens in committed files.
 | `GITHUB_WEBHOOK_SECRET` | The secret configured on the GitHub webhook. |
 | `SLACK_BOT_TOKEN` | Slack bot token, usually starting with `xoxb-`. |
 
-The server and CLIs fail fast when either value is missing.
-Use a long random `GITHUB_WEBHOOK_SECRET`; 32 characters or more is a good
-baseline.
+The server and CLIs fail fast when either value is missing. Use a long random `GITHUB_WEBHOOK_SECRET`; 32 characters or
+more is a good baseline.
 
 ## Server and Logging
 
@@ -45,8 +44,7 @@ Mount `/data` if you want the database to survive container restarts.
 | --- | --- | --- |
 | `NOTIFYCAT_MAPPINGS_FILE` | `./mappings.yaml` | Path to the declarative mappings file. The sibling lock file (e.g. `./mappings.lock`) is derived by swapping the `.yaml`/`.yml` extension for `.lock`. |
 
-Both `notifycat-server` and `notifycat-mapping` read this file. See
-[Mappings file](mappings.md) for the schema and
+Both `notifycat-server` and `notifycat-mapping` read this file. See [Mappings file](mappings.md) for the schema and
 [`mappings.example.yaml`](https://github.com/mptooling/notifycat/blob/main/mappings.example.yaml) for a copy-paste
 starting point.
 
@@ -63,11 +61,9 @@ starting point.
 | `GITHUB_TOKEN` | _(unset)_ | Optional PAT used by `notifycat-mapping validate` and `notifycat-doctor` to read repo webhook config. Required scope: `admin:repo_hook` (or `repo` for private repos). The server does not need this; if unset, the webhook-coverage check is skipped. |
 | `GITHUB_BASE_URL` | `https://api.github.com` | Override for GitHub Enterprise or tests. |
 
-`GITHUB_TOKEN` is also read by `scripts/github-webhook-create.sh`, but
-that script *creates* the webhook and only needs the
-`Webhooks: Read and write` permission on a fine-grained PAT. The
-validate/doctor reading path needs `admin:repo_hook` / `repo`. A single
-token that has both works everywhere; otherwise issue separate PATs.
+`GITHUB_TOKEN` is also read by `scripts/github-webhook-create.sh`, but that script *creates* the webhook and only needs
+the `Webhooks: Read and write` permission on a fine-grained PAT. The validate/doctor reading path needs
+`admin:repo_hook` / `repo`. A single token that has both works everywhere; otherwise issue separate PATs.
 
 ## Cleanup
 
@@ -93,13 +89,12 @@ token that has both works everywhere; otherwise issue separate PATs.
 | `SLACK_REACTION_PR_COMMENTED` | `speech_balloon` | Added when a review comments on the PR. |
 | `SLACK_REACTION_PR_REQUEST_CHANGE` | `exclamation` | Added when a review requests changes. |
 
-Use Slack emoji names without surrounding colons. For example, set
-`SLACK_REACTION_PR_APPROVED=shipit`, not `:shipit:`.
+Use Slack emoji names without surrounding colons. For example, set `SLACK_REACTION_PR_APPROVED=shipit`, not `:shipit:`.
 
 ## Mapping CLI
 
-Mappings are defined in [`mappings.yaml`](mappings.md), not in environment
-variables. The `notifycat-mapping` binary has two subcommands:
+Mappings are defined in [`mappings.yaml`](mappings.md), not in environment variables. The `notifycat-mapping` binary has
+two subcommands:
 
 ```sh
 notifycat-mapping list                    # print the parsed file (no network)
@@ -108,10 +103,7 @@ notifycat-mapping validate owner/repo     # validate a single entry, ignore cach
 notifycat-mapping validate --force        # ignore the lock entirely; revalidate everything
 ```
 
-`validate` checks each entry end-to-end: the Slack channel ID is
-well-formed, the bot token has the required scopes, the bot is a member
-of the channel, and (when `GITHUB_TOKEN` is set) the GitHub webhook is
-subscribed to `pull_request`, `pull_request_review`, and
-`pull_request_review_comment`. See `docs/operations.md` for the
-failure-mode remediation table. The server runs the same validation at
-boot and refuses to start on failure.
+`validate` checks each entry end-to-end: the Slack channel ID is well-formed, the bot token has the required scopes, the
+bot is a member of the channel, and (when `GITHUB_TOKEN` is set) the GitHub webhook is subscribed to `pull_request`,
+`pull_request_review`, and `pull_request_review_comment`. See `docs/operations.md` for the failure-mode remediation
+table. The server runs the same validation at boot and refuses to start on failure.

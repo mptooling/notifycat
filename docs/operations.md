@@ -1,13 +1,12 @@
 # Operations
 
-Notifycat is designed to be operated as a single process plus a SQLite file.
-There are no background workers and no external queue.
+Notifycat is designed to be operated as a single process plus a SQLite file. There are no background workers and no
+external queue.
 
 ## Process Model
 
-Run one `notifycat-server` process behind your normal HTTPS ingress. GitHub
-posts webhooks to `/webhook/github`, and Notifycat makes outbound HTTPS calls to
-Slack.
+Run one `notifycat-server` process behind your normal HTTPS ingress. GitHub posts webhooks to `/webhook/github`, and
+Notifycat makes outbound HTTPS calls to Slack.
 
 The server exposes:
 
@@ -18,30 +17,26 @@ The server exposes:
 
 ## Startup and Shutdown
 
-The server fails fast when required configuration is missing. It also applies
-embedded migrations at startup, so a simple deployment can start the server
-directly. For stricter production setups, run `notifycat-migrate up` as a
+The server fails fast when required configuration is missing. It also applies embedded migrations at startup, so a
+simple deployment can start the server directly. For stricter production setups, run `notifycat-migrate up` as a
 separate init step before the server starts.
 
-Shutdown listens for `SIGINT` and `SIGTERM` and allows in-flight requests to
-finish within the configured shutdown window.
+Shutdown listens for `SIGINT` and `SIGTERM` and allows in-flight requests to finish within the configured shutdown
+window.
 
 ## Persistence
 
 State lives in two places:
 
-- **`mappings.yaml`** — the declarative source of truth for routing. Edit
-  it in version control and deploy it alongside the binary. The sibling
-  `mappings.lock` caches successful validation so steady-state boots
-  don't re-contact Slack/GitHub.
-- **SQLite** — stores per-PR Slack message timestamps so Notifycat can
-  update the same message across the PR lifecycle.
+- **`mappings.yaml`** — the declarative source of truth for routing. Edit it in version control and deploy it alongside
+  the binary. The sibling `mappings.lock` caches successful validation so steady-state boots don't re-contact
+  Slack/GitHub.
+- **SQLite** — stores per-PR Slack message timestamps so Notifycat can update the same message across the PR lifecycle.
 
-Back up the SQLite file if losing notification state would be painful. If
-the database is lost, Notifycat can still receive webhooks, but existing
-PRs may get new Slack messages because the old Slack timestamp mapping is
-gone. `mappings.yaml` and `mappings.lock` live in your repo, so losing
-the container's local copy is harmless on the next deploy.
+Back up the SQLite file if losing notification state would be painful. If the database is lost, Notifycat can still
+receive webhooks, but existing PRs may get new Slack messages because the old Slack timestamp mapping is gone.
+`mappings.yaml` and `mappings.lock` live in your repo, so losing the container's local copy is harmless on the next
+deploy.
 
 ## Logging
 
@@ -51,14 +46,12 @@ Use:
 LOG_FORMAT=json
 ```
 
-for production log aggregation. Logs avoid raw webhook payloads, signatures, and
-secrets.
+for production log aggregation. Logs avoid raw webhook payloads, signatures, and secrets.
 
 ### Debugging a 200 OK with no Slack change
 
-GitHub records a successful delivery whenever Notifycat returns 200 — including
-when the event is intentionally ignored. Every silent no-op leaves a structured
-log line with the message `ignored webhook event` and a `reason` field, so an
+GitHub records a successful delivery whenever Notifycat returns 200 — including when the event is intentionally ignored.
+Every silent no-op leaves a structured log line with the message `ignored webhook event` and a `reason` field, so an
 operator can answer *"why didn't Slack change for delivery X?"* from logs alone.
 
 Standard field set (all six fields appear on every `ignored webhook event` line):
@@ -87,8 +80,7 @@ To surface `no_handler` lines during triage:
 LOG_LEVEL=debug
 ```
 
-`grep` for the `reason` value (or filter on it in your log aggregator) to slice
-silent deliveries by class.
+`grep` for the `reason` value (or filter on it in your log aggregator) to slice silent deliveries by class.
 
 ## Deploying a Release Image
 
@@ -103,36 +95,31 @@ For a Git tag such as `v0.1.0`, the version image tag is `0.1.0`.
 
 ## Deployment
 
-For end-to-end deploy instructions, see
-[Install with Docker Compose](compose.md). That page covers the
-one-command installer, the interactive setup wizard, HTTPS via
-Let's Encrypt, and the full preflight checklist.
+For end-to-end deploy instructions, see [Install with Docker Compose](compose.md). That page covers the one-command
+installer, the interactive setup wizard, HTTPS via Let's Encrypt, and the full preflight checklist.
 
-For local first-time setup against a tunnel (Go source, no Docker), see
-[Getting started](getting-started.md). For the manual Docker + host Caddy
-alternative, see
-[Docker → Production deploy on a single VM](docker.md#production-deploy-on-a-single-vm-ec2-example).
+For local first-time setup against a tunnel (Go source, no Docker), see [Getting started](getting-started.md). For the
+manual Docker + host Caddy alternative, see [Docker → Production deploy on a single
+VM](docker.md#production-deploy-on-a-single-vm-ec2-example).
 
-The remainder of this page is operations-time reference: what each
-log line means, what the validate / doctor checks cover, and how to
-trace a silent 200-OK delivery.
+The remainder of this page is operations-time reference: what each log line means, what the validate / doctor checks
+cover, and how to trace a silent 200-OK delivery.
 
 <!-- Stale anchor preserved for old links to operations.md#deployment-checklist -->
 <a id="deployment-checklist"></a>
 
 ## Validating a Mapping
 
-`notifycat-mapping validate` is a non-destructive command that surfaces setup
-problems before GitHub fires a real PR event. It exits 0 when every check
-passes (or is skipped) and 1 when any check fails.
+`notifycat-mapping validate` is a non-destructive command that surfaces setup problems before GitHub fires a real PR
+event. It exits 0 when every check passes (or is skipped) and 1 when any check fails.
 
 ```sh
 notifycat-mapping validate                 # check every mapping
 notifycat-mapping validate owner/repo      # check a single mapping
 ```
 
-Each line in the output is `STATUS  check-name  detail`. `OK`/`FAIL`/`SKIP`
-are plain ASCII so the output is greppable in CI logs.
+Each line in the output is `STATUS  check-name  detail`. `OK`/`FAIL`/`SKIP` are plain ASCII so the output is greppable
+in CI logs.
 
 | Check | What it verifies | How to fix a `FAIL` |
 | --- | --- | --- |
@@ -144,23 +131,20 @@ are plain ASCII so the output is greppable in CI logs.
 
 ### Tokens and Scopes for `validate`
 
-- `SLACK_BOT_TOKEN`: the same bot token the server uses. Scopes
-  `chat:write`, `reactions:write`, and `channels:read` (or `groups:read` for
-  private channels) cover every probe.
-- `GITHUB_TOKEN` (optional): a PAT with `admin:repo_hook` (or `repo` if the
-  repository is private). Only the validate CLI consumes this; the server
-  ignores it.
+- `SLACK_BOT_TOKEN`: the same bot token the server uses. Scopes `chat:write`, `reactions:write`, and `channels:read` (or
+  `groups:read` for private channels) cover every probe.
+- `GITHUB_TOKEN` (optional): a PAT with `admin:repo_hook` (or `repo` if the repository is private). Only the validate
+  CLI consumes this; the server ignores it.
 
 ## Bot-reviewer suppression
 
-When `NOTIFYCAT_IGNORE_AI_REVIEWS=true`, notifycat skips the
-`reactions.add` call for any review event whose `sender.type == "Bot"`. The
-initial PR-open message and all human-reviewer events are unaffected.
+When `NOTIFYCAT_IGNORE_AI_REVIEWS=true`, notifycat skips the `reactions.add` call for any review event whose
+`sender.type == "Bot"`. The initial PR-open message and all human-reviewer events are unaffected.
 
 ### What it covers
 
-The toggle silences every GitHub App and legacy bot account on review and
-review-comment events. That includes, but is not limited to:
+The toggle silences every GitHub App and legacy bot account on review and review-comment events. That includes, but is
+not limited to:
 
 | Category | Examples |
 | --- | --- |
@@ -170,42 +154,32 @@ review-comment events. That includes, but is not limited to:
 
 ### Bots ≠ AI agents — the explicit trade-off
 
-GitHub's payload does not distinguish AI reviewers from scripted bots. The
-only signal available is `sender.type == "Bot"`. We deliberately do **not**
-maintain a curated AI-agent allowlist — vendor GitHub Apps get renamed
-(Copilot's review bot has already been renamed twice) and such a list rots
-faster than the operator value it provides.
+GitHub's payload does not distinguish AI reviewers from scripted bots. The only signal available is `sender.type ==
+"Bot"`. We deliberately do **not** maintain a curated AI-agent allowlist — vendor GitHub Apps get renamed (Copilot's
+review bot has already been renamed twice) and such a list rots faster than the operator value it provides.
 
-If you enable `NOTIFYCAT_IGNORE_AI_REVIEWS`, you are opting into a
-**uniform** rule: every non-human reviewer is silenced. If a team wants
-their `github-actions[bot]` auto-approve green checkmark to surface in
-Slack, they should leave the flag off.
+If you enable `NOTIFYCAT_IGNORE_AI_REVIEWS`, you are opting into a **uniform** rule: every non-human reviewer is
+silenced. If a team wants their `github-actions[bot]` auto-approve green checkmark to surface in Slack, they should
+leave the flag off.
 
 This is also intentionally narrow:
 
-- It only affects `reactions.add`. The initial `chat.postMessage` (with
-  mentions / `@channel` fallback) is unchanged.
-- It does not look at the PR **author** — a bot-authored PR (e.g.
-  dependabot-created) still posts a new Slack message when it opens.
-- It does not touch `mappings.yaml`. No schema change, no migration, no
-  per-mapping override.
+- It only affects `reactions.add`. The initial `chat.postMessage` (with mentions / `@channel` fallback) is unchanged.
+- It does not look at the PR **author** — a bot-authored PR (e.g. dependabot-created) still posts a new Slack message
+  when it opens.
+- It does not touch `mappings.yaml`. No schema change, no migration, no per-mapping override.
 
 ### Failure-mode guide
 
-> "I expected a green checkmark / speech bubble / red flag on my PR's
-> Slack message, but nothing happened."
+> "I expected a green checkmark / speech bubble / red flag on my PR's > Slack message, but nothing happened."
 
-1. Check `notifycat-server` logs at debug level. A line like
-   `level=DEBUG msg="skipped bot reviewer reaction" login=copilot[bot] …`
-   confirms the suppression fired.
-2. If you see that log, `NOTIFYCAT_IGNORE_AI_REVIEWS` is on and the
-   reviewer's GitHub account is a Bot/App. Either:
-   - Disable the flag (`NOTIFYCAT_IGNORE_AI_REVIEWS=false`) — every bot
-     reviewer will react again, AI or not.
+1. Check `notifycat-server` logs at debug level. A line like `level=DEBUG msg="skipped bot reviewer reaction"
+   login=copilot[bot] …` confirms the suppression fired.
+2. If you see that log, `NOTIFYCAT_IGNORE_AI_REVIEWS` is on and the reviewer's GitHub account is a Bot/App. Either:
+   - Disable the flag (`NOTIFYCAT_IGNORE_AI_REVIEWS=false`) — every bot reviewer will react again, AI or not.
    - Or accept the trade-off and leave the flag on.
-3. If you do **not** see that log, the suppression did not fire; the
-   missing reaction has a different cause — work through the regular
-   "silent 200 OK" debug checklist above.
+3. If you do **not** see that log, the suppression did not fire; the missing reaction has a different cause — work
+   through the regular "silent 200 OK" debug checklist above.
 
 ## CI Checks
 
@@ -219,9 +193,7 @@ go test -race ./...
 go build ./...
 ```
 
-The Docker build uses a patched Go toolchain. Keep the Go patch version current
-when Go security releases land.
+The Docker build uses a patched Go toolchain. Keep the Go patch version current when Go security releases land.
 
-For local development, the same checks are available through `just check`.
-`just` is only a task runner; it is not included in production builds or Go
-module dependencies.
+For local development, the same checks are available through `just check`. `just` is only a task runner; it is not
+included in production builds or Go module dependencies.
