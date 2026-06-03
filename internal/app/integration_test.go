@@ -467,6 +467,48 @@ func TestIntegration_PullRequestReviewLineComment(t *testing.T) {
 	}
 }
 
+func TestIntegration_IssueCommentOnPR(t *testing.T) {
+	f := newIntegrationFixture(t, mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: nil})
+	f.seedSlackMessage(t, "octo/widget", 42, "prev-ts")
+
+	status := f.postEvent(t, "issue_comment", `{
+		"action": "created",
+		"repository": {"full_name": "octo/widget"},
+		"issue": {"number": 42, "pull_request": {"url": "https://api.github.com/repos/octo/widget/pulls/42"}},
+		"comment": {"body": "conversation comment"}
+	}`)
+
+	if status != http.StatusOK {
+		t.Fatalf("status = %d", status)
+	}
+	call, ok := f.slack.findCall("/api/reactions.add")
+	if !ok {
+		t.Fatalf("reactions.add not called; methods = %v", f.slack.methods())
+	}
+	if call.Body["name"] != "speech_balloon" {
+		t.Errorf("reaction name = %v; want speech_balloon", call.Body["name"])
+	}
+}
+
+func TestIntegration_IssueCommentOnPlainIssueIsIgnored(t *testing.T) {
+	f := newIntegrationFixture(t, mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: nil})
+	f.seedSlackMessage(t, "octo/widget", 42, "prev-ts")
+
+	status := f.postEvent(t, "issue_comment", `{
+		"action": "created",
+		"repository": {"full_name": "octo/widget"},
+		"issue": {"number": 42},
+		"comment": {"body": "plain issue comment"}
+	}`)
+
+	if status != http.StatusOK {
+		t.Fatalf("status = %d", status)
+	}
+	if contains(f.slack.methods(), "/api/reactions.add") {
+		t.Errorf("reactions.add called for plain-issue comment; methods = %v", f.slack.methods())
+	}
+}
+
 func TestIntegration_ReviewRequestChange(t *testing.T) {
 	f := newIntegrationFixture(t, mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: nil})
 	f.seedSlackMessage(t, "octo/widget", 42, "prev-ts")

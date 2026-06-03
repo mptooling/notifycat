@@ -123,6 +123,9 @@ func NewCommentedHandler(
 			if e.GitHubEvent == "pull_request_review_comment" {
 				return e.Action == "created"
 			}
+			if e.GitHubEvent == "issue_comment" {
+				return e.Action == "created" && e.PRComment
+			}
 			if e.Review == nil || e.Review.State != "commented" {
 				return false
 			}

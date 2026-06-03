@@ -25,7 +25,7 @@ func TestValidate_GitHubSkippedWhenCheckerNil(t *testing.T) {
 func TestValidate_WebhookMissingEvents(t *testing.T) {
 	m, s, gh := happy()
 	gh.listHookEvents = func(_ context.Context, _, _, _ string) ([]string, error) {
-		return []string{"pull_request"}, nil // missing two
+		return []string{"pull_request"}, nil // missing the other three
 	}
 	v := validate.NewValidator(m, s, gh)
 

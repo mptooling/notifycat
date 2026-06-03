@@ -41,7 +41,7 @@ func happySlack() *mockSlackChecker {
 func happyGitHub() *mockGitHubChecker {
 	return &mockGitHubChecker{
 		listHookEvents: func(_ context.Context, _, _, _ string) ([]string, error) {
-			return []string{"pull_request", "pull_request_review", "pull_request_review_comment"}, nil
+			return []string{"pull_request", "pull_request_review", "pull_request_review_comment", "issue_comment"}, nil
 		},
 	}
 }

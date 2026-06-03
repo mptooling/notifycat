@@ -111,7 +111,7 @@ notifycat-mapping validate --force        # ignore the lock entirely; revalidate
 `validate` checks each entry end-to-end: the Slack channel ID is
 well-formed, the bot token has the required scopes, the bot is a member
 of the channel, and (when `GITHUB_TOKEN` is set) the GitHub webhook is
-subscribed to `pull_request`, `pull_request_review`, and
-`pull_request_review_comment`. See `docs/operations.md` for the
-failure-mode remediation table. The server runs the same validation at
+subscribed to `pull_request`, `pull_request_review`,
+`pull_request_review_comment`, and `issue_comment`. See `docs/operations.md`
+for the failure-mode remediation table. The server runs the same validation at
 boot and refuses to start on failure.

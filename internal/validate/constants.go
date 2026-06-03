@@ -18,6 +18,7 @@ var requiredGitHubEvents = []string{
 	"pull_request",
 	"pull_request_review",
 	"pull_request_review_comment",
+	"issue_comment",
 }
 
 // channelIDPattern mirrors the regex enforced when `add` writes a row, but
