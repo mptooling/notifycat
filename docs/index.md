@@ -70,7 +70,8 @@ flowchart LR
 - [GitHub webhook setup](github-webhook.md): script-based webhook creation,
   required GitHub access, PR events, comment events, secret handling, and
   delivery checks.
-- [Docker](docker.md): image layout, migrations, persistence, and runtime
+- [Install with Docker Compose](compose.md): one-command installer, setup wizard, HTTPS via Let's Encrypt.
+- [Docker (manual)](docker.md): image layout, migrations, persistence, and runtime
   commands.
 - [Operations](operations.md): deployment model, persistence, logs, release
   images, and CI checks.

@@ -2,9 +2,9 @@
 
 This guide gets Notifycat running on your machine with a local SQLite database.
 Use it when you want to test the full GitHub-to-Slack flow before deploying.
-For the production path, follow the
-[Deployment Checklist](operations.md#deployment-checklist) instead — it
-covers the same dependencies without the local tunnel.
+For the production path, see
+[Install with Docker Compose](compose.md) instead — it covers the full
+install, HTTPS setup, and preflight checks.
 
 ## Requirements
 

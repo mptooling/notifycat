@@ -104,12 +104,14 @@ For a Git tag such as `v0.1.0`, the version image tag is `0.1.0`.
 ## Deployment
 
 For end-to-end deploy instructions, see
+[Install with Docker Compose](compose.md). That page covers the
+one-command installer, the interactive setup wizard, HTTPS via
+Let's Encrypt, and the full preflight checklist.
+
+For local first-time setup against a tunnel (Go source, no Docker), see
+[Getting started](getting-started.md). For the manual Docker + host Caddy
+alternative, see
 [Docker → Production deploy on a single VM](docker.md#production-deploy-on-a-single-vm-ec2-example).
-That page covers the five-command Docker run, the Caddy install for
-HTTPS + Let's Encrypt auto-renewal, the security-group / DNS
-prerequisites, and the migration path from pre-0.4.0 `/data`
-deployments. For local first-time setup against a tunnel, see
-[Getting started](getting-started.md).
 
 The remainder of this page is operations-time reference: what each
 log line means, what the validate / doctor checks cover, and how to
