@@ -16,53 +16,37 @@ The recommended production path: one `docker compose up -d` brings up Notifycat 
 
 ## Quick-start
 
-### 1. Create a working directory and pull the config files
+### 1. Run the installer
 
 ```sh
-mkdir -p ~/notifycat && cd ~/notifycat
-
-curl -fsSL https://raw.githubusercontent.com/mptooling/notifycat/main/.env.example          -o .env
-curl -fsSL https://raw.githubusercontent.com/mptooling/notifycat/main/mappings.example.yaml -o mappings.yaml
-curl -fsSL https://raw.githubusercontent.com/mptooling/notifycat/main/compose.yaml          -o compose.yaml
-curl -fsSL https://raw.githubusercontent.com/mptooling/notifycat/main/Caddyfile             -o Caddyfile
+curl -fsSL https://raw.githubusercontent.com/mptooling/notifycat/main/scripts/install.sh | sh
+cd notifycat
 ```
 
-### 2. Edit `.env`
+The installer checks that Docker and Compose V2 are present, creates a
+`./notifycat` directory, and downloads all required files into it
+(`compose.yaml`, `Caddyfile`, `notifycat` wrapper, `.env.example`,
+`mappings.example.yaml`).
 
-Open `.env` in your editor. At minimum, set these four variables:
+### 2. Run the setup wizard
 
 ```sh
-DOMAIN=notifycat.example.com     # DNS name resolving to this host
-ACME_EMAIL=ops@example.com       # email for Let's Encrypt registration
-
-GITHUB_WEBHOOK_SECRET=replace-me # secret you set on the GitHub webhook
-SLACK_BOT_TOKEN=xoxb-replace-me  # your Slack bot token
+./notifycat setup
 ```
 
-All other variables have working defaults. Keep `.env` out of version control — it is gitignored.
+The wizard prompts for:
 
-### 3. Edit `mappings.yaml`
+- **Domain** — the public DNS name pointing at this host (e.g. `notifycat.acme.com`)
+- **ACME email** — Let's Encrypt contact address
+- **GitHub webhook secret** — any strong random string; you'll use it when registering the webhook
+- **Slack bot token** — starts with `xoxb-`
+- **First mapping** — GitHub org, repositories (`*` for all, or a comma-separated list), and Slack channel ID
 
-Replace the example repos and channel IDs with your real ones:
+It writes `.env` (permissions `0600`) and a starter `mappings.yaml`. Edit
+`mappings.yaml` to add more repos or orgs; see [Mappings](mappings.md) for the
+full format reference.
 
-```sh
-$EDITOR mappings.yaml
-```
-
-See [Mappings](mappings.md) for the full reference.
-
-### 4. Validate the mappings (recommended)
-
-```sh
-docker run --rm \
-  -v "$PWD/mappings.yaml:/app/mappings.yaml:ro" \
-  --env-file .env \
-  ghcr.io/mptooling/notifycat:latest notifycat-mapping validate
-```
-
-Fix any errors before starting the stack.
-
-### 5. Start the stack
+### 3. Start the stack
 
 ```sh
 docker compose up -d
@@ -70,19 +54,19 @@ docker compose up -d
 
 Caddy contacts Let's Encrypt via the HTTP-01 challenge. First-time certificate provisioning typically completes within 30 seconds.
 
-### 6. Verify
+### 4. Verify
 
 ```sh
 # HTTPS health check through Caddy
 curl -i https://notifycat.example.com/healthz   # expect HTTP/2 200
 
 # Preflight report (config, database, mappings)
-docker compose exec notifycat notifycat-doctor
+./notifycat doctor
 ```
 
 All doctor entries should show `ok`.
 
-### 7. Register the GitHub webhook
+### 5. Register the GitHub webhook
 
 Set your webhook URL to `https://notifycat.example.com/webhook/github` with the secret from `GITHUB_WEBHOOK_SECRET`. See [GitHub webhook setup](github-webhook.md).
 
@@ -105,11 +89,12 @@ Caddy terminates TLS and proxies to the `notifycat` service on the internal Dock
 ## Managing the stack
 
 ```sh
-docker compose up -d                            # start or recreate containers
-docker compose down                             # stop and remove containers (volumes preserved)
-docker compose pull && docker compose up -d     # pull latest image and redeploy
-docker compose logs -f notifycat                # follow server logs
+./notifycat up                                  # start or recreate containers
+./notifycat down                                # stop and remove containers (volumes preserved)
+./notifycat logs                                # follow server logs
+docker compose pull && ./notifycat up           # pull latest image and redeploy
 docker compose logs -f caddy                    # follow Caddy logs (ACME, access)
+./notifycat doctor                              # run preflight checks
 ```
 
 Both containers are set to `restart: unless-stopped` — they start automatically on reboot.

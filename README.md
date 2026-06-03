@@ -46,35 +46,25 @@ PRs route to which Slack channels.
 
 ## Quickstart
 
-### Docker
+### Docker Compose (recommended)
 
-**Requires:** Docker. Nothing else — no Go toolchain, no SQLite client.
-The published image carries all four binaries and a self-contained
-runtime.
-
-Five Docker commands get Notifycat from "nothing" to "running":
+**Requires:** Docker with Compose V2. Nothing else — no Go toolchain, no
+SQLite client.
 
 ```sh
-mkdir -p ~/notifycat && cd ~/notifycat
-curl -fsSL https://raw.githubusercontent.com/mptooling/notifycat/main/.env.example     -o .env
-curl -fsSL https://raw.githubusercontent.com/mptooling/notifycat/main/mappings.example.yaml -o mappings.yaml
-# edit .env and mappings.yaml, then:
-
-docker run --rm --user $(id -u):$(id -g) -v "$PWD:/app" --env-file .env \
-  ghcr.io/mptooling/notifycat:latest notifycat-mapping validate
-
-docker run --rm --user $(id -u):$(id -g) -v "$PWD:/app" --env-file .env \
-  ghcr.io/mptooling/notifycat:latest notifycat-doctor
-
-docker run -d --name notifycat --restart unless-stopped \
-  -p 127.0.0.1:8080:8080 \
-  --user $(id -u):$(id -g) -v "$PWD:/app" --env-file .env \
-  ghcr.io/mptooling/notifycat:latest
+curl -fsSL https://raw.githubusercontent.com/mptooling/notifycat/main/scripts/install.sh | sh
+cd notifycat
+./notifycat setup          # interactive wizard — writes .env and mappings.yaml
+docker compose up -d       # start Notifycat + Caddy (HTTPS via Let's Encrypt)
+./notifycat doctor         # verify setup
 ```
 
-For a real production deploy with HTTPS (Caddy + Let's Encrypt
-auto-renewal), see
-[Docker → Production deploy on a single VM](https://mptooling.github.io/notifycat/docker/#production-deploy-on-a-single-vm-ec2-example).
+The installer creates a `./notifycat` directory with all required files.
+The setup wizard prompts for your domain, Slack token, webhook secret, and
+first mapping — no manual file editing required.
+
+For the full walkthrough including webhook registration and troubleshooting,
+see [Install with Docker Compose](https://mptooling.github.io/notifycat/compose/).
 
 ### Local (Go source)
 
@@ -113,7 +103,8 @@ Full documentation is published at <https://mptooling.github.io/notifycat/>.
 - [Configuration](https://mptooling.github.io/notifycat/configuration/)
 - [Slack app setup](https://mptooling.github.io/notifycat/slack-app/)
 - [GitHub webhook setup](https://mptooling.github.io/notifycat/github-webhook/)
-- [Docker](https://mptooling.github.io/notifycat/docker/)
+- [Install with Docker Compose](https://mptooling.github.io/notifycat/compose/)
+- [Docker (manual)](https://mptooling.github.io/notifycat/docker/)
 - [Operations](https://mptooling.github.io/notifycat/operations/)
 - [Doctor](https://mptooling.github.io/notifycat/doctor/)
 
