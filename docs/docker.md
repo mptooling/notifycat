@@ -1,14 +1,13 @@
 # Docker
 
-The published image runs as a single process with one bind-mounted
-directory holding all state. The same image powers local Docker
-testing on a dev machine and production HTTPS deployments on a single
-VM (EC2, Hetzner, DO droplet — anything systemd-based).
+The published image runs as a single process with one bind-mounted directory holding all state. The same image powers
+local Docker testing on a dev machine and production HTTPS deployments on a single VM (EC2, Hetzner, DO droplet —
+anything systemd-based).
 
 !!! tip "Recommended production path: Docker Compose"
-    For a production HTTPS install, use [Install with Docker Compose](compose.md) instead.
-    It brings up Notifycat and Caddy together with one command and handles TLS automatically.
-    The `docker run` flows on this page are the manual alternative when you manage Caddy yourself.
+    For a production HTTPS install, use [Install with Docker Compose](compose.md) instead. It brings up Notifycat and
+    Caddy together with one command and handles TLS automatically. The `docker run` flows on this page are the manual
+    alternative when you manage Caddy yourself.
 
 ## Quick reference
 
@@ -23,15 +22,13 @@ VM (EC2, Hetzner, DO droplet — anything systemd-based).
 | Default user | `65532:65532` (override with `--user $(id -u):$(id -g)` for host-owned volumes) |
 | Entrypoint | none — pass the binary name as the command (`notifycat-doctor`, `notifycat-mapping validate`, …); the default `CMD` is `notifycat-server` |
 
-A single host directory mounted at `/app` is the entire surface. It
-holds `mappings.yaml`, `mappings.lock`, `notifycat.db`. `.env` is
-passed separately via `--env-file`.
+A single host directory mounted at `/app` is the entire surface. It holds `mappings.yaml`, `mappings.lock`,
+`notifycat.db`. `.env` is passed separately via `--env-file`.
 
 ## Local Docker run
 
-Use this when you want to try Notifycat against real GitHub + Slack
-without installing Go. Five commands plus a tunnel for the GitHub
-side.
+Use this when you want to try Notifycat against real GitHub + Slack without installing Go. Five commands plus a tunnel
+for the GitHub side.
 
 ```sh
 mkdir -p ~/notifycat && cd ~/notifycat
@@ -66,10 +63,9 @@ curl -i http://localhost:8080/healthz   # expect 200 OK
 docker logs -f notifycat
 ```
 
-`--user $(id -u):$(id -g)` runs the container as your host user, so
-the bind-mounted `~/notifycat/` is naturally writable — no `chown`
-needed. The image's default UID `65532` still applies if you omit
-the flag (useful for orchestrators that set up volumes themselves).
+`--user $(id -u):$(id -g)` runs the container as your host user, so the bind-mounted `~/notifycat/` is naturally
+writable — no `chown` needed. The image's default UID `65532` still applies if you omit the flag (useful for
+orchestrators that set up volumes themselves).
 
 ### Exposing the local server to GitHub
 
@@ -83,20 +79,17 @@ ngrok http 8080
 cloudflared tunnel --url http://localhost:8080
 ```
 
-Then register the webhook against the tunnel's HTTPS URL using
-`scripts/github-webhook-create.sh` — see
-[GitHub webhook setup](github-webhook.md).
+Then register the webhook against the tunnel's HTTPS URL using `scripts/github-webhook-create.sh` — see [GitHub webhook
+setup](github-webhook.md).
 
 ## Production deploy on a single VM (manual Caddy, EC2 example)
 
 !!! note
-    The [Docker Compose install](compose.md) is the recommended production path.
-    Use this section only if you need to manage Caddy as a host service rather than
-    running it as a container.
+    The [Docker Compose install](compose.md) is the recommended production path. Use this section only if you need to
+    manage Caddy as a host service rather than running it as a container.
 
-End-state: the EC2 box runs Notifycat in Docker and Caddy on the host
-for TLS termination + Let's Encrypt cert auto-renewal. Caddy proxies
-`https://notifycat.example.com` to `http://127.0.0.1:8080`.
+End-state: the EC2 box runs Notifycat in Docker and Caddy on the host for TLS termination + Let's Encrypt cert
+auto-renewal. Caddy proxies `https://notifycat.example.com` to `http://127.0.0.1:8080`.
 
 ### Prerequisites
 
@@ -116,8 +109,7 @@ sudo usermod -aG docker "$USER"   # log out + back in for the group to apply
 
 ### Deploy
 
-The five-command shape is identical to local; only the hostname and
-the post-step Caddy install differ.
+The five-command shape is identical to local; only the hostname and the post-step Caddy install differ.
 
 ```sh
 mkdir -p ~/notifycat && cd ~/notifycat
@@ -149,18 +141,16 @@ sudo NOTIFYCAT_DOMAIN=notifycat.example.com \
      /tmp/notifycat/scripts/caddy-install.sh
 ```
 
-After step 5, hit `https://notifycat.example.com/healthz` from your
-browser — you should see `200 OK` with a valid Let's Encrypt cert.
+After step 5, hit `https://notifycat.example.com/healthz` from your browser — you should see `200 OK` with a valid Let's
+Encrypt cert.
 
 ### What `caddy-install.sh` does
 
-The script is a single POSIX-sh file under `scripts/`. It is
-**idempotent** — safe to re-run when you want to upgrade Caddy or
-rewrite the Caddyfile from new env values.
+The script is a single POSIX-sh file under `scripts/`. It is **idempotent** — safe to re-run when you want to upgrade
+Caddy or rewrite the Caddyfile from new env values.
 
-1. Downloads the latest Caddy release binary from GitHub (override
-   with `CADDY_VERSION`) for `amd64` / `arm64` / `armv7` and installs
-   it to `/usr/local/bin/caddy`.
+1. Downloads the latest Caddy release binary from GitHub (override with `CADDY_VERSION`) for `amd64` / `arm64` / `armv7`
+   and installs it to `/usr/local/bin/caddy`.
 2. Creates the `caddy` system user, `/etc/caddy/`, `/var/lib/caddy/`.
 3. Writes `/etc/caddy/Caddyfile`:
 
@@ -176,19 +166,13 @@ rewrite the Caddyfile from new env values.
    ```
 
    (Any existing Caddyfile is backed up with a timestamped suffix.)
-4. Installs the canonical Caddy systemd unit at
-   `/etc/systemd/system/caddy.service` with hardening flags
-   (`PrivateTmp`, `ProtectSystem=full`, `ProtectHome`, and
-   `CAP_NET_BIND_SERVICE` so the unprivileged `caddy` user can bind
-   80/443).
+4. Installs the canonical Caddy systemd unit at `/etc/systemd/system/caddy.service` with hardening flags (`PrivateTmp`,
+   `ProtectSystem=full`, `ProtectHome`, and `CAP_NET_BIND_SERVICE` so the unprivileged `caddy` user can bind 80/443).
 5. Runs `caddy fmt` + `caddy validate` before activating.
-6. `systemctl enable --now caddy` on first run; `systemctl reload caddy`
-   on subsequent runs.
+6. `systemctl enable --now caddy` on first run; `systemctl reload caddy` on subsequent runs.
 
-**Auto-renewal is automatic.** Caddy refreshes its Let's Encrypt
-certificates ~30 days before expiry, all in-process — no `cron`, no
-`certbot.timer`, no extra config. Renewals are logged to
-`journalctl -u caddy`.
+**Auto-renewal is automatic.** Caddy refreshes its Let's Encrypt certificates ~30 days before expiry, all in-process —
+no `cron`, no `certbot.timer`, no extra config. Renewals are logged to `journalctl -u caddy`.
 
 ### Verification
 
@@ -213,9 +197,8 @@ If `journalctl -u caddy` shows ACME errors:
 
 ## Migrating from a `/data`-based deployment (pre-0.4.0)
 
-`0.4.0` moves all state under `/app`. If your `0.3.x` `docker run`
-mounted a volume at `/data` (and possibly `mappings.yaml` at
-`/etc/notifycat/` or `/mappings.yaml`), migrate like this:
+`0.4.0` moves all state under `/app`. If your `0.3.x` `docker run` mounted a volume at `/data` (and possibly
+`mappings.yaml` at `/etc/notifycat/` or `/mappings.yaml`), migrate like this:
 
 ```sh
 docker stop notifycat
@@ -238,25 +221,21 @@ docker run -d --name notifycat --restart unless-stopped \
   ghcr.io/mptooling/notifycat:latest
 ```
 
-The migration does not touch the SQLite schema; existing
-`slack_messages` rows continue to serve and update.
+The migration does not touch the SQLite schema; existing `slack_messages` rows continue to serve and update.
 
 ## Troubleshooting
 
 **`mappings: write lock tmp: open mappings.lock.tmp: permission denied`**
 
-You're on a pre-0.4.0 image where the bind-mounted file's parent
-directory wasn't writable. Upgrade to `:0.4.0` (or `:latest`) and
-follow the migration above. The new image's `WORKDIR=/app` puts the
-lock file inside the mount, where atomic-write-and-rename works.
+You're on a pre-0.4.0 image where the bind-mounted file's parent directory wasn't writable. Upgrade to `:0.4.0` (or
+`:latest`) and follow the migration above. The new image's `WORKDIR=/app` puts the lock file inside the mount, where
+atomic-write-and-rename works.
 
 **`store: open: unable to open database file: out of memory (14)`**
 
-The parent directory of `DATABASE_URL` does not exist or is not
-writable by the container's user. With the image defaults, the DB is
-at `/app/notifycat.db` — so the `/app` mount must be writable.
-`--user $(id -u):$(id -g)` is the simplest fix; alternatively
-`chown 65532:65532 ~/notifycat` once.
+The parent directory of `DATABASE_URL` does not exist or is not writable by the container's user. With the image
+defaults, the DB is at `/app/notifycat.db` — so the `/app` mount must be writable. `--user $(id -u):$(id -g)` is the
+simplest fix; alternatively `chown 65532:65532 ~/notifycat` once.
 
 **Container exits immediately on start**
 
@@ -264,14 +243,12 @@ at `/app/notifycat.db` — so the `/app` mount must be writable.
 docker logs notifycat
 ```
 
-The most common cause is `app: startup validation failed for N entries`
-— one or more mappings failed Slack or GitHub checks. Run
-`notifycat-mapping validate` separately to see the per-check detail.
+The most common cause is `app: startup validation failed for N entries` — one or more mappings failed Slack or GitHub
+checks. Run `notifycat-mapping validate` separately to see the per-check detail.
 
 **Caddy fails to obtain a certificate**
 
-See the HTTP-01 failure table above. Worst case, switch to the
-staging ACME endpoint while debugging:
+See the HTTP-01 failure table above. Worst case, switch to the staging ACME endpoint while debugging:
 
 ```caddyfile
 {
@@ -280,8 +257,8 @@ staging ACME endpoint while debugging:
 }
 ```
 
-then `sudo systemctl reload caddy`. Staging certs are not trusted by
-browsers but produce the same errors quickly without rate limits.
+then `sudo systemctl reload caddy`. Staging certs are not trusted by browsers but produce the same errors quickly
+without rate limits.
 
 ## Building the image locally
 
@@ -289,6 +266,5 @@ browsers but produce the same errors quickly without rate limits.
 docker build -t notifycat:dev .
 ```
 
-The justfile has `just docker-build`, `just docker-validate`,
-`just docker-doctor`, `just docker-up` for the same flows against the
-local build.
+The justfile has `just docker-build`, `just docker-validate`, `just docker-doctor`, `just docker-up` for the same flows
+against the local build.
