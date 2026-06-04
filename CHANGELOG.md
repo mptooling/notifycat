@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/mptooling/notifycat/compare/v0.9.0...v0.10.0) (2026-06-04)
+
+
+### 🚀 Features
+
+* build multi-arch docker image (linux/amd64 + linux/arm64) in CI ([#63](https://github.com/mptooling/notifycat/issues/63)) ([4f2df81](https://github.com/mptooling/notifycat/commit/4f2df8107168bbe314f953cc420f8fe7fc956fdd))
+
 ## [0.9.0](https://github.com/mptooling/notifycat/compare/v0.8.0...v0.9.0) (2026-06-04)
 
 
