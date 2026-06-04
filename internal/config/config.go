@@ -50,6 +50,14 @@ type Config struct {
 	// reviewers and scripted bots alike). Default false — current behavior.
 	IgnoreAIReviews bool `env:"NOTIFYCAT_IGNORE_AI_REVIEWS" envDefault:"false"`
 
+	// Domain is the public DNS name operators point at this host; the
+	// docker-compose reverse proxy uses it for the virtual host and TLS. It is
+	// the single source of truth for the public host: notifycat-doctor derives
+	// the GitHub webhook URL (https://$DOMAIN/webhook/github) from it. Optional —
+	// unset is fine for local-dev / tunnel setups, and a value exported in the
+	// environment counts the same as one from .env.
+	Domain string `env:"DOMAIN"`
+
 	Reactions Reactions
 }
 
