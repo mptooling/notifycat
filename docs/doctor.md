@@ -93,6 +93,8 @@ When in doubt, prefer the doctor for pre-deploy gating and `mapping validate` fo
 
 ## Related
 
+- [Install with Docker Compose](compose.md#5-smoke-test-delivery-before-wiring-the-real-webhook) — once the doctor is
+  green, `./notifycat smoke <org>/<repo>` posts a real signed event end-to-end and confirms a Slack message is delivered.
 - [Configuration](configuration.md) — every environment variable the doctor inspects.
 - [Mappings](mappings.md) — the file the `mappings` section parses.
 - [Operations](operations.md) — failure-mode remediation for the per-repo Slack + GitHub checks.

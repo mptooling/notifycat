@@ -67,7 +67,21 @@ curl -i https://notifycat.example.com/healthz   # expect HTTP/2 200
 
 All doctor entries should show `ok`.
 
-### 5. Register the GitHub webhook
+### 5. Smoke-test delivery before wiring the real webhook
+
+The doctor confirms config and connectivity; the smoke test confirms the **whole path** actually delivers. It forges a
+correctly-signed `pull_request: opened` event for a repository in your `mappings.yaml`, POSTs it to the running server's
+`/webhook/github` (exercising the real signature check, dispatcher, and Slack client), and reports the channel and Slack
+timestamp it produced:
+
+```sh
+./notifycat smoke <org>/<repo>    # use a repo present in mappings.yaml
+```
+
+A real message titled `[notifycat smoke] …` appears in the mapped channel — delete it once you've confirmed delivery. A
+secret mismatch is reported as a clear `401`, and an unmapped repository is rejected before any request is sent.
+
+### 6. Register the GitHub webhook
 
 Set your webhook URL to `https://notifycat.example.com/webhook/github` with the secret from `GITHUB_WEBHOOK_SECRET`. See
 [GitHub webhook setup](github-webhook.md).

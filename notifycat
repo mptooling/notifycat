@@ -26,7 +26,9 @@ Commands:
   setup           Interactive wizard — writes .env and mappings.yaml
   doctor [org/repo]
                   Run notifycat-doctor inside the running stack
-  smoke           End-to-end smoke test (not yet implemented)
+  smoke <org/repo>
+                  Post a signed test PR event to the running stack and
+                  confirm a real Slack message is delivered
   up              docker compose up -d
   logs            docker compose logs -f
   down            docker compose down
@@ -215,7 +217,8 @@ cmd_doctor() {
 }
 
 cmd_smoke() {
-  die "smoke is not yet implemented — see https://github.com/mptooling/notifycat/issues/45"
+  [ "$#" -ge 1 ] || die "usage: ./notifycat smoke <owner/repo>"
+  docker compose run --rm "$COMPOSE_SVC" notifycat-smoke "$@"
 }
 
 # ── dispatch ──────────────────────────────────────────────────────────────────
