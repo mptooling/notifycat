@@ -156,6 +156,65 @@ func TestCheckConfig_NeverPrintsSecretValues(t *testing.T) {
 	}
 }
 
+func findConfigCheck(t *testing.T, sec doctor.Section, name string) validate.CheckResult {
+	t.Helper()
+	for _, c := range sec.Checks {
+		if c.Name == name {
+			return c
+		}
+	}
+	t.Fatalf("check %q not found in section: %+v", name, sec.Checks)
+	return validate.CheckResult{}
+}
+
+func TestCheckConfig_ValidDomainReportsWebhookURL(t *testing.T) {
+	cfg := validConfig()
+	cfg.Domain = "notifycat.example.com"
+	sec := doctor.CheckConfig(cfg)
+	c := findConfigCheck(t, sec, "DOMAIN")
+	if c.Status != validate.StatusOK {
+		t.Fatalf("DOMAIN check = %+v; want OK", c)
+	}
+	if !strings.Contains(c.Detail, "https://notifycat.example.com/webhook/github") {
+		t.Errorf("detail should name the exact webhook URL to paste into GitHub, got %q", c.Detail)
+	}
+}
+
+func TestCheckConfig_DomainWithSchemeFails(t *testing.T) {
+	cfg := validConfig()
+	cfg.Domain = "https://notifycat.example.com"
+	sec := doctor.CheckConfig(cfg)
+	c := findConfigCheck(t, sec, "DOMAIN")
+	if c.Status != validate.StatusFail {
+		t.Fatalf("DOMAIN carrying a scheme should FAIL (it must be a bare host), got %+v", c)
+	}
+	if sec.OK() {
+		t.Errorf("section must not be OK when DOMAIN is invalid")
+	}
+}
+
+func TestCheckConfig_MalformedDomainFails(t *testing.T) {
+	cfg := validConfig()
+	cfg.Domain = "not a valid host"
+	sec := doctor.CheckConfig(cfg)
+	c := findConfigCheck(t, sec, "DOMAIN")
+	if c.Status != validate.StatusFail {
+		t.Fatalf("malformed DOMAIN should FAIL, got %+v", c)
+	}
+}
+
+func TestCheckConfig_UnsetDomainSkips(t *testing.T) {
+	cfg := validConfig() // Domain is empty
+	sec := doctor.CheckConfig(cfg)
+	c := findConfigCheck(t, sec, "DOMAIN")
+	if c.Status != validate.StatusSkip {
+		t.Fatalf("unset DOMAIN should SKIP (local-dev/tunnel users), got %+v", c)
+	}
+	if !sec.OK() {
+		t.Errorf("a SKIP must not fail the section")
+	}
+}
+
 func TestCheckConfig_RejectsNonPositiveTTL(t *testing.T) {
 	cfg := validConfig()
 	cfg.MessageTTLDays = 0

@@ -26,6 +26,7 @@ Exit code is `0` when every check passes (`SKIP` does not count as a failure) an
 | `config` | `NOTIFYCAT_MESSAGE_TTL_DAYS` | Must be `> 0`; the server refuses to start otherwise. |
 | `config` | `DATABASE_URL` | Non-empty; actual reachability is the next section's job. |
 | `config` | `NOTIFYCAT_MAPPINGS_FILE` | Non-empty; actual file parsing is its own section. |
+| `config` | `DOMAIN` | Derives the public webhook URL (`https://$DOMAIN/webhook/github`) the operator pastes into GitHub. `OK` prints that URL; a scheme/path or malformed host is a `FAIL` with a hint; unset is a `SKIP` (expected for local dev / tunnels). |
 | `database` | `open` | Opens the SQLite database and pings the underlying connection. Reports the DSN that was used. |
 | `mappings` | `file` | Loads the YAML via the same parser the server uses. Surfaces schema errors and missing files. |
 | `mappings` | `entries` | Number of parsed entries (`0` is allowed — the server boots and routes nothing). |

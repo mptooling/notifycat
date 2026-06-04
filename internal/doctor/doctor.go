@@ -9,6 +9,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
+	"strings"
 
 	"github.com/mptooling/notifycat/internal/config"
 	"github.com/mptooling/notifycat/internal/mappings"
@@ -119,7 +121,49 @@ func CheckConfig(cfg config.Config) Section {
 			Detail: cfg.MappingsFile,
 		})
 	}
+	sec.Checks = append(sec.Checks, publicWebhookURLCheck(cfg.Domain))
 	return sec
+}
+
+// publicWebhookURLCheck validates DOMAIN and reports the exact URL the operator
+// pastes into the GitHub webhook. DOMAIN is the single source of truth for the
+// public host (the docker-compose reverse proxy reads the same value), so the
+// doctor derives https://$DOMAIN/webhook/github rather than asking for the URL
+// separately. The most common install-path mistake is putting a scheme or path
+// in DOMAIN, or leaving it as a bare host that doesn't parse — both FAIL here
+// with a remediation hint. When DOMAIN is unset the check is a SKIP, not a FAIL:
+// local-dev and tunnel (ngrok) users legitimately have no fixed public host.
+func publicWebhookURLCheck(domain string) validate.CheckResult {
+	const name = "DOMAIN"
+	d := strings.TrimSpace(domain)
+	if d == "" {
+		return validate.CheckResult{
+			Name:   name,
+			Status: validate.StatusSkip,
+			Detail: "not set — skipping the public webhook URL check (expected for local dev / tunnels; " +
+				"set DOMAIN to your public host, e.g. notifycat.example.com, in .env or the environment to enable it)",
+		}
+	}
+	if strings.Contains(d, "://") {
+		return validate.CheckResult{
+			Name:   name,
+			Status: validate.StatusFail,
+			Detail: fmt.Sprintf("must be a bare host like notifycat.example.com, not a full URL: got %q", d),
+		}
+	}
+	u, err := url.Parse("https://" + d + "/webhook/github")
+	if err != nil || u.Host != d {
+		return validate.CheckResult{
+			Name:   name,
+			Status: validate.StatusFail,
+			Detail: fmt.Sprintf("not a valid host: %q — use a bare hostname like notifycat.example.com", d),
+		}
+	}
+	return validate.CheckResult{
+		Name:   name,
+		Status: validate.StatusOK,
+		Detail: "paste this into the GitHub webhook Payload URL: " + u.String(),
+	}
 }
 
 // CheckDatabase opens dsn, pings the underlying connection, and reports the
