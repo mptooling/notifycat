@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/mptooling/notifycat/compare/v0.8.0...v0.9.0) (2026-06-04)
+
+
+### 🚀 Features
+
+* react to general PR conversation comments (issue_comment event) ([#61](https://github.com/mptooling/notifycat/issues/61)) ([4ca980f](https://github.com/mptooling/notifycat/commit/4ca980fe964bf60671c1f132951b92aaf09bc785))
+
 ## [0.8.0](https://github.com/mptooling/notifycat/compare/v0.7.0...v0.8.0) (2026-06-03)
 
 
