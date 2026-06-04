@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.8.0](https://github.com/mptooling/notifycat/compare/v0.7.0...v0.8.0) (2026-06-03)
+
+
+### 🚀 Features
+
+* notifycat setup wizard and host dispatch wrapper ([#57](https://github.com/mptooling/notifycat/issues/57)) ([c8be8c8](https://github.com/mptooling/notifycat/commit/c8be8c817ab33f91c975a8c7ce82bcbd831cfd56))
+
+## [0.7.0](https://github.com/mptooling/notifycat/compare/v0.6.1...v0.7.0) (2026-06-01)
+
+
+### 🚀 Features
+
+* friendly first-run errors for missing or invalid config ([#55](https://github.com/mptooling/notifycat/issues/55)) ([8a70c61](https://github.com/mptooling/notifycat/commit/8a70c61081f097b12b5dccef67b9edf546bd3486))
+
 ## [0.6.1](https://github.com/mptooling/notifycat/compare/v0.6.0...v0.6.1) (2026-06-01)
 
 

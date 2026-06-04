@@ -1,10 +1,9 @@
 # Doctor
 
-`notifycat-doctor` is the preflight diagnostics binary. Run it in your
-deployment environment to verify that Notifycat is wired correctly **before**
-GitHub fires a real webhook. It complements `notifycat-mapping validate`:
-the mapping validator only checks per-entry Slack/GitHub coverage, while the
-doctor adds runtime config, database, and mappings-file health on top.
+`notifycat-doctor` is the preflight diagnostics binary. Run it in your deployment environment to verify that Notifycat
+is wired correctly **before** GitHub fires a real webhook. It complements `notifycat-mapping validate`: the mapping
+validator only checks per-entry Slack/GitHub coverage, while the doctor adds runtime config, database, and mappings-file
+health on top.
 
 ## Usage
 
@@ -16,8 +15,7 @@ notifycat-doctor
 notifycat-doctor owner/repo
 ```
 
-Exit code is `0` when every check passes (`SKIP` does not count as a
-failure) and `1` otherwise.
+Exit code is `0` when every check passes (`SKIP` does not count as a failure) and `1` otherwise.
 
 ## What it checks
 
@@ -62,14 +60,12 @@ failure) and `1` otherwise.
 The doctor is **safe to run in production**:
 
 - No `os.Args` parsing beyond a single positional repository name.
-- Reads config from environment variables (and `.env` for local dev).
-  Secret values are never written to stdout, stderr, or logs.
-- Opens the SQLite database read-write but performs **no migrations** and
-  **no writes** — the open + ping happens, then the connection is closed.
-- Per-repo Slack checks call `auth.test` and `conversations.info` only
-  (read-only Slack API methods).
-- The GitHub webhook check, when `GITHUB_TOKEN` is set, lists hooks via the
-  REST API. Read-only.
+- Reads config from environment variables (and `.env` for local dev). Secret values are never written to stdout, stderr,
+  or logs.
+- Opens the SQLite database read-write but performs **no migrations** and **no writes** — the open + ping happens, then
+  the connection is closed.
+- Per-repo Slack checks call `auth.test` and `conversations.info` only (read-only Slack API methods).
+- The GitHub webhook check, when `GITHUB_TOKEN` is set, lists hooks via the REST API. Read-only.
 
 Recommended deployment hooks:
 
@@ -83,18 +79,16 @@ notifycat-doctor "$REPO" || exit 1
 
 ## When the doctor disagrees with `notifycat-mapping validate`
 
-They share the same Slack + GitHub checking code (the `internal/validate`
-package). Differences in output indicate one of:
+They share the same Slack + GitHub checking code (the `internal/validate` package). Differences in output indicate one
+of:
 
-- Different environment (the doctor and the validator read the same
-  `NOTIFYCAT_MAPPINGS_FILE`, but a stale lock file can mask issues only the
-  doctor surfaces — the doctor does not consult the lock).
-- The mappings file is unreadable. The doctor surfaces this in the
-  `mappings` section and then skips the per-repo checks; `mapping validate`
-  refuses to start.
+- Different environment (the doctor and the validator read the same `NOTIFYCAT_MAPPINGS_FILE`, but a stale lock file can
+  mask issues only the doctor surfaces — the doctor does not consult the lock).
+- The mappings file is unreadable. The doctor surfaces this in the `mappings` section and then skips the per-repo
+  checks; `mapping validate` refuses to start.
 
-When in doubt, prefer the doctor for pre-deploy gating and `mapping
-validate` for operator workflows around `mappings.yaml` edits.
+When in doubt, prefer the doctor for pre-deploy gating and `mapping validate` for operator workflows around
+`mappings.yaml` edits.
 
 ## Related
 

@@ -6,11 +6,10 @@ Notifycat receives GitHub webhook requests at:
 POST /webhook/github
 ```
 
-GitHub must send JSON payloads and sign them with the same secret you set in
-`GITHUB_WEBHOOK_SECRET`.
+GitHub must send JSON payloads and sign them with the same secret you set in `GITHUB_WEBHOOK_SECRET`.
 
-For production setup, use the shell script directly. It only needs `sh` and
-`curl`; `jq` is optional and only makes the output easier to read.
+For production setup, use the shell script directly. It only needs `sh` and `curl`; `jq` is optional and only makes the
+output easier to read.
 
 ## Create the Webhook with the Script
 
@@ -29,8 +28,7 @@ NOTIFYCAT_PUBLIC_URL=https://notifycat.example.com \
 ./scripts/github-webhook-create.sh owner/repo
 ```
 
-The script validates the inputs before calling GitHub. It creates an active
-repository webhook with:
+The script validates the inputs before calling GitHub. It creates an active repository webhook with:
 
 | Field | Value |
 | --- | --- |
@@ -40,19 +38,15 @@ repository webhook with:
 | SSL verification | enabled |
 | Events | `pull_request`, `pull_request_review`, `pull_request_review_comment`, `issue_comment` |
 
-The GitHub token is setup-only. Do not store it in Notifycat production
-configuration.
+The GitHub token is setup-only. Do not store it in Notifycat production configuration.
 
-`NOTIFYCAT_PUBLIC_URL` is **script-only**. It is the public address you
-want GitHub to deliver to (your reverse proxy, your tunnel, the
-`*.example.com` you have in DNS) and is never read by the running
-server. Setting it as an environment variable on `notifycat-server`
-has no effect.
+`NOTIFYCAT_PUBLIC_URL` is **script-only**. It is the public address you want GitHub to deliver to (your reverse proxy,
+your tunnel, the `*.example.com` you have in DNS) and is never read by the running server. Setting it as an environment
+variable on `notifycat-server` has no effect.
 
 ## Local Development Shortcut
 
-If you use `just` while working on the repository, this recipe calls the same
-script:
+If you use `just` while working on the repository, this recipe calls the same script:
 
 ```sh
 GITHUB_TOKEN=github_pat_your-token \
@@ -61,8 +55,8 @@ NOTIFYCAT_PUBLIC_URL=https://notifycat.example.com \
 just github-webhook-create owner/repo
 ```
 
-Production instructions should use `./scripts/github-webhook-create.sh`
-directly so operators do not need to install `just`.
+Production instructions should use `./scripts/github-webhook-create.sh` directly so operators do not need to install
+`just`.
 
 ## Manual Fallback
 
@@ -89,22 +83,19 @@ If you cannot use the GitHub API, create the webhook in the repository settings:
 10. Keep **Active** checked.
 11. Save the webhook.
 
-GitHub sends a ping after creation. Notifycat only handles pull request events,
-so use GitHub's delivery view to test a real PR event after the webhook is
-registered.
+GitHub sends a ping after creation. Notifycat only handles pull request events, so use GitHub's delivery view to test a
+real PR event after the webhook is registered.
 
 ## Security Notes
 
-Use a fine-grained GitHub token scoped to the target repository with
-**Webhooks: Read and write**. Avoid broad classic `repo` tokens unless your
-organization cannot use fine-grained tokens.
+Use a fine-grained GitHub token scoped to the target repository with **Webhooks: Read and write**. Avoid broad classic
+`repo` tokens unless your organization cannot use fine-grained tokens.
 
-Use HTTPS for `NOTIFYCAT_PUBLIC_URL`. The script rejects plain `http://` URLs
-and creates the webhook with SSL verification enabled.
+Use HTTPS for `NOTIFYCAT_PUBLIC_URL`. The script rejects plain `http://` URLs and creates the webhook with SSL
+verification enabled.
 
-Use a long random `GITHUB_WEBHOOK_SECRET`. A good default is at least 32
-characters from your password manager or secret manager. Set the same value in
-Notifycat and in the GitHub webhook.
+Use a long random `GITHUB_WEBHOOK_SECRET`. A good default is at least 32 characters from your password manager or secret
+manager. Set the same value in Notifycat and in the GitHub webhook.
 
 To rotate the secret:
 
@@ -124,24 +115,21 @@ Notifycat handles these event states:
 | `pull_request_review_comment` | line-specific PR comments |
 | `issue_comment` | comments on the PR conversation tab (created) |
 
-To verify the webhook is subscribed to all four events after setup, run
-`notifycat-mapping validate owner/repo` with `GITHUB_TOKEN` exported. The
-validator queries the repository's webhook configuration and reports any
-missing event. The PAT needs `admin:repo_hook` (or `repo` for private
-repositories) — the same token used by `scripts/github-webhook-create.sh` is
-sufficient.
+To verify the webhook is subscribed to all three events after setup, run `notifycat-mapping validate owner/repo` with
+`GITHUB_TOKEN` exported. The validator queries the repository's webhook configuration and reports any missing event. The
+PAT needs `admin:repo_hook` (or `repo` for private repositories) — the same token used by
+`scripts/github-webhook-create.sh` is sufficient.
 
 GitHub uses different events for different comment surfaces:
 
 - A submitted review with "Comment" uses `pull_request_review`.
 - A line-specific comment on the diff uses `pull_request_review_comment`.
-- A comment in the PR conversation tab uses `issue_comment`; Notifycat reacts to
-  those fired on a pull request and ignores comments on plain issues.
+- A comment in the PR conversation tab uses `issue_comment`, which Notifycat does not handle today.
 
 ## Signature Verification
 
-Notifycat verifies `X-Hub-Signature-256` with HMAC-SHA256. Requests without a
-valid signature are rejected before the JSON payload is processed.
+Notifycat verifies `X-Hub-Signature-256` with HMAC-SHA256. Requests without a valid signature are rejected before the
+JSON payload is processed.
 
 If deliveries fail with `401` or `403`, check that:
 
@@ -151,8 +139,7 @@ If deliveries fail with `401` or `403`, check that:
 
 ## Local Testing
 
-GitHub needs a public URL. For local testing, run Notifycat on your machine and
-expose it with a tunnel:
+GitHub needs a public URL. For local testing, run Notifycat on your machine and expose it with a tunnel:
 
 ```sh
 go run ./cmd/notifycat-server
