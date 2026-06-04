@@ -60,7 +60,7 @@ Standard field set (all six fields appear on every `ignored webhook event` line)
 | --- | --- |
 | `reason` | `no_handler`, `no_mapping`, `no_stored_message`, `already_sent` |
 | `handler` | `open`, `close`, `draft`, `approve`, `commented`, `request_change` (empty for the dispatcher) |
-| `github_event` | `pull_request`, `pull_request_review`, `pull_request_review_comment` |
+| `github_event` | `pull_request`, `pull_request_review`, `pull_request_review_comment`, `issue_comment` |
 | `action` | `opened`, `closed`, `synchronize`, `labeled`, `submitted`, … |
 | `repository` | `owner/repo` |
 | `pr` | PR number (int) |
@@ -127,7 +127,7 @@ in CI logs.
 | `channel-format` | The entry's channel ID matches `[CGD][A-Z0-9]{2,}`. | Edit `mappings.yaml` and use the real Slack channel ID, not the display name. |
 | `slack-auth` | `auth.test` succeeds and `X-OAuth-Scopes` includes `chat:write` and `reactions:write`. | Rotate `SLACK_BOT_TOKEN`, or reinstall the app after updating the manifest scopes. |
 | `slack-channel` | `conversations.info` reports the channel exists, is not archived, and the bot is a member. | `/invite @notifycat` in the channel; unarchive if needed; correct the channel ID. |
-| `github-webhook` | When `GITHUB_TOKEN` is set, an active webhook on the repo points at `/webhook/github` and subscribes to `pull_request`, `pull_request_review`, `pull_request_review_comment`. Skipped when `GITHUB_TOKEN` is unset. | Create the webhook with `./scripts/github-webhook-create.sh`, or edit the existing webhook to add the missing events. |
+| `github-webhook` | When `GITHUB_TOKEN` is set, an active webhook on the repo points at `/webhook/github` and subscribes to `pull_request`, `pull_request_review`, `pull_request_review_comment`, `issue_comment`. Skipped when `GITHUB_TOKEN` is unset. | Create the webhook with `./scripts/github-webhook-create.sh`, or edit the existing webhook to add the missing events. |
 
 ### Tokens and Scopes for `validate`
 

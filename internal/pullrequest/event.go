@@ -20,6 +20,11 @@ type Event struct {
 	// Review is non-nil only for pull_request_review events.
 	Review *Review
 
+	// PRComment is true for issue_comment events fired on a pull request (the
+	// payload carried an issue.pull_request reference). False for comments on
+	// plain issues, which CommentedHandler ignores.
+	PRComment bool
+
 	// Sender identifies the actor that fired the webhook. Type is "User"
 	// for humans and "Bot" for GitHub Apps (Copilot, dependabot, …).
 	Sender Sender

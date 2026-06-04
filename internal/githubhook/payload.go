@@ -19,6 +19,11 @@ type Payload struct {
 	// Review is non-nil only for pull_request_review events.
 	Review *Review
 
+	// PRComment is true for issue_comment events fired on a pull request —
+	// the payload carries an issue.pull_request reference. It is false for
+	// comments on plain issues, which handlers ignore.
+	PRComment bool
+
 	// Sender is the actor who fired the event (GitHub's `sender` object).
 	// Zero value when the field is absent in the payload.
 	Sender Sender
@@ -68,6 +73,15 @@ type rawPayload struct {
 	Review *struct {
 		State string `json:"state"`
 	} `json:"review"`
+	// Issue is present on issue_comment events. The PR number lives under
+	// issue.number, and a non-nil issue.pull_request marks the comment as a
+	// pull-request conversation comment rather than a plain-issue comment.
+	Issue struct {
+		Number      int `json:"number"`
+		PullRequest *struct {
+			URL string `json:"url"`
+		} `json:"pull_request"`
+	} `json:"issue"`
 	Sender struct {
 		Login string `json:"login"`
 		Type  string `json:"type"`
@@ -82,7 +96,18 @@ func ParsePayload(body []byte) (Payload, error) {
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return Payload{}, fmt.Errorf("githubhook: decode payload: %w", err)
 	}
-	if raw.PullRequest.Number == 0 {
+	// issue_comment events carry the PR number under issue.number; the
+	// presence of issue.pull_request marks the comment as a PR conversation
+	// comment. A plain-issue comment (issue.number set, no issue.pull_request)
+	// parses with PRComment=false and PR number 0 so the dispatcher can ignore
+	// it as no_handler rather than 400-ing every issue comment in the repo.
+	number := raw.PullRequest.Number
+	prComment := false
+	if number == 0 && raw.Issue.PullRequest != nil {
+		number = raw.Issue.Number
+		prComment = true
+	}
+	if number == 0 && raw.Issue.Number == 0 {
 		return Payload{}, ErrMissingPRNumber
 	}
 
@@ -90,14 +115,15 @@ func ParsePayload(body []byte) (Payload, error) {
 		Action:     raw.Action,
 		Repository: raw.Repository.FullName,
 		PullRequest: PullRequest{
-			Number: raw.PullRequest.Number,
+			Number: number,
 			Title:  raw.PullRequest.Title,
 			URL:    raw.PullRequest.HTMLURL,
 			Author: raw.PullRequest.User.Login,
 			Merged: raw.PullRequest.Merged,
 			Draft:  raw.PullRequest.Draft,
 		},
-		Sender: Sender{Login: raw.Sender.Login, Type: raw.Sender.Type},
+		PRComment: prComment,
+		Sender:    Sender{Login: raw.Sender.Login, Type: raw.Sender.Type},
 	}
 	if raw.Review != nil {
 		p.Review = &Review{State: raw.Review.State}

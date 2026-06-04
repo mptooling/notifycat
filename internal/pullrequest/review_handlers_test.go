@@ -82,6 +82,9 @@ func TestCommentedHandler_Applicable(t *testing.T) {
 		{"edited+commented", pullrequest.Event{Action: "edited", Review: &pullrequest.Review{State: "commented"}}, true},
 		{"line comment created", pullrequest.Event{GitHubEvent: "pull_request_review_comment", Action: "created"}, true},
 		{"line comment edited", pullrequest.Event{GitHubEvent: "pull_request_review_comment", Action: "edited"}, false},
+		{"pr conversation comment created", pullrequest.Event{GitHubEvent: "issue_comment", Action: "created", PRComment: true}, true},
+		{"pr conversation comment edited", pullrequest.Event{GitHubEvent: "issue_comment", Action: "edited", PRComment: true}, false},
+		{"plain issue comment created", pullrequest.Event{GitHubEvent: "issue_comment", Action: "created", PRComment: false}, false},
 		{"submitted+approved", pullrequest.Event{Action: "submitted", Review: &pullrequest.Review{State: "approved"}}, false},
 		{"submitted no review", pullrequest.Event{Action: "submitted"}, false},
 	}

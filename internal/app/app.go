@@ -223,7 +223,8 @@ func eventSink(d *pullrequest.Dispatcher, logger *slog.Logger) githubhook.EventS
 				Merged: p.PullRequest.Merged,
 				Draft:  p.PullRequest.Draft,
 			},
-			Sender: pullrequest.Sender{Login: p.Sender.Login, Type: p.Sender.Type},
+			PRComment: p.PRComment,
+			Sender:    pullrequest.Sender{Login: p.Sender.Login, Type: p.Sender.Type},
 		}
 		if p.Review != nil {
 			event.Review = &pullrequest.Review{State: p.Review.State}

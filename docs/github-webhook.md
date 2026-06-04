@@ -36,7 +36,7 @@ The script validates the inputs before calling GitHub. It creates an active repo
 | Content type | `application/json` |
 | Secret | `GITHUB_WEBHOOK_SECRET` |
 | SSL verification | enabled |
-| Events | `pull_request`, `pull_request_review`, `pull_request_review_comment` |
+| Events | `pull_request`, `pull_request_review`, `pull_request_review_comment`, `issue_comment` |
 
 The GitHub token is setup-only. Do not store it in Notifycat production configuration.
 
@@ -79,6 +79,7 @@ If you cannot use the GitHub API, create the webhook in the repository settings:
    - **Pull requests**
    - **Pull request reviews**
    - **Pull request review comments**
+   - **Issue comments**
 10. Keep **Active** checked.
 11. Save the webhook.
 
@@ -112,6 +113,7 @@ Notifycat handles these event states:
 | `pull_request` | opened, closed, converted to draft |
 | `pull_request_review` | approved, commented, changes requested |
 | `pull_request_review_comment` | line-specific PR comments |
+| `issue_comment` | comments on the PR conversation tab (created) |
 
 To verify the webhook is subscribed to all three events after setup, run `notifycat-mapping validate owner/repo` with
 `GITHUB_TOKEN` exported. The validator queries the repository's webhook configuration and reports any missing event. The

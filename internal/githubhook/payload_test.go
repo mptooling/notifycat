@@ -104,6 +104,55 @@ func TestParsePayload_DraftConverted(t *testing.T) {
 	}
 }
 
+func TestParsePayload_IssueCommentOnPR(t *testing.T) {
+	// issue_comment payloads carry the PR number under issue.number, and the
+	// presence of issue.pull_request marks the comment as a PR conversation
+	// comment rather than a plain-issue comment.
+	body := []byte(`{
+		"action": "created",
+		"repository": {"full_name": "octo/widget"},
+		"issue": {
+			"number": 42,
+			"pull_request": {"url": "https://api.github.com/repos/octo/widget/pulls/42"}
+		},
+		"sender": {"login": "alice", "type": "User"}
+	}`)
+
+	p, err := githubhook.ParsePayload(body)
+	if err != nil {
+		t.Fatalf("ParsePayload: %v", err)
+	}
+	if p.PullRequest.Number != 42 {
+		t.Errorf("PR number = %d; want 42", p.PullRequest.Number)
+	}
+	if !p.PRComment {
+		t.Error("PRComment = false; want true for issue_comment on a PR")
+	}
+}
+
+func TestParsePayload_IssueCommentOnPlainIssue(t *testing.T) {
+	// A comment on a plain issue (no issue.pull_request) must parse without
+	// error so the dispatcher can ignore it with reason: no_handler, rather
+	// than 400-ing every issue comment in the repo.
+	body := []byte(`{
+		"action": "created",
+		"repository": {"full_name": "octo/widget"},
+		"issue": {"number": 99},
+		"sender": {"login": "alice", "type": "User"}
+	}`)
+
+	p, err := githubhook.ParsePayload(body)
+	if err != nil {
+		t.Fatalf("ParsePayload: %v", err)
+	}
+	if p.PullRequest.Number != 0 {
+		t.Errorf("PR number = %d; want 0 for a plain-issue comment", p.PullRequest.Number)
+	}
+	if p.PRComment {
+		t.Error("PRComment = true; want false for a plain-issue comment")
+	}
+}
+
 func TestParsePayload_MissingPRNumberIsError(t *testing.T) {
 	body := []byte(`{
 		"action": "opened",
