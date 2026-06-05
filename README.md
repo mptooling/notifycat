@@ -8,7 +8,7 @@
 [![Release](https://img.shields.io/github/v/release/mptooling/notifycat?display_name=tag&sort=semver)](https://github.com/mptooling/notifycat/releases/latest)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/mptooling/notifycat)](go.mod) [![Go Report
 Card](https://goreportcard.com/badge/github.com/mptooling/notifycat)](https://goreportcard.com/report/github.com/mptooling/notifycat)
-[![License: MIT](https://img.shields.io/github/license/mptooling/notifycat)](LICENSE) [![Conventional
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Conventional
 Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow.svg)](https://www.conventionalcommits.org)
 
 Notifycat listens for GitHub pull request webhooks and keeps Slack up to date.
