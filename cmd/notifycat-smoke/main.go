@@ -80,26 +80,35 @@ func render(stdout io.Writer, res smoke.Result) int {
 
 	exit := 0
 	if res.ReactionsRequested {
-		switch {
-		case !res.ReactionsEnabled:
-			fmt.Fprintln(stdout, "  reactions:  disabled in config (SLACK_REACTIONS_ENABLED=false) — skipped")
-		default:
-			fmt.Fprintln(stdout, "  reactions:")
-			for _, c := range res.Reactions {
-				switch {
-				case c.VerifyErr != nil:
-					fmt.Fprintf(stdout, "    ?  %-8s %-26s could not verify: %v\n", c.Step, c.Emoji, c.VerifyErr)
-				case c.Present:
-					fmt.Fprintf(stdout, "    ✓  %-8s %s\n", c.Step, c.Emoji)
-				default:
-					fmt.Fprintf(stdout, "    ✗  %-8s %-26s not found on the message\n", c.Step, c.Emoji)
-					exit = 1
-				}
-			}
-		}
+		exit = renderReactions(stdout, res)
 	}
 
 	fmt.Fprintln(stdout, "A real Slack message was posted — delete it from the channel when you're done.")
+	return exit
+}
+
+// renderReactions prints the reaction-lifecycle section and returns 1 if any
+// requested emoji was confirmed absent. A verify failure (couldn't read the
+// reactions back) is surfaced but not treated as a smoke failure.
+func renderReactions(stdout io.Writer, res smoke.Result) int {
+	if !res.ReactionsEnabled {
+		fmt.Fprintln(stdout, "  reactions:  disabled in config (SLACK_REACTIONS_ENABLED=false) — skipped")
+		return 0
+	}
+
+	fmt.Fprintln(stdout, "  reactions:")
+	exit := 0
+	for _, c := range res.Reactions {
+		switch {
+		case c.VerifyErr != nil:
+			fmt.Fprintf(stdout, "    ?  %-8s %-26s could not verify: %v\n", c.Step, c.Emoji, c.VerifyErr)
+		case c.Present:
+			fmt.Fprintf(stdout, "    ✓  %-8s %s\n", c.Step, c.Emoji)
+		default:
+			fmt.Fprintf(stdout, "    ✗  %-8s %-26s not found on the message\n", c.Step, c.Emoji)
+			exit = 1
+		}
+	}
 	return exit
 }
 
