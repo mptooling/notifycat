@@ -46,7 +46,7 @@ It is intentionally small: one HTTP endpoint, a SQLite database (for Slack messa
 **Requires:** Docker with Compose V2. Nothing else — no Go toolchain, no SQLite client.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/mptooling/notifycat/main/scripts/install.sh | sh
+curl -fsSL https://github.com/mptooling/notifycat/releases/latest/download/install.sh | sh
 cd notifycat
 ./notifycat setup          # interactive wizard — writes .env and mappings.yaml
 docker compose up -d       # start Notifycat + Caddy (HTTPS via Let's Encrypt)

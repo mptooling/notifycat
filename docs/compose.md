@@ -22,12 +22,14 @@ ownership concerns.
 ### 1. Run the installer
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/mptooling/notifycat/main/scripts/install.sh | sh
+curl -fsSL https://github.com/mptooling/notifycat/releases/latest/download/install.sh | sh
 cd notifycat
 ```
 
-The installer checks that Docker and Compose V2 are present, creates a `./notifycat` directory, and downloads all
-required files into it (`compose.yaml`, `Caddyfile`, `notifycat` wrapper, `.env.example`, `mappings.example.yaml`).
+The installer checks that Docker and Compose V2 are present, creates a `./notifycat` directory, downloads all required
+files into it (`compose.yaml`, `Caddyfile`, `notifycat` wrapper, `.env.example`, `mappings.example.yaml`), and verifies
+each against the release's `SHA256SUMS` before use. To install a specific release, swap `latest` for a tag — e.g.
+`releases/download/v0.11.0/install.sh`. See [Supported tags](docker.md#supported-tags) for what each tag means.
 
 ### 2. Run the setup wizard
 

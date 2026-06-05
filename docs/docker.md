@@ -25,6 +25,33 @@ anything systemd-based).
 A single host directory mounted at `/app` is the entire surface. It holds `mappings.yaml`, `mappings.lock`,
 `notifycat.db`. `.env` is passed separately via `--env-file`.
 
+## Supported tags
+
+Each release publishes the multi-arch image to GHCR under four tags. Pick one by how much movement you want between
+deploys:
+
+| Tag | Moves? | Use it when |
+| --- | --- | --- |
+| `vX.Y.Z` | Immutable — always the same image | You want a fully pinned, reproducible deploy |
+| `vX.Y` | Moves to the latest patch of that minor | You want patch fixes but not minor upgrades |
+| `vX` | Moves to the latest release of that major | You want all non-breaking updates |
+| `latest` | Moves to the newest release | You always want the most recent image |
+
+The shipped `compose.yaml` pins `ghcr.io/mptooling/notifycat:latest`. For a reproducible deploy, edit its `image:` line
+to a specific `vX.Y.Z` before `docker compose up -d`.
+
+### Verifying the install bundle
+
+Every release also attaches the install files — `compose.yaml`, `Caddyfile`, the `notifycat` wrapper, `.env.example`,
+`mappings.example.yaml`, and `install.sh` — together with a `SHA256SUMS` manifest. `install.sh` verifies them
+automatically; to check a manual download yourself, fetch the assets and the manifest into one directory and run:
+
+```sh
+sha256sum -c SHA256SUMS      # or, on macOS/BSD: shasum -a 256 -c SHA256SUMS
+```
+
+`sha256sum -c` reports `OK` for each asset present in the current directory and a non-zero exit on any mismatch.
+
 ## Local Docker run
 
 Use this when you want to try Notifycat against real GitHub + Slack without installing Go. Five commands plus a tunnel
@@ -34,8 +61,8 @@ for the GitHub side.
 mkdir -p ~/notifycat && cd ~/notifycat
 
 # 1. Pull the config templates
-curl -fsSL https://raw.githubusercontent.com/mptooling/notifycat/main/.env.example     -o .env
-curl -fsSL https://raw.githubusercontent.com/mptooling/notifycat/main/mappings.example.yaml -o mappings.yaml
+curl -fsSL https://github.com/mptooling/notifycat/releases/latest/download/.env.example          -o .env
+curl -fsSL https://github.com/mptooling/notifycat/releases/latest/download/mappings.example.yaml -o mappings.yaml
 
 # 2. Edit them
 $EDITOR .env            # set GITHUB_WEBHOOK_SECRET and SLACK_BOT_TOKEN
@@ -115,8 +142,8 @@ The five-command shape is identical to local; only the hostname and the post-ste
 mkdir -p ~/notifycat && cd ~/notifycat
 
 # 1. config templates
-curl -fsSL https://raw.githubusercontent.com/mptooling/notifycat/main/.env.example     -o .env
-curl -fsSL https://raw.githubusercontent.com/mptooling/notifycat/main/mappings.example.yaml -o mappings.yaml
+curl -fsSL https://github.com/mptooling/notifycat/releases/latest/download/.env.example          -o .env
+curl -fsSL https://github.com/mptooling/notifycat/releases/latest/download/mappings.example.yaml -o mappings.yaml
 $EDITOR .env
 $EDITOR mappings.yaml
 
