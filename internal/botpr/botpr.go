@@ -46,11 +46,12 @@ func (k BotKind) Name() string {
 	}
 }
 
-// DetectBot matches senderLogin against the two known bot logins,
-// case-insensitively. The surface is exactly two values, so the match is exact
-// — prefix matching ("dependabot") is intentionally not a hit.
-func DetectBot(senderLogin string) BotKind {
-	switch strings.ToLower(senderLogin) {
+// DetectBot matches login against the two known bot logins, case-insensitively.
+// The surface is exactly two values, so the match is exact — prefix matching
+// ("dependabot") is intentionally not a hit. Callers pass the PR author so the
+// classification follows who opened the PR, not who fired the webhook.
+func DetectBot(login string) BotKind {
+	switch strings.ToLower(login) {
 	case dependabotLogin:
 		return BotKindDependabot
 	case renovateLogin:

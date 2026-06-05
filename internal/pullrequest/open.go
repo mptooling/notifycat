@@ -100,13 +100,14 @@ func (h *OpenHandler) Handle(ctx context.Context, e Event) error {
 }
 
 // composeText renders the message for an opened PR. When the dependabot format
-// is enabled and the sender is dependabot[bot]/renovate[bot], it picks the
-// compact routine/security template; otherwise it uses the standard message.
-// Bot detection keys off sender.login per the locked design — for an opened
-// event the sender is the actor that opened the PR.
+// is enabled and the PR was opened by dependabot[bot]/renovate[bot], it picks
+// the compact routine/security template; otherwise it uses the standard
+// message. Detection keys off the PR author, not the webhook sender: on a
+// ready_for_review event the sender is the human who marked a bot's draft PR
+// ready, while the author stays the bot.
 func (h *OpenHandler) composeText(e Event, mentions []string) string {
 	if h.dependabotFormat {
-		if kind := botpr.DetectBot(e.Sender.Login); kind != botpr.BotKindNone {
+		if kind := botpr.DetectBot(e.PR.Author); kind != botpr.BotKindNone {
 			security := botpr.IsSecurityAdvisory(e.PR.Body)
 			return h.composer.BotMessage(slackPRFrom(e), mentions, kind.Name(), security)
 		}
