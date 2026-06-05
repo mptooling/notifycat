@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.13.0](https://github.com/mptooling/notifycat/compare/v0.12.1...v0.13.0) (2026-06-05)
+
+
+### 🚀 Features
+
+* compact Slack format for Dependabot and Renovate PRs ([#79](https://github.com/mptooling/notifycat/issues/79)) ([3108b02](https://github.com/mptooling/notifycat/commit/3108b0259e5b1b2ce1c311bb4afec6368adff668))
+
+
+### 🧹 Maintenance
+
+* enable dependabot version updates for go modules, actions, and docker ([#81](https://github.com/mptooling/notifycat/issues/81)) ([fd233bc](https://github.com/mptooling/notifycat/commit/fd233bca83b81e45c7b302a4b92019fa6dc9f3cc))
+
 ## [0.12.1](https://github.com/mptooling/notifycat/compare/v0.12.0...v0.12.1) (2026-06-05)
 
 
