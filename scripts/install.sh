@@ -10,14 +10,15 @@
 #   NOTIFYCAT_DIR       Target directory name (default: notifycat)
 set -eu
 
-VERSION="${NOTIFYCAT_VERSION:-0.11.0}"
+VERSION="${NOTIFYCAT_VERSION:-0.11.2}"
 INSTALL_DIR="${NOTIFYCAT_DIR:-notifycat}"
 REPO="mptooling/notifycat"
 # Each release attaches these files plus a SHA256SUMS manifest as assets.
 RELEASE_BASE="https://github.com/${REPO}/releases/download/v${VERSION}"
 
-# Files to download into the project directory.
-ARTIFACTS="compose.yaml Caddyfile .env.example mappings.example.yaml notifycat"
+# Release-asset names to download. The env template ships as env.example because
+# GitHub rewrites asset names that start with a dot; it is saved as .env.example.
+ASSETS="compose.yaml Caddyfile env.example mappings.example.yaml notifycat"
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -50,7 +51,7 @@ fetch() {
   fi
 }
 
-# Verify the downloaded artifacts against the release's SHA256SUMS manifest.
+# Verify the downloaded assets against the release's SHA256SUMS manifest.
 # Checks only the files we fetched — SHA256SUMS also lists install.sh, which is
 # the running script and not re-downloaded here.
 verify_checksums() {
@@ -61,7 +62,7 @@ verify_checksums() {
   else
     die "neither sha256sum nor shasum found — cannot verify download integrity"
   fi
-  for _v_a in $ARTIFACTS; do
+  for _v_a in $ASSETS; do
     grep " ${_v_a}\$" "${INSTALL_DIR}/SHA256SUMS" \
       | ( cd "$INSTALL_DIR" && $_v_check - >/dev/null 2>&1 ) \
       || die "checksum verification failed for ${_v_a} — aborting"
@@ -99,9 +100,9 @@ check_deps
 prepare_dir
 
 printf 'Downloading into ./%s/\n' "$INSTALL_DIR"
-for artifact in $ARTIFACTS; do
-  fetch "${RELEASE_BASE}/${artifact}" "${INSTALL_DIR}/${artifact}"
-  printf '  %s\n' "$artifact"
+for asset in $ASSETS; do
+  fetch "${RELEASE_BASE}/${asset}" "${INSTALL_DIR}/${asset}"
+  printf '  %s\n' "$asset"
 done
 
 fetch "${RELEASE_BASE}/SHA256SUMS" "${INSTALL_DIR}/SHA256SUMS"
@@ -109,6 +110,9 @@ fetch "${RELEASE_BASE}/SHA256SUMS" "${INSTALL_DIR}/SHA256SUMS"
 printf 'Verifying checksums...\n'
 verify_checksums
 printf '  ok\n'
+
+# Restore the dotfile name once the asset has been verified.
+mv "${INSTALL_DIR}/env.example" "${INSTALL_DIR}/.env.example"
 
 chmod +x "${INSTALL_DIR}/notifycat"
 

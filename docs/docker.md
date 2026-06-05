@@ -42,9 +42,11 @@ to a specific `vX.Y.Z` before `docker compose up -d`.
 
 ### Verifying the install bundle
 
-Every release also attaches the install files — `compose.yaml`, `Caddyfile`, the `notifycat` wrapper, `.env.example`,
-`mappings.example.yaml`, and `install.sh` — together with a `SHA256SUMS` manifest. `install.sh` verifies them
-automatically; to check a manual download yourself, fetch the assets and the manifest into one directory and run:
+Every release also attaches the install files — `compose.yaml`, `Caddyfile`, the `notifycat` wrapper, `env.example`,
+`mappings.example.yaml`, and `install.sh` — together with a `SHA256SUMS` manifest. (The env template is named
+`env.example` because GitHub rewrites asset names that start with a dot; `install.sh` saves it as `.env.example`.)
+`install.sh` verifies them automatically; to check a manual download yourself, fetch the assets and the manifest into
+one directory and run:
 
 ```sh
 sha256sum -c SHA256SUMS      # or, on macOS/BSD: shasum -a 256 -c SHA256SUMS
@@ -61,7 +63,7 @@ for the GitHub side.
 mkdir -p ~/notifycat && cd ~/notifycat
 
 # 1. Pull the config templates
-curl -fsSL https://github.com/mptooling/notifycat/releases/latest/download/.env.example          -o .env
+curl -fsSL https://github.com/mptooling/notifycat/releases/latest/download/env.example           -o .env
 curl -fsSL https://github.com/mptooling/notifycat/releases/latest/download/mappings.example.yaml -o mappings.yaml
 
 # 2. Edit them
@@ -142,7 +144,7 @@ The five-command shape is identical to local; only the hostname and the post-ste
 mkdir -p ~/notifycat && cd ~/notifycat
 
 # 1. config templates
-curl -fsSL https://github.com/mptooling/notifycat/releases/latest/download/.env.example          -o .env
+curl -fsSL https://github.com/mptooling/notifycat/releases/latest/download/env.example           -o .env
 curl -fsSL https://github.com/mptooling/notifycat/releases/latest/download/mappings.example.yaml -o mappings.yaml
 $EDITOR .env
 $EDITOR mappings.yaml
