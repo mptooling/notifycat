@@ -2,19 +2,21 @@
 # install.sh — Bootstrap a notifycat project directory on any POSIX host.
 #
 # Quickstart:
-#   curl -fsSL https://raw.githubusercontent.com/mptooling/notifycat/v0.7.0/scripts/install.sh | sh
+#   curl -fsSL https://github.com/mptooling/notifycat/releases/latest/download/install.sh | sh
 #
 # Environment variables:
-#   NOTIFYCAT_VERSION   Release tag to fetch (default: pinned in this script)
+#   NOTIFYCAT_VERSION   Release tag to fetch (default: pinned in this script;
+#                       stamped to the release tag in each published install.sh)
 #   NOTIFYCAT_DIR       Target directory name (default: notifycat)
 set -eu
 
-VERSION="${NOTIFYCAT_VERSION:-0.7.0}"
+VERSION="${NOTIFYCAT_VERSION:-0.11.0}"
 INSTALL_DIR="${NOTIFYCAT_DIR:-notifycat}"
 REPO="mptooling/notifycat"
-RAW_BASE="https://raw.githubusercontent.com/${REPO}/v${VERSION}"
+# Each release attaches these files plus a SHA256SUMS manifest as assets.
+RELEASE_BASE="https://github.com/${REPO}/releases/download/v${VERSION}"
 
-# Files to download into the project directory (all live at the repo root).
+# Files to download into the project directory.
 ARTIFACTS="compose.yaml Caddyfile .env.example mappings.example.yaml notifycat"
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -46,6 +48,24 @@ fetch() {
   else
     die "neither curl nor wget found — install one and retry"
   fi
+}
+
+# Verify the downloaded artifacts against the release's SHA256SUMS manifest.
+# Checks only the files we fetched — SHA256SUMS also lists install.sh, which is
+# the running script and not re-downloaded here.
+verify_checksums() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    _v_check="sha256sum -c"
+  elif command -v shasum >/dev/null 2>&1; then
+    _v_check="shasum -a 256 -c"
+  else
+    die "neither sha256sum nor shasum found — cannot verify download integrity"
+  fi
+  for _v_a in $ARTIFACTS; do
+    grep " ${_v_a}\$" "${INSTALL_DIR}/SHA256SUMS" \
+      | ( cd "$INSTALL_DIR" && $_v_check - >/dev/null 2>&1 ) \
+      || die "checksum verification failed for ${_v_a} — aborting"
+  done
 }
 
 # ── dependency checks ─────────────────────────────────────────────────────────
@@ -80,9 +100,15 @@ prepare_dir
 
 printf 'Downloading into ./%s/\n' "$INSTALL_DIR"
 for artifact in $ARTIFACTS; do
-  fetch "${RAW_BASE}/${artifact}" "${INSTALL_DIR}/${artifact}"
+  fetch "${RELEASE_BASE}/${artifact}" "${INSTALL_DIR}/${artifact}"
   printf '  %s\n' "$artifact"
 done
+
+fetch "${RELEASE_BASE}/SHA256SUMS" "${INSTALL_DIR}/SHA256SUMS"
+
+printf 'Verifying checksums...\n'
+verify_checksums
+printf '  ok\n'
 
 chmod +x "${INSTALL_DIR}/notifycat"
 
