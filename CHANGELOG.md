@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.3](https://github.com/mptooling/notifycat/compare/v0.11.2...v0.11.3) (2026-06-05)
+
+
+### 📝 Documentation
+
+* headline the one-command quickstart in README and docs nav ([#73](https://github.com/mptooling/notifycat/issues/73)) ([a90d58e](https://github.com/mptooling/notifycat/commit/a90d58e34d19ee1c3fe236769228905395d485a4))
+
 ## [0.11.2](https://github.com/mptooling/notifycat/compare/v0.11.1...v0.11.2) (2026-06-05)
 
 
