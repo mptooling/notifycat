@@ -58,5 +58,6 @@ nav:
   - GitHub webhook: github-webhook.md
   - Install with Docker Compose: compose.md
   - Docker (manual): docker.md
+  - Security & permissions: security.md
   - Operations: operations.md
   - Doctor: doctor.md

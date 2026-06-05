@@ -1,5 +1,9 @@
 # Security Policy
 
+Deploying Notifycat? See the operator-facing
+[Security & permissions](docs/security.md) page for the least-privilege model
+and a pre-go-live checklist. This file covers vulnerability reporting.
+
 ## Reporting a Vulnerability
 
 Please do not open a public issue for a suspected vulnerability.
