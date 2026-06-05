@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.1](https://github.com/mptooling/notifycat/compare/v0.13.0...v0.13.1) (2026-06-05)
+
+
+### 🐛 Bug fixes
+
+* classify bot PRs by author so compact format applies on ready_for_review ([#89](https://github.com/mptooling/notifycat/issues/89)) ([7205091](https://github.com/mptooling/notifycat/commit/72050919184377ac372450c6950b05aa0cd62949))
+
 ## [0.13.0](https://github.com/mptooling/notifycat/compare/v0.12.1...v0.13.0) (2026-06-05)
 
 
