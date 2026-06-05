@@ -35,19 +35,46 @@ func NewComposer(newPREmoji string) *Composer {
 // mentions list is empty, the prefix is omitted entirely so the message has
 // no stranded ", ".
 func (c *Composer) NewMessage(pr PRDetails, mentions []string) string {
-	prefix := ""
-	if len(mentions) > 0 {
-		prefix = strings.Join(mentions, ",") + ", "
-	}
 	return fmt.Sprintf(
 		":%s: %splease review <%s|PR #%d: %s> by %s",
 		c.newPREmoji,
-		prefix,
+		mentionsPrefix(mentions),
 		pr.URL,
 		pr.Number,
 		pr.Title,
 		pr.Author,
 	)
+}
+
+// BotMessage renders the compact notification for a PR opened by a dependency
+// bot. bot is the lowercase bot name ("dependabot" / "renovate"). When
+// security is true it uses the rotating-light advisory template; otherwise the
+// package routine-bump template. Mentions follow the same empty-list rule as
+// NewMessage. The PR author is intentionally omitted — the bot name carries it.
+func (c *Composer) BotMessage(pr PRDetails, mentions []string, bot string, security bool) string {
+	emoji, verb := "package", "bumped"
+	if security {
+		emoji, verb = "rotating_light", "security update"
+	}
+	return fmt.Sprintf(
+		":%s: %s%s %s <%s|PR #%d: %s>",
+		emoji,
+		mentionsPrefix(mentions),
+		bot,
+		verb,
+		pr.URL,
+		pr.Number,
+		pr.Title,
+	)
+}
+
+// mentionsPrefix joins mentions with commas (the legacy PHP wire format) and
+// appends ", "; an empty list yields "" so the message has no stranded ", ".
+func mentionsPrefix(mentions []string) string {
+	if len(mentions) == 0 {
+		return ""
+	}
+	return strings.Join(mentions, ",") + ", "
 }
 
 // UpdatedMessage wraps the previous message in the closed-PR decoration:

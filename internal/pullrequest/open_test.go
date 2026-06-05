@@ -20,10 +20,22 @@ func newOpenHandler(
 	client *fakeSlackClient,
 ) *pullrequest.OpenHandler {
 	t.Helper()
+	return newOpenHandlerWithFormat(t, msgs, mappings, client, true)
+}
+
+func newOpenHandlerWithFormat(
+	t *testing.T,
+	msgs *fakeSlackMessages,
+	mappings *fakeRepoMappings,
+	client *fakeSlackClient,
+	dependabotFormat bool,
+) *pullrequest.OpenHandler {
+	t.Helper()
 	return pullrequest.NewOpenHandler(
 		msgs, mappings, client,
 		slack.NewComposer("rocket"),
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		dependabotFormat,
 	)
 }
 
@@ -126,6 +138,139 @@ func TestOpenHandler_Handle_SkipsIfNoMapping(t *testing.T) {
 	}
 	if len(client.calls) != 0 {
 		t.Errorf("Slack called when no mapping existed: %v", client.methods())
+	}
+}
+
+func TestOpenHandler_Handle_DependabotRoutine(t *testing.T) {
+	msgs := newFakeSlackMessages()
+	mappings := newFakeRepoMappings(store.RepoMapping{
+		Repository: "octo/widget", SlackChannel: "C123", Mentions: []string{"@alice"},
+	})
+	client := &fakeSlackClient{}
+	h := newOpenHandler(t, msgs, mappings, client)
+
+	e := pullrequest.Event{
+		Action:     "opened",
+		Repository: "octo/widget",
+		PR:         pullrequest.PR{Number: 42, Title: "bump acme/lib from 1.2.0 to 1.2.1", URL: "u", Author: "dependabot[bot]"},
+		Sender:     pullrequest.Sender{Login: "dependabot[bot]", Type: "Bot"},
+	}
+	if err := h.Handle(context.Background(), e); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+
+	text := client.calls[0].Text
+	for _, want := range []string{":package:", "dependabot bumped", "bump acme/lib from 1.2.0 to 1.2.1"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("posted text missing %q: %q", want, text)
+		}
+	}
+	if strings.Contains(text, "please review") {
+		t.Errorf("dependabot routine message should not say 'please review': %q", text)
+	}
+}
+
+func TestOpenHandler_Handle_DependabotSecurity(t *testing.T) {
+	msgs := newFakeSlackMessages()
+	mappings := newFakeRepoMappings(store.RepoMapping{
+		Repository: "octo/widget", SlackChannel: "C123",
+	})
+	client := &fakeSlackClient{}
+	h := newOpenHandler(t, msgs, mappings, client)
+
+	e := pullrequest.Event{
+		Action:     "opened",
+		Repository: "octo/widget",
+		PR: pullrequest.PR{
+			Number: 42, Title: "bump acme/lib from 1.2.0 to 1.2.1", URL: "u", Author: "dependabot[bot]",
+			Body: "Bumps acme/lib.\n\n## Vulnerabilities fixed\n\nCVE-2026-1234.",
+		},
+		Sender: pullrequest.Sender{Login: "dependabot[bot]", Type: "Bot"},
+	}
+	if err := h.Handle(context.Background(), e); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+
+	text := client.calls[0].Text
+	for _, want := range []string{":rotating_light:", "dependabot security update"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("posted text missing %q: %q", want, text)
+		}
+	}
+}
+
+func TestOpenHandler_Handle_Renovate(t *testing.T) {
+	msgs := newFakeSlackMessages()
+	mappings := newFakeRepoMappings(store.RepoMapping{
+		Repository: "octo/widget", SlackChannel: "C123",
+	})
+	client := &fakeSlackClient{}
+	h := newOpenHandler(t, msgs, mappings, client)
+
+	e := pullrequest.Event{
+		Action:     "opened",
+		Repository: "octo/widget",
+		PR:         pullrequest.PR{Number: 7, Title: "Update acme/lib to v2", URL: "u", Author: "renovate[bot]"},
+		Sender:     pullrequest.Sender{Login: "renovate[bot]", Type: "Bot"},
+	}
+	if err := h.Handle(context.Background(), e); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+
+	text := client.calls[0].Text
+	if !strings.Contains(text, ":package:") || !strings.Contains(text, "renovate bumped") {
+		t.Errorf("renovate routine message wrong: %q", text)
+	}
+}
+
+func TestOpenHandler_Handle_DependabotFormatDisabled(t *testing.T) {
+	msgs := newFakeSlackMessages()
+	mappings := newFakeRepoMappings(store.RepoMapping{
+		Repository: "octo/widget", SlackChannel: "C123",
+	})
+	client := &fakeSlackClient{}
+	h := newOpenHandlerWithFormat(t, msgs, mappings, client, false)
+
+	e := pullrequest.Event{
+		Action:     "opened",
+		Repository: "octo/widget",
+		PR:         pullrequest.PR{Number: 42, Title: "bump acme/lib", URL: "u", Author: "dependabot[bot]"},
+		Sender:     pullrequest.Sender{Login: "dependabot[bot]", Type: "Bot"},
+	}
+	if err := h.Handle(context.Background(), e); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+
+	text := client.calls[0].Text
+	if !strings.Contains(text, "please review") {
+		t.Errorf("with format disabled, dependabot PR should use standard format: %q", text)
+	}
+	if strings.Contains(text, ":package:") {
+		t.Errorf("with format disabled, compact format should not appear: %q", text)
+	}
+}
+
+func TestOpenHandler_Handle_DependabotEmptyMentions(t *testing.T) {
+	msgs := newFakeSlackMessages()
+	mappings := newFakeRepoMappings(store.RepoMapping{
+		Repository: "octo/widget", SlackChannel: "C123",
+	})
+	client := &fakeSlackClient{}
+	h := newOpenHandler(t, msgs, mappings, client)
+
+	e := pullrequest.Event{
+		Action:     "opened",
+		Repository: "octo/widget",
+		PR:         pullrequest.PR{Number: 42, Title: "bump acme/lib", URL: "u", Author: "dependabot[bot]"},
+		Sender:     pullrequest.Sender{Login: "dependabot[bot]", Type: "Bot"},
+	}
+	if err := h.Handle(context.Background(), e); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+
+	text := client.calls[0].Text
+	if strings.Contains(text, ", ,") || strings.Contains(text, ": ,") {
+		t.Errorf("stranded comma with empty mentions: %q", text)
 	}
 }
 

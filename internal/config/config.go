@@ -50,6 +50,13 @@ type Config struct {
 	// reviewers and scripted bots alike). Default false — current behavior.
 	IgnoreAIReviews bool `env:"NOTIFYCAT_IGNORE_AI_REVIEWS" envDefault:"false"`
 
+	// DependabotFormat, when true (the default), renders a compact Slack
+	// message for PRs opened by dependabot[bot] or renovate[bot] — a routine
+	// "bumped" line, or a distinct "security update" line when the PR body
+	// shows a security advisory. Set false to fall back to the standard
+	// "please review" format for those PRs. See internal/botpr.
+	DependabotFormat bool `env:"NOTIFYCAT_DEPENDABOT_FORMAT" envDefault:"true"`
+
 	// Domain is the public DNS name operators point at this host; the
 	// docker-compose reverse proxy uses it for the virtual host and TLS. It is
 	// the single source of truth for the public host: notifycat-doctor derives

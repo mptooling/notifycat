@@ -196,6 +196,33 @@ events; it does not distinguish AI reviewers from scripted bots.
 3. If you do **not** see that log, the suppression did not fire; the missing reaction has a different cause — work
    through the regular "silent 200 OK" debug checklist above.
 
+## Dependabot / Renovate format
+
+With `NOTIFYCAT_DEPENDABOT_FORMAT=true` (the default), a PR **opened** by
+`dependabot[bot]` or `renovate[bot]` posts a compact message instead of the
+standard "please review" line:
+
+- **Routine bump** — `:package: <mentions>, <bot> bumped <link|PR #N: title>`
+- **Security advisory** — `:rotating_light: <mentions>, <bot> security update <link|PR #N: title>`
+
+A few operator-relevant details:
+
+- **Detection is by author login only.** notifycat matches the PR opener's
+  login against exactly `dependabot[bot]` and `renovate[bot]` (case-insensitive,
+  no prefix matching). Renovate self-hosted instances with custom bot logins are
+  not detected.
+- **The security split relies on a string in the PR body.** notifycat scans the
+  body for a "Vulnerabilities" advisory header. The failure mode is safe: a
+  parse miss falls back to the routine `:package:` format, never the reverse. A
+  future Dependabot/Renovate template change could therefore regress a security
+  PR to the routine format, but will never raise a false `:rotating_light:`.
+- **Mentions are unchanged.** Bot PRs use the same `mappings.yaml` mentions as
+  any other PR — if your entry pings `@channel`, your Dependabot PRs ping
+  `@channel` too.
+
+Set `NOTIFYCAT_DEPENDABOT_FORMAT=false` to render bot-opened PRs with the
+standard "please review" format.
+
 ## CI Checks
 
 The repository CI runs:

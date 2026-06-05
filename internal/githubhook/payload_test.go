@@ -47,6 +47,25 @@ func TestParsePayload_PullRequestOpened(t *testing.T) {
 	}
 }
 
+func TestParsePayload_PullRequestBody(t *testing.T) {
+	body := []byte(`{
+		"action": "opened",
+		"repository": {"full_name": "octo/widget"},
+		"pull_request": {
+			"number": 42, "title": "bump", "html_url": "u", "user": {"login": "dependabot[bot]"},
+			"body": "## Vulnerabilities fixed\n\nCVE-2026-1234."
+		}
+	}`)
+
+	p, err := githubhook.ParsePayload(body)
+	if err != nil {
+		t.Fatalf("ParsePayload: %v", err)
+	}
+	if p.PullRequest.Body != "## Vulnerabilities fixed\n\nCVE-2026-1234." {
+		t.Errorf("Body = %q", p.PullRequest.Body)
+	}
+}
+
 func TestParsePayload_ReviewApproved(t *testing.T) {
 	body := []byte(`{
 		"action": "submitted",

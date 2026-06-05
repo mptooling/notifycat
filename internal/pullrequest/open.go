@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 
+	"github.com/mptooling/notifycat/internal/botpr"
 	"github.com/mptooling/notifycat/internal/slack"
 	"github.com/mptooling/notifycat/internal/store"
 )
@@ -13,27 +14,32 @@ import (
 // ready_for_review. It posts the first Slack message for the PR and records
 // the message TS for later updates.
 type OpenHandler struct {
-	messages SlackMessages
-	mappings RepoMappings
-	slack    SlackClient
-	composer *slack.Composer
-	logger   *slog.Logger
+	messages         SlackMessages
+	mappings         RepoMappings
+	slack            SlackClient
+	composer         *slack.Composer
+	logger           *slog.Logger
+	dependabotFormat bool
 }
 
-// NewOpenHandler builds an OpenHandler.
+// NewOpenHandler builds an OpenHandler. When dependabotFormat is true, PRs
+// opened by dependabot[bot]/renovate[bot] get the compact composer template;
+// when false they fall back to the standard "please review" message.
 func NewOpenHandler(
 	messages SlackMessages,
 	mappings RepoMappings,
 	slackClient SlackClient,
 	composer *slack.Composer,
 	logger *slog.Logger,
+	dependabotFormat bool,
 ) *OpenHandler {
 	return &OpenHandler{
-		messages: messages,
-		mappings: mappings,
-		slack:    slackClient,
-		composer: composer,
-		logger:   logger,
+		messages:         messages,
+		mappings:         mappings,
+		slack:            slackClient,
+		composer:         composer,
+		logger:           logger,
+		dependabotFormat: dependabotFormat,
 	}
 }
 
@@ -80,7 +86,7 @@ func (h *OpenHandler) Handle(ctx context.Context, e Event) error {
 		return err
 	}
 
-	text := h.composer.NewMessage(slackPRFrom(e), mapping.Mentions)
+	text := h.composeText(e, mapping.Mentions)
 	ts, err := h.slack.PostMessage(ctx, mapping.SlackChannel, text)
 	if err != nil {
 		return err
@@ -91,6 +97,21 @@ func (h *OpenHandler) Handle(ctx context.Context, e Event) error {
 		Repository: e.Repository,
 		TS:         ts,
 	})
+}
+
+// composeText renders the message for an opened PR. When the dependabot format
+// is enabled and the sender is dependabot[bot]/renovate[bot], it picks the
+// compact routine/security template; otherwise it uses the standard message.
+// Bot detection keys off sender.login per the locked design — for an opened
+// event the sender is the actor that opened the PR.
+func (h *OpenHandler) composeText(e Event, mentions []string) string {
+	if h.dependabotFormat {
+		if kind := botpr.DetectBot(e.Sender.Login); kind != botpr.BotKindNone {
+			security := botpr.IsSecurityAdvisory(e.PR.Body)
+			return h.composer.BotMessage(slackPRFrom(e), mentions, kind.Name(), security)
+		}
+	}
+	return h.composer.NewMessage(slackPRFrom(e), mentions)
 }
 
 // slackPRFrom adapts an Event's PR fields to the slack.PRDetails shape used
