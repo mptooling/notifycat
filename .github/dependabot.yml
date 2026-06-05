@@ -1,0 +1,48 @@
+# Dependabot version updates. (Dependabot alerts + security updates are enabled
+# separately at the repository level under Settings → Code security.)
+#
+# Every PR in this repo is linted by .github/workflows/pr-title.yml against
+# Conventional Commits with a lowercase-subject rule (^[^A-Z].+$). Dependabot
+# only emits a conventional-style, lowercase title ("chore(deps): bump ...")
+# when commit-message.prefix is set; without it the default "Bump x from y to z"
+# fails that check. So every ecosystem below sets an explicit prefix.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      go-modules:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      github-actions:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      docker:
+        update-types:
+          - minor
+          - patch
