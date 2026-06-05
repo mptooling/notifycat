@@ -45,6 +45,9 @@ type PR struct {
 	Author string
 	Merged bool
 	Draft  bool
+	// Body is the PR description, consulted by OpenHandler to tell a
+	// Dependabot/Renovate security advisory from a routine bump.
+	Body string
 }
 
 // Review carries the review state (approved | commented | changes_requested).

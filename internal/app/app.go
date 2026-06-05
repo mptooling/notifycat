@@ -75,7 +75,7 @@ func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, Cleanup, error) 
 
 	dispatcher := pullrequest.NewDispatcher(
 		logger,
-		pullrequest.NewOpenHandler(messages, provider, slackClient, composer, logger),
+		pullrequest.NewOpenHandler(messages, provider, slackClient, composer, logger, cfg.DependabotFormat),
 		pullrequest.NewCloseHandler(messages, provider, slackClient, composer, logger,
 			pullrequest.CloseOptions{
 				ReactionsEnabled: cfg.Reactions.Enabled,
@@ -222,6 +222,7 @@ func eventSink(d *pullrequest.Dispatcher, logger *slog.Logger) githubhook.EventS
 				Author: p.PullRequest.Author,
 				Merged: p.PullRequest.Merged,
 				Draft:  p.PullRequest.Draft,
+				Body:   p.PullRequest.Body,
 			},
 			PRComment: p.PRComment,
 			Sender:    pullrequest.Sender{Login: p.Sender.Login, Type: p.Sender.Type},

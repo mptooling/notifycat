@@ -131,6 +131,7 @@ func newIntegrationFixtureCfg(t *testing.T, mutate func(*config.Config), seeds .
 		DatabaseURL:         "file:" + filepath.Join(dir, "int.db"),
 		MappingsFile:        mappingsPath,
 		MessageTTLDays:      30,
+		DependabotFormat:    true,
 		GitHubWebhookSecret: config.Secret("itsecret"),
 		SlackBotToken:       config.Secret("xoxb-int"),
 		SlackBaseURL:        slack.URL,
@@ -529,6 +530,124 @@ func TestIntegration_ReviewRequestChange(t *testing.T) {
 	}
 	if call.Body["name"] != "exclamation" {
 		t.Errorf("reaction name = %v; want exclamation", call.Body["name"])
+	}
+}
+
+// ---------- Dependabot / Renovate compact format ----------
+
+// postedText returns the text of the first chat.postMessage call.
+func (f *integrationFixture) postedText(t *testing.T) string {
+	t.Helper()
+	call, ok := f.slack.findCall("/api/chat.postMessage")
+	if !ok {
+		t.Fatalf("chat.postMessage not called; methods = %v", f.slack.methods())
+	}
+	text, _ := call.Body["text"].(string)
+	return text
+}
+
+func TestIntegration_DependabotRoutinePR(t *testing.T) {
+	f := newIntegrationFixture(t, mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: []string{"@alice"}})
+
+	status := f.post(t, `{
+		"action": "opened",
+		"sender": {"login": "dependabot[bot]", "type": "Bot"},
+		"repository": {"full_name": "octo/widget"},
+		"pull_request": {
+			"number": 42, "title": "bump acme/lib from 1.2.0 to 1.2.1",
+			"html_url": "https://gh/octo/widget/pull/42",
+			"body": "Bumps acme/lib from 1.2.0 to 1.2.1.\n\n## Release notes\n\n- A change.",
+			"user": {"login": "dependabot[bot]"}, "draft": false
+		}
+	}`)
+
+	if status != http.StatusOK {
+		t.Fatalf("status = %d", status)
+	}
+	text := f.postedText(t)
+	for _, want := range []string{":package:", "dependabot bumped", "bump acme/lib from 1.2.0 to 1.2.1"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("posted text missing %q: %q", want, text)
+		}
+	}
+	if strings.Contains(text, "please review") {
+		t.Errorf("routine bot PR should not say 'please review': %q", text)
+	}
+}
+
+func TestIntegration_DependabotSecurityPR(t *testing.T) {
+	f := newIntegrationFixture(t, mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: nil})
+
+	status := f.post(t, `{
+		"action": "opened",
+		"sender": {"login": "dependabot[bot]", "type": "Bot"},
+		"repository": {"full_name": "octo/widget"},
+		"pull_request": {
+			"number": 42, "title": "bump acme/lib from 1.2.0 to 1.2.1",
+			"html_url": "u",
+			"body": "Bumps acme/lib.\n\n## Vulnerabilities fixed\n\nSourced from the GitHub Security Advisory Database.\n\nCVE-2026-1234.",
+			"user": {"login": "dependabot[bot]"}, "draft": false
+		}
+	}`)
+
+	if status != http.StatusOK {
+		t.Fatalf("status = %d", status)
+	}
+	text := f.postedText(t)
+	for _, want := range []string{":rotating_light:", "dependabot security update"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("posted text missing %q: %q", want, text)
+		}
+	}
+}
+
+func TestIntegration_RenovateRoutinePR(t *testing.T) {
+	f := newIntegrationFixture(t, mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: nil})
+
+	status := f.post(t, `{
+		"action": "opened",
+		"sender": {"login": "renovate[bot]", "type": "Bot"},
+		"repository": {"full_name": "octo/widget"},
+		"pull_request": {
+			"number": 7, "title": "Update acme/lib to v2", "html_url": "u",
+			"user": {"login": "renovate[bot]"}, "draft": false
+		}
+	}`)
+
+	if status != http.StatusOK {
+		t.Fatalf("status = %d", status)
+	}
+	text := f.postedText(t)
+	if !strings.Contains(text, ":package:") || !strings.Contains(text, "renovate bumped") {
+		t.Errorf("renovate routine PR text wrong: %q", text)
+	}
+}
+
+func TestIntegration_DependabotFormatDisabled(t *testing.T) {
+	f := newIntegrationFixtureCfg(t,
+		func(c *config.Config) { c.DependabotFormat = false },
+		mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: nil},
+	)
+
+	status := f.post(t, `{
+		"action": "opened",
+		"sender": {"login": "dependabot[bot]", "type": "Bot"},
+		"repository": {"full_name": "octo/widget"},
+		"pull_request": {
+			"number": 42, "title": "bump acme/lib", "html_url": "u",
+			"user": {"login": "dependabot[bot]"}, "draft": false
+		}
+	}`)
+
+	if status != http.StatusOK {
+		t.Fatalf("status = %d", status)
+	}
+	text := f.postedText(t)
+	if !strings.Contains(text, "please review") {
+		t.Errorf("with format disabled, dependabot PR should use standard format: %q", text)
+	}
+	if strings.Contains(text, ":package:") {
+		t.Errorf("with format disabled, compact format should not appear: %q", text)
 	}
 }
 
