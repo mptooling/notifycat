@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/mptooling/notifycat/compare/v0.11.0...v0.11.1) (2026-06-05)
+
+
+### 🧹 Maintenance
+
+* attach compose files, checksums, and versioned install URL to releases ([#69](https://github.com/mptooling/notifycat/issues/69)) ([cc9390d](https://github.com/mptooling/notifycat/commit/cc9390d68b13f40a1db8f657a902920ba4114f2b))
+
 ## [0.11.0](https://github.com/mptooling/notifycat/compare/v0.10.0...v0.11.0) (2026-06-05)
 
 
