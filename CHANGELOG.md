@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.14.0](https://github.com/mptooling/notifycat/compare/v0.13.1...v0.14.0) (2026-06-05)
+
+
+### 🧹 Maintenance
+
+* **deps:** bump actions/checkout from 5 to 6 ([#84](https://github.com/mptooling/notifycat/issues/84)) ([06e6933](https://github.com/mptooling/notifycat/commit/06e69337862bac74a3ba29944b7536ef6c127b51))
+* **deps:** bump actions/deploy-pages from 4 to 5 ([#88](https://github.com/mptooling/notifycat/issues/88)) ([9781bff](https://github.com/mptooling/notifycat/commit/9781bffe2b08432500b4fde697e442ab4351ca66))
+* **deps:** bump actions/setup-python from 5 to 6 ([#86](https://github.com/mptooling/notifycat/issues/86)) ([a416db0](https://github.com/mptooling/notifycat/commit/a416db059de399eec63524ae33e0f4dc45461ea4))
+* **deps:** bump actions/upload-pages-artifact from 3 to 5 ([#85](https://github.com/mptooling/notifycat/issues/85)) ([d6651b9](https://github.com/mptooling/notifycat/commit/d6651b92545fb9859315241dae2977e2b4c1842f))
+* **deps:** bump golang from 1.25.11-alpine to 1.26.4-alpine in the docker group ([#83](https://github.com/mptooling/notifycat/issues/83)) ([fe2ec67](https://github.com/mptooling/notifycat/commit/fe2ec67cb8b628f8dc0daee6657d80ebda064412))
+* **deps:** bump googleapis/release-please-action from 4 to 5 ([#87](https://github.com/mptooling/notifycat/issues/87)) ([26add62](https://github.com/mptooling/notifycat/commit/26add62652532a1ad8e699aa5ba05b66dcb67384))
+* release 0.14.0 ([74d5a4b](https://github.com/mptooling/notifycat/commit/74d5a4b718b8b09bcc73e16f3207fc21800e5c0f))
+
 ## [0.13.1](https://github.com/mptooling/notifycat/compare/v0.13.0...v0.13.1) (2026-06-05)
 
 
