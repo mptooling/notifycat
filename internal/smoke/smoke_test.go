@@ -8,10 +8,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/mptooling/notifycat/internal/config"
 	"github.com/mptooling/notifycat/internal/githubhook"
+	"github.com/mptooling/notifycat/internal/slack"
 	"github.com/mptooling/notifycat/internal/smoke"
 	"github.com/mptooling/notifycat/internal/store"
 )
@@ -22,6 +25,16 @@ const (
 	testChannel = "C0123ABCDE"
 	testTS      = "1717171717.000100"
 )
+
+var testReactions = config.Reactions{
+	Enabled:       true,
+	NewPR:         "large_green_circle",
+	MergedPR:      "twisted_rightwards_arrows",
+	ClosedPR:      "x",
+	Approved:      "white_check_mark",
+	Commented:     "speech_balloon",
+	RequestChange: "exclamation",
+}
 
 // fakeMappings answers Get for exactly one repository.
 type fakeMappings struct {
@@ -52,82 +65,251 @@ func (f *fakeStore) Get(_ context.Context, repository string, prNumber int) (sto
 	return store.SlackMessage{Repository: repository, PRNumber: prNumber, TS: f.ts}, nil
 }
 
+// fakeReactions stands in for the Slack reactions.get call.
+type fakeReactions struct {
+	reactions []slack.Reaction
+	err       error
+	calls     int
+}
+
+func (f *fakeReactions) GetReactions(_ context.Context, _, _ string) ([]slack.Reaction, error) {
+	f.calls++
+	return f.reactions, f.err
+}
+
 func fixedClock() func() time.Time {
 	return func() time.Time { return time.Unix(1717171717, 0) }
 }
 
-func newSmoke(t *testing.T, url string, st smoke.MessageStore) *smoke.Smoke {
+// capturedReq records one inbound webhook for later assertions.
+type capturedReq struct {
+	event string
+	sig   string
+	body  []byte
+}
+
+// recordingServer returns an httptest server that records every request and
+// answers 200, plus a function to read the captured requests race-safely.
+func recordingServer(t *testing.T) (*httptest.Server, func() []capturedReq) {
+	t.Helper()
+	var mu sync.Mutex
+	var reqs []capturedReq
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		reqs = append(reqs, capturedReq{
+			event: r.Header.Get("X-GitHub-Event"),
+			sig:   r.Header.Get(githubhook.SignatureHeader),
+			body:  body,
+		})
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`"ok"`))
+	}))
+	return srv, func() []capturedReq {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]capturedReq(nil), reqs...)
+	}
+}
+
+func newSmoke(t *testing.T, url string, st smoke.MessageStore, rx smoke.ReactionReader, rxCfg config.Reactions) *smoke.Smoke {
 	t.Helper()
 	return smoke.New(
 		fakeMappings{repo: testRepo, channel: testChannel},
 		st,
+		rx,
 		http.DefaultClient,
 		testSecret,
 		url,
+		rxCfg,
 		fixedClock(),
 	)
 }
 
-func TestRun_HappyPath_DrivesRealEndpointAndReportsChannelAndTS(t *testing.T) {
-	var gotEvent, gotSig string
-	var gotBody []byte
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotEvent = r.Header.Get("X-GitHub-Event")
-		gotSig = r.Header.Get(githubhook.SignatureHeader)
-		gotBody, _ = io.ReadAll(r.Body)
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`"ok"`))
-	}))
+// decodeEvent pulls the routing-relevant fields out of a captured body.
+func decodeEvent(t *testing.T, body []byte) (action, reviewState string, merged bool, number int, title string) {
+	t.Helper()
+	var p struct {
+		Action      string `json:"action"`
+		PullRequest struct {
+			Number int    `json:"number"`
+			Title  string `json:"title"`
+			Merged bool   `json:"merged"`
+		} `json:"pull_request"`
+		Review *struct {
+			State string `json:"state"`
+		} `json:"review"`
+	}
+	if err := json.Unmarshal(body, &p); err != nil {
+		t.Fatalf("payload is not valid JSON: %v", err)
+	}
+	state := ""
+	if p.Review != nil {
+		state = p.Review.State
+	}
+	return p.Action, state, p.PullRequest.Merged, p.PullRequest.Number, p.PullRequest.Title
+}
+
+func TestRun_OpenedDelivery_DrivesRealEndpointAndReportsChannelAndTS(t *testing.T) {
+	srv, captured := recordingServer(t)
 	defer srv.Close()
 
 	st := &fakeStore{ts: testTS}
-	res, err := newSmoke(t, srv.URL, st).Run(context.Background(), testRepo)
+	rx := &fakeReactions{}
+	res, err := newSmoke(t, srv.URL, st, rx, testReactions).Run(context.Background(), testRepo, false)
 	if err != nil {
 		t.Fatalf("Run returned %v; want nil", err)
 	}
 
-	if gotEvent != "pull_request" {
-		t.Errorf("X-GitHub-Event = %q; want pull_request", gotEvent)
+	reqs := captured()
+	if len(reqs) != 1 {
+		t.Fatalf("got %d requests; want exactly 1 (opened only, no --reactions)", len(reqs))
 	}
-	if err := githubhook.NewVerifier(testSecret).Verify(gotBody, gotSig); err != nil {
+	if reqs[0].event != "pull_request" {
+		t.Errorf("X-GitHub-Event = %q; want pull_request", reqs[0].event)
+	}
+	if err := githubhook.NewVerifier(testSecret).Verify(reqs[0].body, reqs[0].sig); err != nil {
 		t.Errorf("server could not verify signature: %v", err)
 	}
+	action, _, _, number, title := decodeEvent(t, reqs[0].body)
+	if action != "opened" {
+		t.Errorf("action = %q; want opened", action)
+	}
+	if !strings.Contains(title, "[notifycat smoke]") {
+		t.Errorf("title %q is not marked as a smoke test", title)
+	}
+	if rx.calls != 0 {
+		t.Errorf("GetReactions called %d times without --reactions; want 0", rx.calls)
+	}
+	if res.Channel != testChannel || res.Timestamp != testTS {
+		t.Errorf("Result channel/ts = %q/%q; want %q/%q", res.Channel, res.Timestamp, testChannel, testTS)
+	}
+	if st.gotNumber != number {
+		t.Errorf("store.Get number = %d; want %d", st.gotNumber, number)
+	}
+	if len(res.Reactions) != 0 {
+		t.Errorf("Result.Reactions = %+v; want empty without --reactions", res.Reactions)
+	}
+}
 
-	var payload struct {
-		Action     string `json:"action"`
-		Repository struct {
-			FullName string `json:"full_name"`
-		} `json:"repository"`
-		PullRequest struct {
-			Number int    `json:"number"`
-			Title  string `json:"title"`
-			Draft  bool   `json:"draft"`
-		} `json:"pull_request"`
-	}
-	if err := json.Unmarshal(gotBody, &payload); err != nil {
-		t.Fatalf("payload is not valid JSON: %v", err)
-	}
-	if payload.Action != "opened" {
-		t.Errorf("action = %q; want opened", payload.Action)
-	}
-	if payload.Repository.FullName != testRepo {
-		t.Errorf("repository.full_name = %q; want %q", payload.Repository.FullName, testRepo)
-	}
-	if payload.PullRequest.Draft {
-		t.Error("payload draft = true; opened-draft would be ignored by the server")
-	}
-	if !strings.Contains(payload.PullRequest.Title, "[notifycat smoke]") {
-		t.Errorf("title %q is not marked as a smoke test", payload.PullRequest.Title)
+func TestRun_WithReactions_RunsLifecycleAndVerifiesEachEmoji(t *testing.T) {
+	srv, captured := recordingServer(t)
+	defer srv.Close()
+
+	rx := &fakeReactions{reactions: []slack.Reaction{
+		{Name: testReactions.Commented},
+		{Name: testReactions.Approved},
+		{Name: testReactions.MergedPR},
+	}}
+	res, err := newSmoke(t, srv.URL, &fakeStore{ts: testTS}, rx, testReactions).Run(context.Background(), testRepo, true)
+	if err != nil {
+		t.Fatalf("Run returned %v; want nil", err)
 	}
 
-	if res.Channel != testChannel {
-		t.Errorf("Channel = %q; want %q", res.Channel, testChannel)
+	reqs := captured()
+	if len(reqs) != 4 {
+		t.Fatalf("got %d requests; want 4 (opened, comment, approve, merge)", len(reqs))
 	}
-	if res.Timestamp != testTS {
-		t.Errorf("Timestamp = %q; want %q", res.Timestamp, testTS)
+	// opened
+	if a, _, _, _, _ := decodeEvent(t, reqs[0].body); reqs[0].event != "pull_request" || a != "opened" {
+		t.Errorf("req0 = %s/%s; want pull_request/opened", reqs[0].event, a)
 	}
-	if st.gotRepo != testRepo || st.gotNumber != payload.PullRequest.Number {
-		t.Errorf("store.Get(%q, %d); want (%q, %d)", st.gotRepo, st.gotNumber, testRepo, payload.PullRequest.Number)
+	// comment
+	if a, s, _, _, _ := decodeEvent(t, reqs[1].body); reqs[1].event != "pull_request_review" || a != "submitted" || s != "commented" {
+		t.Errorf("req1 = %s/%s/%s; want pull_request_review/submitted/commented", reqs[1].event, a, s)
+	}
+	// approve
+	if a, s, _, _, _ := decodeEvent(t, reqs[2].body); reqs[2].event != "pull_request_review" || a != "submitted" || s != "approved" {
+		t.Errorf("req2 = %s/%s/%s; want pull_request_review/submitted/approved", reqs[2].event, a, s)
+	}
+	// merge
+	if a, _, merged, _, _ := decodeEvent(t, reqs[3].body); reqs[3].event != "pull_request" || a != "closed" || !merged {
+		t.Errorf("req3 = %s/%s/merged=%v; want pull_request/closed/merged=true", reqs[3].event, a, merged)
+	}
+
+	// every event reuses the same PR number so reactions land on one message.
+	_, _, _, n0, _ := decodeEvent(t, reqs[0].body)
+	for i, r := range reqs {
+		if _, _, _, n, _ := decodeEvent(t, r.body); n != n0 {
+			t.Errorf("req%d PR number = %d; want %d (shared across the lifecycle)", i, n, n0)
+		}
+		if err := githubhook.NewVerifier(testSecret).Verify(r.body, r.sig); err != nil {
+			t.Errorf("req%d signature did not verify: %v", i, err)
+		}
+	}
+
+	want := []struct{ step, emoji string }{
+		{"comment", testReactions.Commented},
+		{"approve", testReactions.Approved},
+		{"merge", testReactions.MergedPR},
+	}
+	if len(res.Reactions) != len(want) {
+		t.Fatalf("Result.Reactions has %d entries; want %d", len(res.Reactions), len(want))
+	}
+	for i, w := range want {
+		c := res.Reactions[i]
+		if c.Step != w.step || c.Emoji != w.emoji || !c.Present || c.VerifyErr != nil {
+			t.Errorf("Reactions[%d] = %+v; want step=%s emoji=%s present=true err=nil", i, c, w.step, w.emoji)
+		}
+	}
+}
+
+func TestRun_WithReactions_MissingEmoji_RecordedNotPresent(t *testing.T) {
+	srv, _ := recordingServer(t)
+	defer srv.Close()
+
+	rx := &fakeReactions{reactions: nil} // server "added" nothing
+	res, err := newSmoke(t, srv.URL, &fakeStore{ts: testTS}, rx, testReactions).Run(context.Background(), testRepo, true)
+	if err != nil {
+		t.Fatalf("Run returned %v; want nil (missing emoji is reported in Result, not an error)", err)
+	}
+	for _, c := range res.Reactions {
+		if c.Present || c.VerifyErr != nil {
+			t.Errorf("Reactions[%s] = %+v; want present=false err=nil", c.Step, c)
+		}
+	}
+}
+
+func TestRun_WithReactions_VerifyError_RecordedAsErr(t *testing.T) {
+	srv, _ := recordingServer(t)
+	defer srv.Close()
+
+	sentinel := errors.New("missing_scope: reactions:read")
+	rx := &fakeReactions{err: sentinel}
+	res, err := newSmoke(t, srv.URL, &fakeStore{ts: testTS}, rx, testReactions).Run(context.Background(), testRepo, true)
+	if err != nil {
+		t.Fatalf("Run returned %v; want nil (a verify error degrades gracefully)", err)
+	}
+	for _, c := range res.Reactions {
+		if c.VerifyErr == nil {
+			t.Errorf("Reactions[%s].VerifyErr = nil; want the GetReactions error", c.Step)
+		}
+	}
+}
+
+func TestRun_ReactionsFlagButDisabledInConfig_SkipsLifecycle(t *testing.T) {
+	srv, captured := recordingServer(t)
+	defer srv.Close()
+
+	disabled := testReactions
+	disabled.Enabled = false
+	rx := &fakeReactions{}
+	res, err := newSmoke(t, srv.URL, &fakeStore{ts: testTS}, rx, disabled).Run(context.Background(), testRepo, true)
+	if err != nil {
+		t.Fatalf("Run returned %v; want nil", err)
+	}
+	if got := len(captured()); got != 1 {
+		t.Errorf("got %d requests; want 1 (reactions disabled in config → opened only)", got)
+	}
+	if rx.calls != 0 {
+		t.Errorf("GetReactions called %d times; want 0 when reactions are disabled", rx.calls)
+	}
+	if !res.ReactionsRequested || res.ReactionsEnabled {
+		t.Errorf("Result requested=%v enabled=%v; want requested=true enabled=false", res.ReactionsRequested, res.ReactionsEnabled)
+	}
+	if len(res.Reactions) != 0 {
+		t.Errorf("Result.Reactions = %+v; want empty when disabled", res.Reactions)
 	}
 }
 
@@ -138,7 +320,7 @@ func TestRun_UnmappedRepo_FailsBeforeAnyNetworkCall(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := newSmoke(t, srv.URL, &fakeStore{ts: testTS}).Run(context.Background(), "nope/missing")
+	_, err := newSmoke(t, srv.URL, &fakeStore{ts: testTS}, &fakeReactions{}, testReactions).Run(context.Background(), "nope/missing", true)
 	if !errors.Is(err, smoke.ErrNoMapping) {
 		t.Fatalf("Run error = %v; want ErrNoMapping", err)
 	}
@@ -153,7 +335,7 @@ func TestRun_BadSecret_ReportsSignatureRejected(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := newSmoke(t, srv.URL, &fakeStore{ts: testTS}).Run(context.Background(), testRepo)
+	_, err := newSmoke(t, srv.URL, &fakeStore{ts: testTS}, &fakeReactions{}, testReactions).Run(context.Background(), testRepo, false)
 	if !errors.Is(err, smoke.ErrSignatureRejected) {
 		t.Fatalf("Run error = %v; want ErrSignatureRejected", err)
 	}
@@ -164,7 +346,7 @@ func TestRun_ServerUnreachable_ReportsUnreachable(t *testing.T) {
 	url := srv.URL
 	srv.Close() // nothing is listening now
 
-	_, err := newSmoke(t, url, &fakeStore{ts: testTS}).Run(context.Background(), testRepo)
+	_, err := newSmoke(t, url, &fakeStore{ts: testTS}, &fakeReactions{}, testReactions).Run(context.Background(), testRepo, false)
 	if !errors.Is(err, smoke.ErrUnreachable) {
 		t.Fatalf("Run error = %v; want ErrUnreachable", err)
 	}

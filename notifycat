@@ -26,9 +26,10 @@ Commands:
   setup           Interactive wizard — writes .env and mappings.yaml
   doctor [org/repo]
                   Run notifycat-doctor inside the running stack
-  smoke <org/repo>
+  smoke [--reactions] <org/repo>
                   Post a signed test PR event to the running stack and
-                  confirm a real Slack message is delivered
+                  confirm a real Slack message is delivered. With --reactions,
+                  also replay comment/approve/merge and verify the emoji.
   up              docker compose up -d
   logs            docker compose logs -f
   down            docker compose down

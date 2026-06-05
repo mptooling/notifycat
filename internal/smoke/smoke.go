@@ -3,8 +3,13 @@
 // to the live /webhook/github endpoint — exercising the real signature
 // middleware, dispatcher, and Slack client — and then reads the resulting Slack
 // message timestamp back from the database so the operator can confirm a real
-// message landed in the mapped channel. The CLI entry point lives in
-// cmd/notifycat-smoke; the wrapper exposes it as `./notifycat smoke owner/repo`.
+// message landed in the mapped channel.
+//
+// With reactions requested (the --reactions flag), it additionally replays the
+// review lifecycle for the same synthetic PR — a comment, an approval, and a
+// merge — and verifies, via reactions.get, that the server added the configured
+// emoji to the message. The CLI entry point lives in cmd/notifycat-smoke; the
+// wrapper exposes it as `./notifycat smoke owner/repo`.
 package smoke
 
 import (
@@ -17,7 +22,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/mptooling/notifycat/internal/config"
 	"github.com/mptooling/notifycat/internal/githubhook"
+	"github.com/mptooling/notifycat/internal/slack"
 	"github.com/mptooling/notifycat/internal/store"
 )
 
@@ -52,6 +59,12 @@ type MessageStore interface {
 	Get(ctx context.Context, repository string, prNumber int) (store.SlackMessage, error)
 }
 
+// ReactionReader reads the reactions attached to a Slack message, so the smoke
+// test can confirm the server actually reacted. *slack.Client satisfies it.
+type ReactionReader interface {
+	GetReactions(ctx context.Context, channel, ts string) ([]slack.Reaction, error)
+}
+
 // Doer is the slice of *http.Client the runner needs.
 type Doer interface {
 	Do(req *http.Request) (*http.Response, error)
@@ -61,30 +74,47 @@ type Doer interface {
 // repeatedly (each call uses a fresh PR number, so the open handler posts anew
 // rather than treating it as an already-sent duplicate).
 type Smoke struct {
-	mappings RepoMappings
-	store    MessageStore
-	http     Doer
-	secret   string
-	url      string
-	now      func() time.Time
+	mappings  RepoMappings
+	store     MessageStore
+	reactions ReactionReader
+	http      Doer
+	secret    string
+	url       string
+	rxCfg     config.Reactions
+	now       func() time.Time
 }
 
 // New wires a Smoke. url is the full webhook endpoint to POST to (e.g.
-// http://notifycat:8080/webhook/github); secret is GITHUB_WEBHOOK_SECRET; now
-// supplies the clock used to derive a unique PR number per run.
-func New(mappings RepoMappings, messages MessageStore, httpClient Doer, secret, url string, now func() time.Time) *Smoke {
+// http://notifycat:8080/webhook/github); secret is GITHUB_WEBHOOK_SECRET;
+// rxCfg mirrors the server's reaction config so the verifier knows which emoji
+// to expect; now supplies the clock used to derive a unique PR number per run.
+func New(mappings RepoMappings, messages MessageStore, reactions ReactionReader, httpClient Doer, secret, url string, rxCfg config.Reactions, now func() time.Time) *Smoke {
 	return &Smoke{
-		mappings: mappings,
-		store:    messages,
-		http:     httpClient,
-		secret:   secret,
-		url:      url,
-		now:      now,
+		mappings:  mappings,
+		store:     messages,
+		reactions: reactions,
+		http:      httpClient,
+		secret:    secret,
+		url:       url,
+		rxCfg:     rxCfg,
+		now:       now,
 	}
 }
 
+// ReactionCheck is the outcome of one lifecycle step: the event that was
+// replayed, the emoji the server was expected to add, and whether reactions.get
+// confirmed it. VerifyErr is set when the reaction could not be read back at all
+// (e.g. the bot token lacks reactions:read) — distinct from a confirmed absence.
+type ReactionCheck struct {
+	Step      string
+	Emoji     string
+	Present   bool
+	VerifyErr error
+}
+
 // Result describes a successful delivery: which channel received the message,
-// the PR number used, and the Slack timestamp the server stored.
+// the PR number used, the Slack timestamp the server stored, and — when
+// reactions were requested — the per-step reaction verifications.
 type Result struct {
 	Repository string
 	Channel    string
@@ -92,13 +122,33 @@ type Result struct {
 	Title      string
 	Timestamp  string
 	URL        string
+
+	// ReactionsRequested is true when the caller asked for the lifecycle pass.
+	ReactionsRequested bool
+	// ReactionsEnabled mirrors the server's SLACK_REACTIONS_ENABLED. When a
+	// caller requests reactions but this is false, the lifecycle is skipped.
+	ReactionsEnabled bool
+	Reactions        []ReactionCheck
+}
+
+// ghEvent describes one synthetic webhook to replay.
+type ghEvent struct {
+	event       string // X-GitHub-Event header
+	action      string
+	reviewState string // review.state, empty when there is no review object
+	merged      bool
 }
 
 // Run validates that target is mapped, posts a signed synthetic
 // `pull_request: opened` to the live endpoint, and reports the channel and the
 // Slack timestamp read back from the store. Mapping is checked first so an
 // unmapped repo fails (ErrNoMapping) without any network traffic.
-func (s *Smoke) Run(ctx context.Context, target string) (Result, error) {
+//
+// When withReactions is set and the server has reactions enabled, Run then
+// replays a comment, an approval, and a merge for the same PR and verifies the
+// configured emoji appeared on the message. A missing emoji is recorded in the
+// Result (not returned as an error) so the CLI can report every step.
+func (s *Smoke) Run(ctx context.Context, target string, withReactions bool) (Result, error) {
 	mapping, err := s.mappings.Get(ctx, target)
 	if errors.Is(err, store.ErrNotFound) {
 		return Result{}, fmt.Errorf("%w: %s", ErrNoMapping, target)
@@ -109,33 +159,18 @@ func (s *Smoke) Run(ctx context.Context, target string) (Result, error) {
 
 	prNumber := int(s.now().Unix())
 	title := fmt.Sprintf("%s delivery test — safe to delete (PR #%d)", smokeTitlePrefix, prNumber)
-	body, err := buildPayload(target, prNumber, title)
-	if err != nil {
+	res := Result{
+		Repository:         target,
+		Channel:            mapping.SlackChannel,
+		PRNumber:           prNumber,
+		Title:              title,
+		URL:                s.url,
+		ReactionsRequested: withReactions,
+		ReactionsEnabled:   s.rxCfg.Enabled,
+	}
+
+	if err := s.deliver(ctx, target, prNumber, title, ghEvent{event: "pull_request", action: "opened"}); err != nil {
 		return Result{}, err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.url, bytes.NewReader(body))
-	if err != nil {
-		return Result{}, fmt.Errorf("smoke: build request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-GitHub-Event", "pull_request")
-	req.Header.Set(githubhook.SignatureHeader, githubhook.Sign(s.secret, body))
-
-	resp, err := s.http.Do(req)
-	if err != nil {
-		return Result{}, fmt.Errorf("%w at %s: %v", ErrUnreachable, s.url, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	switch resp.StatusCode {
-	case http.StatusOK:
-		// fall through to read back the stored timestamp.
-	case http.StatusUnauthorized:
-		return Result{}, ErrSignatureRejected
-	default:
-		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
-		return Result{}, fmt.Errorf("%w: %d: %s", ErrUnexpectedStatus, resp.StatusCode, bytes.TrimSpace(snippet))
 	}
 
 	msg, err := s.store.Get(ctx, target, prNumber)
@@ -143,23 +178,90 @@ func (s *Smoke) Run(ctx context.Context, target string) (Result, error) {
 		return Result{}, fmt.Errorf("smoke: server returned 200 but the Slack message timestamp was not stored "+
 			"(was the repo mapped to a channel the bot can post to?): %w", err)
 	}
+	res.Timestamp = msg.TS
 
-	return Result{
-		Repository: target,
-		Channel:    mapping.SlackChannel,
-		PRNumber:   prNumber,
-		Title:      title,
-		Timestamp:  msg.TS,
-		URL:        s.url,
-	}, nil
+	if !withReactions || !s.rxCfg.Enabled {
+		return res, nil
+	}
+
+	steps := []struct {
+		name  string
+		emoji string
+		ev    ghEvent
+	}{
+		{"comment", s.rxCfg.Commented, ghEvent{event: "pull_request_review", action: "submitted", reviewState: "commented"}},
+		{"approve", s.rxCfg.Approved, ghEvent{event: "pull_request_review", action: "submitted", reviewState: "approved"}},
+		{"merge", s.rxCfg.MergedPR, ghEvent{event: "pull_request", action: "closed", merged: true}},
+	}
+	for _, step := range steps {
+		if err := s.deliver(ctx, target, prNumber, title, step.ev); err != nil {
+			return res, err
+		}
+		check := ReactionCheck{Step: step.name, Emoji: step.emoji}
+		reactions, gerr := s.reactions.GetReactions(ctx, mapping.SlackChannel, msg.TS)
+		if gerr != nil {
+			check.VerifyErr = gerr
+		} else {
+			check.Present = containsReaction(reactions, step.emoji)
+		}
+		res.Reactions = append(res.Reactions, check)
+	}
+	return res, nil
 }
 
-// buildPayload renders a minimal `pull_request: opened` body carrying only the
-// fields githubhook.ParsePayload and the open handler read. draft is false so
-// the open handler acts rather than ignoring it as a draft.
-func buildPayload(repository string, number int, title string) ([]byte, error) {
+// deliver signs and POSTs one synthetic event, mapping the response to a
+// sentinel error. A 200 is success; 401 is a secret mismatch; anything else is
+// unexpected.
+func (s *Smoke) deliver(ctx context.Context, repository string, number int, title string, ev ghEvent) error {
+	body, err := buildPayload(repository, number, title, ev)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.url, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("smoke: build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-GitHub-Event", ev.event)
+	req.Header.Set(githubhook.SignatureHeader, githubhook.Sign(s.secret, body))
+
+	resp, err := s.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("%w at %s: %v", ErrUnreachable, s.url, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return nil
+	case http.StatusUnauthorized:
+		return ErrSignatureRejected
+	default:
+		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
+		return fmt.Errorf("%w: %d: %s", ErrUnexpectedStatus, resp.StatusCode, bytes.TrimSpace(snippet))
+	}
+}
+
+func containsReaction(reactions []slack.Reaction, name string) bool {
+	for _, r := range reactions {
+		if r.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// buildPayload renders a minimal webhook body carrying only the fields
+// githubhook.ParsePayload and the handlers read for ev. The sender is a User so
+// the bot-reviewer suppression never fires; draft is false so the open handler
+// acts rather than ignoring it.
+func buildPayload(repository string, number int, title string, ev ghEvent) ([]byte, error) {
 	type user struct {
 		Login string `json:"login"`
+	}
+	type review struct {
+		State string `json:"state"`
 	}
 	payload := struct {
 		Action     string `json:"action"`
@@ -171,18 +273,24 @@ func buildPayload(repository string, number int, title string) ([]byte, error) {
 			Title   string `json:"title"`
 			HTMLURL string `json:"html_url"`
 			User    user   `json:"user"`
+			Merged  bool   `json:"merged"`
 			Draft   bool   `json:"draft"`
 		} `json:"pull_request"`
+		Review *review `json:"review,omitempty"`
 		Sender struct {
 			Login string `json:"login"`
 			Type  string `json:"type"`
 		} `json:"sender"`
-	}{Action: "opened"}
+	}{Action: ev.action}
 	payload.Repository.FullName = repository
 	payload.PullRequest.Number = number
 	payload.PullRequest.Title = title
 	payload.PullRequest.HTMLURL = fmt.Sprintf("https://github.com/%s/pull/%d", repository, number)
 	payload.PullRequest.User = user{Login: "notifycat-smoke"}
+	payload.PullRequest.Merged = ev.merged
+	if ev.reviewState != "" {
+		payload.Review = &review{State: ev.reviewState}
+	}
 	payload.Sender.Login = "notifycat-smoke"
 	payload.Sender.Type = "User"
 

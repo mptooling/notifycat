@@ -75,11 +75,17 @@ correctly-signed `pull_request: opened` event for a repository in your `mappings
 timestamp it produced:
 
 ```sh
-./notifycat smoke <org>/<repo>    # use a repo present in mappings.yaml
+./notifycat smoke <org>/<repo>              # use a repo present in mappings.yaml
+./notifycat smoke --reactions <org>/<repo>  # also exercise the review-lifecycle reactions
 ```
 
 A real message titled `[notifycat smoke] …` appears in the mapped channel — delete it once you've confirmed delivery. A
 secret mismatch is reported as a clear `401`, and an unmapped repository is rejected before any request is sent.
+
+Add `--reactions` to also replay a comment, an approval, and a merge for the same synthetic PR and verify (via
+`reactions.get`) that the configured emoji landed on the message — an end-to-end check of `reactions:write`/`read` and the
+reaction handlers. It is skipped with a note when `SLACK_REACTIONS_ENABLED=false`, and the merge step decorates the
+message as `[Merged]`, so expect a few extra emoji on the throwaway message.
 
 ### 6. Register the GitHub webhook
 

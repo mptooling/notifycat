@@ -3,6 +3,9 @@
 // mapped repository, POSTs it to the live /webhook/github endpoint, and reports
 // the Slack channel and message timestamp it produced — the honest "does my
 // config actually deliver?" check to run before wiring a real GitHub webhook.
+//
+// With --reactions it also replays a comment, an approval, and a merge for the
+// same synthetic PR and verifies the configured emoji landed on the message.
 package main
 
 import (
@@ -18,6 +21,7 @@ import (
 
 	"github.com/mptooling/notifycat/internal/config"
 	"github.com/mptooling/notifycat/internal/mappings"
+	"github.com/mptooling/notifycat/internal/slack"
 	"github.com/mptooling/notifycat/internal/smoke"
 	"github.com/mptooling/notifycat/internal/store"
 )
@@ -31,7 +35,7 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
-	target, url, code, ok := parseArgs(args, stderr)
+	opts, code, ok := parseArgs(args, stderr)
 	if !ok {
 		return code
 	}
@@ -56,19 +60,47 @@ func run(args []string, stdout, stderr io.Writer) int {
 	messages := store.NewSlackMessages(db)
 
 	hc := &http.Client{Timeout: 15 * time.Second}
-	s := smoke.New(provider, messages, hc, cfg.GitHubWebhookSecret.Reveal(), url, time.Now)
+	slackClient := slack.NewClient(hc, cfg.SlackBotToken.Reveal(), slack.WithBaseURL(cfg.SlackBaseURL))
+	s := smoke.New(provider, messages, slackClient, hc, cfg.GitHubWebhookSecret.Reveal(), opts.url, cfg.Reactions, time.Now)
 
-	res, err := s.Run(context.Background(), target)
+	res, err := s.Run(context.Background(), opts.target, opts.reactions)
 	if err != nil {
-		return report(stderr, target, url, err)
+		return report(stderr, opts.target, opts.url, err)
 	}
+	return render(stdout, res)
+}
 
+// render prints a successful result and returns the exit code — non-zero when a
+// requested reaction was expected but did not appear on the message.
+func render(stdout io.Writer, res smoke.Result) int {
 	fmt.Fprintf(stdout, "✓ delivered a smoke test to %s\n", res.Repository)
 	fmt.Fprintf(stdout, "  channel:    %s\n", res.Channel)
 	fmt.Fprintf(stdout, "  timestamp:  %s\n", res.Timestamp)
 	fmt.Fprintf(stdout, "  title:      %s\n", res.Title)
+
+	exit := 0
+	if res.ReactionsRequested {
+		switch {
+		case !res.ReactionsEnabled:
+			fmt.Fprintln(stdout, "  reactions:  disabled in config (SLACK_REACTIONS_ENABLED=false) — skipped")
+		default:
+			fmt.Fprintln(stdout, "  reactions:")
+			for _, c := range res.Reactions {
+				switch {
+				case c.VerifyErr != nil:
+					fmt.Fprintf(stdout, "    ?  %-8s %-26s could not verify: %v\n", c.Step, c.Emoji, c.VerifyErr)
+				case c.Present:
+					fmt.Fprintf(stdout, "    ✓  %-8s %s\n", c.Step, c.Emoji)
+				default:
+					fmt.Fprintf(stdout, "    ✗  %-8s %-26s not found on the message\n", c.Step, c.Emoji)
+					exit = 1
+				}
+			}
+		}
+	}
+
 	fmt.Fprintln(stdout, "A real Slack message was posted — delete it from the channel when you're done.")
-	return 0
+	return exit
 }
 
 // report maps a Smoke error to a clear, stack-trace-free message and exit code.
@@ -87,26 +119,34 @@ func report(stderr io.Writer, target, url string, err error) int {
 	return 1
 }
 
-func parseArgs(args []string, stderr io.Writer) (target, url string, code int, ok bool) {
+type options struct {
+	target    string
+	url       string
+	reactions bool
+}
+
+func parseArgs(args []string, stderr io.Writer) (opts options, code int, ok bool) {
 	fs := flag.NewFlagSet("notifycat-smoke", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() { fmt.Fprintln(stderr, usage()) }
-	urlFlag := fs.String("url", defaultURL, "webhook endpoint to POST the synthetic event to")
+	url := fs.String("url", defaultURL, "webhook endpoint to POST the synthetic event to")
+	reactions := fs.Bool("reactions", false, "also replay comment/approve/merge and verify the configured emoji")
 	if err := fs.Parse(args); err != nil {
-		return "", "", 2, false
+		return options{}, 2, false
 	}
 	positional := fs.Args()
 	if len(positional) != 1 {
 		fs.Usage()
-		return "", "", 2, false
+		return options{}, 2, false
 	}
-	return positional[0], *urlFlag, 0, true
+	return options{target: positional[0], url: *url, reactions: *reactions}, 0, true
 }
 
 func usage() string {
 	return strings.TrimSpace(`
 usage:
-  notifycat-smoke owner/repo           # post a signed test event to the running server
-  notifycat-smoke --url URL owner/repo # override the endpoint (default: ` + defaultURL + `)
+  notifycat-smoke owner/repo              # post a signed test event to the running server
+  notifycat-smoke --reactions owner/repo  # also replay comment/approve/merge and verify emoji
+  notifycat-smoke --url URL owner/repo    # override the endpoint (default: ` + defaultURL + `)
 `)
 }
