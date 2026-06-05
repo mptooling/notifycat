@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/mptooling/notifycat/compare/v0.11.3...v0.12.0) (2026-06-05)
+
+
+### 🚀 Features
+
+* distinct reaction for non-suppressed bot reviews (closes [#5](https://github.com/mptooling/notifycat/issues/5)) ([#75](https://github.com/mptooling/notifycat/issues/75)) ([98f9923](https://github.com/mptooling/notifycat/commit/98f9923dc0f6450b766438836f1e32c8c756930d))
+
 ## [0.11.3](https://github.com/mptooling/notifycat/compare/v0.11.2...v0.11.3) (2026-06-05)
 
 
