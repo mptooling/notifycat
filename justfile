@@ -106,3 +106,8 @@ docker-up:
 # Stop and remove the detached container started by docker-up
 docker-down:
   -docker rm -f notifycat
+
+# Smoke-test end-to-end delivery in Docker (needs `just docker-up` first) — e.g. just docker-smoke owner/repo
+docker-smoke +args="":
+  # --network container:notifycat shares the running server's netns so the webhook reaches it on localhost.
+  docker run --rm --network container:notifycat --user "$(id -u):$(id -g)" -v "$PWD:/app" --env-file .env {{app}}:test /usr/local/bin/notifycat-smoke --url http://localhost:8080/webhook/github {{args}}
