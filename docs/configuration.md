@@ -77,6 +77,12 @@ the `Webhooks: Read and write` permission on a fine-grained PAT. The validate/do
 | --- | --- | --- |
 | `NOTIFYCAT_IGNORE_AI_REVIEWS` | `false` | When `true`, suppress `reactions.add` for any review event whose `sender.type == "Bot"` — Copilot, Claude, Codex, dependabot, github-actions, release-please, and any other GitHub App or legacy bot account. Detection is intentionally coarse: notifycat does **not** distinguish AI reviewers from scripted bots. See [Operations → Bot-reviewer suppression](operations.md#bot-reviewer-suppression) for the trade-off and failure-mode guide. |
 
+## Dependabot / Renovate format
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `NOTIFYCAT_DEPENDABOT_FORMAT` | `true` | When `true`, PRs opened by `dependabot[bot]` or `renovate[bot]` post a compact Slack message instead of the standard "please review" format: `:package: <bot> bumped <link>` for routine bumps, or `:rotating_light: <bot> security update <link>` when the PR body shows a security advisory. Set `false` to render those PRs with today's standard format. See [Operations → Dependabot / Renovate format](operations.md#dependabot--renovate-format) for detection details. |
+
 ## Reactions
 
 | Variable | Default | Notes |

@@ -29,6 +29,7 @@ func clearAll(t *testing.T) {
 		"SLACK_REACTION_BOT_REVIEW",
 		"NOTIFYCAT_MESSAGE_TTL_DAYS",
 		"NOTIFYCAT_IGNORE_AI_REVIEWS",
+		"NOTIFYCAT_DEPENDABOT_FORMAT",
 	}
 	for _, k := range keys {
 		t.Setenv(k, "")
@@ -100,6 +101,7 @@ func TestLoad_AppliesDefaults(t *testing.T) {
 		{"Reactions.BotReview", cfg.Reactions.BotReview, "robot_face"},
 		{"MessageTTLDays", cfg.MessageTTLDays, 30},
 		{"IgnoreAIReviews", cfg.IgnoreAIReviews, false},
+		{"DependabotFormat", cfg.DependabotFormat, true},
 	}
 	for _, c := range checks {
 		if c.got != c.want {
@@ -180,6 +182,22 @@ func TestLoad_MessageTTLDays_RejectsNegative(t *testing.T) {
 	})
 	if _, err := config.Load(); err == nil {
 		t.Fatal("Load() succeeded with NOTIFYCAT_MESSAGE_TTL_DAYS=-1; want error")
+	}
+}
+
+func TestLoad_DependabotFormatOverride(t *testing.T) {
+	clearAll(t)
+	setEnv(t, map[string]string{
+		"GITHUB_WEBHOOK_SECRET":       "shh",
+		"SLACK_BOT_TOKEN":             "xoxb-x",
+		"NOTIFYCAT_DEPENDABOT_FORMAT": "false",
+	})
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.DependabotFormat {
+		t.Errorf("DependabotFormat = true; want false from override")
 	}
 }
 

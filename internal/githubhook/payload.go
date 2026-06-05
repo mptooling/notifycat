@@ -44,6 +44,9 @@ type PullRequest struct {
 	Author string
 	Merged bool
 	Draft  bool
+	// Body is the PR description. Used to tell a Dependabot/Renovate security
+	// advisory apart from a routine bump (see internal/botpr).
+	Body string
 }
 
 // Review carries the review state (approved | commented | changes_requested).
@@ -64,6 +67,7 @@ type rawPayload struct {
 		Number  int    `json:"number"`
 		Title   string `json:"title"`
 		HTMLURL string `json:"html_url"`
+		Body    string `json:"body"`
 		User    struct {
 			Login string `json:"login"`
 		} `json:"user"`
@@ -121,6 +125,7 @@ func ParsePayload(body []byte) (Payload, error) {
 			Author: raw.PullRequest.User.Login,
 			Merged: raw.PullRequest.Merged,
 			Draft:  raw.PullRequest.Draft,
+			Body:   raw.PullRequest.Body,
 		},
 		PRComment: prComment,
 		Sender:    Sender{Login: raw.Sender.Login, Type: raw.Sender.Type},
