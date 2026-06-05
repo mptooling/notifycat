@@ -74,7 +74,11 @@ func TestClient_PostMessage_Success(t *testing.T) {
 	})
 	c := slack.NewClient(fake.Client(), "xoxb-test", slack.WithBaseURL(fake.URL))
 
-	ts, err := c.PostMessage(context.Background(), "C123", "hello")
+	msg := slack.Message{
+		Blocks:   []slack.Block{{Type: "section", Text: &slack.TextObject{Type: "mrkdwn", Text: "hello"}}},
+		Fallback: "hello",
+	}
+	ts, err := c.PostMessage(context.Background(), "C123", msg)
 	if err != nil {
 		t.Fatalf("PostMessage: %v", err)
 	}
@@ -92,12 +96,16 @@ func TestClient_PostMessage_Success(t *testing.T) {
 	if !strings.Contains(call.ContentType, "application/json") {
 		t.Errorf("Content-Type = %q", call.ContentType)
 	}
-	var payload map[string]string
+	var payload map[string]any
 	if err := json.Unmarshal([]byte(call.Body), &payload); err != nil {
 		t.Fatalf("body json: %v (body=%q)", err, call.Body)
 	}
 	if payload["channel"] != "C123" || payload["text"] != "hello" {
 		t.Errorf("body payload = %v", payload)
+	}
+	blocks, ok := payload["blocks"].([]any)
+	if !ok || len(blocks) == 0 {
+		t.Errorf("expected a non-empty blocks array, got %v", payload["blocks"])
 	}
 }
 
@@ -107,7 +115,7 @@ func TestClient_PostMessage_SlackError(t *testing.T) {
 	})
 	c := slack.NewClient(fake.Client(), "xoxb-test", slack.WithBaseURL(fake.URL))
 
-	_, err := c.PostMessage(context.Background(), "Cbad", "hi")
+	_, err := c.PostMessage(context.Background(), "Cbad", slack.Message{Fallback: "hi"})
 	if err == nil {
 		t.Fatal("PostMessage with Slack error returned nil; want APIError")
 	}
@@ -126,7 +134,7 @@ func TestClient_UpdateMessage(t *testing.T) {
 	})
 	c := slack.NewClient(fake.Client(), "xoxb-test", slack.WithBaseURL(fake.URL))
 
-	if err := c.UpdateMessage(context.Background(), "C1", "ts1", "edited"); err != nil {
+	if err := c.UpdateMessage(context.Background(), "C1", "ts1", slack.Message{Fallback: "edited"}); err != nil {
 		t.Fatalf("UpdateMessage: %v", err)
 	}
 	call := fake.lastCall(t)
@@ -289,7 +297,7 @@ func TestClient_NetworkError(t *testing.T) {
 	defer srv.Close()
 	c := slack.NewClient(srv.Client(), "xoxb-test", slack.WithBaseURL(srv.URL))
 
-	_, err := c.PostMessage(context.Background(), "C1", "x")
+	_, err := c.PostMessage(context.Background(), "C1", slack.Message{Fallback: "x"})
 	if err == nil {
 		t.Fatal("PostMessage on broken server returned nil; want network error")
 	}

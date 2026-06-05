@@ -86,8 +86,8 @@ func (h *OpenHandler) Handle(ctx context.Context, e Event) error {
 		return err
 	}
 
-	text := h.composeText(e, mapping.Mentions)
-	ts, err := h.slack.PostMessage(ctx, mapping.SlackChannel, text)
+	msg := h.composeMessage(e, mapping.Mentions)
+	ts, err := h.slack.PostMessage(ctx, mapping.SlackChannel, msg)
 	if err != nil {
 		return err
 	}
@@ -99,13 +99,13 @@ func (h *OpenHandler) Handle(ctx context.Context, e Event) error {
 	})
 }
 
-// composeText renders the message for an opened PR. When the dependabot format
-// is enabled and the PR was opened by dependabot[bot]/renovate[bot], it picks
-// the compact routine/security template; otherwise it uses the standard
-// message. Detection keys off the PR author, not the webhook sender: on a
-// ready_for_review event the sender is the human who marked a bot's draft PR
-// ready, while the author stays the bot.
-func (h *OpenHandler) composeText(e Event, mentions []string) string {
+// composeMessage renders the message for an opened PR. When the dependabot
+// format is enabled and the PR was opened by dependabot[bot]/renovate[bot], it
+// picks the compact routine/security template; otherwise it uses the standard
+// Block Kit message. Detection keys off the PR author, not the webhook sender:
+// on a ready_for_review event the sender is the human who marked a bot's draft
+// PR ready, while the author stays the bot.
+func (h *OpenHandler) composeMessage(e Event, mentions []string) slack.Message {
 	if h.dependabotFormat {
 		if kind := botpr.DetectBot(e.PR.Author); kind != botpr.BotKindNone {
 			security := botpr.IsSecurityAdvisory(e.PR.Body)
@@ -124,5 +124,6 @@ func slackPRFrom(e Event) slack.PRDetails {
 		Title:      e.PR.Title,
 		URL:        e.PR.URL,
 		Author:     e.PR.Author,
+		CreatedAt:  e.PR.CreatedAt,
 	}
 }

@@ -330,7 +330,8 @@ func TestIntegration_OpenedPR(t *testing.T) {
 		"repository": {"full_name": "octo/widget"},
 		"pull_request": {
 			"number": 42, "title": "fix", "html_url": "https://gh/octo/widget/pull/42",
-			"user": {"login": "bob"}, "draft": false
+			"user": {"login": "bob"}, "draft": false,
+			"created_at": "2026-06-05T14:04:00Z"
 		}
 	}`)
 
@@ -340,6 +341,25 @@ func TestIntegration_OpenedPR(t *testing.T) {
 	if !contains(f.slack.methods(), "/api/chat.postMessage") {
 		t.Errorf("chat.postMessage not called; calls = %v", f.slack.methods())
 	}
+
+	// Block Kit shape, threaded end-to-end through the real HTTP pipeline:
+	// a headline section keeps the mention and linked title; a context line
+	// carries repo, author, and the localized open-time token; and a top-level
+	// text fallback is sent alongside the blocks.
+	body := f.postedBody(t)
+	section := blockText(body, "section")
+	if !strings.Contains(section, ":rocket:") || !strings.Contains(section, "@alice, please review") ||
+		!strings.Contains(section, "<https://gh/octo/widget/pull/42|PR #42: fix>") {
+		t.Errorf("headline section wrong: %q", section)
+	}
+	ctx := blockText(body, "context")
+	if !strings.Contains(ctx, "octo/widget · bob · opened ") || !strings.Contains(ctx, "<!date^") {
+		t.Errorf("context line did not carry repo/author/localized time: %q", ctx)
+	}
+	if fallback, _ := body["text"].(string); fallback == "" {
+		t.Error("posted message has no top-level text fallback")
+	}
+
 	saved, err := f.loadMessage(t, "octo/widget", 42)
 	if err != nil {
 		t.Fatalf("loadMessage: %v", err)
@@ -535,15 +555,45 @@ func TestIntegration_ReviewRequestChange(t *testing.T) {
 
 // ---------- Dependabot / Renovate compact format ----------
 
-// postedText returns the text of the first chat.postMessage call.
-func (f *integrationFixture) postedText(t *testing.T) string {
+// postedBody returns the JSON body of the first chat.postMessage call.
+func (f *integrationFixture) postedBody(t *testing.T) map[string]any {
 	t.Helper()
 	call, ok := f.slack.findCall("/api/chat.postMessage")
 	if !ok {
 		t.Fatalf("chat.postMessage not called; methods = %v", f.slack.methods())
 	}
-	text, _ := call.Body["text"].(string)
-	return text
+	return call.Body
+}
+
+// postedText returns the rendered headline (the first section block's text) of
+// the first chat.postMessage call — the visible message line carrying the
+// leading emoji and the linked title.
+func (f *integrationFixture) postedText(t *testing.T) string {
+	t.Helper()
+	return blockText(f.postedBody(t), "section")
+}
+
+// blockText returns the text of the first block of the given type ("section"
+// or "context") in a posted Slack message body, or "" if absent.
+func blockText(body map[string]any, blockType string) string {
+	blocks, _ := body["blocks"].([]any)
+	for _, b := range blocks {
+		bm, ok := b.(map[string]any)
+		if !ok || bm["type"] != blockType {
+			continue
+		}
+		if txt, ok := bm["text"].(map[string]any); ok { // section
+			s, _ := txt["text"].(string)
+			return s
+		}
+		if els, ok := bm["elements"].([]any); ok && len(els) > 0 { // context
+			if em, ok := els[0].(map[string]any); ok {
+				s, _ := em["text"].(string)
+				return s
+			}
+		}
+	}
+	return ""
 }
 
 func TestIntegration_DependabotRoutinePR(t *testing.T) {

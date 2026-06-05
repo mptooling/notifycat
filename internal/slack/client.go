@@ -57,26 +57,31 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("slack: %s: %s", e.Method, e.Code)
 }
 
-// PostMessage posts a new message to channel and returns its ts.
-func (c *Client) PostMessage(ctx context.Context, channel, text string) (string, error) {
+// PostMessage posts a new message to channel and returns its ts. The Block Kit
+// blocks render in-channel; msg.Fallback is sent as the top-level text Slack
+// uses for the push preview and screen readers.
+func (c *Client) PostMessage(ctx context.Context, channel string, msg Message) (string, error) {
 	var resp struct {
 		TS string `json:"ts"`
 	}
 	if err := c.postJSON(ctx, "chat.postMessage", map[string]any{
 		"channel": channel,
-		"text":    text,
+		"text":    msg.Fallback,
+		"blocks":  msg.Blocks,
 	}, &resp, nil); err != nil {
 		return "", err
 	}
 	return resp.TS, nil
 }
 
-// UpdateMessage edits an existing message by ts.
-func (c *Client) UpdateMessage(ctx context.Context, channel, ts, text string) error {
+// UpdateMessage edits an existing message by ts, replacing both its blocks and
+// the top-level text fallback.
+func (c *Client) UpdateMessage(ctx context.Context, channel, ts string, msg Message) error {
 	return c.postJSON(ctx, "chat.update", map[string]any{
 		"channel": channel,
 		"ts":      ts,
-		"text":    text,
+		"text":    msg.Fallback,
+		"blocks":  msg.Blocks,
 	}, nil, nil)
 }
 

@@ -196,11 +196,33 @@ events; it does not distinguish AI reviewers from scripted bots.
 3. If you do **not** see that log, the suppression did not fire; the missing reaction has a different cause — work
    through the regular "silent 200 OK" debug checklist above.
 
+## Notification message
+
+A new (non-draft, or `ready_for_review`) PR posts a [Block
+Kit](https://docs.slack.dev/reference/block-kit) message — a headline section
+and a muted context line:
+
+- **Headline `section`** — `:<new-PR emoji>: <mentions>, please review <link|PR #N: title>`.
+  Mentions stay in the section because Slack only reliably pings on a mention in
+  a section (a context block renders it as gray text but does not notify); with
+  no mentions the prefix is omitted, so there is no stranded comma.
+- **Context line** — `owner/repo · <author> · opened <localized time>`. The
+  time uses Slack's date token, so each viewer sees it in their own timezone
+  ("opened Today at 2:04 PM"). When the webhook omits `created_at` the
+  "opened …" clause is dropped.
+
+A plain-text fallback is sent alongside the blocks; Slack uses it for the mobile
+push preview and screen readers (it does not read interior block text).
+
+On **merge or close** the message updates in place: the title is struck through,
+the leading emoji swaps to the merged/closed reaction emoji, and a `[Merged]` /
+`[Closed]` label is prepended. The context line is preserved.
+
 ## Dependabot / Renovate format
 
 With `NOTIFYCAT_DEPENDABOT_FORMAT=true` (the default), a PR **opened** by
 `dependabot[bot]` or `renovate[bot]` posts a compact message instead of the
-standard "please review" line:
+standard message above — a single line, no context block:
 
 - **Routine bump** — `:package: <mentions>, <bot> bumped <link|PR #N: title>`
 - **Security advisory** — `:rotating_light: <mentions>, <bot> security update <link|PR #N: title>`

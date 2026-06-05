@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 )
 
 // Payload is the parsed view of an inbound GitHub webhook body, holding only
@@ -47,6 +48,9 @@ type PullRequest struct {
 	// Body is the PR description. Used to tell a Dependabot/Renovate security
 	// advisory apart from a routine bump (see internal/botpr).
 	Body string
+	// CreatedAt is the PR's open time, parsed from pull_request.created_at
+	// (RFC3339). Zero when the field is absent or unparseable.
+	CreatedAt time.Time
 }
 
 // Review carries the review state (approved | commented | changes_requested).
@@ -64,11 +68,12 @@ type rawPayload struct {
 		FullName string `json:"full_name"`
 	} `json:"repository"`
 	PullRequest struct {
-		Number  int    `json:"number"`
-		Title   string `json:"title"`
-		HTMLURL string `json:"html_url"`
-		Body    string `json:"body"`
-		User    struct {
+		Number    int    `json:"number"`
+		Title     string `json:"title"`
+		HTMLURL   string `json:"html_url"`
+		Body      string `json:"body"`
+		CreatedAt string `json:"created_at"`
+		User      struct {
 			Login string `json:"login"`
 		} `json:"user"`
 		Merged bool `json:"merged"`
@@ -115,17 +120,28 @@ func ParsePayload(body []byte) (Payload, error) {
 		return Payload{}, ErrMissingPRNumber
 	}
 
+	// created_at is best-effort: a missing or malformed timestamp leaves the
+	// zero time rather than failing the whole webhook, since the notifier only
+	// uses it for a cosmetic context line.
+	var createdAt time.Time
+	if s := raw.PullRequest.CreatedAt; s != "" {
+		if t, err := time.Parse(time.RFC3339, s); err == nil {
+			createdAt = t
+		}
+	}
+
 	p := Payload{
 		Action:     raw.Action,
 		Repository: raw.Repository.FullName,
 		PullRequest: PullRequest{
-			Number: number,
-			Title:  raw.PullRequest.Title,
-			URL:    raw.PullRequest.HTMLURL,
-			Author: raw.PullRequest.User.Login,
-			Merged: raw.PullRequest.Merged,
-			Draft:  raw.PullRequest.Draft,
-			Body:   raw.PullRequest.Body,
+			Number:    number,
+			Title:     raw.PullRequest.Title,
+			URL:       raw.PullRequest.HTMLURL,
+			Author:    raw.PullRequest.User.Login,
+			Merged:    raw.PullRequest.Merged,
+			Draft:     raw.PullRequest.Draft,
+			Body:      raw.PullRequest.Body,
+			CreatedAt: createdAt,
 		},
 		PRComment: prComment,
 		Sender:    Sender{Login: raw.Sender.Login, Type: raw.Sender.Type},

@@ -71,7 +71,7 @@ type Config struct {
 // Reactions configures Slack reaction emoji names per PR lifecycle event.
 type Reactions struct {
 	Enabled       bool   `env:"SLACK_REACTIONS_ENABLED" envDefault:"true"`
-	NewPR         string `env:"SLACK_REACTION_NEW_PR" envDefault:"large_green_circle"`
+	NewPR         string `env:"SLACK_REACTION_NEW_PR" envDefault:"eyes"`
 	MergedPR      string `env:"SLACK_REACTION_MERGED_PR" envDefault:"twisted_rightwards_arrows"`
 	ClosedPR      string `env:"SLACK_REACTION_CLOSED_PR" envDefault:"x"`
 	Approved      string `env:"SLACK_REACTION_PR_APPROVED" envDefault:"white_check_mark"`
