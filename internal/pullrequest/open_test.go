@@ -223,6 +223,40 @@ func TestOpenHandler_Handle_Renovate(t *testing.T) {
 	}
 }
 
+func TestOpenHandler_Handle_DependabotReadyForReviewByHuman(t *testing.T) {
+	// Regression: a draft Dependabot PR marked ready_for_review by a human. The
+	// webhook sender is the human who clicked the button, but the PR author is
+	// still dependabot[bot] — detection must key off the author so the compact
+	// format applies, not off the sender (which would fall back to "please
+	// review").
+	msgs := newFakeSlackMessages()
+	mappings := newFakeRepoMappings(store.RepoMapping{
+		Repository: "octo/widget", SlackChannel: "C123",
+	})
+	client := &fakeSlackClient{}
+	h := newOpenHandler(t, msgs, mappings, client)
+
+	e := pullrequest.Event{
+		Action:     "ready_for_review",
+		Repository: "octo/widget",
+		PR:         pullrequest.PR{Number: 42, Title: "bump acme/lib from 1.2.0 to 1.2.1", URL: "u", Author: "dependabot[bot]"},
+		Sender:     pullrequest.Sender{Login: "alice", Type: "User"},
+	}
+	if err := h.Handle(context.Background(), e); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+
+	text := client.calls[0].Text
+	for _, want := range []string{":package:", "dependabot bumped", "bump acme/lib from 1.2.0 to 1.2.1"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("posted text missing %q: %q", want, text)
+		}
+	}
+	if strings.Contains(text, "please review") {
+		t.Errorf("dependabot PR marked ready by a human should still use compact format: %q", text)
+	}
+}
+
 func TestOpenHandler_Handle_DependabotFormatDisabled(t *testing.T) {
 	msgs := newFakeSlackMessages()
 	mappings := newFakeRepoMappings(store.RepoMapping{
