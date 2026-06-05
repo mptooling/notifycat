@@ -20,30 +20,11 @@ of a PR without digging through repeated notifications.
 It is intentionally small: one HTTP endpoint, a SQLite database (for Slack message timestamps), and a declarative
 `mappings.yaml` that decides which PRs route to which Slack channels.
 
-## What It Handles
+## Quick start
 
-- `pull_request` webhooks for opened, closed, and converted-to-draft PRs.
-- `pull_request_review` webhooks for approved, commented, and changes-requested reviews.
-- `pull_request_review_comment` webhooks for line-specific PR comments.
-- GitHub HMAC-SHA256 verification through `X-Hub-Signature-256`.
-- Repository routing from a declarative `mappings.yaml` — explicit lists or `repositories: "*"` for a whole org. See
-  [`mappings.example.yaml`](mappings.example.yaml).
-- Slack message updates instead of repeated new messages for the same PR.
-
-## Binaries
-
-| Binary | Purpose |
-| --- | --- |
-| `notifycat-server` | HTTP server for GitHub webhooks |
-| `notifycat-mapping` | CLI for listing and validating the mappings file |
-| `notifycat-migrate` | Applies embedded SQLite migrations |
-| `notifycat-doctor` | Preflight diagnostics (config, database, mappings, optional per-repo Slack/GitHub) |
-
-## Quickstart
-
-### Docker Compose (recommended)
-
-**Requires:** Docker with Compose V2. Nothing else — no Go toolchain, no SQLite client.
+**You'll need** a host with Docker + Compose V2, a domain name pointing at it, and inbound ports 80/443 open.
+**In about 10 minutes** you'll have Notifycat running behind automatic HTTPS and posting PR updates to Slack — no Go
+toolchain, no SQLite client, no manual file editing.
 
 ```sh
 curl -fsSL https://github.com/mptooling/notifycat/releases/latest/download/install.sh | sh
@@ -53,13 +34,14 @@ docker compose up -d       # start Notifycat + Caddy (HTTPS via Let's Encrypt)
 ./notifycat doctor         # verify setup
 ```
 
-The installer creates a `./notifycat` directory with all required files. The setup wizard prompts for your domain, Slack
-token, webhook secret, and first mapping — no manual file editing required.
+The installer downloads a pinned, checksum-verified bundle into `./notifycat`. The setup wizard prompts for your domain,
+Slack token, webhook secret, and first mapping. For the full walkthrough — webhook registration, a delivery smoke test,
+and troubleshooting — see [Install with Docker Compose](https://mptooling.github.io/notifycat/compose/), then run through
+the [Security & permissions](https://mptooling.github.io/notifycat/security/) checklist before go-live.
 
-For the full walkthrough including webhook registration and troubleshooting, see [Install with Docker
-Compose](https://mptooling.github.io/notifycat/compose/).
+### Alternative: run from source (contributors)
 
-### Local (Go source)
+Most users want the one-command path above. Build from source if you're contributing or want to run without Docker.
 
 **Requires:**
 
@@ -85,16 +67,37 @@ The binaries pick up `.env` from the current working directory and default to `.
 `./data/notifycat.db`. See [Getting started](https://mptooling.github.io/notifycat/getting-started/) for the end-to-end
 walkthrough including the tunnel + webhook setup.
 
+## What It Handles
+
+- `pull_request` webhooks for opened, closed, and converted-to-draft PRs.
+- `pull_request_review` webhooks for approved, commented, and changes-requested reviews.
+- `pull_request_review_comment` webhooks for line-specific PR comments.
+- GitHub HMAC-SHA256 verification through `X-Hub-Signature-256`.
+- Repository routing from a declarative `mappings.yaml` — explicit lists or `repositories: "*"` for a whole org. See
+  [`mappings.example.yaml`](mappings.example.yaml).
+- Slack message updates instead of repeated new messages for the same PR.
+
+## Binaries
+
+| Binary | Purpose |
+| --- | --- |
+| `notifycat-server` | HTTP server for GitHub webhooks |
+| `notifycat-mapping` | CLI for listing and validating the mappings file |
+| `notifycat-migrate` | Applies embedded SQLite migrations |
+| `notifycat-doctor` | Preflight diagnostics (config, database, mappings, optional per-repo Slack/GitHub) |
+| `notifycat-smoke` | Forges a signed PR event end-to-end to confirm Slack delivery |
+
 ## Documentation
 
 Full documentation is published at <https://mptooling.github.io/notifycat/>.
 
+- [Install with Docker Compose](https://mptooling.github.io/notifycat/compose/) — the recommended one-command path
+- [Security & permissions](https://mptooling.github.io/notifycat/security/) — least-privilege model and pre-go-live checklist
 - [Getting started](https://mptooling.github.io/notifycat/getting-started/)
 - [Mappings file](https://mptooling.github.io/notifycat/mappings/)
 - [Configuration](https://mptooling.github.io/notifycat/configuration/)
 - [Slack app setup](https://mptooling.github.io/notifycat/slack-app/)
 - [GitHub webhook setup](https://mptooling.github.io/notifycat/github-webhook/)
-- [Install with Docker Compose](https://mptooling.github.io/notifycat/compose/)
 - [Docker (manual)](https://mptooling.github.io/notifycat/docker/)
 - [Operations](https://mptooling.github.io/notifycat/operations/)
 - [Doctor](https://mptooling.github.io/notifycat/doctor/)

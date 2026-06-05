@@ -83,6 +83,15 @@ The manifest includes these scopes. If you create the app manually, add the same
 `notifycat-mapping validate` reads `X-OAuth-Scopes` from Slack's `auth.test` response and fails fast when `chat:write`
 or `reactions:write` is missing.
 
+### Optional: `reactions:read`
+
+The running server never reads reactions back, so this scope is **not** required for normal operation. It is used by
+exactly one optional command: `notifycat-smoke --reactions`, which calls `reactions.get` to *verify* that the
+lifecycle emoji it triggered actually landed on the message. Without `reactions:read`, the reactions are still posted
+(that only needs `reactions:write`) but the smoke test reports `? could not verify … missing_scope` instead of `✓`,
+and exits successfully. Grant `reactions:read` only if you want that readback verification — leaving it off keeps the
+bot at least privilege.
+
 ## Channel Access
 
 Invite the bot to every channel listed in `mappings.yaml`:

@@ -132,6 +132,19 @@ docker compose logs -f caddy                    # follow Caddy logs (ACME, acces
 
 Both containers are set to `restart: unless-stopped` — they start automatically on reboot.
 
+### Upgrading and pinning a version
+
+The shipped `compose.yaml` tracks `ghcr.io/mptooling/notifycat:latest`. `docker compose up`/`run` reuse an image
+that is already present locally, so to actually move to a newer release you must pull first:
+
+```sh
+docker compose pull && ./notifycat up           # fetch the latest image and redeploy
+```
+
+For reproducible deploys, pin a specific release instead of tracking `:latest` — edit the `image:` line in
+`compose.yaml` to `ghcr.io/mptooling/notifycat:vX.Y.Z`, then `docker compose pull && ./notifycat up`. See
+[Supported tags](docker.md#supported-tags) for what each tag means.
+
 ## Troubleshooting
 
 ### Caddy fails to obtain a certificate
