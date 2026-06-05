@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.0](https://github.com/mptooling/notifycat/compare/v0.14.0...v0.15.0) (2026-06-05)
+
+
+### 🚀 Features
+
+* render PR Slack notifications as Block Kit with repo, author, and open time ([#92](https://github.com/mptooling/notifycat/issues/92)) ([4883ada](https://github.com/mptooling/notifycat/commit/4883adadf998858efe89f4c7c4e67b51d9f513aa))
+
 ## [0.14.0](https://github.com/mptooling/notifycat/compare/v0.13.1...v0.14.0) (2026-06-05)
 
 
