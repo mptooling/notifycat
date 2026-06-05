@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1](https://github.com/mptooling/notifycat/compare/v0.12.0...v0.12.1) (2026-06-05)
+
+
+### 🐛 Bug fixes
+
+* **docs:** use static MIT license badge to avoid intermittent 'invalid' ([#77](https://github.com/mptooling/notifycat/issues/77)) ([4c569ab](https://github.com/mptooling/notifycat/commit/4c569ab03ff2c4bcd182288bd09b076031c75d77))
+
 ## [0.12.0](https://github.com/mptooling/notifycat/compare/v0.11.3...v0.12.0) (2026-06-05)
 
 
