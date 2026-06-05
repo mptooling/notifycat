@@ -46,6 +46,19 @@ func TestVerifier_InvalidSignature(t *testing.T) {
 	}
 }
 
+func TestSign_RoundTripsWithVerify(t *testing.T) {
+	body := []byte(`{"ok":true}`)
+
+	sig := githubhook.Sign(testSecret, body)
+
+	if want := sign(body); sig != want {
+		t.Fatalf("Sign = %q; want %q", sig, want)
+	}
+	if err := githubhook.NewVerifier(testSecret).Verify(body, sig); err != nil {
+		t.Fatalf("Verify of Sign output returned %v; want nil", err)
+	}
+}
+
 func TestVerifier_BodyTamperedReturnsError(t *testing.T) {
 	v := githubhook.NewVerifier(testSecret)
 	body := []byte(`{"ok":true}`)

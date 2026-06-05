@@ -32,6 +32,16 @@ func NewVerifier(secret string) *Verifier {
 	return &Verifier{secret: []byte(secret)}
 }
 
+// Sign returns the "sha256=<hex>" HMAC of body under secret — the value
+// GitHub puts in X-Hub-Signature-256. It is the inverse of Verify and shares
+// the same scheme, so anything Sign produces, Verify accepts. Used by the
+// smoke command to forge a correctly-signed request against the live endpoint.
+func Sign(secret string, body []byte) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(body)
+	return signaturePrefix + hex.EncodeToString(mac.Sum(nil))
+}
+
 // Verify checks that signature is a valid "sha256=<hex>" HMAC of body using
 // the verifier's secret. Returns ErrInvalidSignature for any mismatch.
 //
