@@ -92,7 +92,7 @@ func TestLoad_AppliesDefaults(t *testing.T) {
 		{"LogFormat", cfg.LogFormat, "text"},
 		{"DatabaseURL", cfg.DatabaseURL, "file:./data/notifycat.db"},
 		{"Reactions.Enabled", cfg.Reactions.Enabled, true},
-		{"Reactions.NewPR", cfg.Reactions.NewPR, "large_green_circle"},
+		{"Reactions.NewPR", cfg.Reactions.NewPR, "eyes"},
 		{"Reactions.MergedPR", cfg.Reactions.MergedPR, "twisted_rightwards_arrows"},
 		{"Reactions.ClosedPR", cfg.Reactions.ClosedPR, "x"},
 		{"Reactions.Approved", cfg.Reactions.Approved, "white_check_mark"},

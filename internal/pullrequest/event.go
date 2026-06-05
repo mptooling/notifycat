@@ -5,7 +5,10 @@
 // the pipeline do not change.
 package pullrequest
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Event is the immutable record of an incoming pull-request-related webhook,
 // detached from any HTTP payload type. Handlers receive Event and decide via
@@ -48,6 +51,10 @@ type PR struct {
 	// Body is the PR description, consulted by OpenHandler to tell a
 	// Dependabot/Renovate security advisory from a routine bump.
 	Body string
+	// CreatedAt is the PR's open time (pull_request.created_at), rendered as a
+	// localized date token in the Slack context line. Zero when the payload
+	// omits it.
+	CreatedAt time.Time
 }
 
 // Review carries the review state (approved | commented | changes_requested).

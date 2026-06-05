@@ -5,6 +5,7 @@ import (
 	"errors"
 	"slices"
 
+	"github.com/mptooling/notifycat/internal/slack"
 	"github.com/mptooling/notifycat/internal/store"
 )
 
@@ -79,26 +80,50 @@ type slackCall struct {
 	Method  string
 	Channel string
 	TS      string
-	Text    string
-	Name    string
+	// Msg is the composed Block Kit message for PostMessage/UpdateMessage calls.
+	Msg slack.Message
+	// Text is the rendered headline (section block) text, kept as a convenience
+	// for substring assertions about the visible message.
+	Text string
+	Name string
 }
 
-func (f *fakeSlackClient) PostMessage(_ context.Context, channel, text string) (string, error) {
+func (f *fakeSlackClient) PostMessage(_ context.Context, channel string, msg slack.Message) (string, error) {
 	if f.postErr != nil {
 		return "", f.postErr
 	}
 	f.postedTSCounter++
 	ts := tsForCounter(f.postedTSCounter)
-	f.calls = append(f.calls, slackCall{Method: "PostMessage", Channel: channel, Text: text, TS: ts})
+	f.calls = append(f.calls, slackCall{Method: "PostMessage", Channel: channel, Msg: msg, Text: sectionTextOf(msg), TS: ts})
 	return ts, nil
 }
 
-func (f *fakeSlackClient) UpdateMessage(_ context.Context, channel, ts, text string) error {
+func (f *fakeSlackClient) UpdateMessage(_ context.Context, channel, ts string, msg slack.Message) error {
 	if f.updateErr != nil {
 		return f.updateErr
 	}
-	f.calls = append(f.calls, slackCall{Method: "UpdateMessage", Channel: channel, TS: ts, Text: text})
+	f.calls = append(f.calls, slackCall{Method: "UpdateMessage", Channel: channel, TS: ts, Msg: msg, Text: sectionTextOf(msg)})
 	return nil
+}
+
+// sectionTextOf returns the first section block's text, or "" if absent.
+func sectionTextOf(m slack.Message) string {
+	for _, b := range m.Blocks {
+		if b.Type == "section" && b.Text != nil {
+			return b.Text.Text
+		}
+	}
+	return ""
+}
+
+// contextTextOf returns the first context block's text, or "" if absent.
+func contextTextOf(m slack.Message) string {
+	for _, b := range m.Blocks {
+		if b.Type == "context" && len(b.Elements) > 0 {
+			return b.Elements[0].Text
+		}
+	}
+	return ""
 }
 
 func (f *fakeSlackClient) DeleteMessage(_ context.Context, channel, ts string) error {

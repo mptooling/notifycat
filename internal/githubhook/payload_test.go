@@ -2,6 +2,7 @@ package githubhook_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/mptooling/notifycat/internal/githubhook"
 )
@@ -63,6 +64,48 @@ func TestParsePayload_PullRequestBody(t *testing.T) {
 	}
 	if p.PullRequest.Body != "## Vulnerabilities fixed\n\nCVE-2026-1234." {
 		t.Errorf("Body = %q", p.PullRequest.Body)
+	}
+}
+
+func TestParsePayload_CreatedAt(t *testing.T) {
+	body := []byte(`{
+		"action": "opened",
+		"repository": {"full_name": "octo/widget"},
+		"pull_request": {
+			"number": 42, "title": "fix", "html_url": "u", "user": {"login": "alice"},
+			"created_at": "2026-06-05T14:04:00Z"
+		}
+	}`)
+
+	p, err := githubhook.ParsePayload(body)
+	if err != nil {
+		t.Fatalf("ParsePayload: %v", err)
+	}
+	want := time.Date(2026, 6, 5, 14, 4, 0, 0, time.UTC)
+	if !p.PullRequest.CreatedAt.Equal(want) {
+		t.Errorf("CreatedAt = %v; want %v", p.PullRequest.CreatedAt, want)
+	}
+}
+
+func TestParsePayload_CreatedAtMalformedIsZero(t *testing.T) {
+	// A missing or unparseable created_at must not fail the webhook — the
+	// notifier only uses it for a cosmetic context line, so it falls back to
+	// the zero time.
+	body := []byte(`{
+		"action": "opened",
+		"repository": {"full_name": "octo/widget"},
+		"pull_request": {
+			"number": 42, "title": "fix", "html_url": "u", "user": {"login": "alice"},
+			"created_at": "not-a-time"
+		}
+	}`)
+
+	p, err := githubhook.ParsePayload(body)
+	if err != nil {
+		t.Fatalf("ParsePayload: %v", err)
+	}
+	if !p.PullRequest.CreatedAt.IsZero() {
+		t.Errorf("CreatedAt = %v; want zero for a malformed timestamp", p.PullRequest.CreatedAt)
 	}
 }
 

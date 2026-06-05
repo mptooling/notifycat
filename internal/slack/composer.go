@@ -1,11 +1,12 @@
 // Package slack talks to the Slack Web API for the PR notifier: posting,
 // updating, and deleting messages, adding emoji reactions, and composing the
-// text of the notification.
+// blocks of the notification.
 package slack
 
 import (
 	"fmt"
 	"strings"
+	"time"
 )
 
 // PRDetails is the subset of PR information the Composer needs to render a
@@ -17,6 +18,33 @@ type PRDetails struct {
 	Title      string
 	URL        string
 	Author     string
+	// CreatedAt is the PR's open time, rendered as a localized date token in
+	// the context line. The zero value omits the "opened …" clause.
+	CreatedAt time.Time
+}
+
+// Message is a composed Slack message: the Block Kit blocks rendered in the
+// channel plus a plain-text Fallback. Slack uses Fallback for the mobile push
+// preview and for screen readers — it does not read interior block text for
+// either — so every Message carries one.
+type Message struct {
+	Blocks   []Block
+	Fallback string
+}
+
+// Block is the narrow subset of Block Kit the notifier emits: a "section"
+// (Text set) or a "context" line (Elements set). Exactly one of the two is
+// populated per block. The struct marshals directly to the Slack blocks JSON.
+type Block struct {
+	Type     string       `json:"type"`
+	Text     *TextObject  `json:"text,omitempty"`
+	Elements []TextObject `json:"elements,omitempty"`
+}
+
+// TextObject is a Block Kit text object. The notifier only ever emits mrkdwn.
+type TextObject struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
 }
 
 // Composer renders Slack-formatted notification messages.
@@ -30,42 +58,103 @@ func NewComposer(newPREmoji string) *Composer {
 	return &Composer{newPREmoji: newPREmoji}
 }
 
-// NewMessage renders the initial Slack message for a PR. Mentions are joined
-// with commas (matching the legacy PHP composer's wire format). When the
-// mentions list is empty, the prefix is omitted entirely so the message has
-// no stranded ", ".
-func (c *Composer) NewMessage(pr PRDetails, mentions []string) string {
-	return fmt.Sprintf(
-		":%s: %splease review <%s|PR #%d: %s> by %s",
-		c.newPREmoji,
-		mentionsPrefix(mentions),
-		pr.URL,
-		pr.Number,
-		pr.Title,
-		pr.Author,
+// NewMessage renders the initial notification for a PR: a headline section with
+// the new-PR emoji, any mentions, and the linked title, plus a muted context
+// line carrying repo, author, and the localized open time. Mentions stay in the
+// section because Slack only reliably notifies on a mention in a section/
+// top-level text — a context block renders the mention as gray text but does
+// not ping. When the mentions list is empty the prefix is omitted entirely so
+// the message has no stranded ", ".
+func (c *Composer) NewMessage(pr PRDetails, mentions []string) Message {
+	headline := fmt.Sprintf(
+		":%s: %splease review <%s|PR #%d: %s>",
+		c.newPREmoji, mentionsPrefix(mentions), pr.URL, pr.Number, pr.Title,
 	)
+	fallback := fmt.Sprintf(
+		"%splease review PR #%d: %s by %s",
+		mentionsPrefix(mentions), pr.Number, pr.Title, pr.Author,
+	)
+	return Message{
+		Blocks:   []Block{section(headline), contextBlock(contextLine(pr))},
+		Fallback: fallback,
+	}
 }
 
 // BotMessage renders the compact notification for a PR opened by a dependency
-// bot. bot is the lowercase bot name ("dependabot" / "renovate"). When
-// security is true it uses the rotating-light advisory template; otherwise the
-// package routine-bump template. Mentions follow the same empty-list rule as
-// NewMessage. The PR author is intentionally omitted — the bot name carries it.
-func (c *Composer) BotMessage(pr PRDetails, mentions []string, bot string, security bool) string {
+// bot. bot is the lowercase bot name ("dependabot" / "renovate"). When security
+// is true it uses the rotating-light advisory template; otherwise the package
+// routine-bump template. It stays deliberately compact — a single section, no
+// context line — so bot bumps read as a one-liner. Mentions follow the same
+// empty-list rule as NewMessage; the PR author is omitted because the bot name
+// carries it.
+func (c *Composer) BotMessage(pr PRDetails, mentions []string, bot string, security bool) Message {
 	emoji, verb := "package", "bumped"
 	if security {
 		emoji, verb = "rotating_light", "security update"
 	}
-	return fmt.Sprintf(
+	headline := fmt.Sprintf(
 		":%s: %s%s %s <%s|PR #%d: %s>",
-		emoji,
-		mentionsPrefix(mentions),
-		bot,
-		verb,
-		pr.URL,
-		pr.Number,
-		pr.Title,
+		emoji, mentionsPrefix(mentions), bot, verb, pr.URL, pr.Number, pr.Title,
 	)
+	fallback := fmt.Sprintf(
+		"%s%s %s PR #%d: %s",
+		mentionsPrefix(mentions), bot, verb, pr.Number, pr.Title,
+	)
+	return Message{Blocks: []Block{section(headline)}, Fallback: fallback}
+}
+
+// UpdatedMessage renders the closed-PR decoration. Block Kit cannot wrap the
+// whole prior message string the way the legacy plain-text format did, so the
+// message is rebuilt from PR details: the title is struck through inside the
+// section, the leading emoji is swapped to the merged/closed reaction emoji,
+// and a [Merged]/[Closed] label is prepended. The context line is preserved.
+func (c *Composer) UpdatedMessage(pr PRDetails, merged bool, emoji string) Message {
+	label := "Closed"
+	if merged {
+		label = "Merged"
+	}
+	headline := fmt.Sprintf(
+		":%s: [%s] ~<%s|PR #%d: %s>~",
+		emoji, label, pr.URL, pr.Number, pr.Title,
+	)
+	fallback := fmt.Sprintf("[%s] PR #%d: %s by %s", label, pr.Number, pr.Title, pr.Author)
+	return Message{
+		Blocks:   []Block{section(headline), contextBlock(contextLine(pr))},
+		Fallback: fallback,
+	}
+}
+
+// contextLine renders the muted "repo · author · opened <time>" line. When the
+// creation time is unknown the "opened …" clause is dropped rather than
+// rendering a bogus epoch date.
+func contextLine(pr PRDetails) string {
+	line := fmt.Sprintf("%s · %s", pr.Repository, pr.Author)
+	if pr.CreatedAt.IsZero() {
+		return line
+	}
+	return line + " · opened " + dateToken(pr.CreatedAt)
+}
+
+// dateToken builds Slack's localized date token. {date_short_pretty} renders
+// "Today"/"Yesterday" when applicable (else e.g. "Jun 5"), and {time} the
+// local clock time, so the line reads "opened Today at 2:04 PM" in each
+// viewer's own timezone. The text after "|" is the fallback Slack shows when it
+// cannot render the token.
+func dateToken(t time.Time) string {
+	return fmt.Sprintf(
+		"<!date^%d^{date_short_pretty} at {time}|%s>",
+		t.Unix(), t.Format("Jan 2, 2006 at 3:04 PM"),
+	)
+}
+
+// section builds an mrkdwn section block.
+func section(text string) Block {
+	return Block{Type: "section", Text: &TextObject{Type: "mrkdwn", Text: text}}
+}
+
+// contextBlock builds an mrkdwn context block with a single element.
+func contextBlock(text string) Block {
+	return Block{Type: "context", Elements: []TextObject{{Type: "mrkdwn", Text: text}}}
 }
 
 // mentionsPrefix joins mentions with commas (the legacy PHP wire format) and
@@ -75,14 +164,4 @@ func mentionsPrefix(mentions []string) string {
 		return ""
 	}
 	return strings.Join(mentions, ",") + ", "
-}
-
-// UpdatedMessage wraps the previous message in the closed-PR decoration:
-// "[Merged] ~<original>~" or "[Closed] ~<original>~".
-func (c *Composer) UpdatedMessage(merged bool, original string) string {
-	state := "Closed"
-	if merged {
-		state = "Merged"
-	}
-	return fmt.Sprintf("[%s] ~%s~", state, original)
 }

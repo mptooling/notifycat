@@ -85,19 +85,19 @@ func (h *CloseHandler) Handle(ctx context.Context, e Event) error {
 		return err
 	}
 
-	original := h.composer.NewMessage(slackPRFrom(e), mapping.Mentions)
-	updated := h.composer.UpdatedMessage(e.PR.Merged, original)
+	// The merged/closed reaction emoji doubles as the message's leading emoji,
+	// so it is selected regardless of whether reactions are also added.
+	emoji := h.opts.ClosedEmoji
+	if e.PR.Merged {
+		emoji = h.opts.MergedEmoji
+	}
 
+	updated := h.composer.UpdatedMessage(slackPRFrom(e), e.PR.Merged, emoji)
 	if err := h.slack.UpdateMessage(ctx, mapping.SlackChannel, stored.TS, updated); err != nil {
 		return err
 	}
 	if !h.opts.ReactionsEnabled {
 		return nil
-	}
-
-	emoji := h.opts.ClosedEmoji
-	if e.PR.Merged {
-		emoji = h.opts.MergedEmoji
 	}
 	return h.slack.AddReaction(ctx, mapping.SlackChannel, stored.TS, emoji)
 }

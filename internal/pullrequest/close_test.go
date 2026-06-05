@@ -69,12 +69,18 @@ func TestCloseHandler_Handle_UpdatesMessage(t *testing.T) {
 			t.Errorf("AddReaction name = %q; want twisted_rightwards_arrows", c.Name)
 		}
 	}
-	// The updated text should be wrapped in [Merged] ~...~.
+	// The updated message swaps the leading emoji to the merged reaction,
+	// prepends [Merged], strikes the linked title, and keeps a context line.
 	for _, c := range client.calls {
-		if c.Method == "UpdateMessage" {
-			if !strings.Contains(c.Text, "[Merged]") || !strings.Contains(c.Text, "~") {
-				t.Errorf("update text not decorated: %q", c.Text)
-			}
+		if c.Method != "UpdateMessage" {
+			continue
+		}
+		wantSection := ":twisted_rightwards_arrows: [Merged] ~<u|PR #42: fix>~"
+		if got := sectionTextOf(c.Msg); got != wantSection {
+			t.Errorf("update section = %q; want %q", got, wantSection)
+		}
+		if ctx := contextTextOf(c.Msg); !strings.Contains(ctx, "octo/widget · a") {
+			t.Errorf("update context line missing repo/author: %q", ctx)
 		}
 	}
 }

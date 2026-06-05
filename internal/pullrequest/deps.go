@@ -3,6 +3,7 @@ package pullrequest
 import (
 	"context"
 
+	"github.com/mptooling/notifycat/internal/slack"
 	"github.com/mptooling/notifycat/internal/store"
 )
 
@@ -24,8 +25,8 @@ type RepoMappings interface {
 
 // SlackClient is the subset of the slack package's client that handlers use.
 type SlackClient interface {
-	PostMessage(ctx context.Context, channel, text string) (ts string, err error)
-	UpdateMessage(ctx context.Context, channel, ts, text string) error
+	PostMessage(ctx context.Context, channel string, msg slack.Message) (ts string, err error)
+	UpdateMessage(ctx context.Context, channel, ts string, msg slack.Message) error
 	DeleteMessage(ctx context.Context, channel, ts string) error
 	AddReaction(ctx context.Context, channel, ts, name string) error
 }

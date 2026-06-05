@@ -88,7 +88,7 @@ the `Webhooks: Read and write` permission on a fine-grained PAT. The validate/do
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `SLACK_REACTIONS_ENABLED` | `true` | Turns reaction updates on or off. |
-| `SLACK_REACTION_NEW_PR` | `large_green_circle` | Added when a PR is opened. |
+| `SLACK_REACTION_NEW_PR` | `eyes` | Added when a PR is opened. Doubles as the leading emoji of the new-PR message. |
 | `SLACK_REACTION_MERGED_PR` | `twisted_rightwards_arrows` | Added when a PR is merged. |
 | `SLACK_REACTION_CLOSED_PR` | `x` | Added when a PR is closed without merge. |
 | `SLACK_REACTION_PR_APPROVED` | `white_check_mark` | Added when a review approves the PR. |

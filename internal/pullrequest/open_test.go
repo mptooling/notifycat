@@ -3,10 +3,12 @@ package pullrequest_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mptooling/notifycat/internal/pullrequest"
 	"github.com/mptooling/notifycat/internal/slack"
@@ -95,6 +97,35 @@ func TestOpenHandler_Handle_PostsAndStoresTS(t *testing.T) {
 	}
 	if saved.TS == "" {
 		t.Errorf("saved TS is empty")
+	}
+}
+
+func TestOpenHandler_Handle_ThreadsCreatedAtAndFallback(t *testing.T) {
+	msgs := newFakeSlackMessages()
+	mappings := newFakeRepoMappings(store.RepoMapping{
+		Repository: "octo/widget", SlackChannel: "C123", Mentions: []string{"@alice"},
+	})
+	client := &fakeSlackClient{}
+	h := newOpenHandler(t, msgs, mappings, client)
+
+	created := time.Date(2026, 6, 5, 14, 4, 0, 0, time.UTC)
+	e := pullrequest.Event{
+		Action:     "opened",
+		Repository: "octo/widget",
+		PR:         pullrequest.PR{Number: 42, Title: "fix", URL: "u", Author: "alice", CreatedAt: created},
+	}
+	if err := h.Handle(context.Background(), e); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+
+	msg := client.calls[0].Msg
+	ctx := contextTextOf(msg)
+	wantToken := fmt.Sprintf("<!date^%d^", created.Unix())
+	if !strings.Contains(ctx, "octo/widget · alice · opened ") || !strings.Contains(ctx, wantToken) {
+		t.Errorf("context line did not thread repo/author/created time: %q", ctx)
+	}
+	if msg.Fallback == "" {
+		t.Error("posted message has no top-level text fallback")
 	}
 }
 
