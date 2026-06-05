@@ -74,30 +74,34 @@ type Doer interface {
 // repeatedly (each call uses a fresh PR number, so the open handler posts anew
 // rather than treating it as an already-sent duplicate).
 type Smoke struct {
-	mappings  RepoMappings
-	store     MessageStore
-	reactions ReactionReader
-	http      Doer
-	secret    string
-	url       string
-	rxCfg     config.Reactions
-	now       func() time.Time
+	mappings        RepoMappings
+	store           MessageStore
+	reactions       ReactionReader
+	http            Doer
+	secret          string
+	url             string
+	rxCfg           config.Reactions
+	ignoreAIReviews bool
+	now             func() time.Time
 }
 
 // New wires a Smoke. url is the full webhook endpoint to POST to (e.g.
 // http://notifycat:8080/webhook/github); secret is GITHUB_WEBHOOK_SECRET;
 // rxCfg mirrors the server's reaction config so the verifier knows which emoji
-// to expect; now supplies the clock used to derive a unique PR number per run.
-func New(mappings RepoMappings, messages MessageStore, reactions ReactionReader, httpClient Doer, secret, url string, rxCfg config.Reactions, now func() time.Time) *Smoke {
+// to expect; ignoreAIReviews mirrors NOTIFYCAT_IGNORE_AI_REVIEWS so the runner
+// only replays a bot review when the server would actually mark it; now
+// supplies the clock used to derive a unique PR number per run.
+func New(mappings RepoMappings, messages MessageStore, reactions ReactionReader, httpClient Doer, secret, url string, rxCfg config.Reactions, ignoreAIReviews bool, now func() time.Time) *Smoke {
 	return &Smoke{
-		mappings:  mappings,
-		store:     messages,
-		reactions: reactions,
-		http:      httpClient,
-		secret:    secret,
-		url:       url,
-		rxCfg:     rxCfg,
-		now:       now,
+		mappings:        mappings,
+		store:           messages,
+		reactions:       reactions,
+		http:            httpClient,
+		secret:          secret,
+		url:             url,
+		rxCfg:           rxCfg,
+		ignoreAIReviews: ignoreAIReviews,
+		now:             now,
 	}
 }
 
@@ -129,6 +133,11 @@ type Result struct {
 	// caller requests reactions but this is false, the lifecycle is skipped.
 	ReactionsEnabled bool
 	Reactions        []ReactionCheck
+
+	// IgnoreAIReviews and BotReviewMarker let the CLI explain why the bot-review
+	// step was skipped: either bot reviews are muted, or the marker is disabled.
+	IgnoreAIReviews bool
+	BotReviewMarker string
 }
 
 // ghEvent describes one synthetic webhook to replay.
@@ -137,6 +146,15 @@ type ghEvent struct {
 	action      string
 	reviewState string // review.state, empty when there is no review object
 	merged      bool
+	senderType  string // sender.type; empty defaults to "User" in buildPayload
+}
+
+// lifecycleStep pairs a synthetic event with the emoji the server is expected
+// to add for it, plus a label for the report.
+type lifecycleStep struct {
+	name  string
+	emoji string
+	ev    ghEvent
 }
 
 // Run validates that target is mapped, posts a signed synthetic
@@ -167,6 +185,8 @@ func (s *Smoke) Run(ctx context.Context, target string, withReactions bool) (Res
 		URL:                s.url,
 		ReactionsRequested: withReactions,
 		ReactionsEnabled:   s.rxCfg.Enabled,
+		IgnoreAIReviews:    s.ignoreAIReviews,
+		BotReviewMarker:    s.rxCfg.BotReview,
 	}
 
 	if err := s.deliver(ctx, target, prNumber, title, ghEvent{event: "pull_request", action: "opened"}); err != nil {
@@ -184,15 +204,22 @@ func (s *Smoke) Run(ctx context.Context, target string, withReactions bool) (Res
 		return res, nil
 	}
 
-	steps := []struct {
-		name  string
-		emoji string
-		ev    ghEvent
-	}{
+	steps := []lifecycleStep{
 		{"comment", s.rxCfg.Commented, ghEvent{event: "pull_request_review", action: "submitted", reviewState: "commented"}},
-		{"approve", s.rxCfg.Approved, ghEvent{event: "pull_request_review", action: "submitted", reviewState: "approved"}},
-		{"merge", s.rxCfg.MergedPR, ghEvent{event: "pull_request", action: "closed", merged: true}},
 	}
+	// Replay a bot review only when the server would actually mark it: bot
+	// reviews aren't muted and a marker emoji is configured. Otherwise the
+	// readback would find nothing and report a spurious miss — so we skip it
+	// here and the CLI prints why (see renderReactions).
+	if !s.ignoreAIReviews && s.rxCfg.BotReview != "" {
+		steps = append(steps, lifecycleStep{"bot", s.rxCfg.BotReview, ghEvent{
+			event: "pull_request_review", action: "submitted", reviewState: "commented", senderType: "Bot",
+		}})
+	}
+	steps = append(steps,
+		lifecycleStep{"approve", s.rxCfg.Approved, ghEvent{event: "pull_request_review", action: "submitted", reviewState: "approved"}},
+		lifecycleStep{"merge", s.rxCfg.MergedPR, ghEvent{event: "pull_request", action: "closed", merged: true}},
+	)
 	for _, step := range steps {
 		if err := s.deliver(ctx, target, prNumber, title, step.ev); err != nil {
 			return res, err
@@ -253,9 +280,10 @@ func containsReaction(reactions []slack.Reaction, name string) bool {
 }
 
 // buildPayload renders a minimal webhook body carrying only the fields
-// githubhook.ParsePayload and the handlers read for ev. The sender is a User so
-// the bot-reviewer suppression never fires; draft is false so the open handler
-// acts rather than ignoring it.
+// githubhook.ParsePayload and the handlers read for ev. The sender defaults to
+// a User (so bot-reviewer logic never fires) unless ev.senderType overrides it
+// — the bot-review marker step sets it to "Bot"; draft is false so the open
+// handler acts rather than ignoring it.
 func buildPayload(repository string, number int, title string, ev ghEvent) ([]byte, error) {
 	type user struct {
 		Login string `json:"login"`
@@ -293,6 +321,9 @@ func buildPayload(repository string, number int, title string, ev ghEvent) ([]by
 	}
 	payload.Sender.Login = "notifycat-smoke"
 	payload.Sender.Type = "User"
+	if ev.senderType != "" {
+		payload.Sender.Type = ev.senderType
+	}
 
 	body, err := json.Marshal(payload)
 	if err != nil {

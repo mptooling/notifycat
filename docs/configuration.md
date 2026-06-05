@@ -88,6 +88,7 @@ the `Webhooks: Read and write` permission on a fine-grained PAT. The validate/do
 | `SLACK_REACTION_PR_APPROVED` | `white_check_mark` | Added when a review approves the PR. |
 | `SLACK_REACTION_PR_COMMENTED` | `speech_balloon` | Added when a review comments on the PR. |
 | `SLACK_REACTION_PR_REQUEST_CHANGE` | `exclamation` | Added when a review requests changes. |
+| `SLACK_REACTION_BOT_REVIEW` | `robot_face` | Distinct marker added **alongside** the normal reaction when a bot reviewer's activity is *not* suppressed (i.e. `NOTIFYCAT_IGNORE_AI_REVIEWS=false`). Lets bot reviews stay visible but recognisable. Set empty (`SLACK_REACTION_BOT_REVIEW=`) to keep bot reviews indistinguishable from human ones. Mutually exclusive with suppression: when `NOTIFYCAT_IGNORE_AI_REVIEWS=true` the bot reaction is skipped entirely, so this marker never appears. |
 
 Use Slack emoji names without surrounding colons. For example, set `SLACK_REACTION_PR_APPROVED=shipit`, not `:shipit:`.
 

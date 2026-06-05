@@ -26,6 +26,7 @@ func clearAll(t *testing.T) {
 		"SLACK_REACTION_NEW_PR", "SLACK_REACTION_MERGED_PR",
 		"SLACK_REACTION_CLOSED_PR", "SLACK_REACTION_PR_APPROVED",
 		"SLACK_REACTION_PR_COMMENTED", "SLACK_REACTION_PR_REQUEST_CHANGE",
+		"SLACK_REACTION_BOT_REVIEW",
 		"NOTIFYCAT_MESSAGE_TTL_DAYS",
 		"NOTIFYCAT_IGNORE_AI_REVIEWS",
 	}
@@ -96,6 +97,7 @@ func TestLoad_AppliesDefaults(t *testing.T) {
 		{"Reactions.Approved", cfg.Reactions.Approved, "white_check_mark"},
 		{"Reactions.Commented", cfg.Reactions.Commented, "speech_balloon"},
 		{"Reactions.RequestChange", cfg.Reactions.RequestChange, "exclamation"},
+		{"Reactions.BotReview", cfg.Reactions.BotReview, "robot_face"},
 		{"MessageTTLDays", cfg.MessageTTLDays, 30},
 		{"IgnoreAIReviews", cfg.IgnoreAIReviews, false},
 	}
@@ -109,14 +111,15 @@ func TestLoad_AppliesDefaults(t *testing.T) {
 func TestLoad_OverridesDefaults(t *testing.T) {
 	clearAll(t)
 	setEnv(t, map[string]string{
-		"GITHUB_WEBHOOK_SECRET":   "shh",
-		"SLACK_BOT_TOKEN":         "xoxb-x",
-		"ADDR":                    ":9000",
-		"LOG_LEVEL":               "debug",
-		"LOG_FORMAT":              "json",
-		"DATABASE_URL":            "file:/tmp/custom.db",
-		"SLACK_REACTIONS_ENABLED": "false",
-		"SLACK_REACTION_NEW_PR":   "rocket",
+		"GITHUB_WEBHOOK_SECRET":     "shh",
+		"SLACK_BOT_TOKEN":           "xoxb-x",
+		"ADDR":                      ":9000",
+		"LOG_LEVEL":                 "debug",
+		"LOG_FORMAT":                "json",
+		"DATABASE_URL":              "file:/tmp/custom.db",
+		"SLACK_REACTIONS_ENABLED":   "false",
+		"SLACK_REACTION_NEW_PR":     "rocket",
+		"SLACK_REACTION_BOT_REVIEW": "robot",
 	})
 
 	cfg, err := config.Load()
@@ -134,6 +137,9 @@ func TestLoad_OverridesDefaults(t *testing.T) {
 	}
 	if cfg.Reactions.NewPR != "rocket" {
 		t.Errorf("Reactions.NewPR = %q", cfg.Reactions.NewPR)
+	}
+	if cfg.Reactions.BotReview != "robot" {
+		t.Errorf("Reactions.BotReview = %q", cfg.Reactions.BotReview)
 	}
 }
 

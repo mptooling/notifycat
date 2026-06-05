@@ -15,6 +15,7 @@ import (
 type reactionHandler struct {
 	name       string // "approve" | "commented" | "request_change"
 	emoji      string
+	botEmoji   string // distinct marker for non-suppressed bot reviewers; "" disables it
 	applicable func(Event) bool
 
 	messages SlackMessages
@@ -74,7 +75,17 @@ func (h *reactionHandler) Handle(ctx context.Context, e Event) error {
 	// so AddReaction is naturally idempotent. We don't need a GetReactions
 	// pre-check (the PHP service did one, but it's redundant once the client
 	// handles the duplicate-add case directly).
-	return h.slack.AddReaction(ctx, mapping.SlackChannel, stored.TS, h.emoji)
+	if err := h.slack.AddReaction(ctx, mapping.SlackChannel, stored.TS, h.emoji); err != nil {
+		return err
+	}
+
+	// A bot reviewer that survived the suppression gate above gets a distinct
+	// marker alongside the normal state reaction, so its activity stays visible
+	// but recognisably non-human. Empty botEmoji turns the marker off.
+	if h.botEmoji != "" && h.detector.IsBot(e.Sender.Type) {
+		return h.slack.AddReaction(ctx, mapping.SlackChannel, stored.TS, h.botEmoji)
+	}
+	return nil
 }
 
 // ApproveHandler adds a reaction when a review is submitted with state
@@ -89,11 +100,13 @@ func NewApproveHandler(
 	slackClient SlackClient,
 	logger *slog.Logger,
 	emoji string,
+	botEmoji string,
 	detector *aireview.Detector,
 ) *ApproveHandler {
 	return &ApproveHandler{reactionHandler{
 		name:     "approve",
 		emoji:    emoji,
+		botEmoji: botEmoji,
 		messages: messages, mappings: mappings, slack: slackClient, logger: logger, detector: detector,
 		applicable: func(e Event) bool {
 			return e.Action == "submitted" && e.Review != nil && e.Review.State == "approved"
@@ -113,11 +126,13 @@ func NewCommentedHandler(
 	slackClient SlackClient,
 	logger *slog.Logger,
 	emoji string,
+	botEmoji string,
 	detector *aireview.Detector,
 ) *CommentedHandler {
 	return &CommentedHandler{reactionHandler{
 		name:     "commented",
 		emoji:    emoji,
+		botEmoji: botEmoji,
 		messages: messages, mappings: mappings, slack: slackClient, logger: logger, detector: detector,
 		applicable: func(e Event) bool {
 			if e.GitHubEvent == "pull_request_review_comment" {
@@ -146,11 +161,13 @@ func NewRequestChangeHandler(
 	slackClient SlackClient,
 	logger *slog.Logger,
 	emoji string,
+	botEmoji string,
 	detector *aireview.Detector,
 ) *RequestChangeHandler {
 	return &RequestChangeHandler{reactionHandler{
 		name:     "request_change",
 		emoji:    emoji,
+		botEmoji: botEmoji,
 		messages: messages, mappings: mappings, slack: slackClient, logger: logger, detector: detector,
 		applicable: func(e Event) bool {
 			return e.Action == "submitted" && e.Review != nil && e.Review.State == "changes_requested"

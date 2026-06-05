@@ -89,6 +89,11 @@ Add `--reactions` to also replay a comment, an approval, and a merge for the sam
 reaction handlers. It is skipped with a note when `SLACK_REACTIONS_ENABLED=false`, and the merge step decorates the
 message as `[Merged]`, so expect a few extra emoji on the throwaway message.
 
+When bot reviews are not muted (`NOTIFYCAT_IGNORE_AI_REVIEWS=false`) and a marker is configured
+(`SLACK_REACTION_BOT_REVIEW`, default `robot_face`), `--reactions` also replays a review from a **bot** sender and
+verifies the marker lands. If bot reviews are muted, or the marker is set empty, that step is skipped with a one-line
+note — so its absence never reads as a silent pass.
+
 ### 6. Register the GitHub webhook
 
 Set your webhook URL to `https://notifycat.example.com/webhook/github` with the secret from `GITHUB_WEBHOOK_SECRET`. See

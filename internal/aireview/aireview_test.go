@@ -29,6 +29,23 @@ func TestDetector_EnabledDoesNotSuppressUser(t *testing.T) {
 	}
 }
 
+func TestDetector_IsBotIgnoresEnabledFlag(t *testing.T) {
+	// IsBot identifies the sender for the distinct bot-review marker, which is
+	// orthogonal to suppression: a disabled detector still reports a bot as a
+	// bot. (Suppression is gated separately by the ShouldSuppress early return.)
+	for _, enabled := range []bool{false, true} {
+		d := aireview.NewDetector(enabled)
+		if !d.IsBot("Bot") {
+			t.Errorf("IsBot(\"Bot\") = false with enabled=%v; want true", enabled)
+		}
+		for _, senderType := range []string{"", "bot", "BOT", "User"} {
+			if d.IsBot(senderType) {
+				t.Errorf("IsBot(%q) = true with enabled=%v; want false", senderType, enabled)
+			}
+		}
+	}
+}
+
 func TestDetector_EnabledIsCaseSensitive(t *testing.T) {
 	// GitHub's payload uses the exact string "Bot". Anything else (lowercase
 	// "bot", empty, unrelated) must not be treated as a bot.

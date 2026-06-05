@@ -61,7 +61,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	hc := &http.Client{Timeout: 15 * time.Second}
 	slackClient := slack.NewClient(hc, cfg.SlackBotToken.Reveal(), slack.WithBaseURL(cfg.SlackBaseURL))
-	s := smoke.New(provider, messages, slackClient, hc, cfg.GitHubWebhookSecret.Reveal(), opts.url, cfg.Reactions, time.Now)
+	s := smoke.New(provider, messages, slackClient, hc, cfg.GitHubWebhookSecret.Reveal(), opts.url, cfg.Reactions, cfg.IgnoreAIReviews, time.Now)
 
 	res, err := s.Run(context.Background(), opts.target, opts.reactions)
 	if err != nil {
@@ -108,6 +108,15 @@ func renderReactions(stdout io.Writer, res smoke.Result) int {
 			fmt.Fprintf(stdout, "    ✗  %-8s %-26s not found on the message\n", c.Step, c.Emoji)
 			exit = 1
 		}
+	}
+
+	// Make a skipped bot-review step explicit — silence here would read as
+	// "covered" when it wasn't.
+	switch {
+	case res.IgnoreAIReviews:
+		fmt.Fprintln(stdout, "    –  bot      skipped (NOTIFYCAT_IGNORE_AI_REVIEWS=true — bot reviews are muted)")
+	case res.BotReviewMarker == "":
+		fmt.Fprintln(stdout, "    –  bot      skipped (SLACK_REACTION_BOT_REVIEW is empty — no bot marker configured)")
 	}
 	return exit
 }

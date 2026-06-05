@@ -1,7 +1,12 @@
-// Package aireview decides whether a webhook event from a "bot reviewer"
-// (any account whose sender.type is "Bot") should have its Slack reaction
-// suppressed. The detector is a tiny value object so callers can short-
-// circuit cheaply when the feature flag is off.
+// Package aireview identifies webhook events from a "bot reviewer" (any
+// account whose sender.type is "Bot") and exposes two orthogonal policies
+// over that identity. The detector is a tiny value object so callers can
+// short-circuit cheaply.
+//
+//   - ShouldSuppress is the opt-in mute switch (NOTIFYCAT_IGNORE_AI_REVIEWS):
+//     when enabled, a bot reviewer's reaction is skipped entirely.
+//   - IsBot is the bare identity check, independent of that flag, used to add
+//     a distinct bot-review marker reaction when the bot is *not* suppressed.
 //
 // The opt-in flag is global and defaults off; see internal/config.
 // Detection is deliberately broad: GitHub's payload does not distinguish AI
@@ -29,4 +34,11 @@ func NewDetector(enabled bool) *Detector { return &Detector{enabled: enabled} }
 // sender.type should be skipped. Matches GitHub's literal "Bot" only.
 func (d *Detector) ShouldSuppress(senderType string) bool {
 	return d.enabled && senderType == senderTypeBot
+}
+
+// IsBot reports whether the given sender.type is a bot, regardless of the
+// suppression flag. Callers use it to add the distinct bot-review marker once
+// they have already passed the ShouldSuppress gate. Matches "Bot" only.
+func (d *Detector) IsBot(senderType string) bool {
+	return senderType == senderTypeBot
 }

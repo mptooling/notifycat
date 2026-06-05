@@ -84,9 +84,9 @@ func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, Cleanup, error) 
 			},
 		),
 		pullrequest.NewDraftHandler(messages, provider, slackClient, logger),
-		pullrequest.NewApproveHandler(messages, provider, slackClient, logger, cfg.Reactions.Approved, aiDetector),
-		pullrequest.NewCommentedHandler(messages, provider, slackClient, logger, cfg.Reactions.Commented, aiDetector),
-		pullrequest.NewRequestChangeHandler(messages, provider, slackClient, logger, cfg.Reactions.RequestChange, aiDetector),
+		pullrequest.NewApproveHandler(messages, provider, slackClient, logger, cfg.Reactions.Approved, cfg.Reactions.BotReview, aiDetector),
+		pullrequest.NewCommentedHandler(messages, provider, slackClient, logger, cfg.Reactions.Commented, cfg.Reactions.BotReview, aiDetector),
+		pullrequest.NewRequestChangeHandler(messages, provider, slackClient, logger, cfg.Reactions.RequestChange, cfg.Reactions.BotReview, aiDetector),
 	)
 
 	mux := http.NewServeMux()
