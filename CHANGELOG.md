@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.2](https://github.com/mptooling/notifycat/compare/v0.11.1...v0.11.2) (2026-06-05)
+
+
+### 🐛 Bug fixes
+
+* **release:** publish env template as env.example so the install bundle works ([#71](https://github.com/mptooling/notifycat/issues/71)) ([f18cfcd](https://github.com/mptooling/notifycat/commit/f18cfcd00eaed987cdbd8429fbaf1a0d0254fd7b))
+
 ## [0.11.1](https://github.com/mptooling/notifycat/compare/v0.11.0...v0.11.1) (2026-06-05)
 
 
