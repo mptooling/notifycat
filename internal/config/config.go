@@ -70,6 +70,10 @@ type Reactions struct {
 	Approved      string `env:"SLACK_REACTION_PR_APPROVED" envDefault:"white_check_mark"`
 	Commented     string `env:"SLACK_REACTION_PR_COMMENTED" envDefault:"speech_balloon"`
 	RequestChange string `env:"SLACK_REACTION_PR_REQUEST_CHANGE" envDefault:"exclamation"`
+	// BotReview is the distinct marker added when a bot reviewer's activity is
+	// NOT suppressed (NOTIFYCAT_IGNORE_AI_REVIEWS=false). Set it empty to keep
+	// bot reviews indistinguishable from human ones. See internal/aireview.
+	BotReview string `env:"SLACK_REACTION_BOT_REVIEW" envDefault:"robot_face"`
 }
 
 // MissingVarError is returned by Load when a required env var is unset or empty.

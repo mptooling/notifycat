@@ -34,7 +34,7 @@ func setupReviewFixture(t *testing.T) (*fakeSlackMessages, *fakeRepoMappings, *f
 // ----- Approve -----
 
 func TestApproveHandler_Applicable(t *testing.T) {
-	h := pullrequest.NewApproveHandler(nil, nil, nil, discardLogger(), "white_check_mark", disabledDetector())
+	h := pullrequest.NewApproveHandler(nil, nil, nil, discardLogger(), "white_check_mark", "", disabledDetector())
 
 	if !h.Applicable(pullrequest.Event{Action: "submitted", Review: &pullrequest.Review{State: "approved"}}) {
 		t.Error("submitted+approved should be applicable")
@@ -49,7 +49,7 @@ func TestApproveHandler_Applicable(t *testing.T) {
 
 func TestApproveHandler_Handle_AddsReaction(t *testing.T) {
 	msgs, mappings, client := setupReviewFixture(t)
-	h := pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), "white_check_mark", disabledDetector())
+	h := pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), "white_check_mark", "", disabledDetector())
 
 	e := pullrequest.Event{
 		Action:     "submitted",
@@ -71,7 +71,7 @@ func TestApproveHandler_Handle_AddsReaction(t *testing.T) {
 // ----- Commented -----
 
 func TestCommentedHandler_Applicable(t *testing.T) {
-	h := pullrequest.NewCommentedHandler(nil, nil, nil, discardLogger(), "speech_balloon", disabledDetector())
+	h := pullrequest.NewCommentedHandler(nil, nil, nil, discardLogger(), "speech_balloon", "", disabledDetector())
 
 	cases := []struct {
 		name string
@@ -99,7 +99,7 @@ func TestCommentedHandler_Applicable(t *testing.T) {
 
 func TestCommentedHandler_Handle_AddsReaction(t *testing.T) {
 	msgs, mappings, client := setupReviewFixture(t)
-	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), "speech_balloon", disabledDetector())
+	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), "speech_balloon", "", disabledDetector())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -115,7 +115,7 @@ func TestCommentedHandler_Handle_AddsReaction(t *testing.T) {
 
 func TestCommentedHandler_Handle_LineCommentAddsReaction(t *testing.T) {
 	msgs, mappings, client := setupReviewFixture(t)
-	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), "speech_balloon", disabledDetector())
+	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), "speech_balloon", "", disabledDetector())
 
 	e := pullrequest.Event{
 		GitHubEvent: "pull_request_review_comment",
@@ -134,7 +134,7 @@ func TestCommentedHandler_Handle_LineCommentAddsReaction(t *testing.T) {
 // ----- RequestChange -----
 
 func TestRequestChangeHandler_Applicable(t *testing.T) {
-	h := pullrequest.NewRequestChangeHandler(nil, nil, nil, discardLogger(), "exclamation", disabledDetector())
+	h := pullrequest.NewRequestChangeHandler(nil, nil, nil, discardLogger(), "exclamation", "", disabledDetector())
 
 	if !h.Applicable(pullrequest.Event{Action: "submitted", Review: &pullrequest.Review{State: "changes_requested"}}) {
 		t.Error("submitted+changes_requested should be applicable")
@@ -146,7 +146,7 @@ func TestRequestChangeHandler_Applicable(t *testing.T) {
 
 func TestRequestChangeHandler_Handle_AddsReaction(t *testing.T) {
 	msgs, mappings, client := setupReviewFixture(t)
-	h := pullrequest.NewRequestChangeHandler(msgs, mappings, client, discardLogger(), "exclamation", disabledDetector())
+	h := pullrequest.NewRequestChangeHandler(msgs, mappings, client, discardLogger(), "exclamation", "", disabledDetector())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -164,7 +164,7 @@ func TestRequestChangeHandler_Handle_AddsReaction(t *testing.T) {
 
 func TestApproveHandler_DetectorEnabled_BotSenderSuppressesReaction(t *testing.T) {
 	msgs, mappings, client := setupReviewFixture(t)
-	h := pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), "white_check_mark", enabledDetector())
+	h := pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), "white_check_mark", "", enabledDetector())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -182,7 +182,7 @@ func TestApproveHandler_DetectorEnabled_BotSenderSuppressesReaction(t *testing.T
 
 func TestApproveHandler_DetectorEnabled_HumanSenderReacts(t *testing.T) {
 	msgs, mappings, client := setupReviewFixture(t)
-	h := pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), "white_check_mark", enabledDetector())
+	h := pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), "white_check_mark", "", enabledDetector())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -200,7 +200,7 @@ func TestApproveHandler_DetectorEnabled_HumanSenderReacts(t *testing.T) {
 
 func TestApproveHandler_DetectorDisabled_BotSenderStillReacts(t *testing.T) {
 	msgs, mappings, client := setupReviewFixture(t)
-	h := pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), "white_check_mark", disabledDetector())
+	h := pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), "white_check_mark", "", disabledDetector())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -218,7 +218,7 @@ func TestApproveHandler_DetectorDisabled_BotSenderStillReacts(t *testing.T) {
 
 func TestCommentedHandler_DetectorEnabled_BotSenderSuppressesReaction(t *testing.T) {
 	msgs, mappings, client := setupReviewFixture(t)
-	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), "speech_balloon", enabledDetector())
+	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), "speech_balloon", "", enabledDetector())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -236,7 +236,7 @@ func TestCommentedHandler_DetectorEnabled_BotSenderSuppressesReaction(t *testing
 
 func TestCommentedHandler_DetectorEnabled_BotLineCommentSuppressed(t *testing.T) {
 	msgs, mappings, client := setupReviewFixture(t)
-	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), "speech_balloon", enabledDetector())
+	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), "speech_balloon", "", enabledDetector())
 
 	e := pullrequest.Event{
 		GitHubEvent: "pull_request_review_comment",
@@ -255,7 +255,7 @@ func TestCommentedHandler_DetectorEnabled_BotLineCommentSuppressed(t *testing.T)
 
 func TestRequestChangeHandler_DetectorEnabled_BotSenderSuppressesReaction(t *testing.T) {
 	msgs, mappings, client := setupReviewFixture(t)
-	h := pullrequest.NewRequestChangeHandler(msgs, mappings, client, discardLogger(), "exclamation", enabledDetector())
+	h := pullrequest.NewRequestChangeHandler(msgs, mappings, client, discardLogger(), "exclamation", "", enabledDetector())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -275,7 +275,7 @@ func TestReactionHandler_SuppressedReactionLogsAtDebug(t *testing.T) {
 	msgs, mappings, client := setupReviewFixture(t)
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	h := pullrequest.NewApproveHandler(msgs, mappings, client, logger, "white_check_mark", enabledDetector())
+	h := pullrequest.NewApproveHandler(msgs, mappings, client, logger, "white_check_mark", "", enabledDetector())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -292,6 +292,104 @@ func TestReactionHandler_SuppressedReactionLogsAtDebug(t *testing.T) {
 	}
 	if !bytes.Contains(buf.Bytes(), []byte("copilot[bot]")) {
 		t.Errorf("expected bot login in log; got: %q", out)
+	}
+}
+
+// ----- Bot-reviewer marker (distinct reaction when NOT suppressed) -----
+
+func TestCommentedHandler_BotMarker_AddsMarkerAlongsideStateReaction(t *testing.T) {
+	msgs, mappings, client := setupReviewFixture(t)
+	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), "speech_balloon", "robot_face", disabledDetector())
+
+	e := pullrequest.Event{
+		Action: "submitted", Repository: "octo/widget",
+		PR:     pullrequest.PR{Number: 42},
+		Review: &pullrequest.Review{State: "commented"},
+		Sender: pullrequest.Sender{Login: "copilot[bot]", Type: "Bot"},
+	}
+	if err := h.Handle(context.Background(), e); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if len(client.calls) != 2 {
+		t.Fatalf("want state reaction + bot marker; got calls = %+v", client.calls)
+	}
+	if client.calls[0].Name != "speech_balloon" || client.calls[1].Name != "robot_face" {
+		t.Errorf("reactions = [%q, %q]; want [speech_balloon, robot_face]", client.calls[0].Name, client.calls[1].Name)
+	}
+}
+
+func TestApproveHandler_BotMarker_AddsMarkerAlongsideStateReaction(t *testing.T) {
+	msgs, mappings, client := setupReviewFixture(t)
+	h := pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), "white_check_mark", "robot_face", disabledDetector())
+
+	e := pullrequest.Event{
+		Action: "submitted", Repository: "octo/widget",
+		PR:     pullrequest.PR{Number: 42},
+		Review: &pullrequest.Review{State: "approved"},
+		Sender: pullrequest.Sender{Login: "dependabot[bot]", Type: "Bot"},
+	}
+	if err := h.Handle(context.Background(), e); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if len(client.calls) != 2 || client.calls[0].Name != "white_check_mark" || client.calls[1].Name != "robot_face" {
+		t.Fatalf("want [white_check_mark, robot_face]; got %+v", client.calls)
+	}
+}
+
+func TestCommentedHandler_BotMarker_LineCommentBotGetsMarker(t *testing.T) {
+	msgs, mappings, client := setupReviewFixture(t)
+	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), "speech_balloon", "robot_face", disabledDetector())
+
+	e := pullrequest.Event{
+		GitHubEvent: "pull_request_review_comment",
+		Action:      "created",
+		Repository:  "octo/widget",
+		PR:          pullrequest.PR{Number: 42},
+		Sender:      pullrequest.Sender{Login: "github-actions[bot]", Type: "Bot"},
+	}
+	if err := h.Handle(context.Background(), e); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if len(client.calls) != 2 || client.calls[1].Name != "robot_face" {
+		t.Fatalf("line-comment bot should also get the marker; got %+v", client.calls)
+	}
+}
+
+func TestCommentedHandler_BotMarker_HumanGetsOnlyStateReaction(t *testing.T) {
+	msgs, mappings, client := setupReviewFixture(t)
+	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), "speech_balloon", "robot_face", disabledDetector())
+
+	e := pullrequest.Event{
+		Action: "submitted", Repository: "octo/widget",
+		PR:     pullrequest.PR{Number: 42},
+		Review: &pullrequest.Review{State: "commented"},
+		Sender: pullrequest.Sender{Login: "alice", Type: "User"},
+	}
+	if err := h.Handle(context.Background(), e); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if len(client.calls) != 1 || client.calls[0].Name != "speech_balloon" {
+		t.Fatalf("human reviewer should get only the state reaction; got %+v", client.calls)
+	}
+}
+
+// Suppression wins over the marker: an ignored bot gets no reaction at all,
+// not even the distinct marker.
+func TestCommentedHandler_BotMarker_SuppressedBotGetsNothing(t *testing.T) {
+	msgs, mappings, client := setupReviewFixture(t)
+	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), "speech_balloon", "robot_face", enabledDetector())
+
+	e := pullrequest.Event{
+		Action: "submitted", Repository: "octo/widget",
+		PR:     pullrequest.PR{Number: 42},
+		Review: &pullrequest.Review{State: "commented"},
+		Sender: pullrequest.Sender{Login: "copilot[bot]", Type: "Bot"},
+	}
+	if err := h.Handle(context.Background(), e); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if len(client.calls) != 0 {
+		t.Fatalf("ignored bot should get no reaction even with a marker set; got %+v", client.calls)
 	}
 }
 
@@ -324,11 +422,11 @@ func TestReviewHandlers_NoStoredMessageIsNoop(t *testing.T) {
 			var h pullrequest.EventHandler
 			switch c.name {
 			case "approve":
-				h = pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), "x", disabledDetector())
+				h = pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), "x", "", disabledDetector())
 			case "commented":
-				h = pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), "x", disabledDetector())
+				h = pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), "x", "", disabledDetector())
 			case "request_change":
-				h = pullrequest.NewRequestChangeHandler(msgs, mappings, client, discardLogger(), "x", disabledDetector())
+				h = pullrequest.NewRequestChangeHandler(msgs, mappings, client, discardLogger(), "x", "", disabledDetector())
 			}
 			if err := h.Handle(context.Background(), c.e); err != nil {
 				t.Fatalf("Handle: %v", err)

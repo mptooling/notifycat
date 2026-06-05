@@ -115,6 +115,13 @@ func recordingServer(t *testing.T) (*httptest.Server, func() []capturedReq) {
 
 func newSmoke(t *testing.T, url string, st smoke.MessageStore, rx smoke.ReactionReader, rxCfg config.Reactions) *smoke.Smoke {
 	t.Helper()
+	return newSmokeAI(t, url, st, rx, rxCfg, false)
+}
+
+// newSmokeAI is newSmoke with an explicit NOTIFYCAT_IGNORE_AI_REVIEWS value, for
+// exercising the bot-review marker step.
+func newSmokeAI(t *testing.T, url string, st smoke.MessageStore, rx smoke.ReactionReader, rxCfg config.Reactions, ignoreAIReviews bool) *smoke.Smoke {
+	t.Helper()
 	return smoke.New(
 		fakeMappings{repo: testRepo, channel: testChannel},
 		st,
@@ -123,6 +130,7 @@ func newSmoke(t *testing.T, url string, st smoke.MessageStore, rx smoke.Reaction
 		testSecret,
 		url,
 		rxCfg,
+		ignoreAIReviews,
 		fixedClock(),
 	)
 }
@@ -149,6 +157,20 @@ func decodeEvent(t *testing.T, body []byte) (action, reviewState string, merged 
 		state = p.Review.State
 	}
 	return p.Action, state, p.PullRequest.Merged, p.PullRequest.Number, p.PullRequest.Title
+}
+
+// decodeSenderType pulls sender.type out of a captured body.
+func decodeSenderType(t *testing.T, body []byte) string {
+	t.Helper()
+	var p struct {
+		Sender struct {
+			Type string `json:"type"`
+		} `json:"sender"`
+	}
+	if err := json.Unmarshal(body, &p); err != nil {
+		t.Fatalf("payload is not valid JSON: %v", err)
+	}
+	return p.Sender.Type
 }
 
 func TestRun_OpenedDelivery_DrivesRealEndpointAndReportsChannelAndTS(t *testing.T) {
@@ -252,6 +274,101 @@ func TestRun_WithReactions_RunsLifecycleAndVerifiesEachEmoji(t *testing.T) {
 		if c.Step != w.step || c.Emoji != w.emoji || !c.Present || c.VerifyErr != nil {
 			t.Errorf("Reactions[%d] = %+v; want step=%s emoji=%s present=true err=nil", i, c, w.step, w.emoji)
 		}
+	}
+}
+
+func TestRun_WithReactions_BotMarkerConfigured_ReplaysBotReviewAndVerifiesMarker(t *testing.T) {
+	srv, captured := recordingServer(t)
+	defer srv.Close()
+
+	rxCfg := testReactions
+	rxCfg.BotReview = "robot_face"
+	rx := &fakeReactions{reactions: []slack.Reaction{
+		{Name: rxCfg.Commented}, {Name: rxCfg.BotReview}, {Name: rxCfg.Approved}, {Name: rxCfg.MergedPR},
+	}}
+	res, err := newSmoke(t, srv.URL, &fakeStore{ts: testTS}, rx, rxCfg).Run(context.Background(), testRepo, true)
+	if err != nil {
+		t.Fatalf("Run returned %v; want nil", err)
+	}
+
+	reqs := captured()
+	if len(reqs) != 5 {
+		t.Fatalf("got %d requests; want 5 (opened, comment, bot, approve, merge)", len(reqs))
+	}
+	// The bot step (req2) is a commented review from a Bot sender; the human
+	// comment step (req1) stays a User so the two are genuinely distinct.
+	if reqs[2].event != "pull_request_review" {
+		t.Errorf("req2 event = %q; want pull_request_review", reqs[2].event)
+	}
+	if got := decodeSenderType(t, reqs[2].body); got != "Bot" {
+		t.Errorf("bot step sender.type = %q; want Bot", got)
+	}
+	if got := decodeSenderType(t, reqs[1].body); got != "User" {
+		t.Errorf("human comment step sender.type = %q; want User", got)
+	}
+
+	var bot *smoke.ReactionCheck
+	for i := range res.Reactions {
+		if res.Reactions[i].Step == "bot" {
+			bot = &res.Reactions[i]
+		}
+	}
+	if bot == nil {
+		t.Fatalf("no bot step recorded in Result.Reactions: %+v", res.Reactions)
+	}
+	if bot.Emoji != "robot_face" || !bot.Present || bot.VerifyErr != nil {
+		t.Errorf("bot step = %+v; want emoji=robot_face present=true err=nil", *bot)
+	}
+}
+
+func TestRun_WithReactions_IgnoreAIReviews_SkipsBotStep(t *testing.T) {
+	srv, captured := recordingServer(t)
+	defer srv.Close()
+
+	rxCfg := testReactions
+	rxCfg.BotReview = "robot_face" // configured, but muted by the ignore flag
+	rx := &fakeReactions{reactions: []slack.Reaction{
+		{Name: rxCfg.Commented}, {Name: rxCfg.Approved}, {Name: rxCfg.MergedPR},
+	}}
+	res, err := newSmokeAI(t, srv.URL, &fakeStore{ts: testTS}, rx, rxCfg, true).Run(context.Background(), testRepo, true)
+	if err != nil {
+		t.Fatalf("Run returned %v; want nil", err)
+	}
+	if got := len(captured()); got != 4 {
+		t.Fatalf("got %d requests; want 4 (bot step skipped when AI reviews are ignored)", got)
+	}
+	for _, c := range res.Reactions {
+		if c.Step == "bot" {
+			t.Errorf("bot step replayed despite IgnoreAIReviews: %+v", res.Reactions)
+		}
+	}
+	if !res.IgnoreAIReviews {
+		t.Error("Result.IgnoreAIReviews = false; want true so the CLI can explain the skip")
+	}
+}
+
+func TestRun_WithReactions_EmptyBotMarker_SkipsBotStep(t *testing.T) {
+	srv, captured := recordingServer(t)
+	defer srv.Close()
+
+	// testReactions leaves BotReview empty — the operator's off-switch.
+	rx := &fakeReactions{reactions: []slack.Reaction{
+		{Name: testReactions.Commented}, {Name: testReactions.Approved}, {Name: testReactions.MergedPR},
+	}}
+	res, err := newSmoke(t, srv.URL, &fakeStore{ts: testTS}, rx, testReactions).Run(context.Background(), testRepo, true)
+	if err != nil {
+		t.Fatalf("Run returned %v; want nil", err)
+	}
+	if got := len(captured()); got != 4 {
+		t.Fatalf("got %d requests; want 4 (no bot step when the marker is empty)", got)
+	}
+	for _, c := range res.Reactions {
+		if c.Step == "bot" {
+			t.Error("bot step replayed with an empty marker")
+		}
+	}
+	if res.BotReviewMarker != "" {
+		t.Errorf("Result.BotReviewMarker = %q; want empty", res.BotReviewMarker)
 	}
 }
 

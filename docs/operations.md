@@ -169,6 +169,21 @@ This is also intentionally narrow:
   when it opens.
 - It does not touch `mappings.yaml`. No schema change, no migration, no per-mapping override.
 
+### The complement: marking bot reviews instead of hiding them
+
+Suppression and marking are two opposite policies over the same `sender.type == "Bot"` signal, and they are mutually
+exclusive:
+
+- **Suppress** (`NOTIFYCAT_IGNORE_AI_REVIEWS=true`) — drop the bot's reaction entirely.
+- **Mark** (`NOTIFYCAT_IGNORE_AI_REVIEWS=false`, the default) — react as normal **and** add `SLACK_REACTION_BOT_REVIEW`
+  (default `robot_face`) alongside, so a bot's review stays visible but is recognisably non-human.
+
+When suppression is on, the marker never appears — the reaction is skipped before the marker is considered. When
+suppression is off, every bot review gets both the normal state reaction (✅ / 💬 / ❗) and the 🤖 marker. To turn the
+marker off while still showing bot reviews like human ones, set `SLACK_REACTION_BOT_REVIEW=` (empty). The marker, like
+suppression, applies uniformly to every `Bot` sender across `pull_request_review` and `pull_request_review_comment`
+events; it does not distinguish AI reviewers from scripted bots.
+
 ### Failure-mode guide
 
 > "I expected a green checkmark / speech bubble / red flag on my PR's > Slack message, but nothing happened."
