@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.11.0](https://github.com/mptooling/notifycat/compare/v0.10.0...v0.11.0) (2026-06-05)
+
+
+### 🚀 Features
+
+* **doctor:** check the public webhook URL derived from DOMAIN ([#65](https://github.com/mptooling/notifycat/issues/65)) ([2ea33cb](https://github.com/mptooling/notifycat/commit/2ea33cb8b137402f73700923f227d8009d342bdf))
+* notifycat smoke — local PR-event delivery test ([#67](https://github.com/mptooling/notifycat/issues/67)) ([554d3eb](https://github.com/mptooling/notifycat/commit/554d3ebd4f418213a0bf5003719a19b789dcf6ac))
+
+
+### 📝 Documentation
+
+* add install-path security and permissions checklist ([#68](https://github.com/mptooling/notifycat/issues/68)) ([634130b](https://github.com/mptooling/notifycat/commit/634130b84716999653f98578502f62aa3dc07281))
+
 ## [0.10.0](https://github.com/mptooling/notifycat/compare/v0.9.0...v0.10.0) (2026-06-04)
 
 
