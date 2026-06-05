@@ -61,4 +61,6 @@ flowchart LR
   events, secret handling, and delivery checks.
 - [Install with Docker Compose](compose.md): one-command installer, setup wizard, HTTPS via Let's Encrypt.
 - [Docker (manual)](docker.md): image layout, migrations, persistence, and runtime commands.
+- [Security & permissions](security.md): least-privilege model, the webhook-secret trust boundary, and a pre-go-live
+  checklist.
 - [Operations](operations.md): deployment model, persistence, logs, release images, and CI checks.

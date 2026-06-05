@@ -92,6 +92,12 @@ message as `[Merged]`, so expect a few extra emoji on the throwaway message.
 Set your webhook URL to `https://notifycat.example.com/webhook/github` with the secret from `GITHUB_WEBHOOK_SECRET`. See
 [GitHub webhook setup](github-webhook.md).
 
+### 7. Run the security checklist before go-live
+
+Walk the [Security & permissions](security.md) checklist — confirm `.env` is `0600`, the webhook secret is long and
+random, and the Slack bot carries only its documented scopes. It also explains why the running server needs no GitHub
+token at all.
+
 ## How the stack is wired
 
 ```
