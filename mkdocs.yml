@@ -51,13 +51,13 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Install with Docker Compose: compose.md
+  - Security & permissions: security.md
   - Getting started: getting-started.md
   - Configuration: configuration.md
   - Mappings: mappings.md
   - Slack app: slack-app.md
   - GitHub webhook: github-webhook.md
-  - Install with Docker Compose: compose.md
   - Docker (manual): docker.md
-  - Security & permissions: security.md
   - Operations: operations.md
   - Doctor: doctor.md

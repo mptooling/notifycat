@@ -2,6 +2,21 @@
 
 These docs are written for engineers deploying or integrating Notifycat.
 
+## Get started in ~10 minutes
+
+The recommended path is the one-command Docker Compose install — it brings up Notifycat behind automatic HTTPS:
+
+```sh
+curl -fsSL https://github.com/mptooling/notifycat/releases/latest/download/install.sh | sh
+cd notifycat
+./notifycat setup          # interactive wizard — writes .env and mappings.yaml
+docker compose up -d       # start Notifycat + Caddy (HTTPS via Let's Encrypt)
+./notifycat doctor         # verify setup
+```
+
+See [Install with Docker Compose](compose.md) for the full walkthrough, then run the
+[Security & permissions](security.md) checklist before go-live.
+
 ## The Usual Slack Setup
 
 The regular way to connect GitHub pull requests to Slack is the official GitHub app for Slack. A channel subscribes to a
@@ -53,14 +68,14 @@ flowchart LR
 
 ## Documentation
 
+- [Install with Docker Compose](compose.md): one-command installer, setup wizard, HTTPS via Let's Encrypt.
+- [Security & permissions](security.md): least-privilege model, the webhook-secret trust boundary, and a pre-go-live
+  checklist.
 - [Getting started](getting-started.md): local setup and first end-to-end run.
 - [Mappings file](mappings.md): the declarative `mappings.yaml` schema, lookup rules, lock file, and CLI workflow.
 - [Configuration](configuration.md): environment variables, database, and reactions.
 - [Slack app setup](slack-app.md): manifest-based app creation, bot scopes, token setup, channel IDs, and mentions.
 - [GitHub webhook setup](github-webhook.md): script-based webhook creation, required GitHub access, PR events, comment
   events, secret handling, and delivery checks.
-- [Install with Docker Compose](compose.md): one-command installer, setup wizard, HTTPS via Let's Encrypt.
 - [Docker (manual)](docker.md): image layout, migrations, persistence, and runtime commands.
-- [Security & permissions](security.md): least-privilege model, the webhook-secret trust boundary, and a pre-go-live
-  checklist.
 - [Operations](operations.md): deployment model, persistence, logs, release images, and CI checks.
