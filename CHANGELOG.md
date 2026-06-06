@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.15.1](https://github.com/mptooling/notifycat/compare/v0.15.0...v0.15.1) (2026-06-06)
+
+
+### 🧹 Maintenance
+
+* add PR labeler, size-labeler, auto-assign, and stale workflows ([#94](https://github.com/mptooling/notifycat/issues/94)) ([f35df36](https://github.com/mptooling/notifycat/commit/f35df364eef1ac8764afdf43f221ffb2431aba2e))
+* pin auto-assign-action to v2.0.2 ([#97](https://github.com/mptooling/notifycat/issues/97)) ([167f8ad](https://github.com/mptooling/notifycat/commit/167f8ad3ee933c9705896deca72db76516e1b561))
+
 ## [0.15.0](https://github.com/mptooling/notifycat/compare/v0.14.0...v0.15.0) (2026-06-05)
 
 
