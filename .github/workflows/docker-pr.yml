@@ -1,0 +1,138 @@
+name: docker-pr
+
+# Publishes a beta image for every pull request so the container can be
+# smoke-tested on a real server before the change ships in a release. The
+# pr-<number> tag tracks the PR head: rebuilt on every push, deletable from
+# GHCR when the PR closes. Semver tags and latest are never touched here.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "PR number to (re)build the beta image for"
+        required: true
+        type: number
+
+permissions:
+  contents: read
+  packages: write
+  pull-requests: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+# One build per PR at a time; a force-push supersedes the in-flight build.
+concurrency:
+  group: docker-pr-${{ github.event.pull_request.number || inputs.pr }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and publish beta image
+    # Fork PRs are excluded: their GITHUB_TOKEN cannot push packages, and the
+    # build would execute an untrusted Dockerfile with package write access.
+    # workflow_dispatch is a deliberate maintainer action, so it skips the
+    # same-repo guard.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.action != 'closed' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Resolve PR number
+        id: pr
+        env:
+          NUMBER: ${{ github.event.pull_request.number || inputs.pr }}
+        # The value feeds a checkout ref, so reject anything that is not a
+        # plain integer (dispatch inputs arrive as strings via the API).
+        run: |
+          set -eu
+          case "$NUMBER" in
+            *[!0-9]*|'') echo "::error::invalid PR number '${NUMBER}'"; exit 1 ;;
+          esac
+          echo "number=${NUMBER}" >> "$GITHUB_OUTPUT"
+
+      - name: Check out PR head
+        uses: actions/checkout@v6
+        with:
+          ref: refs/pull/${{ steps.pr.outputs.number }}/head
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push beta image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:pr-${{ steps.pr.outputs.number }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Upsert beta-image comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ steps.pr.outputs.number }}
+          IMAGE: ghcr.io/${{ github.repository }}
+        run: |
+          set -eu
+          sha="$(git rev-parse HEAD)"
+          marker="<!-- docker-pr-beta -->"
+          # shellcheck disable=SC2016 # single quotes are deliberate: the backticks are markdown, not command substitution
+          body="$(printf '%s\n🐳 Beta image published: `%s:pr-%s` — rebuilt on every push, removed when the PR closes.\n\n```sh\ndocker pull %s:pr-%s\n```\n\nBuilt from %s.' \
+            "$marker" "$IMAGE" "$NUMBER" "$IMAGE" "$NUMBER" "$sha")"
+          existing="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${NUMBER}/comments" --paginate \
+            --jq ".[] | select(.body | startswith(\"${marker}\")) | .id" | head -n1)"
+          if [ -n "$existing" ]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${existing}" \
+              -f body="$body" >/dev/null
+            echo "updated comment ${existing} on PR #${NUMBER}"
+          else
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${NUMBER}/comments" \
+              -f body="$body" >/dev/null
+            echo "created beta-image comment on PR #${NUMBER}"
+          fi
+
+  cleanup:
+    name: Delete beta image tag
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Delete pr-<number> package version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: pr-${{ github.event.pull_request.number }}
+        run: |
+          set -eu
+          owner="${GITHUB_REPOSITORY%%/*}"
+          name="${GITHUB_REPOSITORY##*/}"
+          # Only the tagged manifest list is deleted. Its untagged child
+          # manifests are left behind on purpose: release images are
+          # multi-arch too, so a blanket untagged sweep would corrupt them.
+          ids="$(gh api "orgs/${owner}/packages/container/${name}/versions" --paginate \
+            --jq ".[] | select(.metadata.container.tags[]? == \"${TAG}\") | .id")"
+          if [ -z "$ids" ]; then
+            echo "no package version tagged ${TAG} (fork PR or never built) — nothing to delete"
+            exit 0
+          fi
+          for id in $ids; do
+            gh api -X DELETE "orgs/${owner}/packages/container/${name}/versions/${id}"
+            echo "deleted package version ${id} (${TAG})"
+          done

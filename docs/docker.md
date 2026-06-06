@@ -40,6 +40,10 @@ deploys:
 The shipped `compose.yaml` pins `ghcr.io/mptooling/notifycat:latest`. For a reproducible deploy, edit its `image:` line
 to a specific `vX.Y.Z` before `docker compose up -d`.
 
+### Beta tags (per pull request)
+
+Every open same-repo pull request also publishes `ghcr.io/mptooling/notifycat:pr-<number>` — a multi-arch beta image rebuilt on each push to the PR and deleted from GHCR when the PR closes. Use it to smoke-test a change on a real server before it ships in a release; the PR carries a pinned comment with the exact `docker pull` command. Never point a production deploy at a `pr-*` tag — it moves with the PR and disappears on close.
+
 ### Verifying the install bundle
 
 Every release also attaches the install files — `compose.yaml`, `Caddyfile`, the `notifycat` wrapper, `env.example`,

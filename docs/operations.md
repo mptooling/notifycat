@@ -93,6 +93,10 @@ ghcr.io/mptooling/notifycat:latest
 
 For a Git tag such as `v0.1.0`, the version image tag is `0.1.0`.
 
+### Testing a PR build before release
+
+The `docker-pr` workflow publishes `ghcr.io/mptooling/notifycat:pr-<number>` for every open same-repo PR, rebuilt on each push and deleted when the PR closes. Pull that tag on the server to verify a container before merging. To rebuild one manually, run the `docker-pr` workflow from the Actions tab with the PR number. See [Docker → Beta tags](docker.md#beta-tags-per-pull-request).
+
 ## Deployment
 
 For end-to-end deploy instructions, see [Install with Docker Compose](compose.md). That page covers the one-command
