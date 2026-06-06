@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.2](https://github.com/mptooling/notifycat/compare/v0.15.1...v0.15.2) (2026-06-06)
+
+
+### 🧹 Maintenance
+
+* publish beta container image for each PR ([#98](https://github.com/mptooling/notifycat/issues/98)) ([2cdb56f](https://github.com/mptooling/notifycat/commit/2cdb56feff917ab0315038f35e813bf27f61073b))
+
 ## [0.15.1](https://github.com/mptooling/notifycat/compare/v0.15.0...v0.15.1) (2026-06-06)
 
 
