@@ -1,0 +1,32 @@
+# Path-based PR labels applied by .github/workflows/labeler.yml
+# (actions/labeler). Only labels that already exist in the repo are used here
+# so the action never silently creates an off-palette label. The v5+ schema is:
+#   <label>:
+#     - changed-files:
+#         - any-glob-to-any-file: [<globs>]
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "docs/**"
+          - "mkdocs.yml"
+          - "**/*.md"
+
+docker:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Dockerfile"
+          - ".dockerignore"
+          - "compose.yaml"
+          - "compose.yml"
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "go.mod"
+          - "go.sum"
+
+github_actions:
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/workflows/**"
+          - ".github/actions/**"

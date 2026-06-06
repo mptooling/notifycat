@@ -1,0 +1,38 @@
+name: pr-size-labeler
+
+# Same pull_request_target rationale as labeler.yml: a writable token so size
+# labels land on Dependabot/fork PRs too. The action creates the size/* labels
+# on first run, so no manual label setup is required.
+on:
+  pull_request_target:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  size:
+    name: Label by size
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Apply size label
+        uses: codelytv/pr-size-labeler@v1
+        with:
+          xs_label: "size/xs"
+          xs_max_size: "10"
+          s_label: "size/s"
+          s_max_size: "100"
+          m_label: "size/m"
+          m_max_size: "500"
+          l_label: "size/l"
+          l_max_size: "1000"
+          xl_label: "size/xl"
+          fail_if_xl: "false"
+          # The size/xl label already signals the size; skip the nag comment.
+          message_if_xl: ""
+          # go.sum churn and generated files dominate diff size without
+          # reflecting review effort — exclude them from the line count.
+          files_to_ignore: |
+            go.sum
+            mappings.lock
