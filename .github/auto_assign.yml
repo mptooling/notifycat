@@ -1,0 +1,10 @@
+# Config for .github/workflows/auto-assign.yml (kentaro-m/auto-assign-action).
+# Assigns the maintainer to every new PR so it lands in their assigned queue;
+# no review requests (a solo maintainer cannot review their own PR, and there
+# is no second reviewer).
+addReviewers: false
+addAssignees: true
+assignees:
+  - pavelmaksimov25
+# 0 = assign everyone in the list above.
+numberOfAssignees: 0

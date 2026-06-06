@@ -1,0 +1,25 @@
+name: labeler
+
+# pull_request_target (not pull_request) so the job gets a writable token even
+# on Dependabot and fork PRs — otherwise those PRs would never be labelled. It
+# is safe here because this workflow never checks out or runs PR code; it only
+# reads the changed-file list and adds labels via the API.
+on:
+  pull_request_target:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  label:
+    name: Label by path
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Apply path-based labels
+        uses: actions/labeler@v6
+        with:
+          # Only add labels; never strip labels a human applied (enhancement,
+          # bug, ...) just because no path rule matched them.
+          sync-labels: false

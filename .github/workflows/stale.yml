@@ -1,0 +1,39 @@
+name: stale
+
+on:
+  schedule:
+    # Daily at 01:30 UTC — off-peak, low API contention.
+    - cron: "30 1 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stale:
+    name: Flag stale issues and PRs
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Mark stale
+        uses: actions/stale@v10
+        with:
+          days-before-stale: 60
+          # -1 disables auto-closing: flag for triage, never close on our own.
+          days-before-close: -1
+          stale-issue-label: stale
+          stale-pr-label: stale
+          stale-issue-message: >
+            This issue has had no activity for 60 days, so it is now marked
+            stale. It will stay open — remove the `stale` label or leave a
+            comment if it is still relevant.
+          stale-pr-message: >
+            This pull request has had no activity for 60 days, so it is now
+            marked stale. It will stay open — remove the `stale` label or push
+            an update if you are still working on it.
+          exempt-issue-labels: "help wanted,good first issue,pinned,security"
+          exempt-pr-labels: "help wanted,good first issue,pinned,security"
+          operations-per-run: 100
