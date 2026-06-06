@@ -19,6 +19,8 @@ jobs:
 
     steps:
       - name: Add assignee
-        uses: kentaro-m/auto-assign-action@v2
+        # This action publishes only full semver tags — there is no moving @v2
+        # major tag — so it must be pinned to an exact release.
+        uses: kentaro-m/auto-assign-action@v2.0.2
         with:
           configuration-path: ".github/auto_assign.yml"
