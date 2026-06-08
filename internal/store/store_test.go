@@ -220,6 +220,37 @@ func TestSlackMessages_FindStuck_Empty(t *testing.T) {
 	}
 }
 
+func TestSlackMessages_ListOpen_ExcludesClosed(t *testing.T) {
+	db := store.NewTestDB(t)
+	repo := store.NewSlackMessages(db)
+	ctx := context.Background()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	closedAt := now.Add(-1 * time.Hour)
+	seed := []store.SlackMessage{
+		{PRNumber: 2, Repository: "o/r", TS: "ts-open-2", UpdatedAt: now},
+		{PRNumber: 1, Repository: "o/r", TS: "ts-open-1", UpdatedAt: now},
+		{PRNumber: 9, Repository: "o/r", TS: "ts-closed", UpdatedAt: now, ClosedAt: &closedAt},
+	}
+	for _, m := range seed {
+		if err := store.RawCreateForTest(db, m); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+	}
+
+	open, err := repo.ListOpen(ctx)
+	if err != nil {
+		t.Fatalf("ListOpen: %v", err)
+	}
+	if len(open) != 2 {
+		t.Fatalf("ListOpen returned %d rows; want 2 open", len(open))
+	}
+	// Ordered by (repository, pr_number).
+	if open[0].PRNumber != 1 || open[1].PRNumber != 2 {
+		t.Fatalf("ListOpen order = %d,%d; want 1,2", open[0].PRNumber, open[1].PRNumber)
+	}
+}
+
 func TestSlackMessages_DeleteStaleBefore_RemovesOldRows(t *testing.T) {
 	db := store.NewTestDB(t)
 	repo := store.NewSlackMessages(db)

@@ -46,7 +46,21 @@ A scheduled job reminds channels about open PRs that have gone unreviewed. It is
 
 **Delivery.** One message per Slack channel, grouping that channel's stuck PRs and pinging the channel's configured `mentions`. It is a separate post — not an update to the per-PR message — so it adds a little noise; set `digest: { enabled: false }` if that is unwanted.
 
-**`updated_at` now tracks activity.** Before this feature `updated_at` only moved when a PR was first announced; it now also moves on every review and comment. A useful side effect: the stale-row cleanup ages an actively-reviewed PR from its last activity rather than its open time. The migration that ships the feature backfills existing open rows' `updated_at` from the Slack message timestamp (the PR's registration time) so the first digest ages them correctly. One caveat: PRs that were already closed before the upgrade are not marked closed in the database, so a recently-closed PR can appear in the digest until the cleanup TTL (`NOTIFYCAT_MESSAGE_TTL_DAYS`) removes its row. Clear those rows or disable the digest for the first run if that is noisy.
+**`updated_at` now tracks activity.** Before this feature `updated_at` only moved when a PR was first announced; it now also moves on every review and comment. A useful side effect: the stale-row cleanup ages an actively-reviewed PR from its last activity rather than its open time. The migration that ships the feature backfills existing open rows' `updated_at` from the Slack message timestamp (the PR's registration time) so the first digest ages them correctly. One caveat: PRs that were already merged/closed before the upgrade are not marked closed in the database (their rows predate the `closed_at` column), so they look open to the digest and can flood the first run. Fix that once with `notifycat-reconcile` (below) before relying on the digest.
+
+### Reconciling the closed-PR backlog (one-time)
+
+`notifycat-reconcile` walks every row the database still believes is open, asks GitHub each PR's real state, and marks the merged/closed ones so they drop out of the digest. It is idempotent — safe to run repeatedly — and a PR it cannot read (e.g. a token-scope miss) is left untouched rather than wrongly hidden. It needs `GITHUB_TOKEN` with read access to the repos and the **same `DATABASE_URL` the server uses**.
+
+Preview first, then apply:
+
+```sh
+# docker compose (runs against the service's volumes)
+docker compose run --rm notifycat /usr/local/bin/notifycat-reconcile -dry-run
+docker compose run --rm notifycat /usr/local/bin/notifycat-reconcile
+```
+
+It prints a summary like `reconcile (applied): checked=37 closed=34 still_open=3 errors=0`. A non-zero `errors` count exits non-zero — resolve (usually token scope) and re-run. Run it once after upgrading to the digest feature; going forward the close handler marks `closed_at` itself, so no repeat is needed. Without a `GITHUB_TOKEN` you cannot reconcile this way — clear the stale rows manually instead.
 
 ## Logging
 

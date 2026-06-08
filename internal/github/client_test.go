@@ -140,3 +140,37 @@ func TestListOrgRepos_Non2xxIsAPIError(t *testing.T) {
 		t.Fatalf("want APIError 404; got %T %v", err, err)
 	}
 }
+
+func TestGetPullRequest_OpenAndDraft(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/acme/web/pulls/42" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		_, _ = io.WriteString(w, `{"state":"open","draft":true,"title":"x"}`)
+	}))
+	defer srv.Close()
+
+	c := github.NewClient(srv.Client(), "tok", github.WithBaseURL(srv.URL))
+	pr, err := c.GetPullRequest(context.Background(), "acme", "web", 42)
+	if err != nil {
+		t.Fatalf("GetPullRequest: %v", err)
+	}
+	if pr.State != "open" || !pr.Draft {
+		t.Fatalf("pr = %+v; want open+draft", pr)
+	}
+}
+
+func TestGetPullRequest_NotFoundIsAPIError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = io.WriteString(w, `{"message":"Not Found"}`)
+	}))
+	defer srv.Close()
+
+	c := github.NewClient(srv.Client(), "tok", github.WithBaseURL(srv.URL))
+	_, err := c.GetPullRequest(context.Background(), "acme", "web", 99)
+	var apiErr *github.APIError
+	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusNotFound {
+		t.Fatalf("want APIError 404; got %T %v", err, err)
+	}
+}

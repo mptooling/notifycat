@@ -55,6 +55,10 @@ migrate:
 migrate-status:
   go run ./cmd/notifycat-migrate status
 
+# One-time: mark slack_messages rows closed from their GitHub state (dry-run first)
+reconcile *args:
+  go run ./cmd/notifycat-reconcile {{args}}
+
 # Add a repo-to-Slack mapping
 mapping-add repo channel mentions:
   go run ./cmd/notifycat-mapping add "{{repo}}" "{{channel}}" "{{mentions}}"
@@ -78,6 +82,10 @@ docker-migrate:
 # Show Docker database migration status
 docker-migrate-status:
   docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/app" --env-file .env {{app}}:test /usr/local/bin/notifycat-migrate status
+
+# One-time reconcile in Docker (pass -dry-run to preview); needs GITHUB_TOKEN in .env
+docker-reconcile *args:
+  docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/app" --env-file .env {{app}}:test /usr/local/bin/notifycat-reconcile {{args}}
 
 # List repo-to-Slack mappings in Docker
 docker-mapping-list:

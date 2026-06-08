@@ -128,6 +128,45 @@ func (c *Client) listHooks(ctx context.Context, owner, repo string) ([]Hook, err
 	return hooks, nil
 }
 
+// PullRequestState is the subset of a PR's status the stuck-PR digest needs to
+// decide whether the PR is still worth nagging about.
+type PullRequestState struct {
+	State string `json:"state"` // "open" | "closed"
+	Draft bool   `json:"draft"`
+}
+
+// GetPullRequest fetches a single PR's open/closed and draft state. A non-2xx
+// response is returned as a typed *APIError (e.g. Status 404 for a missing or
+// inaccessible PR) so callers can decide how to treat it.
+func (c *Client) GetPullRequest(ctx context.Context, owner, repo string, number int) (PullRequestState, error) {
+	path := fmt.Sprintf("/repos/%s/%s/pulls/%d", url.PathEscape(owner), url.PathEscape(repo), number)
+	req, err := c.createRequest(ctx, path)
+	if err != nil {
+		return PullRequestState{}, fmt.Errorf("github: get-pull-request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req) //nolint:gosec // baseURL operator-controlled
+	if err != nil {
+		return PullRequestState{}, fmt.Errorf("github: get-pull-request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	const maxBytes int64 = defaultMaxRespMiB << 20
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes))
+	if err != nil {
+		return PullRequestState{}, fmt.Errorf("github: get-pull-request: read body: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return PullRequestState{}, &APIError{Method: "get-pull-request", Status: resp.StatusCode, Message: extractMessage(body)}
+	}
+
+	var pr PullRequestState
+	if err := json.Unmarshal(body, &pr); err != nil {
+		return PullRequestState{}, fmt.Errorf("github: get-pull-request: decode: %w", err)
+	}
+	return pr, nil
+}
+
 func (c *Client) createRequest(ctx context.Context, path string) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
