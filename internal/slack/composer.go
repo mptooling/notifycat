@@ -128,6 +128,11 @@ func (c *Composer) UpdatedMessage(pr PRDetails, merged bool, emoji string) Messa
 // digest is a distinct, opt-out feature, not part of the per-PR reaction set.
 const stuckDigestEmoji = "hourglass_flowing_sand"
 
+// maxSectionChars is the ceiling we pack a digest section to before starting a
+// new one. Slack rejects a section whose text exceeds 3000 chars with
+// invalid_blocks; we stay under that with headroom for multi-byte content.
+const maxSectionChars = 2900
+
 // StuckPR is one entry in a stuck-PR digest: a PR that has seen no activity
 // since before today. The PR title is intentionally absent — the store does
 // not keep it — so the digest links by repository and number.
@@ -142,23 +147,34 @@ type StuckPR struct {
 // carrying the channel's mentions (so the post actually notifies) plus one line
 // per stuck PR. Mentions follow the same empty-list rule as NewMessage. The
 // caller must pass a non-empty prs slice; an empty channel is skipped upstream.
+//
+// A busy channel can list more PRs than fit in one Block Kit section (Slack
+// caps section text at 3000 chars), so the lines are packed into successive
+// section blocks, each kept under maxSectionChars.
 func (c *Composer) StuckDigest(mentions []string, prs []StuckPR) Message {
 	headline := fmt.Sprintf(
 		":%s: %s%d open PR%s waiting for review since before today:",
 		stuckDigestEmoji, mentionsPrefix(mentions), len(prs), pluralSuffix(len(prs)),
 	)
 
+	var blocks []Block
 	var b strings.Builder
-	b.WriteString(headline)
+	b.WriteString(headline) // the first section opens with the headline
 	for _, pr := range prs {
-		fmt.Fprintf(&b, "\n• <%s|%s #%d> · idle %s", pr.URL, pr.Repository, pr.Number, idlePhrase(pr.IdleDays))
+		line := fmt.Sprintf("• <%s|%s #%d> · idle %s", pr.URL, pr.Repository, pr.Number, idlePhrase(pr.IdleDays))
+		if b.Len()+len("\n")+len(line) > maxSectionChars {
+			blocks = append(blocks, section(b.String()))
+			b.Reset()
+		}
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(line)
 	}
+	blocks = append(blocks, section(b.String()))
 
 	fallback := fmt.Sprintf("%d PR%s waiting for review", len(prs), pluralSuffix(len(prs)))
-	return Message{
-		Blocks:   []Block{section(b.String())},
-		Fallback: fallback,
-	}
+	return Message{Blocks: blocks, Fallback: fallback}
 }
 
 // idlePhrase renders a whole-day idle duration ("1 day" / "3 days").

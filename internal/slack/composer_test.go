@@ -253,3 +253,54 @@ func TestComposer_StuckDigest_SingularAndNoMentions(t *testing.T) {
 		t.Errorf("singular headline wrong: %s", got)
 	}
 }
+
+// allSectionTexts returns the text of every section block, in order.
+func allSectionTexts(m slack.Message) []string {
+	var out []string
+	for _, b := range m.Blocks {
+		if b.Type == "section" && b.Text != nil {
+			out = append(out, b.Text.Text)
+		}
+	}
+	return out
+}
+
+func TestComposer_StuckDigest_SplitsToRespectSlackSectionLimit(t *testing.T) {
+	c := slack.NewComposer("eyes")
+
+	// A busy channel: enough PRs that a single section would exceed Slack's
+	// 3000-char section-text cap (which returns invalid_blocks).
+	const n = 80
+	prs := make([]slack.StuckPR, n)
+	for i := range prs {
+		prs[i] = slack.StuckPR{
+			Repository: "mptooling/notifycat",
+			Number:     1000 + i,
+			URL:        fmt.Sprintf("https://github.com/mptooling/notifycat/pull/%d", 1000+i),
+			IdleDays:   3,
+		}
+	}
+
+	msg := c.StuckDigest([]string{"<!channel>"}, prs)
+
+	sections := allSectionTexts(msg)
+	if len(sections) < 2 {
+		t.Fatalf("expected the digest to split into multiple sections; got %d", len(sections))
+	}
+	for i, s := range sections {
+		if len(s) > 3000 {
+			t.Errorf("section %d is %d chars; Slack rejects > 3000", i, len(s))
+		}
+	}
+	// Every PR must still appear exactly once across the sections.
+	joined := strings.Join(sections, "\n")
+	for _, pr := range prs {
+		needle := fmt.Sprintf("#%d>", pr.Number)
+		if strings.Count(joined, needle) != 1 {
+			t.Errorf("PR %d not rendered exactly once across sections", pr.Number)
+		}
+	}
+	if len(msg.Blocks) > 50 {
+		t.Errorf("message has %d blocks; Slack caps at 50", len(msg.Blocks))
+	}
+}
