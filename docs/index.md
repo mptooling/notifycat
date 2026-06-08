@@ -79,3 +79,4 @@ flowchart LR
   events, secret handling, and delivery checks.
 - [Docker (manual)](docker.md): image layout, migrations, persistence, and runtime commands.
 - [Operations](operations.md): deployment model, persistence, logs, release images, and CI checks.
+- [Upgrading](upgrading.md): release-specific upgrade steps, including the 0.16.0 stuck-PR digest.
