@@ -79,6 +79,13 @@ func (h *reactionHandler) Handle(ctx context.Context, e Event) error {
 		return err
 	}
 
+	// Record this review as activity so the stuck-PR digest stops nagging about
+	// the PR until it next goes quiet. Suppressed bot reviews return above and
+	// intentionally do not count — an ignored AI review is not human attention.
+	if err := h.messages.Touch(ctx, e.Repository, e.PR.Number); err != nil {
+		return err
+	}
+
 	// A bot reviewer that survived the suppression gate above gets a distinct
 	// marker alongside the normal state reaction, so its activity stays visible
 	// but recognisably non-human. Empty botEmoji turns the marker off.

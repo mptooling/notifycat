@@ -32,7 +32,7 @@ func run() error {
 		return err
 	}
 
-	server, scheduler, cleanup, err := app.Wire(cfg)
+	server, scheduler, digestScheduler, cleanup, err := app.Wire(cfg)
 	if err != nil {
 		return err
 	}
@@ -51,6 +51,9 @@ func run() error {
 		errCh <- nil
 	}()
 	go func() { _ = scheduler.Run(ctx) }()
+	if digestScheduler != nil {
+		go func() { _ = digestScheduler.Run(ctx) }()
+	}
 
 	select {
 	case <-ctx.Done():

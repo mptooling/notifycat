@@ -43,12 +43,12 @@ func NewTestDB(t *testing.T) *gorm.DB {
 }
 
 // RawCreateForTest inserts a SlackMessage row preserving the caller's
-// UpdatedAt value, bypassing GORM's autoUpdateTime. Used by tests that need
-// to seed rows with a controlled age.
+// UpdatedAt and ClosedAt values, bypassing GORM's autoUpdateTime. Used by
+// tests that need to seed rows with a controlled age and open/closed state.
 func RawCreateForTest(db *gorm.DB, m SlackMessage) error {
 	res := db.Exec(
-		"INSERT INTO slack_messages (pr_number, gh_repository, ts, updated_at) VALUES (?, ?, ?, ?)",
-		m.PRNumber, m.Repository, m.TS, m.UpdatedAt,
+		"INSERT INTO slack_messages (pr_number, gh_repository, ts, updated_at, closed_at) VALUES (?, ?, ?, ?, ?)",
+		m.PRNumber, m.Repository, m.TS, m.UpdatedAt, m.ClosedAt,
 	)
 	if res.Error != nil {
 		return fmt.Errorf("store: raw insert slack message: %w", res.Error)

@@ -119,6 +119,107 @@ func TestSlackMessages_Save_BumpsUpdatedAt(t *testing.T) {
 	}
 }
 
+func TestSlackMessages_Touch_BumpsUpdatedAt(t *testing.T) {
+	db := store.NewTestDB(t)
+	repo := store.NewSlackMessages(db)
+	ctx := context.Background()
+
+	old := time.Now().UTC().Add(-48 * time.Hour).Truncate(time.Second)
+	if err := store.RawCreateForTest(db, store.SlackMessage{PRNumber: 1, Repository: "o/r", TS: "t1", UpdatedAt: old}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	if err := repo.Touch(ctx, "o/r", 1); err != nil {
+		t.Fatalf("Touch: %v", err)
+	}
+
+	got, err := repo.Get(ctx, "o/r", 1)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !got.UpdatedAt.After(old) {
+		t.Fatalf("Touch did not bump updated_at: got %v, seed %v", got.UpdatedAt, old)
+	}
+}
+
+func TestSlackMessages_Touch_MissingIsNoop(t *testing.T) {
+	db := store.NewTestDB(t)
+	repo := store.NewSlackMessages(db)
+
+	if err := repo.Touch(context.Background(), "o/r", 1); err != nil {
+		t.Fatalf("Touch missing: %v", err)
+	}
+}
+
+func TestSlackMessages_MarkClosed_ExcludesFromFindStuck(t *testing.T) {
+	db := store.NewTestDB(t)
+	repo := store.NewSlackMessages(db)
+	ctx := context.Background()
+
+	old := time.Now().UTC().Add(-48 * time.Hour).Truncate(time.Second)
+	if err := store.RawCreateForTest(db, store.SlackMessage{PRNumber: 1, Repository: "o/r", TS: "t1", UpdatedAt: old}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	if err := repo.MarkClosed(ctx, "o/r", 1); err != nil {
+		t.Fatalf("MarkClosed: %v", err)
+	}
+
+	stuck, err := repo.FindStuck(ctx, time.Now())
+	if err != nil {
+		t.Fatalf("FindStuck: %v", err)
+	}
+	if len(stuck) != 0 {
+		t.Fatalf("FindStuck returned %d rows; want 0 (closed row excluded)", len(stuck))
+	}
+}
+
+func TestSlackMessages_FindStuck_OnlyOpenAndStale(t *testing.T) {
+	db := store.NewTestDB(t)
+	repo := store.NewSlackMessages(db)
+	ctx := context.Background()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	stale := now.Add(-48 * time.Hour)
+	closedAt := now.Add(-1 * time.Hour)
+
+	seed := []store.SlackMessage{
+		{PRNumber: 1, Repository: "o/r", TS: "ts-stale-open", UpdatedAt: stale},
+		{PRNumber: 2, Repository: "o/r", TS: "ts-fresh-open", UpdatedAt: now.Add(-1 * time.Hour)},
+		{PRNumber: 3, Repository: "o/r", TS: "ts-stale-closed", UpdatedAt: stale, ClosedAt: &closedAt},
+	}
+	for _, m := range seed {
+		if err := store.RawCreateForTest(db, m); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+	}
+
+	cutoff := now.Add(-24 * time.Hour)
+	stuck, err := repo.FindStuck(ctx, cutoff)
+	if err != nil {
+		t.Fatalf("FindStuck: %v", err)
+	}
+	if len(stuck) != 1 {
+		t.Fatalf("FindStuck returned %d rows; want 1", len(stuck))
+	}
+	if stuck[0].PRNumber != 1 {
+		t.Fatalf("FindStuck returned PR %d; want the stale open PR (1)", stuck[0].PRNumber)
+	}
+}
+
+func TestSlackMessages_FindStuck_Empty(t *testing.T) {
+	db := store.NewTestDB(t)
+	repo := store.NewSlackMessages(db)
+
+	stuck, err := repo.FindStuck(context.Background(), time.Now())
+	if err != nil {
+		t.Fatalf("FindStuck on empty: %v", err)
+	}
+	if len(stuck) != 0 {
+		t.Fatalf("FindStuck on empty returned %d rows; want 0", len(stuck))
+	}
+}
+
 func TestSlackMessages_DeleteStaleBefore_RemovesOldRows(t *testing.T) {
 	db := store.NewTestDB(t)
 	repo := store.NewSlackMessages(db)

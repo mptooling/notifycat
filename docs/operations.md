@@ -38,6 +38,16 @@ receive webhooks, but existing PRs may get new Slack messages because the old Sl
 `mappings.yaml` and `mappings.lock` live in your repo, so losing the container's local copy is harmless on the next
 deploy.
 
+## Stuck-PR digest
+
+A scheduled job reminds channels about open PRs that have gone unreviewed. It is **on by default** (opt-out) and configured in the global `digest:` section of `mappings.yaml` — see [Mappings → Stuck-PR digest](mappings.md#stuck-pr-digest) for the schema.
+
+**What counts as stuck.** On each tick (default 9am daily, server-local time) the digest lists every open PR whose last activity predates the start of the current day — so a PR that sat through a previous day with nobody reviewing it shows up that morning. "Activity" is anything Notifycat sees on the PR: the open notification, a review (approve / comment / request-changes), or a PR/line comment — each bumps the row's `updated_at`. Suppressed AI reviews (see [Bot-reviewer suppression](#bot-reviewer-suppression)) intentionally do **not** count, so an AI-only pass still leaves a PR waiting for review. Merged/closed PRs are marked and excluded; a PR converted back to draft is removed entirely.
+
+**Delivery.** One message per Slack channel, grouping that channel's stuck PRs and pinging the channel's configured `mentions`. It is a separate post — not an update to the per-PR message — so it adds a little noise; set `digest: { enabled: false }` if that is unwanted.
+
+**`updated_at` now tracks activity.** Before this feature `updated_at` only moved when a PR was first announced; it now also moves on every review and comment. A useful side effect: the stale-row cleanup ages an actively-reviewed PR from its last activity rather than its open time. The migration that ships the feature backfills existing open rows' `updated_at` from the Slack message timestamp (the PR's registration time) so the first digest ages them correctly. One caveat: PRs that were already closed before the upgrade are not marked closed in the database, so a recently-closed PR can appear in the digest until the cleanup TTL (`NOTIFYCAT_MESSAGE_TTL_DAYS`) removes its row. Clear those rows or disable the digest for the first run if that is noisy.
+
 ## Logging
 
 Use:

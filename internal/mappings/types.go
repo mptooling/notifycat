@@ -12,7 +12,51 @@ const ChannelMention = "<!channel>"
 
 // File is the parsed mappings.yaml document.
 type File struct {
+	Digest   *DigestConfig  `yaml:"digest"`
 	Mappings map[string]Org `yaml:"mappings"`
+}
+
+// DigestConfig is the optional global `digest:` section: a scheduled reminder
+// that lists open PRs nobody has touched since the previous day. It is a
+// global parameter — one schedule for every org/repo, not per-entry. The
+// section is optional and the feature is on by default, so an absent section
+// behaves like `{enabled: true}` with the default schedule.
+type DigestConfig struct {
+	Enabled  bool
+	Schedule string
+}
+
+// UnmarshalYAML walks the mapping node by hand (like Org) so we can default
+// Enabled to true — distinguishing a missing `enabled:` key from an explicit
+// `enabled: false` — while keeping KnownFields-style rejection of typos.
+func (d *DigestConfig) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.MappingNode {
+		return fmt.Errorf("digest: expected mapping; got node kind %d", node.Kind)
+	}
+	if len(node.Content)%2 != 0 {
+		return fmt.Errorf("digest: malformed mapping")
+	}
+	d.Enabled = true // on by default; an explicit `enabled: false` overrides
+	for i := 0; i < len(node.Content); i += 2 {
+		keyNode := node.Content[i]
+		valNode := node.Content[i+1]
+		if keyNode.Kind != yaml.ScalarNode {
+			return fmt.Errorf("digest: non-scalar key")
+		}
+		switch keyNode.Value {
+		case "enabled":
+			if err := valNode.Decode(&d.Enabled); err != nil {
+				return fmt.Errorf("digest: enabled: %w", err)
+			}
+		case "schedule":
+			if err := valNode.Decode(&d.Schedule); err != nil {
+				return fmt.Errorf("digest: schedule: %w", err)
+			}
+		default:
+			return fmt.Errorf("digest: unknown field %q", keyNode.Value)
+		}
+	}
+	return nil
 }
 
 // Org is one organization's mapping: every configured repository in the org

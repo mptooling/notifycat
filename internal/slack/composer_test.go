@@ -210,3 +210,46 @@ func TestComposer_UpdatedMessage_Closed(t *testing.T) {
 		t.Errorf("fallback = %q, want %q", got.Fallback, want)
 	}
 }
+
+func TestComposer_StuckDigest(t *testing.T) {
+	c := slack.NewComposer("eyes")
+	prs := []slack.StuckPR{
+		{Repository: "octo/api", Number: 42, URL: "https://github.com/octo/api/pull/42", IdleDays: 1},
+		{Repository: "octo/web", Number: 51, URL: "https://github.com/octo/web/pull/51", IdleDays: 3},
+	}
+
+	msg := c.StuckDigest([]string{"<!channel>"}, prs)
+	got := sectionText(t, msg)
+
+	for _, want := range []string{
+		":hourglass_flowing_sand:",
+		"<!channel>,",
+		"2 open PRs waiting for review since before today:",
+		"<https://github.com/octo/api/pull/42|octo/api #42> · idle 1 day",
+		"<https://github.com/octo/web/pull/51|octo/web #51> · idle 3 days",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("digest section missing %q\ngot: %s", want, got)
+		}
+	}
+	if msg.Fallback != "2 PRs waiting for review" {
+		t.Errorf("fallback = %q", msg.Fallback)
+	}
+}
+
+func TestComposer_StuckDigest_SingularAndNoMentions(t *testing.T) {
+	c := slack.NewComposer("eyes")
+	prs := []slack.StuckPR{
+		{Repository: "octo/api", Number: 7, URL: "https://github.com/octo/api/pull/7", IdleDays: 1},
+	}
+
+	msg := c.StuckDigest(nil, prs)
+	got := sectionText(t, msg)
+
+	if strings.Contains(got, ", ") && !strings.Contains(got, "idle") {
+		t.Errorf("empty mentions left a stranded separator: %s", got)
+	}
+	if !strings.Contains(got, "1 open PR waiting for review") {
+		t.Errorf("singular headline wrong: %s", got)
+	}
+}

@@ -30,6 +30,25 @@ func Load(path string) (*Provider, error) {
 	return &Provider{file: file}, nil
 }
 
+// DefaultDigestSchedule is the cron spec used when the digest section is
+// absent or omits `schedule`: 9am every morning, server-local time.
+const DefaultDigestSchedule = "0 9 * * *"
+
+// Digest returns the effective stuck-PR digest configuration. The feature is
+// enabled by default, so an absent `digest:` section yields {Enabled: true,
+// Schedule: DefaultDigestSchedule}. An explicit section may disable it or
+// override the schedule.
+func (p *Provider) Digest() DigestConfig {
+	cfg := DigestConfig{Enabled: true, Schedule: DefaultDigestSchedule}
+	if p.file.Digest != nil {
+		cfg.Enabled = p.file.Digest.Enabled
+		if s := strings.TrimSpace(p.file.Digest.Schedule); s != "" {
+			cfg.Schedule = s
+		}
+	}
+	return cfg
+}
+
 // Get returns the mapping for "org/repo": exact match first, then wildcard
 // on the org. Returns store.ErrNotFound when nothing matches.
 func (p *Provider) Get(_ context.Context, repository string) (store.RepoMapping, error) {

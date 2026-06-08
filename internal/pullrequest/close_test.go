@@ -133,6 +133,41 @@ func TestCloseHandler_Handle_NoReactionWhenDisabled(t *testing.T) {
 	}
 }
 
+func TestCloseHandler_Handle_MarksClosed(t *testing.T) {
+	msgs := newFakeSlackMessages()
+	_ = msgs.Save(context.Background(), store.SlackMessage{PRNumber: 42, Repository: "octo/widget", TS: "ts1"})
+	mappings := newFakeRepoMappings(store.RepoMapping{Repository: "octo/widget", SlackChannel: "C123"})
+	client := &fakeSlackClient{}
+
+	// Reactions disabled, to prove MarkClosed is independent of reactions.
+	h := newCloseHandler(t, msgs, mappings, client, false)
+	e := pullrequest.Event{
+		Action:     "closed",
+		Repository: "octo/widget",
+		PR:         pullrequest.PR{Number: 42, Merged: true},
+	}
+	if err := h.Handle(context.Background(), e); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if len(msgs.closed) != 1 || msgs.closed[0] != (fakeKey{"octo/widget", 42}) {
+		t.Fatalf("MarkClosed not recorded for the PR: %v", msgs.closed)
+	}
+}
+
+func TestCloseHandler_Handle_NoStoredMessageDoesNotMarkClosed(t *testing.T) {
+	msgs := newFakeSlackMessages() // empty
+	mappings := newFakeRepoMappings(store.RepoMapping{Repository: "octo/widget", SlackChannel: "C123"})
+	h := newCloseHandler(t, msgs, mappings, &fakeSlackClient{}, true)
+
+	e := pullrequest.Event{Action: "closed", Repository: "octo/widget", PR: pullrequest.PR{Number: 42}}
+	if err := h.Handle(context.Background(), e); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if len(msgs.closed) != 0 {
+		t.Fatalf("MarkClosed recorded despite no stored message: %v", msgs.closed)
+	}
+}
+
 func TestCloseHandler_Handle_NoStoredMessageIsNoop(t *testing.T) {
 	msgs := newFakeSlackMessages() // empty
 	mappings := newFakeRepoMappings(store.RepoMapping{Repository: "octo/widget", SlackChannel: "C123"})

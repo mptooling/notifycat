@@ -96,6 +96,13 @@ func (h *CloseHandler) Handle(ctx context.Context, e Event) error {
 	if err := h.slack.UpdateMessage(ctx, mapping.SlackChannel, stored.TS, updated); err != nil {
 		return err
 	}
+
+	// Drop the PR from the stuck-PR digest now that it's merged/closed. The row
+	// itself stays until the cleanup TTL; closed_at just hides it from reminders.
+	if err := h.messages.MarkClosed(ctx, e.Repository, e.PR.Number); err != nil {
+		return err
+	}
+
 	if !h.opts.ReactionsEnabled {
 		return nil
 	}

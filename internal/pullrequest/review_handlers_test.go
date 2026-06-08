@@ -68,6 +68,42 @@ func TestApproveHandler_Handle_AddsReaction(t *testing.T) {
 	}
 }
 
+func TestApproveHandler_Handle_TouchesActivity(t *testing.T) {
+	msgs, mappings, client := setupReviewFixture(t)
+	h := pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), "white_check_mark", "", disabledDetector())
+
+	e := pullrequest.Event{
+		Action:     "submitted",
+		Repository: "octo/widget",
+		PR:         pullrequest.PR{Number: 42},
+		Review:     &pullrequest.Review{State: "approved"},
+	}
+	if err := h.Handle(context.Background(), e); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if len(msgs.touched) != 1 || msgs.touched[0] != (fakeKey{"octo/widget", 42}) {
+		t.Fatalf("review activity not recorded via Touch: %v", msgs.touched)
+	}
+}
+
+func TestApproveHandler_DetectorEnabled_BotSenderDoesNotTouch(t *testing.T) {
+	msgs, mappings, client := setupReviewFixture(t)
+	h := pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), "white_check_mark", "", enabledDetector())
+
+	e := pullrequest.Event{
+		Action: "submitted", Repository: "octo/widget",
+		PR:     pullrequest.PR{Number: 42},
+		Review: &pullrequest.Review{State: "approved"},
+		Sender: pullrequest.Sender{Login: "copilot[bot]", Type: "Bot"},
+	}
+	if err := h.Handle(context.Background(), e); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if len(msgs.touched) != 0 {
+		t.Fatalf("suppressed AI review reset the idle clock via Touch: %v", msgs.touched)
+	}
+}
+
 // ----- Commented -----
 
 func TestCommentedHandler_Applicable(t *testing.T) {
