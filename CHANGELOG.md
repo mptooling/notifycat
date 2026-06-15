@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.3](https://github.com/mptooling/notifycat/compare/v0.15.2...v0.15.3) (2026-06-11)
+
+
+### 🧹 Maintenance
+
+* **deps:** bump actions/configure-pages from 5 to 6 ([#104](https://github.com/mptooling/notifycat/issues/104)) ([2962490](https://github.com/mptooling/notifycat/commit/2962490d6092be87e296e965e60a5af6758f7955))
+
 ## [0.15.2](https://github.com/mptooling/notifycat/compare/v0.15.1...v0.15.2) (2026-06-06)
 
 
