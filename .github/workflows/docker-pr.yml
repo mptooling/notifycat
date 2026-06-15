@@ -61,7 +61,7 @@ jobs:
           ref: refs/pull/${{ steps.pr.outputs.number }}/head
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
         with:
           platforms: arm64
 
