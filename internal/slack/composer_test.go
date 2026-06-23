@@ -211,25 +211,19 @@ func TestComposer_UpdatedMessage_Closed(t *testing.T) {
 	}
 }
 
-func TestComposer_StuckDigest(t *testing.T) {
+func TestComposer_StuckDigestParent(t *testing.T) {
 	c := slack.NewComposer("eyes")
-	prs := []slack.StuckPR{
-		{Repository: "octo/api", Number: 42, URL: "https://github.com/octo/api/pull/42", IdleDays: 1},
-		{Repository: "octo/web", Number: 51, URL: "https://github.com/octo/web/pull/51", IdleDays: 3},
-	}
 
-	msg := c.StuckDigest([]string{"<!channel>"}, prs)
+	msg := c.StuckDigestParent([]string{"<!channel>"}, 2)
 	got := sectionText(t, msg)
 
 	for _, want := range []string{
 		":hourglass_flowing_sand:",
 		"<!channel>,",
 		"2 open PRs waiting for review since before today:",
-		"<https://github.com/octo/api/pull/42|octo/api #42> · idle 1 day",
-		"<https://github.com/octo/web/pull/51|octo/web #51> · idle 3 days",
 	} {
 		if !strings.Contains(got, want) {
-			t.Errorf("digest section missing %q\ngot: %s", want, got)
+			t.Errorf("parent section missing %q\ngot: %s", want, got)
 		}
 	}
 	if msg.Fallback != "2 PRs waiting for review" {
@@ -237,20 +231,41 @@ func TestComposer_StuckDigest(t *testing.T) {
 	}
 }
 
-func TestComposer_StuckDigest_SingularAndNoMentions(t *testing.T) {
+func TestComposer_StuckDigestParent_SingularAndNoMentions(t *testing.T) {
 	c := slack.NewComposer("eyes")
-	prs := []slack.StuckPR{
-		{Repository: "octo/api", Number: 7, URL: "https://github.com/octo/api/pull/7", IdleDays: 1},
-	}
 
-	msg := c.StuckDigest(nil, prs)
+	msg := c.StuckDigestParent(nil, 1)
 	got := sectionText(t, msg)
 
-	if strings.Contains(got, ", ") && !strings.Contains(got, "idle") {
+	if strings.Contains(got, ", ") {
 		t.Errorf("empty mentions left a stranded separator: %s", got)
 	}
 	if !strings.Contains(got, "1 open PR waiting for review") {
 		t.Errorf("singular headline wrong: %s", got)
+	}
+}
+
+func TestComposer_StuckDigestList(t *testing.T) {
+	c := slack.NewComposer("eyes")
+	prs := []slack.StuckPR{
+		{Repository: "octo/api", Number: 42, URL: "https://github.com/octo/api/pull/42", IdleDays: 1},
+		{Repository: "octo/web", Number: 51, URL: "https://github.com/octo/web/pull/51", IdleDays: 3},
+	}
+
+	msg := c.StuckDigestList(prs)
+	got := sectionText(t, msg)
+
+	for _, want := range []string{
+		"<https://github.com/octo/api/pull/42|octo/api #42> · idle 1 day",
+		"<https://github.com/octo/web/pull/51|octo/web #51> · idle 3 days",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("list section missing %q\ngot: %s", want, got)
+		}
+	}
+	// The list carries no headline — mentions and count live on the parent.
+	if strings.Contains(got, "open PR") || strings.Contains(got, "hourglass") {
+		t.Errorf("list should not repeat the parent headline: %s", got)
 	}
 }
 
@@ -265,7 +280,7 @@ func allSectionTexts(m slack.Message) []string {
 	return out
 }
 
-func TestComposer_StuckDigest_SplitsToRespectSlackSectionLimit(t *testing.T) {
+func TestComposer_StuckDigestList_SplitsToRespectSlackSectionLimit(t *testing.T) {
 	c := slack.NewComposer("eyes")
 
 	// A busy channel: enough PRs that a single section would exceed Slack's
@@ -281,11 +296,11 @@ func TestComposer_StuckDigest_SplitsToRespectSlackSectionLimit(t *testing.T) {
 		}
 	}
 
-	msg := c.StuckDigest([]string{"<!channel>"}, prs)
+	msg := c.StuckDigestList(prs)
 
 	sections := allSectionTexts(msg)
 	if len(sections) < 2 {
-		t.Fatalf("expected the digest to split into multiple sections; got %d", len(sections))
+		t.Fatalf("expected the list to split into multiple sections; got %d", len(sections))
 	}
 	for i, s := range sections {
 		if len(s) > 3000 {

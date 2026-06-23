@@ -109,6 +109,40 @@ func TestClient_PostMessage_Success(t *testing.T) {
 	}
 }
 
+func TestClient_PostReply_ThreadsOnParent(t *testing.T) {
+	fake := newFakeSlack(t, func(_ string, _ []byte, _ map[string][]string) (int, string) {
+		return 200, `{"ok":true,"ts":"1700000000.0002"}`
+	})
+	c := slack.NewClient(fake.Client(), "xoxb-test", slack.WithBaseURL(fake.URL))
+
+	msg := slack.Message{
+		Blocks:   []slack.Block{{Type: "section", Text: &slack.TextObject{Type: "mrkdwn", Text: "list"}}},
+		Fallback: "list",
+	}
+	ts, err := c.PostReply(context.Background(), "C123", "1700000000.0001", msg)
+	if err != nil {
+		t.Fatalf("PostReply: %v", err)
+	}
+	if ts != "1700000000.0002" {
+		t.Fatalf("PostReply ts = %q; want 1700000000.0002", ts)
+	}
+
+	call := fake.lastCall(t)
+	if call.Method != http.MethodPost || call.Path != "/api/chat.postMessage" {
+		t.Errorf("call = %s %s; want POST /api/chat.postMessage", call.Method, call.Path)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(call.Body), &payload); err != nil {
+		t.Fatalf("body json: %v (body=%q)", err, call.Body)
+	}
+	if payload["thread_ts"] != "1700000000.0001" {
+		t.Errorf("thread_ts = %v; want 1700000000.0001", payload["thread_ts"])
+	}
+	if payload["channel"] != "C123" {
+		t.Errorf("channel = %v; want C123", payload["channel"])
+	}
+}
+
 func TestClient_PostMessage_SlackError(t *testing.T) {
 	fake := newFakeSlack(t, func(_ string, _ []byte, _ map[string][]string) (int, string) {
 		return 200, `{"ok":false,"error":"channel_not_found"}`

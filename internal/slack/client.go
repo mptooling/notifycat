@@ -74,6 +74,24 @@ func (c *Client) PostMessage(ctx context.Context, channel string, msg Message) (
 	return resp.TS, nil
 }
 
+// PostReply posts a message as a reply in the thread rooted at threadTS and
+// returns its ts. It is PostMessage plus a thread_ts, kept separate so the
+// webhook path stays a plain top-level post.
+func (c *Client) PostReply(ctx context.Context, channel, threadTS string, msg Message) (string, error) {
+	var resp struct {
+		TS string `json:"ts"`
+	}
+	if err := c.postJSON(ctx, "chat.postMessage", map[string]any{
+		"channel":   channel,
+		"text":      msg.Fallback,
+		"blocks":    msg.Blocks,
+		"thread_ts": threadTS,
+	}, &resp, nil); err != nil {
+		return "", err
+	}
+	return resp.TS, nil
+}
+
 // UpdateMessage edits an existing message by ts, replacing both its blocks and
 // the top-level text fallback.
 func (c *Client) UpdateMessage(ctx context.Context, channel, ts string, msg Message) error {

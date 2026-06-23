@@ -90,7 +90,7 @@ mappings:
 | `digest.schedule` | Optional standard 5-field cron expression (e.g. `0 9 * * *`). Default `0 9 * * *`. Evaluated in the server's local timezone. An invalid expression fails server startup. |
 | Unknown keys under `digest` | Rejected at parse time, like the rest of the file. |
 
-On each tick the server posts one message per Slack channel listing that channel's open PRs whose last activity — the open notification, a review, or a comment — predates the start of the current day. Merged/closed PRs and PRs converted back to draft are excluded. The digest pings the same `mentions` as the channel's mapping, so it notifies the room; channels with no stuck PRs get no message. See [Operations → Stuck-PR digest](operations.md#stuck-pr-digest) for the runtime behavior and the upgrade note.
+On each tick the server posts a parent message per Slack channel and lists that channel's stuck PRs in a single reply under it — open PRs whose last activity (the open notification, a review, or a comment) predates the start of the current day. Merged/closed PRs and PRs converted back to draft are excluded. The parent pings the same `mentions` as the channel's mapping, so it notifies the room; channels with no stuck PRs get no message. See [Operations → Stuck-PR digest](operations.md#stuck-pr-digest) for the runtime behavior and the upgrade note.
 
 > **Enabled by default.** Upgrading from a release without this feature starts the 9am digest automatically. Add `digest: { enabled: false }` to keep the previous quiet behavior.
 

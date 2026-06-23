@@ -26,9 +26,12 @@ type MappingLookup interface {
 	Get(ctx context.Context, repository string) (store.RepoMapping, error)
 }
 
-// Poster posts a composed message to a Slack channel.
+// Poster posts a composed message to a Slack channel, either as a top-level
+// post (PostMessage, returning its ts) or as a reply threaded under one
+// (PostReply).
 type Poster interface {
 	PostMessage(ctx context.Context, channel string, msg slack.Message) (string, error)
+	PostReply(ctx context.Context, channel, threadTS string, msg slack.Message) (string, error)
 }
 
 // Reporter builds and posts the stuck-PR digest for every channel that owns at
@@ -71,9 +74,16 @@ func (r *Reporter) Report(ctx context.Context) error {
 	}
 
 	for _, g := range r.groupByChannel(ctx, rows, now) {
-		msg := r.composer.StuckDigest(g.mentions, g.prs)
-		if _, err := r.slack.PostMessage(ctx, g.channel, msg); err != nil {
-			r.logger.Error("stuck-pr digest: post failed",
+		ts, err := r.slack.PostMessage(ctx, g.channel, r.composer.StuckDigestParent(g.mentions, len(g.prs)))
+		if err != nil {
+			r.logger.Error("stuck-pr digest: parent post failed",
+				slog.String("channel", g.channel),
+				slog.Int("prs", len(g.prs)),
+				slog.Any("err", err))
+			continue
+		}
+		if _, err := r.slack.PostReply(ctx, g.channel, ts, r.composer.StuckDigestList(g.prs)); err != nil {
+			r.logger.Error("stuck-pr digest: list reply failed",
 				slog.String("channel", g.channel),
 				slog.Int("prs", len(g.prs)),
 				slog.Any("err", err))

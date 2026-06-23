@@ -143,26 +143,34 @@ type StuckPR struct {
 	IdleDays   int
 }
 
-// StuckDigest renders the scheduled reminder for one Slack channel: a headline
-// carrying the channel's mentions (so the post actually notifies) plus one line
-// per stuck PR. Mentions follow the same empty-list rule as NewMessage. The
-// caller must pass a non-empty prs slice; an empty channel is skipped upstream.
+// StuckDigestParent renders the static parent of a channel's stuck-PR digest: a
+// headline carrying the channel's mentions (so the post actually notifies) and
+// the PR count. The PR list itself is posted as a thread reply via
+// StuckDigestList — keeping the channel feed to one quiet line per channel.
+// Mentions follow the same empty-list rule as NewMessage.
+func (c *Composer) StuckDigestParent(mentions []string, count int) Message {
+	headline := fmt.Sprintf(
+		":%s: %s%d open PR%s waiting for review since before today:",
+		stuckDigestEmoji, mentionsPrefix(mentions), count, pluralSuffix(count),
+	)
+	fallback := fmt.Sprintf("%d PR%s waiting for review", count, pluralSuffix(count))
+	return Message{Blocks: []Block{section(headline)}, Fallback: fallback}
+}
+
+// StuckDigestList renders the thread reply for a channel's stuck-PR digest: one
+// line per stuck PR, with no headline (mentions and count live on the parent).
+// The caller must pass a non-empty prs slice; an empty channel is skipped
+// upstream.
 //
 // A busy channel can list more PRs than fit in one Block Kit section (Slack
 // caps section text at 3000 chars), so the lines are packed into successive
 // section blocks, each kept under maxSectionChars.
-func (c *Composer) StuckDigest(mentions []string, prs []StuckPR) Message {
-	headline := fmt.Sprintf(
-		":%s: %s%d open PR%s waiting for review since before today:",
-		stuckDigestEmoji, mentionsPrefix(mentions), len(prs), pluralSuffix(len(prs)),
-	)
-
+func (c *Composer) StuckDigestList(prs []StuckPR) Message {
 	var blocks []Block
 	var b strings.Builder
-	b.WriteString(headline) // the first section opens with the headline
 	for _, pr := range prs {
 		line := fmt.Sprintf("• <%s|%s #%d> · idle %s", pr.URL, pr.Repository, pr.Number, idlePhrase(pr.IdleDays))
-		if b.Len()+len("\n")+len(line) > maxSectionChars {
+		if b.Len() > 0 && b.Len()+len("\n")+len(line) > maxSectionChars {
 			blocks = append(blocks, section(b.String()))
 			b.Reset()
 		}
