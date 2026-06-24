@@ -44,10 +44,20 @@ func (f fakeChecker) IsOpen(_ context.Context, repo string, pr int) (bool, error
 	return f.open[key(repo, pr)], nil
 }
 
-type fakeCloser struct{ closed []string }
+// fakeStore records MarkClosed and Delete calls so tests can assert which path
+// each row took. It satisfies both reconcile.Closer and reconcile.Deleter.
+type fakeStore struct {
+	closed  []string
+	deleted []string
+}
 
-func (f *fakeCloser) MarkClosed(_ context.Context, repo string, pr int) error {
+func (f *fakeStore) MarkClosed(_ context.Context, repo string, pr int) error {
 	f.closed = append(f.closed, key(repo, pr))
+	return nil
+}
+
+func (f *fakeStore) Delete(_ context.Context, repo string, pr int) error {
+	f.deleted = append(f.deleted, key(repo, pr))
 	return nil
 }
 
@@ -64,8 +74,8 @@ func TestReconciler_MarksClosedOnly(t *testing.T) {
 		open: map[string]bool{key("o/r", 1): true, key("o/r", 2): false},
 		err:  map[string]error{key("o/r", 3): errors.New("boom")},
 	}
-	closer := &fakeCloser{}
-	r := reconcile.NewReconciler(fakeLister{rows()}, checker, closer, discardLogger(), false)
+	closer := &fakeStore{}
+	r := reconcile.NewReconciler(fakeLister{rows()}, checker, closer, closer, discardLogger(), false)
 
 	s, err := r.Run(context.Background())
 	if err != nil {
@@ -79,10 +89,85 @@ func TestReconciler_MarksClosedOnly(t *testing.T) {
 	}
 }
 
+func TestReconciler_NotFoundIsRemovedNotErrored(t *testing.T) {
+	checker := fakeChecker{err: map[string]error{key("o/r", 9): reconcile.ErrPRNotFound}}
+	closer := &fakeStore{}
+	rows := []store.SlackMessage{{PRNumber: 9, Repository: "o/r", TS: "t9"}}
+	r := reconcile.NewReconciler(fakeLister{rows}, checker, closer, closer, discardLogger(), false)
+
+	s, err := r.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(closer.closed) != 1 || closer.closed[0] != key("o/r", 9) {
+		t.Fatalf("closed = %v; want o/r#9 removed from the digest", closer.closed)
+	}
+	if s.Checked != 1 || s.Removed != 1 || s.Errors != 0 || s.Closed != 0 {
+		t.Fatalf("summary = %+v; want checked=1 removed=1 errors=0 closed=0", s)
+	}
+}
+
+func TestReconciler_DraftIsRemovedNotErrored(t *testing.T) {
+	checker := fakeChecker{err: map[string]error{key("o/r", 7): reconcile.ErrPRDraft}}
+	closer := &fakeStore{}
+	rows := []store.SlackMessage{{PRNumber: 7, Repository: "o/r", TS: "t7"}}
+	r := reconcile.NewReconciler(fakeLister{rows}, checker, closer, closer, discardLogger(), false)
+
+	s, err := r.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(closer.deleted) != 1 || closer.deleted[0] != key("o/r", 7) {
+		t.Fatalf("deleted = %v; want o/r#7 deleted from the db", closer.deleted)
+	}
+	if len(closer.closed) != 0 {
+		t.Fatalf("closed = %v; a draft must be deleted, not marked closed", closer.closed)
+	}
+	if s.Checked != 1 || s.Removed != 1 || s.Errors != 0 || s.Closed != 0 {
+		t.Fatalf("summary = %+v; want checked=1 removed=1 errors=0 closed=0", s)
+	}
+}
+
+func TestReconciler_DryRunDoesNotDeleteDraft(t *testing.T) {
+	checker := fakeChecker{err: map[string]error{key("o/r", 7): reconcile.ErrPRDraft}}
+	closer := &fakeStore{}
+	rows := []store.SlackMessage{{PRNumber: 7, Repository: "o/r", TS: "t7"}}
+	r := reconcile.NewReconciler(fakeLister{rows}, checker, closer, closer, discardLogger(), true)
+
+	s, err := r.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(closer.deleted) != 0 {
+		t.Fatalf("dry-run deleted %v; want nothing", closer.deleted)
+	}
+	if s.Removed != 1 {
+		t.Fatalf("summary = %+v; want removed=1 (would)", s)
+	}
+}
+
+func TestReconciler_DryRunDoesNotRemoveNotFound(t *testing.T) {
+	checker := fakeChecker{err: map[string]error{key("o/r", 9): reconcile.ErrPRNotFound}}
+	closer := &fakeStore{}
+	rows := []store.SlackMessage{{PRNumber: 9, Repository: "o/r", TS: "t9"}}
+	r := reconcile.NewReconciler(fakeLister{rows}, checker, closer, closer, discardLogger(), true)
+
+	s, err := r.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(closer.closed) != 0 {
+		t.Fatalf("dry-run wrote %v; want nothing", closer.closed)
+	}
+	if s.Removed != 1 {
+		t.Fatalf("summary = %+v; want removed=1 (would)", s)
+	}
+}
+
 func TestReconciler_DryRunWritesNothing(t *testing.T) {
 	checker := fakeChecker{open: map[string]bool{key("o/r", 1): true, key("o/r", 2): false, key("o/r", 3): false}}
-	closer := &fakeCloser{}
-	r := reconcile.NewReconciler(fakeLister{rows()}, checker, closer, discardLogger(), true)
+	closer := &fakeStore{}
+	r := reconcile.NewReconciler(fakeLister{rows()}, checker, closer, closer, discardLogger(), true)
 
 	s, err := r.Run(context.Background())
 	if err != nil {

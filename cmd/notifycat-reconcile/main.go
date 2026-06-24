@@ -70,7 +70,7 @@ func run(args []string) error {
 	messages := store.NewSlackMessages(db)
 	httpClient := &http.Client{Timeout: 10 * time.Second}
 	gh := github.NewClient(httpClient, cfg.GitHubToken.Reveal(), github.WithBaseURL(cfg.GitHubBaseURL))
-	rec := reconcile.NewReconciler(messages, reconcile.NewGitHubChecker(gh), messages, logger, *dryRun)
+	rec := reconcile.NewReconciler(messages, reconcile.NewGitHubChecker(gh), messages, messages, logger, *dryRun)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -84,8 +84,8 @@ func run(args []string) error {
 	if *dryRun {
 		mode = "dry-run"
 	}
-	fmt.Printf("reconcile (%s): checked=%d closed=%d still_open=%d errors=%d\n",
-		mode, summary.Checked, summary.Closed, summary.StillOpen, summary.Errors)
+	fmt.Printf("reconcile (%s): checked=%d closed=%d removed=%d still_open=%d errors=%d\n",
+		mode, summary.Checked, summary.Closed, summary.Removed, summary.StillOpen, summary.Errors)
 	if summary.Errors > 0 {
 		return fmt.Errorf("%d PR(s) could not be checked; resolve (e.g. token scope) and re-run — it is idempotent", summary.Errors)
 	}
