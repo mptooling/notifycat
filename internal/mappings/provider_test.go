@@ -61,7 +61,7 @@ func TestProvider_Load_MalformedFile_ReturnsParseError(t *testing.T) {
 }
 
 func tierProvider() *Provider {
-	return NewProvider(map[string]Org{
+	return NewProvider(Defaults{}, map[string]Org{
 		"acme": {
 			"api": {Channel: "C0API", Mentions: []string{"<@U1>"}, MentionsPresent: true},
 			"*":   {Channel: "C0DEFAULT"},
@@ -93,7 +93,7 @@ func TestGet_WildcardFallback(t *testing.T) {
 }
 
 func TestGet_NoOrgOrNoTier(t *testing.T) {
-	p := NewProvider(map[string]Org{
+	p := NewProvider(Defaults{}, map[string]Org{
 		"acme": {"api": {Channel: "C0API"}}, // no "*"
 	}, nil)
 	if _, err := p.Get(context.Background(), "acme/other"); !errors.Is(err, store.ErrNotFound) {
@@ -110,7 +110,7 @@ func TestNewProvider_BehavesLikeLoad(t *testing.T) {
 			"web": {Channel: "C0123ABCDE", Mentions: []string{"<@U1>"}, MentionsPresent: true},
 		},
 	}
-	p := NewProvider(m, nil)
+	p := NewProvider(Defaults{}, m, nil)
 
 	got, err := p.Get(context.Background(), "acme/web")
 	if err != nil {
@@ -129,7 +129,7 @@ func TestNewProvider_BehavesLikeLoad(t *testing.T) {
 }
 
 func TestEntries_PerTierWithResolvedChannel(t *testing.T) {
-	p := NewProvider(map[string]Org{
+	p := NewProvider(Defaults{}, map[string]Org{
 		"acme": {
 			"web": {}, // inherits channel from "*"
 			"api": {Channel: "C0API"},
@@ -149,5 +149,32 @@ func TestEntries_PerTierWithResolvedChannel(t *testing.T) {
 	}
 	if !entries[2].Wildcard || entries[2].Key() != "acme/*" || entries[2].Channel != "C0DEFAULT" {
 		t.Errorf("entries[2] = %+v; want acme/* C0DEFAULT", entries[2])
+	}
+}
+
+func TestGet_PopulatesResolvedBehavior(t *testing.T) {
+	global := Defaults{
+		Reactions:        store.Reactions{Enabled: true, NewPR: "eyes", Approved: "white_check_mark"},
+		DependabotFormat: true,
+	}
+	shipit := "shipit"
+	p := NewProvider(global, map[string]Org{
+		"acme": {
+			"api": {Channel: "C0API", Reactions: &ReactionsOverride{Approved: &shipit}},
+			"*":   {Channel: "C0DEFAULT"},
+		},
+	}, nil)
+	got, err := p.Get(context.Background(), "acme/api")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.SlackChannel != "C0API" {
+		t.Errorf("channel = %q", got.SlackChannel)
+	}
+	if got.Reactions.Approved != "shipit" {
+		t.Errorf("approved = %q; want repo override shipit", got.Reactions.Approved)
+	}
+	if got.Reactions.NewPR != "eyes" || !got.DependabotFormat {
+		t.Errorf("global defaults lost: %+v dependabot=%v", got.Reactions, got.DependabotFormat)
 	}
 }

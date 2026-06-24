@@ -12,7 +12,8 @@ import (
 // Provider serves repository → mapping lookups from a parsed mappings.yaml.
 // Construct with Load; safe for concurrent reads (no mutation after Load).
 type Provider struct {
-	file File
+	defaults Defaults
+	file     File
 }
 
 // Load reads and validates the file at path.
@@ -33,8 +34,8 @@ func Load(path string) (*Provider, error) {
 // NewProvider builds a Provider from already-decoded sections (config.yaml's
 // `mappings:` map and `digest:` block), the in-memory counterpart to Load.
 // A nil digest leaves the feature on by default (see Digest).
-func NewProvider(m map[string]Org, digest *DigestConfig) *Provider {
-	return &Provider{file: File{Mappings: m, Digest: digest}}
+func NewProvider(defaults Defaults, m map[string]Org, digest *DigestConfig) *Provider {
+	return &Provider{defaults: defaults, file: File{Mappings: m, Digest: digest}}
 }
 
 // DefaultDigestSchedule is the cron spec used when the digest section is
@@ -79,10 +80,14 @@ func (p *Provider) Get(_ context.Context, repository string) (store.RepoMapping,
 		return store.RepoMapping{}, store.ErrNotFound
 	}
 	res := resolveRouting(starPtr, repoPtr)
+	rx, ignoreAI, dependabot := resolveBehavior(p.defaults, starPtr, repoPtr)
 	return store.RepoMapping{
-		Repository:   repository,
-		SlackChannel: res.Channel,
-		Mentions:     res.Mentions,
+		Repository:       repository,
+		SlackChannel:     res.Channel,
+		Mentions:         res.Mentions,
+		Reactions:        rx,
+		IgnoreAIReviews:  ignoreAI,
+		DependabotFormat: dependabot,
 	}, nil
 }
 
