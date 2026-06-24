@@ -99,16 +99,13 @@ func TestGitHubChecker_OpenDraftMapsToErrPRDraft(t *testing.T) {
 	}
 }
 
-func TestGitHubChecker_ClosedDraftIsClosedNotDraft(t *testing.T) {
-	// A closed PR that happens to carry draft=true is closed, not draft.
+func TestGitHubChecker_ClosedDraftStillMapsToErrPRDraft(t *testing.T) {
+	// A draft must never stay in the database even when GitHub also reports it
+	// closed — the draft flag wins over the closed disposition.
 	c := reconcile.NewGitHubChecker(&fakePRGetter{state: "closed", draft: true})
 
-	open, err := c.IsOpen(context.Background(), "acme/web", 1)
-	if err != nil {
-		t.Fatalf("IsOpen: %v", err)
-	}
-	if open {
-		t.Error("closed PR reported open")
+	if _, err := c.IsOpen(context.Background(), "acme/web", 1); !errors.Is(err, reconcile.ErrPRDraft) {
+		t.Fatalf("err = %v; want it to match ErrPRDraft", err)
 	}
 }
 

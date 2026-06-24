@@ -16,10 +16,10 @@ import (
 // removes the PR from the digest (a 404 will never resolve on its own).
 var ErrPRNotFound = errors.New("reconcile: pull request not found")
 
-// ErrPRDraft marks a PR that is open but in draft. The digest only nags about
-// review-ready PRs, so the reconciler drops drafts the same way the live
-// converted_to_draft webhook does — the difference being this catches drafts
-// in the pre-tracking backlog.
+// ErrPRDraft marks a draft PR. A draft must never stay in the database
+// (regardless of open/closed state), so the reconciler deletes its row the same
+// way the live converted_to_draft webhook does — the difference being this
+// catches drafts in the pre-tracking backlog.
 var ErrPRDraft = errors.New("reconcile: pull request is a draft")
 
 // prGetter is the slice of *github.Client the checker needs.
@@ -29,7 +29,7 @@ type prGetter interface {
 
 // GitHubChecker adapts the GitHub client to PRChecker: it splits "owner/repo"
 // and reports whether the PR's state is "open". A 404 is mapped to
-// ErrPRNotFound and an open-but-draft PR to ErrPRDraft, so the reconciler can
+// ErrPRNotFound and a draft PR (any state) to ErrPRDraft, so the reconciler can
 // drop either from the digest; any other API error is propagated verbatim, so
 // the reconciler leaves the row untouched rather than wrongly acting on a PR it
 // could not read (e.g. a transient 5xx).
@@ -57,7 +57,9 @@ func (c *GitHubChecker) IsOpen(ctx context.Context, repository string, number in
 		}
 		return false, err
 	}
-	if st.State == "open" && st.Draft {
+	// A draft PR must never stay in the database, regardless of open/closed
+	// state — this takes precedence over the merged/closed disposition.
+	if st.Draft {
 		return false, ErrPRDraft
 	}
 	return st.State == "open", nil

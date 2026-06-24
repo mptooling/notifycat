@@ -65,9 +65,10 @@ func NewReconciler(lister OpenLister, checker PRChecker, closer Closer, deleter 
 // Run checks every not-yet-closed row against GitHub and resolves it. Per-PR
 // errors are logged and counted, never fatal — a row we cannot confirm is left
 // untouched (so a token-scope miss never wrongly hides an open PR), and
-// re-running is safe. Two states are dropped from the digest rather than left
-// to nag: a 404 (the PR is gone for good) and an open-but-draft PR (not yet
-// review-ready, mirroring the live converted_to_draft webhook).
+// re-running is safe. Two states are dropped rather than left to nag: a 404
+// (the PR is gone for good, marked closed) and a draft (deleted outright — a
+// draft must never stay in the database, mirroring the converted_to_draft
+// webhook).
 func (r *Reconciler) Run(ctx context.Context) (Summary, error) {
 	rows, err := r.lister.ListOpen(ctx)
 	if err != nil {
@@ -160,11 +161,11 @@ func (r *Reconciler) removeNotFound(ctx context.Context, row store.SlackMessage,
 		slog.Any("err", cause))
 }
 
-// removeDraft deletes an open-but-draft PR's row outright: a draft is not
-// review-ready, so it must not stay in the database at all. This mirrors the
-// live converted_to_draft webhook (DraftHandler), and means a later
-// ready_for_review re-announces the PR from a clean slate. Logs at INFO since a
-// draft is a normal state, not a fault.
+// removeDraft deletes a draft PR's row outright: a draft must never stay in the
+// database, regardless of its open/closed state. This mirrors the live
+// converted_to_draft webhook (DraftHandler), and means a later ready_for_review
+// re-announces the PR from a clean slate. Logs at INFO since a draft is a
+// normal state, not a fault.
 func (r *Reconciler) removeDraft(ctx context.Context, row store.SlackMessage, url string, s *Summary) {
 	if r.dryRun {
 		s.Removed++
