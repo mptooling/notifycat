@@ -210,3 +210,112 @@ func TestComposer_UpdatedMessage_Closed(t *testing.T) {
 		t.Errorf("fallback = %q, want %q", got.Fallback, want)
 	}
 }
+
+func TestComposer_StuckDigestParent(t *testing.T) {
+	c := slack.NewComposer("eyes")
+
+	msg := c.StuckDigestParent([]string{"<!channel>"}, 2)
+	got := sectionText(t, msg)
+
+	for _, want := range []string{
+		":hourglass_flowing_sand:",
+		"<!channel>,",
+		"2 open PRs waiting for review since before today:",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("parent section missing %q\ngot: %s", want, got)
+		}
+	}
+	if msg.Fallback != "2 PRs waiting for review" {
+		t.Errorf("fallback = %q", msg.Fallback)
+	}
+}
+
+func TestComposer_StuckDigestParent_SingularAndNoMentions(t *testing.T) {
+	c := slack.NewComposer("eyes")
+
+	msg := c.StuckDigestParent(nil, 1)
+	got := sectionText(t, msg)
+
+	if strings.Contains(got, ", ") {
+		t.Errorf("empty mentions left a stranded separator: %s", got)
+	}
+	if !strings.Contains(got, "1 open PR waiting for review") {
+		t.Errorf("singular headline wrong: %s", got)
+	}
+}
+
+func TestComposer_StuckDigestList(t *testing.T) {
+	c := slack.NewComposer("eyes")
+	prs := []slack.StuckPR{
+		{Repository: "octo/api", Number: 42, URL: "https://github.com/octo/api/pull/42", IdleDays: 1},
+		{Repository: "octo/web", Number: 51, URL: "https://github.com/octo/web/pull/51", IdleDays: 3},
+	}
+
+	msg := c.StuckDigestList(prs)
+	got := sectionText(t, msg)
+
+	for _, want := range []string{
+		"<https://github.com/octo/api/pull/42|octo/api #42> · idle 1 day",
+		"<https://github.com/octo/web/pull/51|octo/web #51> · idle 3 days",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("list section missing %q\ngot: %s", want, got)
+		}
+	}
+	// The list carries no headline — mentions and count live on the parent.
+	if strings.Contains(got, "open PR") || strings.Contains(got, "hourglass") {
+		t.Errorf("list should not repeat the parent headline: %s", got)
+	}
+}
+
+// allSectionTexts returns the text of every section block, in order.
+func allSectionTexts(m slack.Message) []string {
+	var out []string
+	for _, b := range m.Blocks {
+		if b.Type == "section" && b.Text != nil {
+			out = append(out, b.Text.Text)
+		}
+	}
+	return out
+}
+
+func TestComposer_StuckDigestList_SplitsToRespectSlackSectionLimit(t *testing.T) {
+	c := slack.NewComposer("eyes")
+
+	// A busy channel: enough PRs that a single section would exceed Slack's
+	// 3000-char section-text cap (which returns invalid_blocks).
+	const n = 80
+	prs := make([]slack.StuckPR, n)
+	for i := range prs {
+		prs[i] = slack.StuckPR{
+			Repository: "mptooling/notifycat",
+			Number:     1000 + i,
+			URL:        fmt.Sprintf("https://github.com/mptooling/notifycat/pull/%d", 1000+i),
+			IdleDays:   3,
+		}
+	}
+
+	msg := c.StuckDigestList(prs)
+
+	sections := allSectionTexts(msg)
+	if len(sections) < 2 {
+		t.Fatalf("expected the list to split into multiple sections; got %d", len(sections))
+	}
+	for i, s := range sections {
+		if len(s) > 3000 {
+			t.Errorf("section %d is %d chars; Slack rejects > 3000", i, len(s))
+		}
+	}
+	// Every PR must still appear exactly once across the sections.
+	joined := strings.Join(sections, "\n")
+	for _, pr := range prs {
+		needle := fmt.Sprintf("#%d>", pr.Number)
+		if strings.Count(joined, needle) != 1 {
+			t.Errorf("PR %d not rendered exactly once across sections", pr.Number)
+		}
+	}
+	if len(msg.Blocks) > 50 {
+		t.Errorf("message has %d blocks; Slack caps at 50", len(msg.Blocks))
+	}
+}

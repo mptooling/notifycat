@@ -150,7 +150,7 @@ func newIntegrationFixtureCfg(t *testing.T, mutate func(*config.Config), seeds .
 		mutate(&cfg)
 	}
 
-	server, _, cleanup, err := app.Wire(cfg)
+	server, _, _, cleanup, err := app.Wire(cfg)
 	if err != nil {
 		t.Fatalf("Wire: %v", err)
 	}

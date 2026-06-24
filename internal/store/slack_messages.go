@@ -34,6 +34,64 @@ func (r *SlackMessages) Save(ctx context.Context, m SlackMessage) error {
 	return nil
 }
 
+// Touch bumps updated_at to the current time for the given PR, recording
+// review/comment activity so the stuck-PR digest can tell idle PRs from active
+// ones. A missing row is a no-op (idempotent).
+func (r *SlackMessages) Touch(ctx context.Context, repository string, prNumber int) error {
+	res := r.db.WithContext(ctx).
+		Model(&SlackMessage{}).
+		Where("pr_number = ? AND gh_repository = ?", prNumber, repository).
+		UpdateColumn("updated_at", time.Now())
+	if res.Error != nil {
+		return fmt.Errorf("store: touch slack message: %w", res.Error)
+	}
+	return nil
+}
+
+// MarkClosed records that the PR has been merged/closed so the stuck-PR digest
+// skips it. A missing row is a no-op (idempotent).
+func (r *SlackMessages) MarkClosed(ctx context.Context, repository string, prNumber int) error {
+	res := r.db.WithContext(ctx).
+		Model(&SlackMessage{}).
+		Where("pr_number = ? AND gh_repository = ?", prNumber, repository).
+		UpdateColumn("closed_at", time.Now())
+	if res.Error != nil {
+		return fmt.Errorf("store: mark slack message closed: %w", res.Error)
+	}
+	return nil
+}
+
+// FindStuck returns every open (closed_at IS NULL) message whose updated_at is
+// strictly older than cutoff — the PRs that saw no activity since cutoff.
+// Results are ordered oldest-first for stable digest output. An empty result
+// is (nil, nil).
+func (r *SlackMessages) FindStuck(ctx context.Context, cutoff time.Time) ([]SlackMessage, error) {
+	var rows []SlackMessage
+	err := r.db.WithContext(ctx).
+		Where("closed_at IS NULL AND updated_at < ?", cutoff).
+		Order("updated_at asc").
+		Find(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("store: find stuck slack messages: %w", err)
+	}
+	return rows, nil
+}
+
+// ListOpen returns every message not yet marked closed, ordered for stable
+// output. Used by the one-time reconcile to check each row against its real PR
+// state on GitHub. An empty result is (nil, nil).
+func (r *SlackMessages) ListOpen(ctx context.Context) ([]SlackMessage, error) {
+	var rows []SlackMessage
+	err := r.db.WithContext(ctx).
+		Where("closed_at IS NULL").
+		Order("gh_repository asc, pr_number asc").
+		Find(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("store: list open slack messages: %w", err)
+	}
+	return rows, nil
+}
+
 // DeleteStaleBefore removes every row whose updated_at is strictly older than
 // cutoff. Returns the number of rows deleted. An empty table returns (0, nil).
 func (r *SlackMessages) DeleteStaleBefore(ctx context.Context, cutoff time.Time) (int64, error) {

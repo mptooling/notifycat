@@ -12,6 +12,19 @@
 # fails for any entry. Successful runs are recorded in mappings.lock so the
 # server can skip the network round-trip on the next boot.
 
+# ── Stuck-PR digest (optional, global) ──────────────────────────────────────
+# A scheduled reminder that lists open PRs nobody has touched since before
+# today. It is ON BY DEFAULT — omit this whole section and the server posts a
+# digest at 9am daily (server-local time). One schedule applies to every org.
+#
+# digest:
+#   enabled: true          # default true; set false to turn the digest off
+#   schedule: "0 9 * * *"  # default 9am daily; standard 5-field cron, server-local
+#
+# On each tick the server posts one message per channel listing that channel's
+# open PRs whose last activity (open / review / comment) predates the start of
+# today, pinging the channel's `mentions`. Merged/closed PRs are excluded.
+
 mappings:
 
   # ── Explicit list ─────────────────────────────────────────────────────────

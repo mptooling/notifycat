@@ -38,6 +38,30 @@ receive webhooks, but existing PRs may get new Slack messages because the old Sl
 `mappings.yaml` and `mappings.lock` live in your repo, so losing the container's local copy is harmless on the next
 deploy.
 
+## Stuck-PR digest
+
+A scheduled job reminds channels about open PRs that have gone unreviewed. It is **on by default** (opt-out) and configured in the global `digest:` section of `mappings.yaml` — see [Mappings → Stuck-PR digest](mappings.md#stuck-pr-digest) for the schema.
+
+**What counts as stuck.** On each tick (default 9am daily, server-local time) the digest lists every open PR whose last activity predates the start of the current day — so a PR that sat through a previous day with nobody reviewing it shows up that morning. "Activity" is anything Notifycat sees on the PR: the open notification, a review (approve / comment / request-changes), or a PR/line comment — each bumps the row's `updated_at`. Suppressed AI reviews (see [Bot-reviewer suppression](#bot-reviewer-suppression)) intentionally do **not** count, so an AI-only pass still leaves a PR waiting for review. Merged/closed PRs are marked and excluded; a PR converted back to draft is removed entirely.
+
+**Delivery.** Two posts per Slack channel: a static parent message that pings the channel's configured `mentions` and carries the count, and a single reply in its thread listing that channel's stuck PRs. Keeping the list in the thread holds the channel feed to one line per channel. Mentions live on the parent because Slack thread replies do not notify the channel. The digest is a separate post — not an update to the per-PR message — so it adds a little noise; set `digest: { enabled: false }` if that is unwanted.
+
+**`updated_at` now tracks activity.** Before this feature `updated_at` only moved when a PR was first announced; it now also moves on every review and comment. A useful side effect: the stale-row cleanup ages an actively-reviewed PR from its last activity rather than its open time. The migration that ships the feature backfills existing open rows' `updated_at` from the Slack message timestamp (the PR's registration time) so the first digest ages them correctly. One caveat: PRs that were already merged/closed before the upgrade are not marked closed in the database (their rows predate the `closed_at` column), so they look open to the digest and can flood the first run. Fix that once with `notifycat-reconcile` (below) before relying on the digest.
+
+### Reconciling the closed-PR backlog (one-time)
+
+`notifycat-reconcile` walks every row the database still believes is open, asks GitHub each PR's real state, and marks the merged/closed ones so they drop out of the digest. It is idempotent — safe to run repeatedly — and a PR it cannot read (e.g. a token-scope miss) is left untouched rather than wrongly hidden. It needs `GITHUB_TOKEN` with read access to the repos and the **same `DATABASE_URL` the server uses**.
+
+Preview first, then apply:
+
+```sh
+# docker compose (runs against the service's volumes)
+docker compose run --rm notifycat /usr/local/bin/notifycat-reconcile -dry-run
+docker compose run --rm notifycat /usr/local/bin/notifycat-reconcile
+```
+
+It prints a summary like `reconcile (applied): checked=37 closed=34 still_open=3 errors=0`. A non-zero `errors` count exits non-zero — resolve (usually token scope) and re-run. Run it once after upgrading to the digest feature; going forward the close handler marks `closed_at` itself, so no repeat is needed. Without a `GITHUB_TOKEN` you cannot reconcile this way — clear the stale rows manually instead.
+
 ## Logging
 
 Use:

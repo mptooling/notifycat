@@ -124,6 +124,83 @@ func (c *Composer) UpdatedMessage(pr PRDetails, merged bool, emoji string) Messa
 	}
 }
 
+// stuckDigestEmoji leads every stuck-PR digest. Fixed (not config-driven) — the
+// digest is a distinct, opt-out feature, not part of the per-PR reaction set.
+const stuckDigestEmoji = "hourglass_flowing_sand"
+
+// maxSectionChars is the ceiling we pack a digest section to before starting a
+// new one. Slack rejects a section whose text exceeds 3000 chars with
+// invalid_blocks; we stay under that with headroom for multi-byte content.
+const maxSectionChars = 2900
+
+// StuckPR is one entry in a stuck-PR digest: a PR that has seen no activity
+// since before today. The PR title is intentionally absent — the store does
+// not keep it — so the digest links by repository and number.
+type StuckPR struct {
+	Repository string
+	Number     int
+	URL        string
+	IdleDays   int
+}
+
+// StuckDigestParent renders the static parent of a channel's stuck-PR digest: a
+// headline carrying the channel's mentions (so the post actually notifies) and
+// the PR count. The PR list itself is posted as a thread reply via
+// StuckDigestList — keeping the channel feed to one quiet line per channel.
+// Mentions follow the same empty-list rule as NewMessage.
+func (c *Composer) StuckDigestParent(mentions []string, count int) Message {
+	headline := fmt.Sprintf(
+		":%s: %s%d open PR%s waiting for review since before today:",
+		stuckDigestEmoji, mentionsPrefix(mentions), count, pluralSuffix(count),
+	)
+	fallback := fmt.Sprintf("%d PR%s waiting for review", count, pluralSuffix(count))
+	return Message{Blocks: []Block{section(headline)}, Fallback: fallback}
+}
+
+// StuckDigestList renders the thread reply for a channel's stuck-PR digest: one
+// line per stuck PR, with no headline (mentions and count live on the parent).
+// The caller must pass a non-empty prs slice; an empty channel is skipped
+// upstream.
+//
+// A busy channel can list more PRs than fit in one Block Kit section (Slack
+// caps section text at 3000 chars), so the lines are packed into successive
+// section blocks, each kept under maxSectionChars.
+func (c *Composer) StuckDigestList(prs []StuckPR) Message {
+	var blocks []Block
+	var b strings.Builder
+	for _, pr := range prs {
+		line := fmt.Sprintf("• <%s|%s #%d> · idle %s", pr.URL, pr.Repository, pr.Number, idlePhrase(pr.IdleDays))
+		if b.Len() > 0 && b.Len()+len("\n")+len(line) > maxSectionChars {
+			blocks = append(blocks, section(b.String()))
+			b.Reset()
+		}
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(line)
+	}
+	blocks = append(blocks, section(b.String()))
+
+	fallback := fmt.Sprintf("%d PR%s waiting for review", len(prs), pluralSuffix(len(prs)))
+	return Message{Blocks: blocks, Fallback: fallback}
+}
+
+// idlePhrase renders a whole-day idle duration ("1 day" / "3 days").
+func idlePhrase(days int) string {
+	if days == 1 {
+		return "1 day"
+	}
+	return fmt.Sprintf("%d days", days)
+}
+
+// pluralSuffix returns "" for one and "s" otherwise.
+func pluralSuffix(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
 // contextLine renders the muted "repo · author · opened <time>" line. When the
 // creation time is unknown the "opened …" clause is dropped rather than
 // rendering a bogus epoch date.

@@ -14,7 +14,7 @@ anything systemd-based).
 | | |
 | --- | --- |
 | Image | `ghcr.io/mptooling/notifycat:latest` (also `:<version>` / `:<major>` / `:<major>.<minor>`) |
-| Binaries | `notifycat-server`, `notifycat-mapping`, `notifycat-migrate`, `notifycat-doctor` |
+| Binaries | `notifycat-server`, `notifycat-mapping`, `notifycat-migrate`, `notifycat-doctor`, `notifycat-smoke`, `notifycat-reconcile` |
 | WORKDIR | `/app` — every state file lives here |
 | Default `DATABASE_URL` | `file:/app/notifycat.db` |
 | Default `NOTIFYCAT_MAPPINGS_FILE` | `/app/mappings.yaml` |

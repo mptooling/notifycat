@@ -16,6 +16,11 @@ type SlackMessages interface {
 	Save(ctx context.Context, m store.SlackMessage) error
 	Get(ctx context.Context, repository string, prNumber int) (store.SlackMessage, error)
 	Delete(ctx context.Context, repository string, prNumber int) error
+	// Touch records review/comment activity (bumps updated_at) so the stuck-PR
+	// digest can tell idle PRs from active ones.
+	Touch(ctx context.Context, repository string, prNumber int) error
+	// MarkClosed records that the PR is merged/closed so the digest skips it.
+	MarkClosed(ctx context.Context, repository string, prNumber int) error
 }
 
 // RepoMappings reads the per-repository routing to a Slack channel.

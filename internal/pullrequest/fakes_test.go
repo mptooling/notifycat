@@ -12,7 +12,9 @@ import (
 // fakeSlackMessages is an in-memory implementation of the SlackMessages
 // dependency. Keyed by (repository, pr_number) like the production schema.
 type fakeSlackMessages struct {
-	rows map[fakeKey]store.SlackMessage
+	rows    map[fakeKey]store.SlackMessage
+	touched []fakeKey
+	closed  []fakeKey
 }
 
 type fakeKey struct {
@@ -39,6 +41,16 @@ func (f *fakeSlackMessages) Get(_ context.Context, repository string, prNumber i
 
 func (f *fakeSlackMessages) Delete(_ context.Context, repository string, prNumber int) error {
 	delete(f.rows, fakeKey{repository, prNumber})
+	return nil
+}
+
+func (f *fakeSlackMessages) Touch(_ context.Context, repository string, prNumber int) error {
+	f.touched = append(f.touched, fakeKey{repository, prNumber})
+	return nil
+}
+
+func (f *fakeSlackMessages) MarkClosed(_ context.Context, repository string, prNumber int) error {
+	f.closed = append(f.closed, fakeKey{repository, prNumber})
 	return nil
 }
 

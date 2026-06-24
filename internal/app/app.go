@@ -17,6 +17,7 @@ import (
 	"github.com/mptooling/notifycat/internal/aireview"
 	"github.com/mptooling/notifycat/internal/cleanup"
 	"github.com/mptooling/notifycat/internal/config"
+	"github.com/mptooling/notifycat/internal/digest"
 	"github.com/mptooling/notifycat/internal/github"
 	"github.com/mptooling/notifycat/internal/githubhook"
 	"github.com/mptooling/notifycat/internal/mappings"
@@ -29,26 +30,27 @@ import (
 // Cleanup releases resources acquired by Wire (database connections, ...).
 type Cleanup func()
 
-// Wire builds the HTTP server, the stale-row cleanup scheduler, and the
-// shared cleanup func from cfg. Callers run the server and the scheduler in
-// separate goroutines and invoke cleanup on shutdown.
+// Wire builds the HTTP server, the stale-row cleanup scheduler, the stuck-PR
+// digest scheduler (nil when the digest is disabled), and the shared cleanup
+// func from cfg. Callers run the server and both schedulers in separate
+// goroutines and invoke cleanup on shutdown.
 //
 // Mappings come from the declarative cfg.MappingsFile; the server refuses
 // to start if any entry fails validation (against the per-entry lock cache).
-func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, Cleanup, error) {
+func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, *digest.Scheduler, Cleanup, error) {
 	logger := newLogger(cfg)
 
 	provider, err := mappings.Load(cfg.MappingsFile)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("app: load mappings: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("app: load mappings: %w", err)
 	}
 
 	db, err := store.Open(cfg.DatabaseURL)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	if err := store.MigrateUp(context.Background(), db); err != nil {
-		return nil, nil, nil, fmt.Errorf("app: migrate: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("app: migrate: %w", err)
 	}
 
 	httpClient := &http.Client{Timeout: 10 * time.Second}
@@ -61,7 +63,7 @@ func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, Cleanup, error) 
 
 	if err := startupValidate(provider, cfg, slackClient, httpClient, logger); err != nil {
 		closeDB(db)
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	messages := store.NewSlackMessages(db)
@@ -72,6 +74,19 @@ func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, Cleanup, error) 
 		cleanup.Interval,
 		logger,
 	)
+
+	// The stuck-PR digest is opt-out (on by default); an explicit
+	// `digest: { enabled: false }` in mappings.yaml disables it. A bad cron
+	// spec fails startup here rather than silently never firing.
+	var digestScheduler *digest.Scheduler
+	if dcfg := provider.Digest(); dcfg.Enabled {
+		reporter := digest.NewReporter(messages, provider, slackClient, composer, logger)
+		digestScheduler, err = digest.NewScheduler(dcfg.Schedule, reporter, logger)
+		if err != nil {
+			closeDB(db)
+			return nil, nil, nil, nil, fmt.Errorf("app: digest scheduler: %w", err)
+		}
+	}
 
 	dispatcher := pullrequest.NewDispatcher(
 		logger,
@@ -110,7 +125,7 @@ func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, Cleanup, error) 
 		MaxHeaderBytes:    1 << 14, // 16 KiB
 	}
 
-	return server, scheduler, func() { closeDB(db) }, nil
+	return server, scheduler, digestScheduler, func() { closeDB(db) }, nil
 }
 
 // startupValidate runs the cache-aware validation pipeline before the

@@ -59,7 +59,7 @@ func newTestConfig(t *testing.T) config.Config {
 func TestWire_ReturnsServerAndCleanup(t *testing.T) {
 	cfg := newTestConfig(t)
 
-	server, _, cleanup, err := app.Wire(cfg)
+	server, _, _, cleanup, err := app.Wire(cfg)
 	if err != nil {
 		t.Fatalf("Wire: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestWire_ReturnsServerAndCleanup(t *testing.T) {
 
 func TestWire_HealthzReturns200(t *testing.T) {
 	cfg := newTestConfig(t)
-	server, _, cleanup, err := app.Wire(cfg)
+	server, _, _, cleanup, err := app.Wire(cfg)
 	if err != nil {
 		t.Fatalf("Wire: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestWire_HealthzReturns200(t *testing.T) {
 
 func TestWire_RejectsUnsignedWebhook(t *testing.T) {
 	cfg := newTestConfig(t)
-	server, _, cleanup, err := app.Wire(cfg)
+	server, _, _, cleanup, err := app.Wire(cfg)
 	if err != nil {
 		t.Fatalf("Wire: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestWire_RejectsUnsignedWebhook(t *testing.T) {
 
 func TestWire_AcceptsSignedWebhookButHasNoMapping(t *testing.T) {
 	cfg := newTestConfig(t)
-	server, _, cleanup, err := app.Wire(cfg)
+	server, _, _, cleanup, err := app.Wire(cfg)
 	if err != nil {
 		t.Fatalf("Wire: %v", err)
 	}
