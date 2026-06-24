@@ -129,6 +129,54 @@ func (p *Provider) Entries() []Entry {
 	return out
 }
 
+// DigestFor returns the effective digest config for a repository: the global
+// Digest() merged with the org/* and org/repo tiers (most-specific tier that
+// sets enabled/schedule wins). An unmapped repo yields the global digest.
+func (p *Provider) DigestFor(repository string) DigestConfig {
+	d := p.Digest() // global default (enabled + DefaultDigestSchedule)
+	org, repo, ok := splitRepo(repository)
+	if !ok {
+		return d
+	}
+	o, ok := p.file.Mappings[org]
+	if !ok {
+		return d
+	}
+	apply := func(rc RepoConfig, has bool) {
+		if has && rc.Digest != nil {
+			d.Enabled = rc.Digest.Enabled
+			if s := strings.TrimSpace(rc.Digest.Schedule); s != "" {
+				d.Schedule = s
+			}
+		}
+	}
+	star, hasStar := o[starKey]
+	apply(star, hasStar)
+	rc, hasRepo := o[repo]
+	apply(rc, hasRepo)
+	return d
+}
+
+// Schedules returns the sorted distinct set of effective digest schedules
+// across every mapping entry whose effective digest is enabled. The scheduler
+// registers one cron per returned spec.
+func (p *Provider) Schedules() []string {
+	seen := map[string]struct{}{}
+	for _, e := range p.Entries() {
+		d := p.DigestFor(e.Key())
+		if !d.Enabled {
+			continue
+		}
+		seen[d.Schedule] = struct{}{}
+	}
+	out := make([]string, 0, len(seen))
+	for s := range seen {
+		out = append(out, s)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func splitRepo(s string) (org, repo string, ok bool) {
 	i := strings.IndexByte(s, '/')
 	if i < 1 || i == len(s)-1 {

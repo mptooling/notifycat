@@ -178,3 +178,40 @@ func TestGet_PopulatesResolvedBehavior(t *testing.T) {
 		t.Errorf("global defaults lost: %+v dependabot=%v", got.Reactions, got.DependabotFormat)
 	}
 }
+
+func TestDigestFor_RepoOverridesGlobal(t *testing.T) {
+	weekdays := "0 8 * * 1-5"
+	p := NewProvider(Defaults{}, map[string]Org{
+		"acme": {
+			"web": {Channel: "C0WEB", Digest: &DigestConfig{Enabled: true, Schedule: weekdays}},
+			"*":   {Channel: "C0DEFAULT"},
+		},
+	}, nil) // global digest absent → default on, 9am
+	d := p.DigestFor("acme/web")
+	if !d.Enabled || d.Schedule != weekdays {
+		t.Errorf("web digest = %+v; want enabled weekdays", d)
+	}
+	dd := p.DigestFor("acme/other") // matches "*", no digest override → global default
+	if !dd.Enabled || dd.Schedule != DefaultDigestSchedule {
+		t.Errorf("default digest = %+v; want global default", dd)
+	}
+}
+
+func TestSchedules_DistinctEnabledOnly(t *testing.T) {
+	weekdays := "0 8 * * 1-5"
+	off := false
+	p := NewProvider(Defaults{}, map[string]Org{
+		"acme": {
+			"web":  {Channel: "C0WEB", Digest: &DigestConfig{Enabled: true, Schedule: weekdays}},
+			"api":  {Channel: "C0API"}, // global default schedule
+			"mute": {Channel: "C0MUTE", Digest: &DigestConfig{Enabled: off}},
+			"*":    {Channel: "C0DEFAULT"},
+		},
+	}, nil)
+	got := p.Schedules()
+	// weekdays + default 9am; "mute" disabled contributes nothing
+	want := map[string]bool{weekdays: true, DefaultDigestSchedule: true}
+	if len(got) != 2 || !want[got[0]] || !want[got[1]] {
+		t.Errorf("Schedules() = %v; want the two distinct enabled schedules", got)
+	}
+}
