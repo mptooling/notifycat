@@ -47,11 +47,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	provider, err := mappings.Load(cfg.MappingsFile)
-	if err != nil {
-		fmt.Fprintln(stderr, "notifycat-smoke: cannot load mappings:", err)
-		return 1
-	}
+	provider := mappings.NewProvider(cfg.Mappings, cfg.Digest)
 	db, err := store.Open(cfg.DatabaseURL)
 	if err != nil {
 		fmt.Fprintln(stderr, "notifycat-smoke: cannot open database:", err)
