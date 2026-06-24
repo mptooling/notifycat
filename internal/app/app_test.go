@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -17,28 +16,15 @@ import (
 	"github.com/mptooling/notifycat/internal/config"
 )
 
-// emptyMappingsFile writes a valid-but-empty mappings.yaml into t.TempDir and
-// returns its path. Used by Wire tests that don't exercise the mapping path:
-// an empty file means startup validation is a no-op.
-func emptyMappingsFile(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "mappings.yaml")
-	if err := os.WriteFile(path, []byte("mappings: {}\n"), 0o600); err != nil {
-		t.Fatalf("write mappings.yaml: %v", err)
-	}
-	return path
-}
-
 func newTestConfig(t *testing.T) config.Config {
 	t.Helper()
 	dir := t.TempDir()
 	return config.Config{
-		Addr:         ":0",
-		LogLevel:     "error",
-		LogFormat:    "text",
-		DatabaseURL:  "file:" + filepath.Join(dir, "wire.db"),
-		MappingsFile: emptyMappingsFile(t),
+		Addr:        ":0",
+		LogLevel:    "error",
+		LogFormat:   "text",
+		DatabaseURL: "file:" + filepath.Join(dir, "wire.db"),
+		ConfigFile:  filepath.Join(dir, "config.yaml"),
 
 		MessageTTLDays: 30,
 

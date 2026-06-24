@@ -35,15 +35,12 @@ type Cleanup func()
 // func from cfg. Callers run the server and both schedulers in separate
 // goroutines and invoke cleanup on shutdown.
 //
-// Mappings come from the declarative cfg.MappingsFile; the server refuses
-// to start if any entry fails validation (against the per-entry lock cache).
+// Mappings come from the `mappings:` section of config.yaml; the server
+// refuses to start if any entry fails validation (against the per-entry lock).
 func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, *digest.Scheduler, Cleanup, error) {
 	logger := newLogger(cfg)
 
-	provider, err := mappings.Load(cfg.MappingsFile)
-	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("app: load mappings: %w", err)
-	}
+	provider := mappings.NewProvider(cfg.Mappings, cfg.Digest)
 
 	db, err := store.Open(cfg.DatabaseURL)
 	if err != nil {
@@ -143,7 +140,7 @@ func startupValidate(
 	if len(entries) == 0 {
 		return nil
 	}
-	lockPath := mappings.LockPath(cfg.MappingsFile)
+	lockPath := mappings.LockPath(cfg.ConfigFile)
 	lock, err := mappings.ReadLock(lockPath)
 	if err != nil {
 		logger.Warn("startup validate: lock unreadable; rebuilding", slog.Any("err", err))

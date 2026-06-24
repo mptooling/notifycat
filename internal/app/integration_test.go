@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -120,16 +119,15 @@ func newIntegrationFixtureCfg(t *testing.T, mutate func(*config.Config), seeds .
 	t.Helper()
 	slack := newSlackFake(t)
 	dir := t.TempDir()
-	mappingsPath := filepath.Join(dir, "mappings.yaml")
-	writeSeedYAML(t, mappingsPath, seeds)
-	primeLock(t, mappingsPath)
+	configPath := filepath.Join(dir, "config.yaml")
 
 	cfg := config.Config{
 		Addr:                ":0",
 		LogLevel:            "error",
 		LogFormat:           "text",
 		DatabaseURL:         "file:" + filepath.Join(dir, "int.db"),
-		MappingsFile:        mappingsPath,
+		ConfigFile:          configPath,
+		Mappings:            seedsToMappings(seeds),
 		MessageTTLDays:      30,
 		DependabotFormat:    true,
 		GitHubWebhookSecret: config.Secret("itsecret"),
@@ -145,6 +143,7 @@ func newIntegrationFixtureCfg(t *testing.T, mutate func(*config.Config), seeds .
 			RequestChange: "exclamation",
 		},
 	}
+	primeLock(t, configPath, mappings.NewProvider(cfg.Mappings, cfg.Digest))
 
 	if mutate != nil {
 		mutate(&cfg)
@@ -162,48 +161,27 @@ func newIntegrationFixtureCfg(t *testing.T, mutate func(*config.Config), seeds .
 	return &integrationFixture{server: ts, cfg: cfg, slack: slack}
 }
 
-// writeSeedYAML renders the seed slice into a valid mappings.yaml. Seeds
-// sharing an org are merged channel/mentions are not de-duplicated; if you
-// pass two seeds in the same org with different channels the second wins
-// (write your tests accordingly).
-func writeSeedYAML(t *testing.T, path string, seeds []mappingSeed) {
-	t.Helper()
-	orgs := map[string]struct {
-		channel  string
-		mentions []string
-		repos    []string
-	}{}
-	var order []string
+// seedsToMappings converts the seed slice into a map[string]mappings.Org
+// suitable for cfg.Mappings. Seeds sharing an org are merged; if two seeds in
+// the same org have different channels the second wins (write your tests
+// accordingly).
+func seedsToMappings(seeds []mappingSeed) map[string]mappings.Org {
+	m := map[string]mappings.Org{}
 	for _, s := range seeds {
 		org, repo, ok := splitRepository(s.repository)
 		if !ok {
-			t.Fatalf("seed repository %q must be org/repo", s.repository)
+			panic(fmt.Sprintf("seed repository %q must be org/repo", s.repository))
 		}
-		entry, exists := orgs[org]
-		if !exists {
-			order = append(order, org)
+		entry := m[org]
+		entry.Channel = s.channel
+		if s.mentions != nil {
+			entry.Mentions = s.mentions
+			entry.MentionsPresent = true
 		}
-		entry.channel = s.channel
-		entry.mentions = s.mentions
-		entry.repos = append(entry.repos, repo)
-		orgs[org] = entry
+		entry.Repositories.List = append(entry.Repositories.List, repo)
+		m[org] = entry
 	}
-
-	var sb strings.Builder
-	sb.WriteString("mappings:\n")
-	if len(order) == 0 {
-		sb.WriteString("  {}\n")
-	}
-	for _, org := range order {
-		e := orgs[org]
-		fmt.Fprintf(&sb, "  %s:\n", org)
-		fmt.Fprintf(&sb, "    channel: %s\n", e.channel)
-		fmt.Fprintf(&sb, "    mentions: [%s]\n", quoteMentions(e.mentions))
-		fmt.Fprintf(&sb, "    repositories: [%s]\n", quoteRepos(e.repos))
-	}
-	if err := os.WriteFile(path, []byte(sb.String()), 0o600); err != nil {
-		t.Fatalf("write mappings.yaml: %v", err)
-	}
+	return m
 }
 
 func splitRepository(s string) (org, repo string, ok bool) {
@@ -214,40 +192,18 @@ func splitRepository(s string) (org, repo string, ok bool) {
 	return s[:i], s[i+1:], true
 }
 
-func quoteMentions(ms []string) string {
-	if len(ms) == 0 {
-		return ""
-	}
-	parts := make([]string, len(ms))
-	for i, m := range ms {
-		parts[i] = fmt.Sprintf("%q", m)
-	}
-	return strings.Join(parts, ", ")
-}
 
-func quoteRepos(rs []string) string {
-	parts := make([]string, len(rs))
-	for i, r := range rs {
-		parts[i] = fmt.Sprintf("%q", r)
-	}
-	return strings.Join(parts, ", ")
-}
-
-// primeLock writes a lock file whose hashes match the parsed entries, so
+// primeLock writes a lock file whose hashes match the provider's entries, so
 // startup validation finds nothing to revalidate. The integration suite is
 // testing post-startup behavior, not validation.
-func primeLock(t *testing.T, mappingsPath string) {
+func primeLock(t *testing.T, configPath string, p *mappings.Provider) {
 	t.Helper()
-	p, err := mappings.Load(mappingsPath)
-	if err != nil {
-		t.Fatalf("prime: load mappings: %v", err)
-	}
 	now := time.Now()
 	lock := mappings.Lock{Version: mappings.LockVersion, Entries: map[string]mappings.LockEntry{}}
 	for _, e := range p.Entries() {
 		lock.Entries[e.Key()] = mappings.LockEntry{SHA256: e.Hash(), ValidatedAt: now}
 	}
-	if err := mappings.WriteLock(mappings.LockPath(mappingsPath), lock); err != nil {
+	if err := mappings.WriteLock(mappings.LockPath(configPath), lock); err != nil {
 		t.Fatalf("prime: write lock: %v", err)
 	}
 }
