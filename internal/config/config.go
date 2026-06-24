@@ -194,7 +194,7 @@ func applyFileSchema(cfg *Config, fs fileSchema) {
 	setString(&cfg.Addr, fs.Server.Addr)
 	setString(&cfg.LogLevel, fs.Server.LogLevel)
 	setString(&cfg.LogFormat, fs.Server.LogFormat)
-	cfg.Domain = fs.Server.Domain // optional; empty is a valid value
+	cfg.Domain = fs.Server.Domain // no default; take the YAML value verbatim (empty is valid)
 	setString(&cfg.DatabaseURL, fs.Database.URL)
 	setString(&cfg.SlackBaseURL, fs.Slack.BaseURL)
 	setString(&cfg.GitHubBaseURL, fs.GitHub.BaseURL)
