@@ -1,20 +1,16 @@
 # Mappings
 
-Notifycat reads its repository → Slack-channel routing from a single declarative YAML file. Edit the file in your
-repository (or wherever your deployment mounts it), commit it, and `notifycat-server` picks it up on the next restart.
+> **0.17 and later:** Mappings now live in the `mappings:` section of `config.yaml` — there is no separate `mappings.yaml` file. The per-org schema is unchanged. The `notifycat-config list` and `notifycat-config validate` commands operate on `config.yaml`. See the [0.17 migration guide](0.17-config-migration.md) if you are upgrading.
 
-The full schema and a runnable starting point live in
-[`mappings.example.yaml`](https://github.com/mptooling/notifycat/blob/main/mappings.example.yaml) at the repo root. Copy
-it and edit it.
+Notifycat reads its repository → Slack-channel routing from the `mappings:` section of `config.yaml`. Edit that file in your deployment directory, and `notifycat-server` picks it up on the next restart.
+
+A runnable starting point lives in [`config.example.yaml`](https://github.com/mptooling/notifycat/blob/main/config.example.yaml) at the repo root. Copy it and edit it.
 
 ## File Location
 
-| Env var | Default | Notes |
-| --- | --- | --- |
-| `NOTIFYCAT_MAPPINGS_FILE` | `./mappings.yaml` | Path to the YAML. Used by both `notifycat-server` and `notifycat-mapping`. |
+The `mappings:` section is part of `config.yaml`. The config file path defaults to `./config.yaml` and is overridable via `NOTIFYCAT_CONFIG_FILE`. See [Configuration](configuration.md) for details.
 
-The sibling **lock file** is derived from the YAML path: `.yaml` / `.yml` is replaced with `.lock`. So `./mappings.yaml`
-produces `./mappings.lock`, and `/etc/notifycat/m.yaml` produces `/etc/notifycat/m.lock`.
+The sibling **lock file** is `config.lock`, derived by the same mechanism as the old `mappings.lock` — placed next to `config.yaml` and gitignored (operator-derived state).
 
 ## Schema
 
@@ -70,7 +66,7 @@ wire format of an existing group mention.
 
 ## Stuck-PR digest
 
-Alongside the per-org `mappings`, an optional **global** `digest:` section configures a scheduled reminder that lists open PRs nobody has touched since the previous day. It is one schedule for every org and repo — not a per-entry setting.
+Alongside the per-org `mappings`, an optional **global** `digest:` section configures a scheduled reminder that lists open PRs nobody has touched since the previous day. It is one schedule for every org and repo — not a per-entry setting. Both `digest:` and `mappings:` are top-level sections inside `config.yaml`.
 
 ```yaml
 digest:
@@ -107,66 +103,51 @@ wildcard orgs.
 
 ## CLI
 
-The `notifycat-mapping` binary has two subcommands:
+The `notifycat-config` binary has two subcommands:
 
 ```sh
-notifycat-mapping list                    # print the file as parsed (no network)
-notifycat-mapping validate                # validate every entry, cache-aware
-notifycat-mapping validate <owner/repo>   # validate one entry, ignore cache for it
-notifycat-mapping validate --force        # validate every entry, ignore the cache entirely
+notifycat-config list                    # print the file as parsed (no network)
+notifycat-config validate                # validate every entry, cache-aware
+notifycat-config validate <owner/repo>   # validate one entry, ignore cache for it
+notifycat-config validate --force        # validate every entry, ignore the cache entirely
 ```
 
 ### `list`
 
-Prints a tab-aligned table of every parsed entry (org, repo, channel, mentions). Wildcards render as `*`. No network
-calls. Useful as a sanity check after editing.
+Prints a tab-aligned table of every parsed entry (org, repo, channel, mentions). Wildcards render as `*`. No network calls. Useful as a sanity check after editing.
 
 ### `validate`
 
-Runs end-to-end checks per entry: the channel ID is well-formed, the bot has the required Slack scopes and is a member
-of the channel, and (when `GITHUB_TOKEN` is set) the GitHub webhook on each repo subscribes to the events Notifycat
-needs. See [Operations](operations.md#validating-a-mapping) for the full check list and remediation table.
+Runs end-to-end checks per entry: the channel ID is well-formed, the bot has the required Slack scopes and is a member of the channel, and (when `GITHUB_TOKEN` is set) the GitHub webhook on each repo subscribes to the events Notifycat needs. See [Operations](operations.md#validating-a-mapping) for the full check list and remediation table.
 
-**Full mode** (`validate` with no positional arg) consults `mappings.lock` and only validates entries whose hash differs
-— perfect for steady-state deploy boots. **Targeted mode** (`validate <owner/repo>`) always validates the one entry.
-**`--force`** ignores the lock and revalidates every entry.
+**Full mode** (`validate` with no positional arg) consults `config.lock` and only validates entries whose hash differs — perfect for steady-state deploy boots. **Targeted mode** (`validate <owner/repo>`) always validates the one entry. **`--force`** ignores the lock and revalidates every entry.
 
-After a successful run, successful entries are merged into `mappings.lock`. Failed entries keep their old hash so a
-transient outage doesn't invalidate the rest.
+After a successful run, successful entries are merged into `config.lock`. Failed entries keep their old hash so a transient outage doesn't invalidate the rest.
 
 ## Server Behavior at Startup
 
-`notifycat-server` runs the same cache-aware validation on boot. If any entry fails, the server refuses to start and
-exits non-zero — startup failures are visible immediately, not after a webhook arrives. An empty `mappings.yaml` (no
-entries) skips validation and boots normally.
+`notifycat-server` runs the same cache-aware validation on boot. If any entry fails, the server refuses to start and exits non-zero — startup failures are visible immediately, not after a webhook arrives. An empty `mappings:` section (no entries) skips validation and boots normally.
 
 ## Lock File
 
-`mappings.lock` is a JSON cache of the SHA256 hash of each validated entry. The hash covers `(org, repo, channel)` only
-— **mentions are excluded** so editing a `@`-handle doesn't bust the cache.
+`config.lock` is a JSON cache of the SHA256 hash of each validated entry. The hash covers `(org, repo, channel)` only — **mentions are excluded** so editing a `@`-handle doesn't bust the cache.
 
-Commit the lock alongside `mappings.yaml` **in the operations repository that owns your deployment** — wherever you keep
-your real `mappings.yaml`. The Notifycat source tree gitignores both files (see `CONTRIBUTING.md`); they are operator
-state, not project state. On every boot, the server re-hashes the parsed entries; if every hash matches the lock, the
-server boots without contacting Slack or GitHub. If any hash differs (or is new), only those entries are validated, and
-the lock is updated.
+Commit the lock alongside `config.yaml` **in the operations repository that owns your deployment**. The Notifycat source tree gitignores both files (see `CONTRIBUTING.md`); they are operator state, not project state. On every boot, the server re-hashes the parsed entries; if every hash matches the lock, the server boots without contacting Slack or GitHub. If any hash differs (or is new), only those entries are validated, and the lock is updated.
 
 Deletes are handled the same way — entries removed from the YAML drop out of the lock on the next successful write.
 
-The lock has a comment field that warns operators not to edit by hand. Tampering only hurts the operator: faking hashes
-only changes whether the server re-validates, not whether the mapping actually works.
+The lock has a comment field that warns operators not to edit by hand. Tampering only hurts the operator: faking hashes only changes whether the server re-validates, not whether the mapping actually works.
 
 ## Operator Workflow
 
 ```
-edit mappings.yaml
-  → notifycat-mapping validate
-  → commit both mappings.yaml and mappings.lock
+edit config.yaml
+  → notifycat-config validate
+  → commit both config.yaml and config.lock
   → deploy
 ```
 
-If you skip the validate step, the server runs validation itself on the next boot. It's just slower (one round-trip per
-changed entry) and the failure surfaces at deploy time instead of at edit time.
+If you skip the validate step, the server runs validation itself on the next boot. It's just slower (one round-trip per changed entry) and the failure surfaces at deploy time instead of at edit time.
 
 ## Common Operations
 
@@ -175,7 +156,7 @@ changed entry) and the failure surfaces at deploy time instead of at edit time.
 Add the repo name to that org's `repositories` list and revalidate:
 
 ```sh
-notifycat-mapping validate
+notifycat-config validate
 ```
 
 ### Add a new org
@@ -197,8 +178,7 @@ acme:
   repositories: "*"
 ```
 
-Then `notifycat-mapping validate` — wildcard expansion needs `GITHUB_TOKEN` to enumerate the org's repos. Without it,
-wildcard entries report as `SKIP` and the server still routes them at webhook time.
+Then `notifycat-config validate` — wildcard expansion needs `GITHUB_TOKEN` to enumerate the org's repos. Without it, wildcard entries report as `SKIP` and the server still routes them at webhook time.
 
 ### Move a repo between orgs
 

@@ -138,12 +138,11 @@ cover, and how to trace a silent 200-OK delivery.
 
 ## Validating a Mapping
 
-`notifycat-mapping validate` is a non-destructive command that surfaces setup problems before GitHub fires a real PR
-event. It exits 0 when every check passes (or is skipped) and 1 when any check fails.
+`notifycat-config validate` is a non-destructive command that surfaces setup problems before GitHub fires a real PR event. It exits 0 when every check passes (or is skipped) and 1 when any check fails.
 
 ```sh
-notifycat-mapping validate                 # check every mapping
-notifycat-mapping validate owner/repo      # check a single mapping
+notifycat-config validate                 # check every mapping
+notifycat-config validate owner/repo      # check a single mapping
 ```
 
 Each line in the output is `STATUS  check-name  detail`. `OK`/`FAIL`/`SKIP` are plain ASCII so the output is greppable
@@ -151,8 +150,8 @@ in CI logs.
 
 | Check | What it verifies | How to fix a `FAIL` |
 | --- | --- | --- |
-| `mapping` | An entry exists in `mappings.yaml` for `owner/repo` (explicit or wildcard). | Add the repo to that org's `repositories` list, or set `repositories: "*"`. See [Mappings file](mappings.md). |
-| `channel-format` | The entry's channel ID matches `[CGD][A-Z0-9]{2,}`. | Edit `mappings.yaml` and use the real Slack channel ID, not the display name. |
+| `mapping` | An entry exists in `config.yaml` for `owner/repo` (explicit or wildcard). | Add the repo to that org's `repositories` list, or set `repositories: "*"`. See [Mappings file](mappings.md). |
+| `channel-format` | The entry's channel ID matches `[CGD][A-Z0-9]{2,}`. | Edit `config.yaml` and use the real Slack channel ID, not the display name. |
 | `slack-auth` | `auth.test` succeeds and `X-OAuth-Scopes` includes `chat:write` and `reactions:write`. | Rotate `SLACK_BOT_TOKEN`, or reinstall the app after updating the manifest scopes. |
 | `slack-channel` | `conversations.info` reports the channel exists, is not archived, and the bot is a member. | `/invite @notifycat` in the channel; unarchive if needed; correct the channel ID. |
 | `github-webhook` | When `GITHUB_TOKEN` is set, an active webhook on the repo points at `/webhook/github` and subscribes to `pull_request`, `pull_request_review`, `pull_request_review_comment`, `issue_comment`. Skipped when `GITHUB_TOKEN` is unset. | Create the webhook with `./scripts/github-webhook-create.sh`, or edit the existing webhook to add the missing events. |
