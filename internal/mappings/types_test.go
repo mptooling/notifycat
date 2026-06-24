@@ -68,3 +68,51 @@ func TestRepoConfig_UnknownKeyRejected(t *testing.T) {
 		t.Fatal("expected error for unknown tier key")
 	}
 }
+
+func TestRepoConfig_BehavioralOverrides(t *testing.T) {
+	o := decodeOrg(t, `
+api:
+  channel: C0API
+  reactions:
+    approved: shipit
+    enabled: false
+  reviews:
+    ignore_ai_reviews: true
+    dependabot_format: false
+  digest:
+    enabled: false
+    schedule: "0 8 * * 1-5"
+`)
+	api := o["api"]
+	if api.Reactions == nil || api.Reactions.Approved == nil || *api.Reactions.Approved != "shipit" {
+		t.Fatalf("reactions.approved override missing: %+v", api.Reactions)
+	}
+	if api.Reactions.Enabled == nil || *api.Reactions.Enabled != false {
+		t.Errorf("reactions.enabled override missing")
+	}
+	if api.IgnoreAIReviews == nil || *api.IgnoreAIReviews != true {
+		t.Errorf("ignore_ai_reviews override missing")
+	}
+	if api.DependabotFormat == nil || *api.DependabotFormat != false {
+		t.Errorf("dependabot_format override missing")
+	}
+	if api.Digest == nil || api.Digest.Enabled != false || api.Digest.Schedule != "0 8 * * 1-5" {
+		t.Errorf("digest override missing: %+v", api.Digest)
+	}
+}
+
+func TestRepoConfig_BehavioralAbsentMeansNil(t *testing.T) {
+	api := decodeOrg(t, "api:\n  channel: C0API\n")["api"]
+	if api.Reactions != nil || api.IgnoreAIReviews != nil || api.DependabotFormat != nil || api.Digest != nil {
+		t.Errorf("absent behavioral keys should be nil (inherit): %+v", api)
+	}
+}
+
+func TestRepoConfig_UnknownReactionKeyRejected(t *testing.T) {
+	var o mappings.Org
+	dec := yaml.NewDecoder(strings.NewReader("api:\n  channel: C0API\n  reactions:\n    bogus: x\n"))
+	dec.KnownFields(true)
+	if err := dec.Decode(&o); err == nil {
+		t.Fatal("expected error for unknown reactions key")
+	}
+}

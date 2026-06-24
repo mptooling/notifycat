@@ -72,6 +72,100 @@ type RepoConfig struct {
 	Channel         string
 	Mentions        []string
 	MentionsPresent bool
+
+	Reactions        *ReactionsOverride
+	IgnoreAIReviews  *bool
+	DependabotFormat *bool
+	Digest           *DigestConfig
+}
+
+// ReactionsOverride is a tier's optional reaction overrides; each nil field
+// inherits from a less-specific tier (org/* then the global config.yaml set).
+type ReactionsOverride struct {
+	Enabled       *bool
+	NewPR         *string
+	MergedPR      *string
+	ClosedPR      *string
+	Approved      *string
+	Commented     *string
+	RequestChange *string
+	BotReview     *string
+}
+
+// UnmarshalYAML walks the reactions mapping by hand so unknown keys are
+// rejected and every leaf is optional (nil = inherit).
+func (r *ReactionsOverride) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.MappingNode {
+		return fmt.Errorf("reactions: expected mapping; got node kind %d", node.Kind)
+	}
+	if len(node.Content)%2 != 0 {
+		return fmt.Errorf("reactions: malformed mapping")
+	}
+	for i := 0; i < len(node.Content); i += 2 {
+		key, val := node.Content[i], node.Content[i+1]
+		var dst any
+		switch key.Value {
+		case "enabled":
+			r.Enabled = new(bool)
+			dst = r.Enabled
+		case "new_pr":
+			r.NewPR = new(string)
+			dst = r.NewPR
+		case "merged_pr":
+			r.MergedPR = new(string)
+			dst = r.MergedPR
+		case "closed_pr":
+			r.ClosedPR = new(string)
+			dst = r.ClosedPR
+		case "approved":
+			r.Approved = new(string)
+			dst = r.Approved
+		case "commented":
+			r.Commented = new(string)
+			dst = r.Commented
+		case "request_change":
+			r.RequestChange = new(string)
+			dst = r.RequestChange
+		case "bot_review":
+			r.BotReview = new(string)
+			dst = r.BotReview
+		default:
+			return fmt.Errorf("reactions: unknown field %q", key.Value)
+		}
+		if err := val.Decode(dst); err != nil {
+			return fmt.Errorf("reactions.%s: %w", key.Value, err)
+		}
+	}
+	return nil
+}
+
+// decodeReviews parses a tier's `reviews:` block (ignore_ai_reviews,
+// dependabot_format), each optional, rejecting unknown keys.
+func decodeReviews(rc *RepoConfig, node *yaml.Node) error {
+	if node.Kind != yaml.MappingNode {
+		return fmt.Errorf("reviews: expected mapping; got node kind %d", node.Kind)
+	}
+	if len(node.Content)%2 != 0 {
+		return fmt.Errorf("reviews: malformed mapping")
+	}
+	for i := 0; i < len(node.Content); i += 2 {
+		key, val := node.Content[i], node.Content[i+1]
+		var dst *bool
+		switch key.Value {
+		case "ignore_ai_reviews":
+			rc.IgnoreAIReviews = new(bool)
+			dst = rc.IgnoreAIReviews
+		case "dependabot_format":
+			rc.DependabotFormat = new(bool)
+			dst = rc.DependabotFormat
+		default:
+			return fmt.Errorf("reviews: unknown field %q", key.Value)
+		}
+		if err := val.Decode(dst); err != nil {
+			return fmt.Errorf("reviews.%s: %w", key.Value, err)
+		}
+	}
+	return nil
 }
 
 // UnmarshalYAML walks the mapping node by hand so we can keep the mentions
@@ -107,6 +201,22 @@ func (rc *RepoConfig) UnmarshalYAML(node *yaml.Node) error {
 				return fmt.Errorf("mentions: %w", err)
 			}
 			rc.Mentions = ms
+		case "reactions":
+			r := &ReactionsOverride{}
+			if err := valNode.Decode(r); err != nil {
+				return fmt.Errorf("reactions: %w", err)
+			}
+			rc.Reactions = r
+		case "reviews":
+			if err := decodeReviews(rc, valNode); err != nil {
+				return err
+			}
+		case "digest":
+			d := &DigestConfig{}
+			if err := valNode.Decode(d); err != nil {
+				return fmt.Errorf("digest: %w", err)
+			}
+			rc.Digest = d
 		default:
 			return fmt.Errorf("unknown field %q", keyNode.Value)
 		}
