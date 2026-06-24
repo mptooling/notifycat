@@ -59,17 +59,9 @@ migrate-status:
 reconcile *args:
   go run ./cmd/notifycat-reconcile {{args}}
 
-# Add a repo-to-Slack mapping
-mapping-add repo channel mentions:
-  go run ./cmd/notifycat-mapping add "{{repo}}" "{{channel}}" "{{mentions}}"
-
-# List repo-to-Slack mappings
-mapping-list:
-  go run ./cmd/notifycat-mapping list
-
-# Remove a repo-to-Slack mapping
-mapping-remove repo:
-  go run ./cmd/notifycat-mapping remove "{{repo}}"
+# List config entries
+config-list:
+  go run ./cmd/notifycat-config list
 
 # Build the Docker image
 docker-build:
@@ -87,17 +79,17 @@ docker-migrate-status:
 docker-reconcile *args:
   docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/app" --env-file .env {{app}}:test /usr/local/bin/notifycat-reconcile {{args}}
 
-# List repo-to-Slack mappings in Docker
-docker-mapping-list:
-  docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/app" --env-file .env {{app}}:test /usr/local/bin/notifycat-mapping list
+# List config entries in Docker
+docker-config-list:
+  docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/app" --env-file .env {{app}}:test /usr/local/bin/notifycat-config list
 
-# Run the `notifycat-mapping` command with any number of args
-docker-mapping +args:
-  docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/app" --env-file .env {{app}}:test /usr/local/bin/notifycat-mapping {{args}}
+# Run the `notifycat-config` command with any number of args
+docker-config +args:
+  docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/app" --env-file .env {{app}}:test /usr/local/bin/notifycat-config {{args}}
 
-# Validate mappings.yaml in Docker (against live Slack/GitHub)
+# Validate config.yaml in Docker (against live Slack/GitHub)
 docker-validate:
-  docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/app" --env-file .env {{app}}:test /usr/local/bin/notifycat-mapping validate
+  docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/app" --env-file .env {{app}}:test /usr/local/bin/notifycat-config validate
 
 # Run preflight diagnostics in Docker
 docker-doctor +args="":
