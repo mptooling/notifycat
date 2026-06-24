@@ -1,5 +1,9 @@
 package mappings
 
+import (
+	"github.com/mptooling/notifycat/internal/store"
+)
+
 // Resolved is the effective routing config for one repository after merging
 // the org/repo tier over the org/* tier.
 type Resolved struct {
@@ -27,4 +31,56 @@ func resolveRouting(star, repo *RepoConfig) Resolved {
 		r.Mentions = []string{ChannelMention}
 	}
 	return r
+}
+
+// Defaults is the global tier: the config.yaml top-level behavioral settings
+// that per-repo tiers override.
+type Defaults struct {
+	Reactions        store.Reactions
+	IgnoreAIReviews  bool
+	DependabotFormat bool
+}
+
+// resolveBehavior merges the global, org/*, and org/repo tiers for the
+// behavioral keys. For each key the most specific tier that set it wins; the
+// global value is the base. star/repo may be nil.
+func resolveBehavior(global Defaults, star, repo *RepoConfig) (store.Reactions, bool, bool) {
+	rx := global.Reactions
+	ignoreAI := global.IgnoreAIReviews
+	dependabot := global.DependabotFormat
+
+	apply := func(rc *RepoConfig) {
+		if rc == nil {
+			return
+		}
+		if o := rc.Reactions; o != nil {
+			if o.Enabled != nil {
+				rx.Enabled = *o.Enabled
+			}
+			setStr(&rx.NewPR, o.NewPR)
+			setStr(&rx.MergedPR, o.MergedPR)
+			setStr(&rx.ClosedPR, o.ClosedPR)
+			setStr(&rx.Approved, o.Approved)
+			setStr(&rx.Commented, o.Commented)
+			setStr(&rx.RequestChange, o.RequestChange)
+			if o.BotReview != nil { // empty string is a meaningful value (no marker)
+				rx.BotReview = *o.BotReview
+			}
+		}
+		if rc.IgnoreAIReviews != nil {
+			ignoreAI = *rc.IgnoreAIReviews
+		}
+		if rc.DependabotFormat != nil {
+			dependabot = *rc.DependabotFormat
+		}
+	}
+	apply(star)
+	apply(repo)
+	return rx, ignoreAI, dependabot
+}
+
+func setStr(dst *string, v *string) {
+	if v != nil {
+		*dst = *v
+	}
 }
