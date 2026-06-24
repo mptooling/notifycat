@@ -14,32 +14,27 @@ import (
 // ready_for_review. It posts the first Slack message for the PR and records
 // the message TS for later updates.
 type OpenHandler struct {
-	messages         SlackMessages
-	mappings         RepoMappings
-	slack            SlackClient
-	composer         *slack.Composer
-	logger           *slog.Logger
-	dependabotFormat bool
+	messages SlackMessages
+	mappings RepoMappings
+	slack    SlackClient
+	composer *slack.Composer
+	logger   *slog.Logger
 }
 
-// NewOpenHandler builds an OpenHandler. When dependabotFormat is true, PRs
-// opened by dependabot[bot]/renovate[bot] get the compact composer template;
-// when false they fall back to the standard "please review" message.
+// NewOpenHandler builds an OpenHandler.
 func NewOpenHandler(
 	messages SlackMessages,
 	mappings RepoMappings,
 	slackClient SlackClient,
 	composer *slack.Composer,
 	logger *slog.Logger,
-	dependabotFormat bool,
 ) *OpenHandler {
 	return &OpenHandler{
-		messages:         messages,
-		mappings:         mappings,
-		slack:            slackClient,
-		composer:         composer,
-		logger:           logger,
-		dependabotFormat: dependabotFormat,
+		messages: messages,
+		mappings: mappings,
+		slack:    slackClient,
+		composer: composer,
+		logger:   logger,
 	}
 }
 
@@ -86,7 +81,7 @@ func (h *OpenHandler) Handle(ctx context.Context, e Event) error {
 		return err
 	}
 
-	msg := h.composeMessage(e, mapping.Mentions)
+	msg := h.composeMessage(e, mapping)
 	ts, err := h.slack.PostMessage(ctx, mapping.SlackChannel, msg)
 	if err != nil {
 		return err
@@ -105,14 +100,14 @@ func (h *OpenHandler) Handle(ctx context.Context, e Event) error {
 // Block Kit message. Detection keys off the PR author, not the webhook sender:
 // on a ready_for_review event the sender is the human who marked a bot's draft
 // PR ready, while the author stays the bot.
-func (h *OpenHandler) composeMessage(e Event, mentions []string) slack.Message {
-	if h.dependabotFormat {
+func (h *OpenHandler) composeMessage(e Event, mapping store.RepoMapping) slack.Message {
+	if mapping.DependabotFormat {
 		if kind := botpr.DetectBot(e.PR.Author); kind != botpr.BotKindNone {
 			security := botpr.IsSecurityAdvisory(e.PR.Body)
-			return h.composer.BotMessage(slackPRFrom(e), mentions, kind.Name(), security)
+			return h.composer.BotMessage(slackPRFrom(e), mapping.Mentions, kind.Name(), security)
 		}
 	}
-	return h.composer.NewMessage(slackPRFrom(e), mentions)
+	return h.composer.NewMessage(slackPRFrom(e), mapping.Mentions, mapping.Reactions.NewPR)
 }
 
 // slackPRFrom adapts an Event's PR fields to the slack.PRDetails shape used
