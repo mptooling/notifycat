@@ -32,12 +32,34 @@ type SlackMessage struct {
 // pluralisation heuristics.
 func (SlackMessage) TableName() string { return "slack_messages" }
 
+// Reactions is the resolved per-repo reaction-emoji set (Slack emoji names
+// without colons). Enabled gates whether close/review reactions are added at
+// all. Empty BotReview disables the bot-reviewer marker.
+type Reactions struct {
+	Enabled       bool
+	NewPR         string
+	MergedPR      string
+	ClosedPR      string
+	Approved      string
+	Commented     string
+	RequestChange string
+	BotReview     string
+}
+
 // RepoMapping is the value object handlers and validators consume — a GitHub
-// repository routed to a Slack channel with an optional mentions list. The
-// source of truth lives in config.yaml's mappings: section (loaded by internal/config / internal/mappings); the
-// type stays here so consumers don't have to know who produced it.
+// repository routed to a Slack channel with an optional mentions list, and
+// resolved behavioral config (global defaults merged with org/* and org/repo
+// overrides). The source of truth for routing lives in config.yaml's mappings:
+// section (loaded by internal/config / internal/mappings); the type stays here
+// so consumers don't have to know who produced it.
 type RepoMapping struct {
 	Repository   string
 	SlackChannel string
 	Mentions     []string
+	// Resolved per-repo behavioral config (global config.yaml defaults merged
+	// with org/* and org/repo overrides). Formatting-only — not part of
+	// validation or the lock.
+	Reactions        Reactions
+	IgnoreAIReviews  bool
+	DependabotFormat bool
 }
