@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/mptooling/notifycat/compare/v0.15.4...v0.16.0) (2026-06-24)
+
+
+### 🚀 Features
+
+* remind on stuck PRs with a daily per-channel digest ([#100](https://github.com/mptooling/notifycat/issues/100)) ([2c02199](https://github.com/mptooling/notifycat/commit/2c02199b23f11192d0c877ba5d25638ef226b4f1))
+
 ## [0.15.4](https://github.com/mptooling/notifycat/compare/v0.15.3...v0.15.4) (2026-06-24)
 
 
