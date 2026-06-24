@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.17.0](https://github.com/mptooling/notifycat/compare/v0.16.0...v0.17.0) (2026-06-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* consolidate non-secret configuration into a single config.yaml ([#109](https://github.com/mptooling/notifycat/issues/109))
+
+### 🚀 Features
+
+* consolidate non-secret configuration into a single config.yaml ([#109](https://github.com/mptooling/notifycat/issues/109)) ([d2f4d6a](https://github.com/mptooling/notifycat/commit/d2f4d6a50a70d1d13194b4a6108fefddb35dbd27))
+
+
+### 🧹 Maintenance
+
+* bump minor (not major) for pre-1.0 breaking changes ([#112](https://github.com/mptooling/notifycat/issues/112)) ([a18653c](https://github.com/mptooling/notifycat/commit/a18653c760c25867b0c76a69f7e3896f89e750e6))
+
 ## [0.16.0](https://github.com/mptooling/notifycat/compare/v0.15.4...v0.16.0) (2026-06-24)
 
 
