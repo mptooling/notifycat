@@ -30,6 +30,13 @@ func Load(path string) (*Provider, error) {
 	return &Provider{file: file}, nil
 }
 
+// NewProvider builds a Provider from already-decoded sections (config.yaml's
+// `mappings:` map and `digest:` block), the in-memory counterpart to Load.
+// A nil digest leaves the feature on by default (see Digest).
+func NewProvider(m map[string]Org, digest *DigestConfig) *Provider {
+	return &Provider{file: File{Mappings: m, Digest: digest}}
+}
+
 // DefaultDigestSchedule is the cron spec used when the digest section is
 // absent or omits `schedule`: 9am every morning, server-local time.
 const DefaultDigestSchedule = "0 9 * * *"

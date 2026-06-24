@@ -176,3 +176,30 @@ func TestProvider_Entries_AbsentMentionsMaterialized(t *testing.T) {
 		}
 	}
 }
+
+func TestNewProvider_BehavesLikeLoad(t *testing.T) {
+	m := map[string]Org{
+		"acme": {
+			Channel:         "C0123ABCDE",
+			Mentions:        []string{"<@U1>"},
+			MentionsPresent: true,
+			Repositories:    Repositories{List: []string{"web"}},
+		},
+	}
+	p := NewProvider(m, nil)
+
+	got, err := p.Get(context.Background(), "acme/web")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.SlackChannel != "C0123ABCDE" {
+		t.Errorf("SlackChannel = %q; want C0123ABCDE", got.SlackChannel)
+	}
+	// nil digest → feature on by default with the default schedule.
+	if d := p.Digest(); !d.Enabled || d.Schedule != DefaultDigestSchedule {
+		t.Errorf("Digest() = %+v; want enabled with default schedule", d)
+	}
+	if len(p.Entries()) != 1 {
+		t.Errorf("Entries() = %d; want 1", len(p.Entries()))
+	}
+}
