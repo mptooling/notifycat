@@ -1,161 +1,261 @@
-// Package config loads runtime configuration from environment variables (and
-// optionally from a .env file in development).
+// Package config loads runtime configuration from a single config.yaml file.
+// Secrets are read separately from the environment (optionally via a .env file
+// in development) and never appear in the YAML.
 //
 // All secret values use the Secret type so they cannot leak through logging.
 package config
 
 import (
-	"errors"
 	"fmt"
-	"strings"
+	"os"
 
-	"github.com/caarlos0/env/v11"
 	"github.com/joho/godotenv"
+	"gopkg.in/yaml.v3"
+
+	"github.com/mptooling/notifycat/internal/mappings"
 )
 
-// Config is the parsed runtime configuration.
+// Config is the parsed runtime configuration. Field names are flat so consumers
+// read cfg.Addr, cfg.Reactions.NewPR, etc.; the nested config.yaml shape is an
+// internal detail of Load (see fileSchema).
 type Config struct {
-	Addr        string `env:"ADDR" envDefault:":8080"`
-	LogLevel    string `env:"LOG_LEVEL" envDefault:"info"`
-	LogFormat   string `env:"LOG_FORMAT" envDefault:"text"`
-	DatabaseURL string `env:"DATABASE_URL" envDefault:"file:./data/notifycat.db"`
+	// ConfigFile is the path config.yaml was loaded from; the sibling
+	// config.lock is derived from it.
+	ConfigFile string
 
-	// MappingsFile is the path to the declarative mappings.yaml file.
-	// The sibling lock file lives at the same path with the .yaml/.yml
-	// extension swapped for .lock (or appended when there is no such ext).
-	MappingsFile string `env:"NOTIFYCAT_MAPPINGS_FILE" envDefault:"./mappings.yaml"`
+	Addr        string
+	LogLevel    string
+	LogFormat   string
+	DatabaseURL string
 
-	GitHubWebhookSecret Secret `env:"GITHUB_WEBHOOK_SECRET,required,notEmpty"`
-	SlackBotToken       Secret `env:"SLACK_BOT_TOKEN,required,notEmpty"`
+	SlackBaseURL  string
+	GitHubBaseURL string
+	Domain        string
 
-	// SlackBaseURL is operator-overridable to point the client at a test
-	// double. Defaults to the real Slack API.
-	SlackBaseURL string `env:"SLACK_BASE_URL" envDefault:"https://slack.com"`
-
-	// GitHubToken is consumed only by `notifycat-mapping validate` to query the
-	// repository's webhook configuration. Optional; without it the webhook
-	// coverage check is skipped.
-	GitHubToken Secret `env:"GITHUB_TOKEN"`
-
-	// GitHubBaseURL is operator-overridable, paralleling SlackBaseURL.
-	GitHubBaseURL string `env:"GITHUB_BASE_URL" envDefault:"https://api.github.com"`
-
-	// MessageTTLDays is the age, in days, after which a slack_messages row
-	// with no further activity becomes eligible for the scheduled cleanup.
-	// Must be > 0; Load() rejects 0 or negative values.
-	MessageTTLDays int `env:"NOTIFYCAT_MESSAGE_TTL_DAYS" envDefault:"30"`
-
-	// IgnoreAIReviews, when true, suppresses Slack reaction emojis for any
-	// review event whose sender.type == "Bot" (GitHub Apps, including AI
-	// reviewers and scripted bots alike). Default false — current behavior.
-	IgnoreAIReviews bool `env:"NOTIFYCAT_IGNORE_AI_REVIEWS" envDefault:"false"`
-
-	// DependabotFormat, when true (the default), renders a compact Slack
-	// message for PRs opened by dependabot[bot] or renovate[bot] — a routine
-	// "bumped" line, or a distinct "security update" line when the PR body
-	// shows a security advisory. Set false to fall back to the standard
-	// "please review" format for those PRs. See internal/botpr.
-	DependabotFormat bool `env:"NOTIFYCAT_DEPENDABOT_FORMAT" envDefault:"true"`
-
-	// Domain is the public DNS name operators point at this host; the
-	// docker-compose reverse proxy uses it for the virtual host and TLS. It is
-	// the single source of truth for the public host: notifycat-doctor derives
-	// the GitHub webhook URL (https://$DOMAIN/webhook/github) from it. Optional —
-	// unset is fine for local-dev / tunnel setups, and a value exported in the
-	// environment counts the same as one from .env.
-	Domain string `env:"DOMAIN"`
+	MessageTTLDays   int
+	IgnoreAIReviews  bool
+	DependabotFormat bool
 
 	Reactions Reactions
+
+	Digest   *mappings.DigestConfig
+	Mappings map[string]mappings.Org
+
+	GitHubWebhookSecret Secret
+	SlackBotToken       Secret
+	GitHubToken         Secret
 }
 
 // Reactions configures Slack reaction emoji names per PR lifecycle event.
 type Reactions struct {
-	Enabled       bool   `env:"SLACK_REACTIONS_ENABLED" envDefault:"true"`
-	NewPR         string `env:"SLACK_REACTION_NEW_PR" envDefault:"eyes"`
-	MergedPR      string `env:"SLACK_REACTION_MERGED_PR" envDefault:"twisted_rightwards_arrows"`
-	ClosedPR      string `env:"SLACK_REACTION_CLOSED_PR" envDefault:"x"`
-	Approved      string `env:"SLACK_REACTION_PR_APPROVED" envDefault:"white_check_mark"`
-	Commented     string `env:"SLACK_REACTION_PR_COMMENTED" envDefault:"speech_balloon"`
-	RequestChange string `env:"SLACK_REACTION_PR_REQUEST_CHANGE" envDefault:"exclamation"`
-	// BotReview is the distinct marker added when a bot reviewer's activity is
-	// NOT suppressed (NOTIFYCAT_IGNORE_AI_REVIEWS=false). Set it empty to keep
-	// bot reviews indistinguishable from human ones. See internal/aireview.
-	BotReview string `env:"SLACK_REACTION_BOT_REVIEW" envDefault:"robot_face"`
+	Enabled       bool
+	NewPR         string
+	MergedPR      string
+	ClosedPR      string
+	Approved      string
+	Commented     string
+	RequestChange string
+	BotReview     string
 }
 
-// MissingVarError is returned by Load when a required env var is unset or empty.
-type MissingVarError struct {
-	Var string
-}
+// MissingVarError is returned when a required secret env var is unset or empty.
+type MissingVarError struct{ Var string }
 
 func (e *MissingVarError) Error() string {
 	return fmt.Sprintf("config: required environment variable %s is missing", e.Var)
 }
 
-// Load reads .env if present (no-op when absent) and parses environment
-// variables into Config.
+// DefaultConfigFile is used when NOTIFYCAT_CONFIG_FILE is unset.
+const DefaultConfigFile = "./config.yaml"
+
+// fileSchema mirrors config.yaml's nested shape; it exists only to decode the
+// document. Bool/int leaves are pointers so an absent key is distinguishable
+// from an explicit zero and the Go-side default survives.
+type fileSchema struct {
+	Server struct {
+		Addr      string `yaml:"addr"`
+		LogLevel  string `yaml:"log_level"`
+		LogFormat string `yaml:"log_format"`
+		Domain    string `yaml:"domain"`
+	} `yaml:"server"`
+	Database struct {
+		URL string `yaml:"url"`
+	} `yaml:"database"`
+	Slack struct {
+		BaseURL   string `yaml:"base_url"`
+		Reactions struct {
+			Enabled       *bool   `yaml:"enabled"`
+			NewPR         string  `yaml:"new_pr"`
+			MergedPR      string  `yaml:"merged_pr"`
+			ClosedPR      string  `yaml:"closed_pr"`
+			Approved      string  `yaml:"approved"`
+			Commented     string  `yaml:"commented"`
+			RequestChange string  `yaml:"request_change"`
+			BotReview     *string `yaml:"bot_review"`
+		} `yaml:"reactions"`
+	} `yaml:"slack"`
+	GitHub struct {
+		BaseURL string `yaml:"base_url"`
+	} `yaml:"github"`
+	Cleanup struct {
+		MessageTTLDays *int `yaml:"message_ttl_days"`
+	} `yaml:"cleanup"`
+	Reviews struct {
+		IgnoreAIReviews  *bool `yaml:"ignore_ai_reviews"`
+		DependabotFormat *bool `yaml:"dependabot_format"`
+	} `yaml:"reviews"`
+	Digest   *mappings.DigestConfig  `yaml:"digest"`
+	Mappings map[string]mappings.Org `yaml:"mappings"`
+}
+
+// defaults returns a Config pre-filled with every default value. Decode then
+// overlays the file's present keys onto it.
+func defaults() Config {
+	return Config{
+		Addr:             ":8080",
+		LogLevel:         "info",
+		LogFormat:        "text",
+		DatabaseURL:      "file:./data/notifycat.db",
+		SlackBaseURL:     "https://slack.com",
+		GitHubBaseURL:    "https://api.github.com",
+		MessageTTLDays:   30,
+		IgnoreAIReviews:  false,
+		DependabotFormat: true,
+		Reactions: Reactions{
+			Enabled:       true,
+			NewPR:         "eyes",
+			MergedPR:      "twisted_rightwards_arrows",
+			ClosedPR:      "x",
+			Approved:      "white_check_mark",
+			Commented:     "speech_balloon",
+			RequestChange: "exclamation",
+			BotReview:     "robot_face",
+		},
+	}
+}
+
+// retiredVars are app-config env vars that moved into config.yaml. Setting one
+// is almost always a stale .env from before the 0.17 migration; fail fast so it
+// is not silently ignored. DOMAIN/ACME_EMAIL are intentionally absent — they
+// stay in .env for docker-compose/Caddy.
+var retiredVars = []string{
+	"ADDR", "LOG_LEVEL", "LOG_FORMAT", "DATABASE_URL", "NOTIFYCAT_MAPPINGS_FILE",
+	"SLACK_BASE_URL", "GITHUB_BASE_URL", "NOTIFYCAT_MESSAGE_TTL_DAYS",
+	"NOTIFYCAT_IGNORE_AI_REVIEWS", "NOTIFYCAT_DEPENDABOT_FORMAT",
+	"SLACK_REACTIONS_ENABLED", "SLACK_REACTION_NEW_PR", "SLACK_REACTION_MERGED_PR",
+	"SLACK_REACTION_CLOSED_PR", "SLACK_REACTION_PR_APPROVED",
+	"SLACK_REACTION_PR_COMMENTED", "SLACK_REACTION_PR_REQUEST_CHANGE",
+	"SLACK_REACTION_BOT_REVIEW",
+}
+
+// Load reads .env (secrets only; absent is fine), decodes config.yaml over the
+// defaults, reads secrets from the environment, and validates.
 func Load() (Config, error) {
-	// Best-effort dev convenience: a missing .env is fine.
 	_ = godotenv.Load()
 
-	var cfg Config
-	if err := env.Parse(&cfg); err != nil {
-		return Config{}, translateParseError(err)
+	if err := checkRetiredVars(); err != nil {
+		return Config{}, err
+	}
+
+	path := os.Getenv("NOTIFYCAT_CONFIG_FILE")
+	if path == "" {
+		path = DefaultConfigFile
+	}
+
+	f, err := os.Open(path) //nolint:gosec // path is operator-supplied configuration
+	if err != nil {
+		return Config{}, fmt.Errorf("config: open %s: %w", path, err)
+	}
+	defer func() { _ = f.Close() }()
+
+	dec := yaml.NewDecoder(f)
+	dec.KnownFields(true)
+	var fs fileSchema
+	if err := dec.Decode(&fs); err != nil {
+		return Config{}, fmt.Errorf("config: parse %s: %w", path, err)
+	}
+
+	cfg := defaults()
+	cfg.ConfigFile = path
+	applyFileSchema(&cfg, fs)
+
+	if err := readSecrets(&cfg); err != nil {
+		return Config{}, err
 	}
 	if cfg.MessageTTLDays <= 0 {
-		return Config{}, fmt.Errorf("config: NOTIFYCAT_MESSAGE_TTL_DAYS must be > 0, got %d", cfg.MessageTTLDays)
+		return Config{}, fmt.Errorf("config: cleanup.message_ttl_days must be > 0, got %d", cfg.MessageTTLDays)
 	}
 	return cfg, nil
 }
 
-// translateParseError converts caarlos0/env's "required" / "not-empty" errors
-// into our MissingVarError, leaving other errors wrapped as-is.
-func translateParseError(err error) error {
-	if name, ok := extractMissingVar(err); ok {
-		return fmt.Errorf("config: %w", &MissingVarError{Var: name})
+// applyFileSchema overlays the file's present keys onto cfg (which starts at
+// defaults). Empty strings and nil pointers mean "absent": keep the default.
+func applyFileSchema(cfg *Config, fs fileSchema) {
+	setString(&cfg.Addr, fs.Server.Addr)
+	setString(&cfg.LogLevel, fs.Server.LogLevel)
+	setString(&cfg.LogFormat, fs.Server.LogFormat)
+	cfg.Domain = fs.Server.Domain // optional; empty is a valid value
+	setString(&cfg.DatabaseURL, fs.Database.URL)
+	setString(&cfg.SlackBaseURL, fs.Slack.BaseURL)
+	setString(&cfg.GitHubBaseURL, fs.GitHub.BaseURL)
+
+	r := fs.Slack.Reactions
+	if r.Enabled != nil {
+		cfg.Reactions.Enabled = *r.Enabled
 	}
-	return fmt.Errorf("config: %w", err)
+	setString(&cfg.Reactions.NewPR, r.NewPR)
+	setString(&cfg.Reactions.MergedPR, r.MergedPR)
+	setString(&cfg.Reactions.ClosedPR, r.ClosedPR)
+	setString(&cfg.Reactions.Approved, r.Approved)
+	setString(&cfg.Reactions.Commented, r.Commented)
+	setString(&cfg.Reactions.RequestChange, r.RequestChange)
+	if r.BotReview != nil { // empty string is a meaningful value (no bot marker)
+		cfg.Reactions.BotReview = *r.BotReview
+	}
+
+	if fs.Cleanup.MessageTTLDays != nil {
+		cfg.MessageTTLDays = *fs.Cleanup.MessageTTLDays
+	}
+	if fs.Reviews.IgnoreAIReviews != nil {
+		cfg.IgnoreAIReviews = *fs.Reviews.IgnoreAIReviews
+	}
+	if fs.Reviews.DependabotFormat != nil {
+		cfg.DependabotFormat = *fs.Reviews.DependabotFormat
+	}
+	cfg.Digest = fs.Digest
+	cfg.Mappings = fs.Mappings
 }
 
-// extractMissingVar inspects an env.Parse error and, when it represents a
-// missing/empty required variable, returns the variable name.
-func extractMissingVar(err error) (string, bool) {
-	var notSet env.VarIsNotSetError
-	if errors.As(err, &notSet) {
-		return notSet.Key, true
+func setString(dst *string, v string) {
+	if v != "" {
+		*dst = v
 	}
-	var emptyVar env.EmptyVarError
-	if errors.As(err, &emptyVar) {
-		return emptyVar.Key, true
+}
+
+// readSecrets pulls the three secrets from the environment into cfg. The two
+// required ones produce a MissingVarError when unset/empty.
+func readSecrets(cfg *Config) error {
+	cfg.GitHubWebhookSecret = Secret(os.Getenv("GITHUB_WEBHOOK_SECRET"))
+	cfg.SlackBotToken = Secret(os.Getenv("SLACK_BOT_TOKEN"))
+	cfg.GitHubToken = Secret(os.Getenv("GITHUB_TOKEN"))
+	if cfg.GitHubWebhookSecret.Reveal() == "" {
+		return fmt.Errorf("config: %w", &MissingVarError{Var: "GITHUB_WEBHOOK_SECRET"})
 	}
-	// env.Parse joins multiple errors. Walk the tree manually because errors.As
-	// only matches the first leaf of a particular type.
-	if u, ok := err.(interface{ Unwrap() []error }); ok {
-		for _, e := range u.Unwrap() {
-			if n, ok := extractMissingVar(e); ok {
-				return n, true
-			}
+	if cfg.SlackBotToken.Reveal() == "" {
+		return fmt.Errorf("config: %w", &MissingVarError{Var: "SLACK_BOT_TOKEN"})
+	}
+	return nil
+}
+
+func checkRetiredVars() error {
+	var found []string
+	for _, k := range retiredVars {
+		if os.Getenv(k) != "" {
+			found = append(found, k)
 		}
 	}
-	if name := guessVarFromMessage(err.Error()); name != "" {
-		return name, true
+	if len(found) == 0 {
+		return nil
 	}
-	return "", false
-}
-
-// guessVarFromMessage is the last-resort fallback for env library variations
-// that don't expose typed errors. It looks for "required environment variable
-// X is not set" patterns.
-func guessVarFromMessage(msg string) string {
-	const marker = `required environment variable "`
-	i := strings.Index(msg, marker)
-	if i < 0 {
-		return ""
-	}
-	rest := msg[i+len(marker):]
-	j := strings.IndexByte(rest, '"')
-	if j < 0 {
-		return ""
-	}
-	return rest[:j]
+	return fmt.Errorf("config: these env vars are no longer read and now live in config.yaml: %v — see docs/0.17-config-migration.md", found)
 }
