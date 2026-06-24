@@ -227,8 +227,7 @@ If `journalctl -u caddy` shows ACME errors:
 
 ## Migrating from a `/data`-based deployment (pre-0.4.0)
 
-`0.4.0` moves all state under `/app`. If your `0.3.x` `docker run` mounted a volume at `/data` (and possibly
-`mappings.yaml` at `/etc/notifycat/` or `/mappings.yaml`), migrate like this:
+`0.4.0` moves all state under `/app`. If your `0.3.x` `docker run` mounted a volume at `/data` (and possibly a separate config file at `/etc/notifycat/` or another path), migrate like this:
 
 ```sh
 docker stop notifycat
@@ -238,7 +237,7 @@ docker rm   notifycat
 mkdir -p ~/notifycat
 mv /path/to/old-data-dir/notifycat.db ~/notifycat/notifycat.db
 
-# Move or recreate config (if mappings were on a separate mount, fold them into config.yaml)
+# Move or recreate config (fold all settings and mappings into config.yaml)
 mv /path/to/old-config.yaml ~/notifycat/config.yaml
 mv /path/to/old-config.lock ~/notifycat/config.lock   # optional
 

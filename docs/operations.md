@@ -28,19 +28,14 @@ window.
 
 State lives in two places:
 
-- **`mappings.yaml`** — the declarative source of truth for routing. Edit it in version control and deploy it alongside
-  the binary. The sibling `mappings.lock` caches successful validation so steady-state boots don't re-contact
-  Slack/GitHub.
+- **`config.yaml`** — the declarative source of truth for routing and all non-secret configuration. Edit it in version control and deploy it alongside the binary. The sibling `config.lock` caches successful validation so steady-state boots don't re-contact Slack/GitHub.
 - **SQLite** — stores per-PR Slack message timestamps so Notifycat can update the same message across the PR lifecycle.
 
-Back up the SQLite file if losing notification state would be painful. If the database is lost, Notifycat can still
-receive webhooks, but existing PRs may get new Slack messages because the old Slack timestamp mapping is gone.
-`mappings.yaml` and `mappings.lock` live in your repo, so losing the container's local copy is harmless on the next
-deploy.
+Back up the SQLite file if losing notification state would be painful. If the database is lost, Notifycat can still receive webhooks, but existing PRs may get new Slack messages because the old Slack timestamp mapping is gone. `config.yaml` and `config.lock` live in your repo, so losing the container's local copy is harmless on the next deploy.
 
 ## Stuck-PR digest
 
-A scheduled job reminds channels about open PRs that have gone unreviewed. It is **on by default** (opt-out) and configured in the global `digest:` section of `mappings.yaml` — see [Mappings → Stuck-PR digest](mappings.md#stuck-pr-digest) for the schema.
+A scheduled job reminds channels about open PRs that have gone unreviewed. It is **on by default** (opt-out) and configured in the global `digest:` section of `config.yaml` — see [Mappings → Stuck-PR digest](mappings.md#stuck-pr-digest) for the schema.
 
 **What counts as stuck.** On each tick (default 9am daily, server-local time) the digest lists every open PR whose last activity predates the start of the current day — so a PR that sat through a previous day with nobody reviewing it shows up that morning. "Activity" is anything Notifycat sees on the PR: the open notification, a review (approve / comment / request-changes), or a PR/line comment — each bumps the row's `updated_at`. Suppressed AI reviews (see [Bot-reviewer suppression](#bot-reviewer-suppression)) intentionally do **not** count, so an AI-only pass still leaves a PR waiting for review. Merged/closed PRs are marked and excluded; a PR converted back to draft is removed entirely.
 
@@ -94,7 +89,7 @@ Reasons and their levels:
 | `reason` | Level | What it means | Typical fix |
 | --- | --- | --- | --- |
 | `no_handler` | **Debug** | No registered handler matched this `(github_event, action)` pair. Volumetric — fires for `synchronize`, `labeled`, `edited`, etc. | Expected; set `LOG_LEVEL=debug` to see it. |
-| `no_mapping` | **Warn** | Webhook arrived for a repo no `mappings.yaml` entry covers. | Add the repo to `mappings.yaml` (or remove the webhook from that repo). |
+| `no_mapping` | **Warn** | Webhook arrived for a repo no `config.yaml` entry covers. | Add the repo to the `mappings:` section of `config.yaml` (or remove the webhook from that repo). |
 | `no_stored_message` | **Info** | Handler ran but found no Slack message row for this PR. Common when the PR predates Notifycat. | Re-open the PR (or wait for the next applicable event) so `OpenHandler` can re-announce. |
 | `already_sent` | **Info** | `OpenHandler` saw an existing message row — idempotency kicks in. | Expected on `ready_for_review` after a prior `opened`. |
 
@@ -194,7 +189,7 @@ This is also intentionally narrow:
 - It only affects `reactions.add`. The initial `chat.postMessage` (with mentions / `@channel` fallback) is unchanged.
 - It does not look at the PR **author** — a bot-authored PR (e.g. dependabot-created) still posts a new Slack message
   when it opens.
-- It does not touch `mappings.yaml`. No schema change, no migration, no per-mapping override.
+- It does not touch `config.yaml`. No schema change, no migration, no per-mapping override.
 
 ### The complement: marking bot reviews instead of hiding them
 
@@ -265,9 +260,7 @@ A few operator-relevant details:
   parse miss falls back to the routine `:package:` format, never the reverse. A
   future Dependabot/Renovate template change could therefore regress a security
   PR to the routine format, but will never raise a false `:rotating_light:`.
-- **Mentions are unchanged.** Bot PRs use the same `mappings.yaml` mentions as
-  any other PR — if your entry pings `@channel`, your Dependabot PRs ping
-  `@channel` too.
+- **Mentions are unchanged.** Bot PRs use the same `config.yaml` mentions as any other PR — if your entry pings `@channel`, your Dependabot PRs ping `@channel` too.
 
 Set `NOTIFYCAT_DEPENDABOT_FORMAT=false` to render bot-opened PRs with the
 standard "please review" format.

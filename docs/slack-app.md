@@ -93,7 +93,7 @@ bot at least privilege.
 
 ## Channel Access
 
-Invite the bot to every channel listed in `mappings.yaml`:
+Invite the bot to every channel listed in the `mappings:` section of `config.yaml`:
 
 ```text
 /invite @notifycat
@@ -108,7 +108,7 @@ starts with `C`.
 
 ## Mentions
 
-Each `mappings.yaml` entry lists the Slack mentions that prefix the PR notification:
+Each entry in `config.yaml`'s `mappings:` section lists the Slack mentions that prefix the PR notification:
 
 ```yaml
 mappings:

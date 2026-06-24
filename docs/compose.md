@@ -71,12 +71,12 @@ All doctor entries should show `ok`.
 ### 5. Smoke-test delivery before wiring the real webhook
 
 The doctor confirms config and connectivity; the smoke test confirms the **whole path** actually delivers. It forges a
-correctly-signed `pull_request: opened` event for a repository in your `mappings.yaml`, POSTs it to the running server's
+correctly-signed `pull_request: opened` event for a repository in your `config.yaml`, POSTs it to the running server's
 `/webhook/github` (exercising the real signature check, dispatcher, and Slack client), and reports the channel and Slack
 timestamp it produced:
 
 ```sh
-./notifycat smoke <org>/<repo>              # use a repo present in mappings.yaml
+./notifycat smoke <org>/<repo>              # use a repo present in config.yaml
 ./notifycat smoke --reactions <org>/<repo>  # also exercise the review-lifecycle reactions
 ```
 

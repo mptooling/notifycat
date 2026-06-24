@@ -62,9 +62,7 @@ go run ./cmd/notifycat-doctor
 go run ./cmd/notifycat-server
 ```
 
-The binaries pick up `.env` from the current working directory and default to `./mappings.yaml` and
-`./data/notifycat.db`. See [Getting started](https://mptooling.github.io/notifycat/getting-started/) for the end-to-end
-walkthrough including the tunnel + webhook setup.
+The binaries pick up `.env` from the current working directory and default to `./config.yaml` and `./data/notifycat.db`. See [Getting started](https://mptooling.github.io/notifycat/getting-started/) for the end-to-end walkthrough including the tunnel + webhook setup.
 
 ## What It Handles
 
