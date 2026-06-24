@@ -12,8 +12,7 @@ import (
 	"github.com/mptooling/notifycat/internal/store"
 )
 
-func disabledDetector() *aireview.Detector { return aireview.NewDetector(false) }
-func enabledDetector() *aireview.Detector  { return aireview.NewDetector(true) }
+func testDetector() *aireview.Detector { return aireview.NewDetector() }
 
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -26,7 +25,14 @@ func setupReviewFixture(t *testing.T) (*fakeSlackMessages, *fakeRepoMappings, *f
 		PRNumber: 42, Repository: "octo/widget", TS: "ts1",
 	})
 	mappings := newFakeRepoMappings(store.RepoMapping{
-		Repository: "octo/widget", SlackChannel: "C123",
+		Repository:      "octo/widget",
+		SlackChannel:    "C123",
+		IgnoreAIReviews: false,
+		Reactions: store.Reactions{
+			Approved:      "white_check_mark",
+			Commented:     "speech_balloon",
+			RequestChange: "exclamation",
+		},
 	})
 	return msgs, mappings, &fakeSlackClient{}
 }
@@ -34,7 +40,7 @@ func setupReviewFixture(t *testing.T) (*fakeSlackMessages, *fakeRepoMappings, *f
 // ----- Approve -----
 
 func TestApproveHandler_Applicable(t *testing.T) {
-	h := pullrequest.NewApproveHandler(nil, nil, nil, discardLogger(), "white_check_mark", "", disabledDetector())
+	h := pullrequest.NewApproveHandler(nil, nil, nil, discardLogger(), testDetector())
 
 	if !h.Applicable(pullrequest.Event{Action: "submitted", Review: &pullrequest.Review{State: "approved"}}) {
 		t.Error("submitted+approved should be applicable")
@@ -49,7 +55,7 @@ func TestApproveHandler_Applicable(t *testing.T) {
 
 func TestApproveHandler_Handle_AddsReaction(t *testing.T) {
 	msgs, mappings, client := setupReviewFixture(t)
-	h := pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), "white_check_mark", "", disabledDetector())
+	h := pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), testDetector())
 
 	e := pullrequest.Event{
 		Action:     "submitted",
@@ -70,7 +76,7 @@ func TestApproveHandler_Handle_AddsReaction(t *testing.T) {
 
 func TestApproveHandler_Handle_TouchesActivity(t *testing.T) {
 	msgs, mappings, client := setupReviewFixture(t)
-	h := pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), "white_check_mark", "", disabledDetector())
+	h := pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), testDetector())
 
 	e := pullrequest.Event{
 		Action:     "submitted",
@@ -86,9 +92,21 @@ func TestApproveHandler_Handle_TouchesActivity(t *testing.T) {
 	}
 }
 
-func TestApproveHandler_DetectorEnabled_BotSenderDoesNotTouch(t *testing.T) {
-	msgs, mappings, client := setupReviewFixture(t)
-	h := pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), "white_check_mark", "", enabledDetector())
+func TestApproveHandler_IgnoreAIReviews_BotSenderDoesNotTouch(t *testing.T) {
+	msgs := newFakeSlackMessages()
+	_ = msgs.Save(context.Background(), store.SlackMessage{
+		PRNumber: 42, Repository: "octo/widget", TS: "ts1",
+	})
+	mappings := newFakeRepoMappings(store.RepoMapping{
+		Repository:      "octo/widget",
+		SlackChannel:    "C123",
+		IgnoreAIReviews: true,
+		Reactions: store.Reactions{
+			Approved: "white_check_mark",
+		},
+	})
+	client := &fakeSlackClient{}
+	h := pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), testDetector())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -102,12 +120,15 @@ func TestApproveHandler_DetectorEnabled_BotSenderDoesNotTouch(t *testing.T) {
 	if len(msgs.touched) != 0 {
 		t.Fatalf("suppressed AI review reset the idle clock via Touch: %v", msgs.touched)
 	}
+	if len(client.calls) != 0 {
+		t.Fatalf("suppressed AI review should not call Slack: %v", client.methods())
+	}
 }
 
 // ----- Commented -----
 
 func TestCommentedHandler_Applicable(t *testing.T) {
-	h := pullrequest.NewCommentedHandler(nil, nil, nil, discardLogger(), "speech_balloon", "", disabledDetector())
+	h := pullrequest.NewCommentedHandler(nil, nil, nil, discardLogger(), testDetector())
 
 	cases := []struct {
 		name string
@@ -135,7 +156,7 @@ func TestCommentedHandler_Applicable(t *testing.T) {
 
 func TestCommentedHandler_Handle_AddsReaction(t *testing.T) {
 	msgs, mappings, client := setupReviewFixture(t)
-	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), "speech_balloon", "", disabledDetector())
+	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), testDetector())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -151,7 +172,7 @@ func TestCommentedHandler_Handle_AddsReaction(t *testing.T) {
 
 func TestCommentedHandler_Handle_LineCommentAddsReaction(t *testing.T) {
 	msgs, mappings, client := setupReviewFixture(t)
-	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), "speech_balloon", "", disabledDetector())
+	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), testDetector())
 
 	e := pullrequest.Event{
 		GitHubEvent: "pull_request_review_comment",
@@ -170,7 +191,7 @@ func TestCommentedHandler_Handle_LineCommentAddsReaction(t *testing.T) {
 // ----- RequestChange -----
 
 func TestRequestChangeHandler_Applicable(t *testing.T) {
-	h := pullrequest.NewRequestChangeHandler(nil, nil, nil, discardLogger(), "exclamation", "", disabledDetector())
+	h := pullrequest.NewRequestChangeHandler(nil, nil, nil, discardLogger(), testDetector())
 
 	if !h.Applicable(pullrequest.Event{Action: "submitted", Review: &pullrequest.Review{State: "changes_requested"}}) {
 		t.Error("submitted+changes_requested should be applicable")
@@ -182,7 +203,7 @@ func TestRequestChangeHandler_Applicable(t *testing.T) {
 
 func TestRequestChangeHandler_Handle_AddsReaction(t *testing.T) {
 	msgs, mappings, client := setupReviewFixture(t)
-	h := pullrequest.NewRequestChangeHandler(msgs, mappings, client, discardLogger(), "exclamation", "", disabledDetector())
+	h := pullrequest.NewRequestChangeHandler(msgs, mappings, client, discardLogger(), testDetector())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -198,9 +219,21 @@ func TestRequestChangeHandler_Handle_AddsReaction(t *testing.T) {
 
 // ----- Bot-reviewer suppression -----
 
-func TestApproveHandler_DetectorEnabled_BotSenderSuppressesReaction(t *testing.T) {
-	msgs, mappings, client := setupReviewFixture(t)
-	h := pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), "white_check_mark", "", enabledDetector())
+func TestApproveHandler_IgnoreAIReviews_BotSenderSuppressesReaction(t *testing.T) {
+	msgs := newFakeSlackMessages()
+	_ = msgs.Save(context.Background(), store.SlackMessage{
+		PRNumber: 42, Repository: "octo/widget", TS: "ts1",
+	})
+	mappings := newFakeRepoMappings(store.RepoMapping{
+		Repository:      "octo/widget",
+		SlackChannel:    "C123",
+		IgnoreAIReviews: true,
+		Reactions: store.Reactions{
+			Approved: "white_check_mark",
+		},
+	})
+	client := &fakeSlackClient{}
+	h := pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), testDetector())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -212,13 +245,25 @@ func TestApproveHandler_DetectorEnabled_BotSenderSuppressesReaction(t *testing.T
 		t.Fatalf("Handle: %v", err)
 	}
 	if len(client.calls) != 0 {
-		t.Fatalf("Slack called for bot reviewer with detector enabled: %v", client.methods())
+		t.Fatalf("Slack called for bot reviewer when IgnoreAIReviews=true: %v", client.methods())
 	}
 }
 
-func TestApproveHandler_DetectorEnabled_HumanSenderReacts(t *testing.T) {
-	msgs, mappings, client := setupReviewFixture(t)
-	h := pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), "white_check_mark", "", enabledDetector())
+func TestApproveHandler_IgnoreAIReviews_HumanSenderReacts(t *testing.T) {
+	msgs := newFakeSlackMessages()
+	_ = msgs.Save(context.Background(), store.SlackMessage{
+		PRNumber: 42, Repository: "octo/widget", TS: "ts1",
+	})
+	mappings := newFakeRepoMappings(store.RepoMapping{
+		Repository:      "octo/widget",
+		SlackChannel:    "C123",
+		IgnoreAIReviews: true,
+		Reactions: store.Reactions{
+			Approved: "white_check_mark",
+		},
+	})
+	client := &fakeSlackClient{}
+	h := pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), testDetector())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -234,9 +279,21 @@ func TestApproveHandler_DetectorEnabled_HumanSenderReacts(t *testing.T) {
 	}
 }
 
-func TestApproveHandler_DetectorDisabled_BotSenderStillReacts(t *testing.T) {
-	msgs, mappings, client := setupReviewFixture(t)
-	h := pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), "white_check_mark", "", disabledDetector())
+func TestApproveHandler_IgnoreAIReviewsFalse_BotSenderStillReacts(t *testing.T) {
+	msgs := newFakeSlackMessages()
+	_ = msgs.Save(context.Background(), store.SlackMessage{
+		PRNumber: 42, Repository: "octo/widget", TS: "ts1",
+	})
+	mappings := newFakeRepoMappings(store.RepoMapping{
+		Repository:      "octo/widget",
+		SlackChannel:    "C123",
+		IgnoreAIReviews: false,
+		Reactions: store.Reactions{
+			Approved: "white_check_mark",
+		},
+	})
+	client := &fakeSlackClient{}
+	h := pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), testDetector())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -248,13 +305,25 @@ func TestApproveHandler_DetectorDisabled_BotSenderStillReacts(t *testing.T) {
 		t.Fatalf("Handle: %v", err)
 	}
 	if len(client.calls) != 1 {
-		t.Fatalf("disabled detector silently suppressed bot reviewer: %v", client.methods())
+		t.Fatalf("IgnoreAIReviews=false should allow bot reviewer: %v", client.methods())
 	}
 }
 
-func TestCommentedHandler_DetectorEnabled_BotSenderSuppressesReaction(t *testing.T) {
-	msgs, mappings, client := setupReviewFixture(t)
-	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), "speech_balloon", "", enabledDetector())
+func TestCommentedHandler_IgnoreAIReviews_BotSenderSuppressesReaction(t *testing.T) {
+	msgs := newFakeSlackMessages()
+	_ = msgs.Save(context.Background(), store.SlackMessage{
+		PRNumber: 42, Repository: "octo/widget", TS: "ts1",
+	})
+	mappings := newFakeRepoMappings(store.RepoMapping{
+		Repository:      "octo/widget",
+		SlackChannel:    "C123",
+		IgnoreAIReviews: true,
+		Reactions: store.Reactions{
+			Commented: "speech_balloon",
+		},
+	})
+	client := &fakeSlackClient{}
+	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), testDetector())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -270,9 +339,21 @@ func TestCommentedHandler_DetectorEnabled_BotSenderSuppressesReaction(t *testing
 	}
 }
 
-func TestCommentedHandler_DetectorEnabled_BotLineCommentSuppressed(t *testing.T) {
-	msgs, mappings, client := setupReviewFixture(t)
-	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), "speech_balloon", "", enabledDetector())
+func TestCommentedHandler_IgnoreAIReviews_BotLineCommentSuppressed(t *testing.T) {
+	msgs := newFakeSlackMessages()
+	_ = msgs.Save(context.Background(), store.SlackMessage{
+		PRNumber: 42, Repository: "octo/widget", TS: "ts1",
+	})
+	mappings := newFakeRepoMappings(store.RepoMapping{
+		Repository:      "octo/widget",
+		SlackChannel:    "C123",
+		IgnoreAIReviews: true,
+		Reactions: store.Reactions{
+			Commented: "speech_balloon",
+		},
+	})
+	client := &fakeSlackClient{}
+	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), testDetector())
 
 	e := pullrequest.Event{
 		GitHubEvent: "pull_request_review_comment",
@@ -289,9 +370,21 @@ func TestCommentedHandler_DetectorEnabled_BotLineCommentSuppressed(t *testing.T)
 	}
 }
 
-func TestRequestChangeHandler_DetectorEnabled_BotSenderSuppressesReaction(t *testing.T) {
-	msgs, mappings, client := setupReviewFixture(t)
-	h := pullrequest.NewRequestChangeHandler(msgs, mappings, client, discardLogger(), "exclamation", "", enabledDetector())
+func TestRequestChangeHandler_IgnoreAIReviews_BotSenderSuppressesReaction(t *testing.T) {
+	msgs := newFakeSlackMessages()
+	_ = msgs.Save(context.Background(), store.SlackMessage{
+		PRNumber: 42, Repository: "octo/widget", TS: "ts1",
+	})
+	mappings := newFakeRepoMappings(store.RepoMapping{
+		Repository:      "octo/widget",
+		SlackChannel:    "C123",
+		IgnoreAIReviews: true,
+		Reactions: store.Reactions{
+			RequestChange: "exclamation",
+		},
+	})
+	client := &fakeSlackClient{}
+	h := pullrequest.NewRequestChangeHandler(msgs, mappings, client, discardLogger(), testDetector())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -308,10 +401,22 @@ func TestRequestChangeHandler_DetectorEnabled_BotSenderSuppressesReaction(t *tes
 }
 
 func TestReactionHandler_SuppressedReactionLogsAtDebug(t *testing.T) {
-	msgs, mappings, client := setupReviewFixture(t)
+	msgs := newFakeSlackMessages()
+	_ = msgs.Save(context.Background(), store.SlackMessage{
+		PRNumber: 42, Repository: "octo/widget", TS: "ts1",
+	})
+	mappings := newFakeRepoMappings(store.RepoMapping{
+		Repository:      "octo/widget",
+		SlackChannel:    "C123",
+		IgnoreAIReviews: true,
+		Reactions: store.Reactions{
+			Approved: "white_check_mark",
+		},
+	})
+	client := &fakeSlackClient{}
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	h := pullrequest.NewApproveHandler(msgs, mappings, client, logger, "white_check_mark", "", enabledDetector())
+	h := pullrequest.NewApproveHandler(msgs, mappings, client, logger, testDetector())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -334,8 +439,21 @@ func TestReactionHandler_SuppressedReactionLogsAtDebug(t *testing.T) {
 // ----- Bot-reviewer marker (distinct reaction when NOT suppressed) -----
 
 func TestCommentedHandler_BotMarker_AddsMarkerAlongsideStateReaction(t *testing.T) {
-	msgs, mappings, client := setupReviewFixture(t)
-	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), "speech_balloon", "robot_face", disabledDetector())
+	msgs := newFakeSlackMessages()
+	_ = msgs.Save(context.Background(), store.SlackMessage{
+		PRNumber: 42, Repository: "octo/widget", TS: "ts1",
+	})
+	mappings := newFakeRepoMappings(store.RepoMapping{
+		Repository:      "octo/widget",
+		SlackChannel:    "C123",
+		IgnoreAIReviews: false,
+		Reactions: store.Reactions{
+			Commented: "speech_balloon",
+			BotReview: "robot_face",
+		},
+	})
+	client := &fakeSlackClient{}
+	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), testDetector())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -355,8 +473,21 @@ func TestCommentedHandler_BotMarker_AddsMarkerAlongsideStateReaction(t *testing.
 }
 
 func TestApproveHandler_BotMarker_AddsMarkerAlongsideStateReaction(t *testing.T) {
-	msgs, mappings, client := setupReviewFixture(t)
-	h := pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), "white_check_mark", "robot_face", disabledDetector())
+	msgs := newFakeSlackMessages()
+	_ = msgs.Save(context.Background(), store.SlackMessage{
+		PRNumber: 42, Repository: "octo/widget", TS: "ts1",
+	})
+	mappings := newFakeRepoMappings(store.RepoMapping{
+		Repository:      "octo/widget",
+		SlackChannel:    "C123",
+		IgnoreAIReviews: false,
+		Reactions: store.Reactions{
+			Approved:  "white_check_mark",
+			BotReview: "robot_face",
+		},
+	})
+	client := &fakeSlackClient{}
+	h := pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), testDetector())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -373,8 +504,21 @@ func TestApproveHandler_BotMarker_AddsMarkerAlongsideStateReaction(t *testing.T)
 }
 
 func TestCommentedHandler_BotMarker_LineCommentBotGetsMarker(t *testing.T) {
-	msgs, mappings, client := setupReviewFixture(t)
-	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), "speech_balloon", "robot_face", disabledDetector())
+	msgs := newFakeSlackMessages()
+	_ = msgs.Save(context.Background(), store.SlackMessage{
+		PRNumber: 42, Repository: "octo/widget", TS: "ts1",
+	})
+	mappings := newFakeRepoMappings(store.RepoMapping{
+		Repository:      "octo/widget",
+		SlackChannel:    "C123",
+		IgnoreAIReviews: false,
+		Reactions: store.Reactions{
+			Commented: "speech_balloon",
+			BotReview: "robot_face",
+		},
+	})
+	client := &fakeSlackClient{}
+	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), testDetector())
 
 	e := pullrequest.Event{
 		GitHubEvent: "pull_request_review_comment",
@@ -392,8 +536,21 @@ func TestCommentedHandler_BotMarker_LineCommentBotGetsMarker(t *testing.T) {
 }
 
 func TestCommentedHandler_BotMarker_HumanGetsOnlyStateReaction(t *testing.T) {
-	msgs, mappings, client := setupReviewFixture(t)
-	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), "speech_balloon", "robot_face", disabledDetector())
+	msgs := newFakeSlackMessages()
+	_ = msgs.Save(context.Background(), store.SlackMessage{
+		PRNumber: 42, Repository: "octo/widget", TS: "ts1",
+	})
+	mappings := newFakeRepoMappings(store.RepoMapping{
+		Repository:      "octo/widget",
+		SlackChannel:    "C123",
+		IgnoreAIReviews: false,
+		Reactions: store.Reactions{
+			Commented: "speech_balloon",
+			BotReview: "robot_face",
+		},
+	})
+	client := &fakeSlackClient{}
+	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), testDetector())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -412,8 +569,21 @@ func TestCommentedHandler_BotMarker_HumanGetsOnlyStateReaction(t *testing.T) {
 // Suppression wins over the marker: an ignored bot gets no reaction at all,
 // not even the distinct marker.
 func TestCommentedHandler_BotMarker_SuppressedBotGetsNothing(t *testing.T) {
-	msgs, mappings, client := setupReviewFixture(t)
-	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), "speech_balloon", "robot_face", enabledDetector())
+	msgs := newFakeSlackMessages()
+	_ = msgs.Save(context.Background(), store.SlackMessage{
+		PRNumber: 42, Repository: "octo/widget", TS: "ts1",
+	})
+	mappings := newFakeRepoMappings(store.RepoMapping{
+		Repository:      "octo/widget",
+		SlackChannel:    "C123",
+		IgnoreAIReviews: true,
+		Reactions: store.Reactions{
+			Commented: "speech_balloon",
+			BotReview: "robot_face",
+		},
+	})
+	client := &fakeSlackClient{}
+	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), testDetector())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -431,7 +601,16 @@ func TestCommentedHandler_BotMarker_SuppressedBotGetsNothing(t *testing.T) {
 
 // Shared: when no SlackMessage exists, the reaction handlers are no-ops.
 func TestReviewHandlers_NoStoredMessageIsNoop(t *testing.T) {
-	mappings := newFakeRepoMappings(store.RepoMapping{Repository: "octo/widget", SlackChannel: "C123"})
+	mappings := newFakeRepoMappings(store.RepoMapping{
+		Repository:      "octo/widget",
+		SlackChannel:    "C123",
+		IgnoreAIReviews: false,
+		Reactions: store.Reactions{
+			Approved:      "x",
+			Commented:     "x",
+			RequestChange: "x",
+		},
+	})
 	type ctor func() pullrequest.EventHandler
 	cases := []struct {
 		name string
@@ -458,11 +637,11 @@ func TestReviewHandlers_NoStoredMessageIsNoop(t *testing.T) {
 			var h pullrequest.EventHandler
 			switch c.name {
 			case "approve":
-				h = pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), "x", "", disabledDetector())
+				h = pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), testDetector())
 			case "commented":
-				h = pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), "x", "", disabledDetector())
+				h = pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), testDetector())
 			case "request_change":
-				h = pullrequest.NewRequestChangeHandler(msgs, mappings, client, discardLogger(), "x", "", disabledDetector())
+				h = pullrequest.NewRequestChangeHandler(msgs, mappings, client, discardLogger(), testDetector())
 			}
 			if err := h.Handle(context.Background(), c.e); err != nil {
 				t.Fatalf("Handle: %v", err)
