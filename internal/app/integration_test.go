@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -127,7 +126,7 @@ func newIntegrationFixtureCfg(t *testing.T, mutate func(*config.Config), seeds .
 		LogFormat:           "text",
 		DatabaseURL:         "file:" + filepath.Join(dir, "int.db"),
 		ConfigFile:          configPath,
-		Mappings:            seedsToMappings(seeds),
+		Mappings:            seedsToMappings(t, seeds),
 		MessageTTLDays:      30,
 		DependabotFormat:    true,
 		GitHubWebhookSecret: config.Secret("itsecret"),
@@ -165,12 +164,13 @@ func newIntegrationFixtureCfg(t *testing.T, mutate func(*config.Config), seeds .
 // suitable for cfg.Mappings. Seeds sharing an org are merged; if two seeds in
 // the same org have different channels the second wins (write your tests
 // accordingly).
-func seedsToMappings(seeds []mappingSeed) map[string]mappings.Org {
+func seedsToMappings(t *testing.T, seeds []mappingSeed) map[string]mappings.Org {
+	t.Helper()
 	m := map[string]mappings.Org{}
 	for _, s := range seeds {
 		org, repo, ok := splitRepository(s.repository)
 		if !ok {
-			panic(fmt.Sprintf("seed repository %q must be org/repo", s.repository))
+			t.Fatalf("seed repository %q must be org/repo", s.repository)
 		}
 		entry := m[org]
 		entry.Channel = s.channel
@@ -191,7 +191,6 @@ func splitRepository(s string) (org, repo string, ok bool) {
 	}
 	return s[:i], s[i+1:], true
 }
-
 
 // primeLock writes a lock file whose hashes match the provider's entries, so
 // startup validation finds nothing to revalidate. The integration suite is
