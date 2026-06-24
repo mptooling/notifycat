@@ -3,7 +3,6 @@ module github.com/mptooling/notifycat
 go 1.25.11
 
 require (
-	github.com/caarlos0/env/v11 v11.4.1
 	github.com/glebarez/sqlite v1.11.0
 	github.com/joho/godotenv v1.5.1
 	github.com/pressly/goose/v3 v3.27.1
