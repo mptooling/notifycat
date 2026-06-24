@@ -56,8 +56,9 @@ func (p *Provider) Digest() DigestConfig {
 	return cfg
 }
 
-// Get returns the mapping for "org/repo": exact match first, then wildcard
-// on the org. Returns store.ErrNotFound when nothing matches.
+// Get returns the resolved mapping for "org/repo": the org/repo tier merged
+// over the org/* tier. Returns store.ErrNotFound when the org is unmapped or
+// neither an explicit tier nor a wildcard tier matches.
 func (p *Provider) Get(_ context.Context, repository string) (store.RepoMapping, error) {
 	org, repo, ok := splitRepo(repository)
 	if !ok {
@@ -67,33 +68,22 @@ func (p *Provider) Get(_ context.Context, repository string) (store.RepoMapping,
 	if !ok {
 		return store.RepoMapping{}, store.ErrNotFound
 	}
-	if !o.Repositories.All {
-		matched := false
-		for _, r := range o.Repositories.List {
-			if r == repo {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			return store.RepoMapping{}, store.ErrNotFound
-		}
+	var repoPtr, starPtr *RepoConfig
+	if rc, has := o[repo]; has {
+		repoPtr = &rc
 	}
+	if sc, has := o[starKey]; has {
+		starPtr = &sc
+	}
+	if repoPtr == nil && starPtr == nil {
+		return store.RepoMapping{}, store.ErrNotFound
+	}
+	res := resolveRouting(starPtr, repoPtr)
 	return store.RepoMapping{
 		Repository:   repository,
-		SlackChannel: o.Channel,
-		Mentions:     resolveMentions(o),
+		SlackChannel: res.Channel,
+		Mentions:     res.Mentions,
 	}, nil
-}
-
-// resolveMentions materializes the absent-mentions case as @channel so
-// downstream consumers (composer, list CLI) don't need to know about
-// MentionsPresent. Returns a fresh slice to keep the parsed file immutable.
-func resolveMentions(o Org) []string {
-	if !o.MentionsPresent {
-		return []string{ChannelMention}
-	}
-	return append([]string(nil), o.Mentions...)
 }
 
 // Entries returns validation units in deterministic order: orgs sorted A→Z,
