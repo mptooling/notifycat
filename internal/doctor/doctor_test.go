@@ -253,6 +253,9 @@ func TestCheckMappings_WithEntriesIsOK(t *testing.T) {
 	if !sec.OK() {
 		t.Fatalf("CheckMappings FAILed on valid provider: %+v", sec.Checks)
 	}
+	if len(sec.Checks) == 0 || !strings.Contains(sec.Checks[0].Detail, "1 entries") {
+		t.Errorf("Detail = %q; want it to contain \"1 entries\"", sec.Checks)
+	}
 }
 
 func TestCheckMappings_EmptyMappingsIsOK(t *testing.T) {
