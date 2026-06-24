@@ -26,7 +26,7 @@ type mappingsValidator struct {
 }
 
 // NewMappingsValidator builds the validate use case from its dependencies.
-// Callers (cmd/notifycat-mapping, tests) construct provider/checker/lister/
+// Callers (cmd/notifycat-config, tests) construct provider/checker/lister/
 // clock themselves and pass them in — there is no production-wiring façade
 // in this package. `lister` may be nil when no GitHub credentials exist.
 func NewMappingsValidator(
@@ -87,7 +87,7 @@ func (v *mappingsValidator) findExplicitEntry(target string) (mappings.Entry, bo
 func (v *mappingsValidator) runFull(ctx context.Context, force bool, stdout, stderr io.Writer) int {
 	entries := v.provider.Entries()
 	if len(entries) == 0 {
-		fmt.Fprintln(stdout, "no mappings to validate; add entries to mappings.yaml")
+		fmt.Fprintln(stdout, "no mappings to validate; add entries to the mappings: section of config.yaml")
 		return 0
 	}
 	lock, toValidate, stale := v.planFull(entries, force, stderr)
