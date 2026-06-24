@@ -73,7 +73,7 @@ func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, *digest.Schedule
 	)
 
 	// The stuck-PR digest is opt-out (on by default); an explicit
-	// `digest: { enabled: false }` in mappings.yaml disables it. A bad cron
+	// `digest: { enabled: false }` in config.yaml disables it. A bad cron
 	// spec fails startup here rather than silently never firing.
 	var digestScheduler *digest.Scheduler
 	if dcfg := provider.Digest(); dcfg.Enabled {

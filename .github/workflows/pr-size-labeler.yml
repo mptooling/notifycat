@@ -35,4 +35,4 @@ jobs:
           # reflecting review effort — exclude them from the line count.
           files_to_ignore: |
             go.sum
-            mappings.lock
+            config.lock

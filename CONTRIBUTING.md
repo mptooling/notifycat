@@ -19,13 +19,11 @@ Go 1.25.10.
 
 ```sh
 cp .env.example .env
-cp mappings.example.yaml mappings.yaml
+cp config.example.yaml config.yaml
 go mod download
 ```
 
-Edit `.env` and `mappings.yaml` for any manual local testing. Keep `.env`,
-`mappings.yaml`, `mappings.lock`, and local SQLite data out of commits unless a
-change explicitly needs an example or fixture.
+Edit `.env` and `config.yaml` for any manual local testing. Keep `.env`, `config.yaml`, `config.lock`, and local SQLite data out of commits unless a change explicitly needs an example or fixture.
 
 ## Development Commands
 

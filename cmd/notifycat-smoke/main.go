@@ -121,7 +121,7 @@ func renderReactions(stdout io.Writer, res smoke.Result) int {
 func report(stderr io.Writer, target, url string, err error) int {
 	switch {
 	case errors.Is(err, smoke.ErrNoMapping):
-		fmt.Fprintf(stderr, "notifycat-smoke: %s is not in mappings.yaml — add it before smoke-testing\n", target)
+		fmt.Fprintf(stderr, "notifycat-smoke: %s is not in config.yaml mappings — add it before smoke-testing\n", target)
 	case errors.Is(err, smoke.ErrSignatureRejected):
 		fmt.Fprintln(stderr, "notifycat-smoke: the server rejected the signature (401).")
 		fmt.Fprintln(stderr, "  the GITHUB_WEBHOOK_SECRET this command used does not match the running server's — check your .env")
