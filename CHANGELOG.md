@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.15.4](https://github.com/mptooling/notifycat/compare/v0.15.3...v0.15.4) (2026-06-24)
+
+
+### 🧹 Maintenance
+
+* **deps:** bump actions/checkout from 6 to 7 ([#107](https://github.com/mptooling/notifycat/issues/107)) ([6a206dd](https://github.com/mptooling/notifycat/commit/6a206dd48479716fd17c18bdd4623ecc3374d42e))
+* **deps:** bump amannn/action-semantic-pull-request from 5 to 6 ([#103](https://github.com/mptooling/notifycat/issues/103)) ([4f14554](https://github.com/mptooling/notifycat/commit/4f14554b6cee550093170ae4676961eea3fd6d99))
+* **deps:** bump docker/setup-buildx-action from 3 to 4 ([#102](https://github.com/mptooling/notifycat/issues/102)) ([13ddd7b](https://github.com/mptooling/notifycat/commit/13ddd7b2ab5496079c1a13aaa439193a404f7a52))
+* **deps:** bump docker/setup-qemu-action from 3 to 4 ([#101](https://github.com/mptooling/notifycat/issues/101)) ([ddd4e04](https://github.com/mptooling/notifycat/commit/ddd4e04bd8e9d8a93a371f18e981831a438ac3ec))
+
 ## [0.15.3](https://github.com/mptooling/notifycat/compare/v0.15.2...v0.15.3) (2026-06-11)
 
 
