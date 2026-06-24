@@ -162,7 +162,7 @@ func TestCheckConfig_ValidDomainReportsWebhookURL(t *testing.T) {
 	cfg := validConfig()
 	cfg.Domain = "notifycat.example.com"
 	sec := doctor.CheckConfig(cfg)
-	c := findConfigCheck(t, sec, "DOMAIN")
+	c := findConfigCheck(t, sec, "server.domain")
 	if c.Status != validate.StatusOK {
 		t.Fatalf("DOMAIN check = %+v; want OK", c)
 	}
@@ -175,7 +175,7 @@ func TestCheckConfig_DomainWithSchemeFails(t *testing.T) {
 	cfg := validConfig()
 	cfg.Domain = "https://notifycat.example.com"
 	sec := doctor.CheckConfig(cfg)
-	c := findConfigCheck(t, sec, "DOMAIN")
+	c := findConfigCheck(t, sec, "server.domain")
 	if c.Status != validate.StatusFail {
 		t.Fatalf("DOMAIN carrying a scheme should FAIL (it must be a bare host), got %+v", c)
 	}
@@ -188,7 +188,7 @@ func TestCheckConfig_MalformedDomainFails(t *testing.T) {
 	cfg := validConfig()
 	cfg.Domain = "not a valid host"
 	sec := doctor.CheckConfig(cfg)
-	c := findConfigCheck(t, sec, "DOMAIN")
+	c := findConfigCheck(t, sec, "server.domain")
 	if c.Status != validate.StatusFail {
 		t.Fatalf("malformed DOMAIN should FAIL, got %+v", c)
 	}
@@ -197,7 +197,7 @@ func TestCheckConfig_MalformedDomainFails(t *testing.T) {
 func TestCheckConfig_UnsetDomainSkips(t *testing.T) {
 	cfg := validConfig() // Domain is empty
 	sec := doctor.CheckConfig(cfg)
-	c := findConfigCheck(t, sec, "DOMAIN")
+	c := findConfigCheck(t, sec, "server.domain")
 	if c.Status != validate.StatusSkip {
 		t.Fatalf("unset DOMAIN should SKIP (local-dev/tunnel users), got %+v", c)
 	}
