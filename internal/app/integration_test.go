@@ -172,14 +172,17 @@ func seedsToMappings(t *testing.T, seeds []mappingSeed) map[string]mappings.Org 
 		if !ok {
 			t.Fatalf("seed repository %q must be org/repo", s.repository)
 		}
-		entry := m[org]
-		entry.Channel = s.channel
-		if s.mentions != nil {
-			entry.Mentions = s.mentions
-			entry.MentionsPresent = true
+		orgTiers := m[org]
+		if orgTiers == nil {
+			orgTiers = make(mappings.Org)
 		}
-		entry.Repositories.List = append(entry.Repositories.List, repo)
-		m[org] = entry
+		repoConfig := mappings.RepoConfig{Channel: s.channel}
+		if s.mentions != nil {
+			repoConfig.Mentions = s.mentions
+			repoConfig.MentionsPresent = true
+		}
+		orgTiers[repo] = repoConfig
+		m[org] = orgTiers
 	}
 	return m
 }

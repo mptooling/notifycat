@@ -244,7 +244,7 @@ func TestCheckDatabase_EmptyDSNFails(t *testing.T) {
 
 func TestCheckMappings_WithEntriesIsOK(t *testing.T) {
 	m := map[string]mappings.Org{
-		"octo": {Channel: "C0123ABCDE", Repositories: mappings.Repositories{List: []string{"widget"}}},
+		"octo": {"widget": {Channel: "C0123ABCDE"}},
 	}
 	sec := doctor.CheckMappings(mappings.NewProvider(m, nil))
 	if sec.Name != "mappings" {
