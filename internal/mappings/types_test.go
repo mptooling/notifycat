@@ -1,55 +1,70 @@
-package mappings
+package mappings_test
 
 import (
 	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/mptooling/notifycat/internal/mappings"
 )
 
-func TestRepositories_UnmarshalYAML_Wildcard(t *testing.T) {
-	var r Repositories
-	if err := yaml.Unmarshal([]byte(`"*"`), &r); err != nil {
-		t.Fatalf("unmarshal wildcard: %v", err)
+func decodeOrg(t *testing.T, body string) mappings.Org {
+	t.Helper()
+	var o mappings.Org
+	dec := yaml.NewDecoder(strings.NewReader(body))
+	dec.KnownFields(true)
+	if err := dec.Decode(&o); err != nil {
+		t.Fatalf("decode: %v", err)
 	}
-	if !r.All || len(r.List) != 0 {
-		t.Errorf("wildcard parse: got %+v; want All=true List=nil", r)
+	return o
+}
+
+func TestRepoConfig_ChannelAndMentionsPresent(t *testing.T) {
+	o := decodeOrg(t, `
+api:
+  channel: C0API
+  mentions: ["<@U1>"]
+"*":
+  channel: C0STAR
+`)
+	api, ok := o["api"]
+	if !ok {
+		t.Fatal("missing api tier")
+	}
+	if api.Channel != "C0API" {
+		t.Errorf("api.Channel = %q; want C0API", api.Channel)
+	}
+	if !api.MentionsPresent || len(api.Mentions) != 1 || api.Mentions[0] != "<@U1>" {
+		t.Errorf("api mentions = %+v present=%v", api.Mentions, api.MentionsPresent)
+	}
+	star := o["*"]
+	if star.Channel != "C0STAR" || star.MentionsPresent {
+		t.Errorf("star = %+v; want channel C0STAR, mentions absent", star)
 	}
 }
 
-func TestRepositories_UnmarshalYAML_List(t *testing.T) {
-	var r Repositories
-	if err := yaml.Unmarshal([]byte(`["api", "web"]`), &r); err != nil {
-		t.Fatalf("unmarshal list: %v", err)
-	}
-	if r.All {
-		t.Errorf("list shape set All=true")
-	}
-	if len(r.List) != 2 || r.List[0] != "api" || r.List[1] != "web" {
-		t.Errorf("list parse: got %+v", r.List)
+func TestRepoConfig_EmptyMentionsIsPresent(t *testing.T) {
+	o := decodeOrg(t, "api:\n  channel: C0API\n  mentions: []\n")
+	if !o["api"].MentionsPresent || len(o["api"].Mentions) != 0 {
+		t.Errorf("mentions: [] should be present+empty; got %+v", o["api"])
 	}
 }
 
-func TestRepositories_UnmarshalYAML_RejectsStarInList(t *testing.T) {
-	var r Repositories
-	err := yaml.Unmarshal([]byte(`["api", "*"]`), &r)
-	if err == nil || !strings.Contains(err.Error(), `"*"`) {
-		t.Fatalf(`expected "*" rejection in list shape; got %v`, err)
+func TestRepoConfig_NullMentionsRejected(t *testing.T) {
+	var o mappings.Org
+	dec := yaml.NewDecoder(strings.NewReader("api:\n  channel: C0API\n  mentions: null\n"))
+	dec.KnownFields(true)
+	if err := dec.Decode(&o); err == nil {
+		t.Fatal("expected error for mentions: null")
 	}
 }
 
-func TestRepositories_UnmarshalYAML_RejectsEmptyList(t *testing.T) {
-	var r Repositories
-	err := yaml.Unmarshal([]byte(`[]`), &r)
-	if err == nil || !strings.Contains(err.Error(), "empty") {
-		t.Fatalf("expected empty-list rejection; got %v", err)
-	}
-}
-
-func TestRepositories_UnmarshalYAML_RejectsRandomString(t *testing.T) {
-	var r Repositories
-	err := yaml.Unmarshal([]byte(`"all"`), &r)
-	if err == nil {
-		t.Fatalf(`expected rejection of non-"*" string`)
+func TestRepoConfig_UnknownKeyRejected(t *testing.T) {
+	var o mappings.Org
+	dec := yaml.NewDecoder(strings.NewReader("api:\n  channel: C0API\n  bogus: x\n"))
+	dec.KnownFields(true)
+	if err := dec.Decode(&o); err == nil {
+		t.Fatal("expected error for unknown tier key")
 	}
 }
