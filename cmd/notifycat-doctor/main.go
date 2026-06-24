@@ -49,14 +49,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// buildValidator constructs a RepoValidator from cfg. Returns nil when the
-// mappings file cannot be loaded — the doctor's CheckMappingsFile will
-// surface that, and per-repo Slack/GitHub checks become a no-op.
+// buildValidator constructs a RepoValidator from in-memory config.
 func buildValidator(cfg config.Config) doctor.RepoValidator {
-	provider, err := mappings.Load(cfg.MappingsFile)
-	if err != nil {
-		return nil
-	}
+	provider := mappings.NewProvider(cfg.Mappings, cfg.Digest)
 	hc := &http.Client{Timeout: 10 * time.Second}
 	slackClient := slack.NewClient(hc, cfg.SlackBotToken.Reveal(), slack.WithBaseURL(cfg.SlackBaseURL))
 	var ghChecker validate.GitHubChecker

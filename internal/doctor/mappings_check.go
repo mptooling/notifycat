@@ -6,22 +6,12 @@ import (
 	"github.com/mptooling/notifycat/internal/mappings"
 )
 
-// CheckMappingsFile loads the mappings file via internal/mappings.Load and
-// reports whether the file exists and parses cleanly. An empty mappings map
-// is OK (the server treats it as a no-op).
-func CheckMappingsFile(path string) Section {
+// CheckMappings reports whether the `mappings:` section of config.yaml parsed
+// into any entries. An empty section is OK (the server boots but routes
+// nothing). Parse failures already surface in config load, so by the time the
+// doctor has a provider the file is structurally valid.
+func CheckMappings(provider *mappings.Provider) Section {
 	sec := Section{Name: "mappings"}
-	if path == "" {
-		sec.Checks = append(sec.Checks, failResult("file", "NOTIFYCAT_MAPPINGS_FILE is empty; set it or rely on the ./mappings.yaml default"))
-		return sec
-	}
-	provider, err := mappings.Load(path)
-	if err != nil {
-		sec.Checks = append(sec.Checks, failResult("file", "cannot load %q: %v", path, err))
-		return sec
-	}
-	sec.Checks = append(sec.Checks, okResult("file", path))
-
 	entries := provider.Entries()
 	if len(entries) == 0 {
 		sec.Checks = append(sec.Checks, okResult("entries", "0 entries (server will boot but route nothing)"))

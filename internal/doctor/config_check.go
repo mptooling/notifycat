@@ -28,10 +28,10 @@ func CheckConfig(cfg config.Config) Section {
 		sec.Checks = append(sec.Checks, okResult("DATABASE_URL", cfg.DatabaseURL))
 	}
 
-	if cfg.MappingsFile == "" {
-		sec.Checks = append(sec.Checks, failResult("NOTIFYCAT_MAPPINGS_FILE", "missing"))
+	if cfg.ConfigFile == "" {
+		sec.Checks = append(sec.Checks, failResult("config.yaml", "missing"))
 	} else {
-		sec.Checks = append(sec.Checks, okResult("NOTIFYCAT_MAPPINGS_FILE", cfg.MappingsFile))
+		sec.Checks = append(sec.Checks, okResult("config.yaml", cfg.ConfigFile))
 	}
 
 	sec.Checks = append(sec.Checks, publicWebhookURLCheck(cfg.Domain))
