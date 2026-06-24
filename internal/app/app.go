@@ -35,15 +35,12 @@ type Cleanup func()
 // func from cfg. Callers run the server and both schedulers in separate
 // goroutines and invoke cleanup on shutdown.
 //
-// Mappings come from the declarative cfg.MappingsFile; the server refuses
-// to start if any entry fails validation (against the per-entry lock cache).
+// Mappings come from the `mappings:` section of config.yaml; the server
+// refuses to start if any entry fails validation (against the per-entry lock).
 func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, *digest.Scheduler, Cleanup, error) {
 	logger := newLogger(cfg)
 
-	provider, err := mappings.Load(cfg.MappingsFile)
-	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("app: load mappings: %w", err)
-	}
+	provider := mappings.NewProvider(cfg.Mappings, cfg.Digest)
 
 	db, err := store.Open(cfg.DatabaseURL)
 	if err != nil {
@@ -76,7 +73,7 @@ func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, *digest.Schedule
 	)
 
 	// The stuck-PR digest is opt-out (on by default); an explicit
-	// `digest: { enabled: false }` in mappings.yaml disables it. A bad cron
+	// `digest: { enabled: false }` in config.yaml disables it. A bad cron
 	// spec fails startup here rather than silently never firing.
 	var digestScheduler *digest.Scheduler
 	if dcfg := provider.Digest(); dcfg.Enabled {
@@ -143,7 +140,7 @@ func startupValidate(
 	if len(entries) == 0 {
 		return nil
 	}
-	lockPath := mappings.LockPath(cfg.MappingsFile)
+	lockPath := mappings.LockPath(cfg.ConfigFile)
 	lock, err := mappings.ReadLock(lockPath)
 	if err != nil {
 		logger.Warn("startup validate: lock unreadable; rebuilding", slog.Any("err", err))

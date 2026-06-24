@@ -6,7 +6,7 @@ Notifycat applies its database migrations automatically on server startup (see [
 
 0.16.0 adds a scheduled [stuck-PR digest](mappings.md#stuck-pr-digest): a per-channel reminder listing open PRs nobody has touched since before today. Two things make this upgrade more than a restart.
 
-> ⚠️ **The digest is on by default.** With no `digest:` section in `mappings.yaml`, the server starts posting a digest at **9am daily, server-local time**, to every mapped channel. This is a deliberate opt-out design. To keep the previous quiet behavior, add the section and disable it:
+> ⚠️ **The digest is on by default.** With no `digest:` section in `config.yaml`, the server starts posting a digest at **9am daily, server-local time**, to every mapped channel. This is a deliberate opt-out design. To keep the previous quiet behavior, add the section and disable it:
 >
 > ```yaml
 > digest:
@@ -19,7 +19,7 @@ Notifycat applies its database migrations automatically on server startup (see [
 
 1. **Deploy the new image and restart.** The embedded migration (`00004`) runs on startup: it adds the `closed_at` column and backfills each existing row's `updated_at` from its Slack message timestamp (the PR's registration time) so ages are correct. For a controlled rollout, run `notifycat-migrate up` as a separate step first — see [Operations → migrations](operations.md#stuck-pr-digest).
 
-2. **Decide on the schedule (optional).** The digest is global, configured in `mappings.yaml`. Defaults to `0 9 * * *`. To change it, or to disable the feature, add a `digest:` section:
+2. **Decide on the schedule (optional).** The digest is global, configured in `config.yaml`. Defaults to `0 9 * * *`. To change it, or to disable the feature, add a `digest:` section:
 
    ```yaml
    digest:

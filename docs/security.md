@@ -37,9 +37,7 @@ as `chat:write` on every channel. If a setup guide ever asks you to over-provisi
 
 ### The optional read-only GitHub token
 
-`GITHUB_TOKEN` is **not** used by the server. It is read only by `notifycat-mapping validate` (and the doctor, which
-delegates to the same check) to query a repository's webhook configuration and confirm the expected PR events are
-subscribed. Without it, that one coverage check is skipped and everything else works.
+`GITHUB_TOKEN` is **not** used by the server. It is read only by `notifycat-config validate` (and the doctor, which delegates to the same check) to query a repository's webhook configuration and confirm the expected PR events are subscribed. Without it, that one coverage check is skipped and everything else works.
 
 When you do set it, a fine-grained token with **Webhooks: Read** on the target repository is enough. Creating a webhook
 in the first place needs **Webhooks: Read and write** (or classic `admin:repo_hook`); see
@@ -65,8 +63,7 @@ ls -l .env            # expect: -rw------- (0600)
 chmod 600 .env        # fix if it is anything more permissive
 ```
 
-`.env` is gitignored — never commit it, and never paste its contents into an issue or PR. The same applies to
-`mappings.yaml` and anything under `data/`.
+`.env` is gitignored — never commit it, and never paste its contents into an issue or PR. The same applies to `config.yaml` and anything under `data/`.
 
 ## Reporting a vulnerability
 

@@ -75,7 +75,7 @@ jobs:
           set -eu
           version="${TAG#v}"
           mkdir -p dist
-          cp compose.yaml Caddyfile notifycat mappings.example.yaml \
+          cp compose.yaml Caddyfile notifycat config.example.yaml \
              scripts/install.sh dist/
           # GitHub rewrites release-asset names that start with a dot, so the
           # env template ships as env.example; install.sh saves it as .env.example.
@@ -85,7 +85,7 @@ jobs:
             "s|^VERSION=\"\${NOTIFYCAT_VERSION:-[^}]*}\"|VERSION=\"\${NOTIFYCAT_VERSION:-${version}}\"|" \
             dist/install.sh
           cd dist
-          sha256sum compose.yaml Caddyfile notifycat env.example mappings.example.yaml \
+          sha256sum compose.yaml Caddyfile notifycat env.example config.example.yaml \
             install.sh > SHA256SUMS
 
       - name: Upload release assets
@@ -95,7 +95,7 @@ jobs:
         run: |
           cd dist
           gh release upload "$TAG" \
-            compose.yaml Caddyfile notifycat env.example mappings.example.yaml \
+            compose.yaml Caddyfile notifycat env.example config.example.yaml \
             install.sh SHA256SUMS \
             --clobber --repo "$GITHUB_REPOSITORY"
 
@@ -107,7 +107,7 @@ jobs:
           set -eu
           # Fail the release if GitHub renamed or dropped any asset (e.g. a
           # leading-dot file) rather than shipping a broken install bundle.
-          expected="compose.yaml Caddyfile notifycat env.example mappings.example.yaml install.sh SHA256SUMS"
+          expected="compose.yaml Caddyfile notifycat env.example config.example.yaml install.sh SHA256SUMS"
           actual="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
           for name in $expected; do
             printf '%s\n' "$actual" | grep -qx "$name" \

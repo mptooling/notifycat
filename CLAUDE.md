@@ -38,7 +38,7 @@ composition root — there is no DI framework.
 
 `app.Wire(cfg) (*http.Server, *cleanup.Scheduler, Cleanup, error)`
 constructs the entire dependency graph. All four binaries under `cmd/`
-reuse pieces of this — the doctor and mapping CLIs build subsets of
+reuse pieces of this — the doctor and config CLIs build subsets of
 the graph for their own purposes. **There is no façade/test-seam
 split**: a type has exactly one constructor, with every dep injected.
 
@@ -66,14 +66,15 @@ debugging deliveries that return 200 but don't update Slack.
 
 ### Mappings & startup validation
 
-Routing comes from a **declarative `mappings.yaml`**, not the DB.
-`internal/mappings.Provider` loads it; `internal/validate` runs
-per-entry checks against Slack and (optionally) GitHub. On boot,
-`app.startupValidate` diffs entries against `mappings.lock` and only
+Routing comes from the **`mappings:` section of the declarative
+`config.yaml`**, not the DB. `internal/mappings.Provider` is built from
+it (via `mappings.NewProvider`); `internal/validate` runs per-entry
+checks against Slack and (optionally) GitHub. On boot,
+`app.startupValidate` diffs entries against `config.lock` and only
 revalidates changed ones — successful entries are merged back into the
 lock. Empty mappings boot fine. Any failing entry aborts startup with
 the failing details logged. The same code path powers
-`notifycat-mapping validate` and `notifycat-doctor owner/repo`.
+`notifycat-config validate` and `notifycat-doctor owner/repo`.
 
 ### Persistence
 
@@ -83,12 +84,13 @@ embedded goose SQL under `internal/store/migrations/` and applied at
 server startup (or via `notifycat-migrate`).
 
 `internal/cleanup.Scheduler` deletes stale `slack_messages` rows older
-than `NOTIFYCAT_MESSAGE_TTL_DAYS` once at startup and every 24h
+than `cleanup.message_ttl_days` (config.yaml) once at startup and every 24h
 thereafter. It only deletes the DB row — never the Slack message.
 
 ### Bot-reviewer suppression
 
-`internal/aireview.Detector`, gated by `NOTIFYCAT_IGNORE_AI_REVIEWS`,
+`internal/aireview.Detector`, gated by `reviews.ignore_ai_reviews`
+(config.yaml),
 sits in the three review handlers and skips `reactions.add` when
 `sender.type == "Bot"`. The initial PR-open post is unaffected; the
 detector intentionally does **not** distinguish AI reviewers from
@@ -98,9 +100,9 @@ same to GitHub's payload).
 ### Doctor
 
 `internal/doctor` builds a list of `Section{Checks}` and writes a
-preflight report. It owns the config/database/mappings-file checks
+preflight report. It owns the config/database/mappings checks
 and **delegates per-repo Slack/GitHub probing to
-`internal/validate`** — so the doctor and `notifycat-mapping validate`
+`internal/validate`** — so the doctor and `notifycat-config validate`
 agree by construction.
 
 ## Code conventions
@@ -131,6 +133,6 @@ agree by construction.
 - Watch out for the literal string `BREAKING CHANGE` *anywhere* in a
   commit body — release-please parses it as a breaking-change footer
   even when it's prose. Use a different phrasing in normal commits.
-- Do not commit `mappings.yaml`, `mappings.lock`, `.env`, or anything
+- Do not commit `config.yaml`, `config.lock`, `.env`, or anything
   under `/data/` — all four are gitignored and represent operator
   state, not project state.

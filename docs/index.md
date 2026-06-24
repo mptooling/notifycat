@@ -9,7 +9,7 @@ The recommended path is the one-command Docker Compose install — it brings up 
 ```sh
 curl -fsSL https://github.com/mptooling/notifycat/releases/latest/download/install.sh | sh
 cd notifycat
-./notifycat setup          # interactive wizard — writes .env and mappings.yaml
+./notifycat setup          # interactive wizard — writes .env and config.yaml
 docker compose up -d       # start Notifycat + Caddy (HTTPS via Let's Encrypt)
 ./notifycat doctor         # verify setup
 ```
@@ -72,7 +72,7 @@ flowchart LR
 - [Security & permissions](security.md): least-privilege model, the webhook-secret trust boundary, and a pre-go-live
   checklist.
 - [Getting started](getting-started.md): local setup and first end-to-end run.
-- [Mappings file](mappings.md): the declarative `mappings.yaml` schema, lookup rules, lock file, and CLI workflow.
+- [Mappings file](mappings.md): the declarative `mappings:` section of `config.yaml` — schema, lookup rules, lock file, and CLI workflow.
 - [Configuration](configuration.md): environment variables, database, and reactions.
 - [Slack app setup](slack-app.md): manifest-based app creation, bot scopes, token setup, channel IDs, and mentions.
 - [GitHub webhook setup](github-webhook.md): script-based webhook creation, required GitHub access, PR events, comment

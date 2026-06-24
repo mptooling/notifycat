@@ -35,7 +35,7 @@ const smokeTitlePrefix = "[notifycat smoke]"
 // Sentinel errors let the CLI render a clear remediation message — and pick an
 // exit code — without parsing strings or leaking a stack trace.
 var (
-	// ErrNoMapping means the repository is absent from mappings.yaml. Returned
+	// ErrNoMapping means the repository is absent from config.yaml's mappings. Returned
 	// before any network call so the operator fixes config first.
 	ErrNoMapping = errors.New("smoke: repository not present in mappings")
 	// ErrSignatureRejected means the server answered 401 — the secret this

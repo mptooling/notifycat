@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -13,25 +11,17 @@ import (
 	"github.com/mptooling/notifycat/internal/mappings"
 )
 
-const testYAML = `mappings:
-  acme:
-    channel: C0123ABCDE
-    mentions: ["@a"]
-    repositories: ["api", "web"]
-`
-
 func testProvider(t *testing.T) *mappings.Provider {
 	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "mappings.yaml")
-	if err := os.WriteFile(path, []byte(testYAML), 0o600); err != nil {
-		t.Fatalf("write yaml: %v", err)
+	m := map[string]mappings.Org{
+		"acme": {
+			Channel:         "C0123ABCDE",
+			Mentions:        []string{"@a"},
+			MentionsPresent: true,
+			Repositories:    mappings.Repositories{List: []string{"api", "web"}},
+		},
 	}
-	p, err := mappings.Load(path)
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	return p
+	return mappings.NewProvider(m, nil)
 }
 
 // fakeMappingsValidator records inputs so dispatch tests can assert the

@@ -35,7 +35,7 @@ func (v *Validator) Validate(ctx context.Context, repository string) Report {
 func (v *Validator) mappingLookupFailure(repository string, err error) Report {
 	detail := fmt.Sprintf("could not load mapping for %q: %v", repository, err)
 	if errors.Is(err, store.ErrNotFound) {
-		detail = fmt.Sprintf("no mapping found for %q; add an entry to mappings.yaml under the org that owns it", repository)
+		detail = fmt.Sprintf("no mapping found for %q; add an entry under the org that owns it in config.yaml's mappings: section", repository)
 	}
 	return Report{
 		Repository: repository,

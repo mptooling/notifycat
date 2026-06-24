@@ -17,8 +17,7 @@ One pull request gets one Slack message. As the PR opens, moves to draft, gets r
 updates that message and adds the configured reactions. The result is a quieter channel: reviewers can follow the state
 of a PR without digging through repeated notifications.
 
-It is intentionally small: one HTTP endpoint, a SQLite database (for Slack message timestamps), and a declarative
-`mappings.yaml` that decides which PRs route to which Slack channels.
+It is intentionally small: one HTTP endpoint, a SQLite database (for Slack message timestamps), and a declarative `config.yaml` that holds all settings and decides which PRs route to which Slack channels.
 
 ## Quick start
 
@@ -29,7 +28,7 @@ toolchain, no SQLite client, no manual file editing.
 ```sh
 curl -fsSL https://github.com/mptooling/notifycat/releases/latest/download/install.sh | sh
 cd notifycat
-./notifycat setup          # interactive wizard — writes .env and mappings.yaml
+./notifycat setup          # interactive wizard — writes .env and config.yaml
 docker compose up -d       # start Notifycat + Caddy (HTTPS via Let's Encrypt)
 ./notifycat doctor         # verify setup
 ```
@@ -56,16 +55,14 @@ Six commands from "nothing" to "running":
 ```sh
 git clone https://github.com/mptooling/notifycat.git && cd notifycat
 cp .env.example .env                       # then edit: set GITHUB_WEBHOOK_SECRET, SLACK_BOT_TOKEN
-cp mappings.example.yaml mappings.yaml     # then edit: real Slack channel IDs
+cp config.example.yaml config.yaml        # then edit: database.url and real Slack channel IDs
 
-go run ./cmd/notifycat-mapping validate
+go run ./cmd/notifycat-config validate
 go run ./cmd/notifycat-doctor
 go run ./cmd/notifycat-server
 ```
 
-The binaries pick up `.env` from the current working directory and default to `./mappings.yaml` and
-`./data/notifycat.db`. See [Getting started](https://mptooling.github.io/notifycat/getting-started/) for the end-to-end
-walkthrough including the tunnel + webhook setup.
+The binaries pick up `.env` from the current working directory and default to `./config.yaml` and `./data/notifycat.db`. See [Getting started](https://mptooling.github.io/notifycat/getting-started/) for the end-to-end walkthrough including the tunnel + webhook setup.
 
 ## What It Handles
 
@@ -73,8 +70,7 @@ walkthrough including the tunnel + webhook setup.
 - `pull_request_review` webhooks for approved, commented, and changes-requested reviews.
 - `pull_request_review_comment` webhooks for line-specific PR comments.
 - GitHub HMAC-SHA256 verification through `X-Hub-Signature-256`.
-- Repository routing from a declarative `mappings.yaml` — explicit lists or `repositories: "*"` for a whole org. See
-  [`mappings.example.yaml`](mappings.example.yaml).
+- Repository routing from the `mappings:` section of `config.yaml` — explicit lists or `repositories: "*"` for a whole org. See [`config.example.yaml`](config.example.yaml).
 - Slack message updates instead of repeated new messages for the same PR.
 
 ## Binaries
@@ -82,7 +78,7 @@ walkthrough including the tunnel + webhook setup.
 | Binary | Purpose |
 | --- | --- |
 | `notifycat-server` | HTTP server for GitHub webhooks |
-| `notifycat-mapping` | CLI for listing and validating the mappings file |
+| `notifycat-config` | CLI for listing and validating config.yaml (mappings and settings) |
 | `notifycat-migrate` | Applies embedded SQLite migrations |
 | `notifycat-doctor` | Preflight diagnostics (config, database, mappings, optional per-repo Slack/GitHub) |
 | `notifycat-smoke` | Forges a signed PR event end-to-end to confirm Slack delivery |

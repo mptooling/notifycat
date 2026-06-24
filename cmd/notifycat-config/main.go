@@ -1,4 +1,4 @@
-// Command notifycat-mapping is the CLI for the declarative mappings.yaml
+// Command notifycat-config is the CLI for the declarative config.yaml
 // workflow: `list` prints the file, `validate` runs the cache-aware
 // validation pipeline. This file owns argument parsing and dispatches to
 // use cases in internal/mappingcli.
@@ -25,20 +25,16 @@ import (
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "notifycat-mapping:", err)
+		fmt.Fprintln(os.Stderr, "notifycat-config:", err)
 		os.Exit(1)
 	}
-	provider, err := mappings.Load(cfg.MappingsFile)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "notifycat-mapping:", err)
-		os.Exit(1)
-	}
+	provider := mappings.NewProvider(cfg.Mappings, cfg.Digest)
 	checker, lister := buildValidationDeps(cfg, provider)
 	validator := mappingcli.NewMappingsValidator(
 		provider,
 		checker,
 		lister,
-		mappings.LockPath(cfg.MappingsFile),
+		mappings.LockPath(cfg.ConfigFile),
 		time.Now,
 	)
 	os.Exit(dispatch(os.Args[1:], provider, validator, os.Stdout, os.Stderr))
@@ -111,7 +107,7 @@ func parseValidateArgs(args []string, stderr io.Writer) (target string, force bo
 func usage() string {
 	return strings.TrimSpace(`
 usage:
-  notifycat-mapping list
-  notifycat-mapping validate [owner/repo] [--force]
+  notifycat-config list
+  notifycat-config validate [owner/repo] [--force]
 `)
 }

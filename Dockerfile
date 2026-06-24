@@ -17,7 +17,7 @@ COPY . .
 
 ENV CGO_ENABLED=0 GOFLAGS="-trimpath" LDFLAGS="-s -w"
 RUN go build -ldflags="${LDFLAGS}" -o /out/notifycat-server   ./cmd/notifycat-server
-RUN go build -ldflags="${LDFLAGS}" -o /out/notifycat-mapping  ./cmd/notifycat-mapping
+RUN go build -ldflags="${LDFLAGS}" -o /out/notifycat-config  ./cmd/notifycat-config
 RUN go build -ldflags="${LDFLAGS}" -o /out/notifycat-migrate  ./cmd/notifycat-migrate
 RUN go build -ldflags="${LDFLAGS}" -o /out/notifycat-doctor    ./cmd/notifycat-doctor
 RUN go build -ldflags="${LDFLAGS}" -o /out/notifycat-smoke     ./cmd/notifycat-smoke
@@ -33,7 +33,7 @@ COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 # Statically linked binaries (CGO_ENABLED=0); ENTRYPOINT left empty so the
 # container can run any of them.
 COPY --from=build /out/notifycat-server    /usr/local/bin/notifycat-server
-COPY --from=build /out/notifycat-mapping   /usr/local/bin/notifycat-mapping
+COPY --from=build /out/notifycat-config    /usr/local/bin/notifycat-config
 COPY --from=build /out/notifycat-migrate   /usr/local/bin/notifycat-migrate
 COPY --from=build /out/notifycat-doctor    /usr/local/bin/notifycat-doctor
 COPY --from=build /out/notifycat-smoke     /usr/local/bin/notifycat-smoke
@@ -42,8 +42,7 @@ COPY --from=build --chown=65532:65532 /out/app /app
 
 EXPOSE 8080
 WORKDIR /app
-ENV DATABASE_URL=file:/app/notifycat.db
-ENV NOTIFYCAT_MAPPINGS_FILE=/app/mappings.yaml
+ENV NOTIFYCAT_CONFIG_FILE=/app/config.yaml
 
 # Distroless-style non-root UID; works on scratch because scratch has no
 # /etc/passwd to consult.

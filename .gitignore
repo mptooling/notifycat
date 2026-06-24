@@ -32,3 +32,5 @@ coverage.out
 # Internal project's files
 mappings.lock
 mappings.yaml
+config.lock
+config.yaml

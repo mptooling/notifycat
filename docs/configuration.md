@@ -1,116 +1,108 @@
 # Configuration
 
-Notifycat reads configuration from environment variables. For local development, it also loads `.env` if the file
-exists.
+Notifycat is configured through a single `config.yaml` file that holds all non-secret settings. Secrets and infra-interpolation values live in environment variables (or `.env` for local development). For local development, `.env` is loaded automatically if the file exists.
 
-Secrets should stay in environment variables or your deployment secret manager. Do not put real tokens in committed
-files.
+The config file path defaults to `./config.yaml`. Override with `NOTIFYCAT_CONFIG_FILE`. The Docker image default is `/app/config.yaml`.
 
-## Required Variables
+Secrets should stay in environment variables or your deployment secret manager. Do not put real tokens in committed files. See [config.example.yaml](https://github.com/mptooling/notifycat/blob/main/config.example.yaml) for a copy-paste starting point.
 
-| Variable | Description |
+## Secrets (environment variables only)
+
+| Variable | Required | Notes |
+| --- | --- | --- |
+| `GITHUB_WEBHOOK_SECRET` | Required | The secret configured on the GitHub webhook. Use a long random value; 32 characters or more is a good baseline. |
+| `SLACK_BOT_TOKEN` | Required | Slack bot token, usually starting with `xoxb-`. |
+| `GITHUB_TOKEN` | Optional | PAT used by `notifycat-config validate` and `notifycat-doctor` to read repo webhook config. Required scope: `admin:repo_hook` (or `repo` for private repos). The server does not need this; if unset, the webhook-coverage check is skipped. |
+
+The server and CLIs fail fast when `GITHUB_WEBHOOK_SECRET` or `SLACK_BOT_TOKEN` is missing.
+
+`GITHUB_TOKEN` is also read by `scripts/github-webhook-create.sh`, but that script *creates* the webhook and only needs the `Webhooks: Read and write` permission on a fine-grained PAT. The validate/doctor reading path needs `admin:repo_hook` / `repo`. A single token that has both works everywhere; otherwise issue separate PATs.
+
+## Infra-interpolation (environment variables only)
+
+These are not secrets but must live in `.env` because `docker-compose` and Caddy read them directly and cannot access `config.yaml`.
+
+| Variable | Notes |
 | --- | --- |
-| `GITHUB_WEBHOOK_SECRET` | The secret configured on the GitHub webhook. |
-| `SLACK_BOT_TOKEN` | Slack bot token, usually starting with `xoxb-`. |
+| `DOMAIN` | Public DNS name. Caddy uses it as the virtual-host name and obtains a Let's Encrypt certificate. Required when using `compose.yaml`. Also set `server.domain` in `config.yaml` so `notifycat-doctor` can derive the webhook URL. |
+| `ACME_EMAIL` | Contact email for Let's Encrypt registration. Required when using `compose.yaml` — Caddy will fail to start without it. |
 
-The server and CLIs fail fast when either value is missing. Use a long random `GITHUB_WEBHOOK_SECRET`; 32 characters or
-more is a good baseline.
+## config.yaml reference
 
-## Server and Logging
+### server
 
-| Variable | Default | Notes |
+| Key | Default | Notes |
 | --- | --- | --- |
-| `ADDR` | `:8080` | HTTP listen address. |
-| `LOG_LEVEL` | `info` | Supported values: `debug`, `info`, `warn`, `error`. |
-| `LOG_FORMAT` | `text` | Use `json` for structured production logs. |
+| `server.addr` | `:8080` | HTTP listen address. |
+| `server.log_level` | `info` | Supported values: `debug`, `info`, `warn`, `error`. |
+| `server.log_format` | `text` | Use `json` for structured production logs. |
+| `server.domain` | _(unset)_ | Public domain name. `notifycat-doctor` derives `https://$domain/webhook/github` from this. Not read by the server process itself. |
 
-## Database
+### database
 
-| Variable | Default | Notes |
+| Key | Default | Notes |
 | --- | --- | --- |
-| `DATABASE_URL` | `file:./data/notifycat.db` | SQLite path or `file:` DSN. Stores the per-PR Slack message timestamps. Mappings live in YAML, not the database. |
+| `database.url` | `file:./data/notifycat.db` | SQLite path or `file:` DSN. Stores the per-PR Slack message timestamps. Mappings live in `config.yaml`, not the database. |
 
-In Docker, the image sets:
+For Docker, set `database.url` in your mounted `config.yaml`. The recommended value is `file:/app/notifycat.db` (the historical image path) or `file:/data/notifycat.db` if you mount a `/data` volume for persistence.
 
-```text
-DATABASE_URL=file:/data/notifycat.db
-```
+### slack
 
-Mount `/data` if you want the database to survive container restarts.
-
-## Mappings File
-
-| Variable | Default | Notes |
+| Key | Default | Notes |
 | --- | --- | --- |
-| `NOTIFYCAT_MAPPINGS_FILE` | `./mappings.yaml` | Path to the declarative mappings file. The sibling lock file (e.g. `./mappings.lock`) is derived by swapping the `.yaml`/`.yml` extension for `.lock`. |
+| `slack.base_url` | `https://slack.com` | Override for tests only. |
+| `slack.reactions.enabled` | `true` | Turns reaction updates on or off. |
+| `slack.reactions.new_pr` | `eyes` | Added when a PR is opened. Doubles as the leading emoji of the new-PR message. |
+| `slack.reactions.merged_pr` | `twisted_rightwards_arrows` | Added when a PR is merged. |
+| `slack.reactions.closed_pr` | `x` | Added when a PR is closed without merge. |
+| `slack.reactions.approved` | `white_check_mark` | Added when a review approves the PR. |
+| `slack.reactions.commented` | `speech_balloon` | Added when a review comments on the PR. |
+| `slack.reactions.request_change` | `exclamation` | Added when a review requests changes. |
+| `slack.reactions.bot_review` | `robot_face` | Distinct marker added **alongside** the normal reaction when a bot reviewer's activity is *not* suppressed (i.e. `reviews.ignore_ai_reviews: false`). Lets bot reviews stay visible but recognisable. Set empty to keep bot reviews indistinguishable from human ones. Mutually exclusive with suppression: when `reviews.ignore_ai_reviews: true` the bot reaction is skipped entirely, so this marker never appears. |
 
-Both `notifycat-server` and `notifycat-mapping` read this file. See [Mappings file](mappings.md) for the schema and
-[`mappings.example.yaml`](https://github.com/mptooling/notifycat/blob/main/mappings.example.yaml) for a copy-paste
-starting point.
+Use Slack emoji names without surrounding colons. For example, set `approved: shipit`, not `:shipit:`.
 
-## Slack
+### github
 
-| Variable | Default | Notes |
+| Key | Default | Notes |
 | --- | --- | --- |
-| `SLACK_BASE_URL` | `https://slack.com` | Mostly useful for tests. |
+| `github.base_url` | `https://api.github.com` | Override for GitHub Enterprise or tests. |
 
-## GitHub (validation only)
+### cleanup
 
-| Variable | Default | Notes |
+| Key | Default | Notes |
 | --- | --- | --- |
-| `GITHUB_TOKEN` | _(unset)_ | Optional PAT used by `notifycat-mapping validate` and `notifycat-doctor` to read repo webhook config. Required scope: `admin:repo_hook` (or `repo` for private repos). The server does not need this; if unset, the webhook-coverage check is skipped. |
-| `GITHUB_BASE_URL` | `https://api.github.com` | Override for GitHub Enterprise or tests. |
+| `cleanup.message_ttl_days` | `30` | Days a `slack_messages` row may go without an update before the in-process cleanup removes it. Must be `> 0`. The cleanup runs once at startup and then once every 24 hours; it only deletes the DB row, never the actual Slack message. |
 
-`GITHUB_TOKEN` is also read by `scripts/github-webhook-create.sh`, but that script *creates* the webhook and only needs
-the `Webhooks: Read and write` permission on a fine-grained PAT. The validate/doctor reading path needs
-`admin:repo_hook` / `repo`. A single token that has both works everywhere; otherwise issue separate PATs.
+### reviews
 
-## Cleanup
-
-| Variable | Default | Notes |
+| Key | Default | Notes |
 | --- | --- | --- |
-| `NOTIFYCAT_MESSAGE_TTL_DAYS` | `30` | Days a `slack_messages` row may go without an update before the in-process cleanup removes it. Must be `> 0`. The cleanup runs once at startup and then once every 24 hours; it only deletes the DB row, never the actual Slack message. |
+| `reviews.ignore_ai_reviews` | `false` | When `true`, suppress `reactions.add` for any review event whose `sender.type == "Bot"` — Copilot, Claude, Codex, dependabot, github-actions, release-please, and any other GitHub App or legacy bot account. Detection is intentionally coarse: notifycat does **not** distinguish AI reviewers from scripted bots. See [Operations → Bot-reviewer suppression](operations.md#bot-reviewer-suppression) for the trade-off and failure-mode guide. |
+| `reviews.dependabot_format` | `true` | When `true`, PRs opened by `dependabot[bot]` or `renovate[bot]` post a compact Slack message instead of the standard "please review" format: `:package: <bot> bumped <link>` for routine bumps, or `:rotating_light: <bot> security update <link>` when the PR body shows a security advisory. Set `false` to render those PRs with the standard format. See [Operations → Dependabot / Renovate format](operations.md#dependabot--renovate-format) for detection details. |
 
-## Reviewer suppression
+### digest
 
-| Variable | Default | Notes |
+| Key | Default | Notes |
 | --- | --- | --- |
-| `NOTIFYCAT_IGNORE_AI_REVIEWS` | `false` | When `true`, suppress `reactions.add` for any review event whose `sender.type == "Bot"` — Copilot, Claude, Codex, dependabot, github-actions, release-please, and any other GitHub App or legacy bot account. Detection is intentionally coarse: notifycat does **not** distinguish AI reviewers from scripted bots. See [Operations → Bot-reviewer suppression](operations.md#bot-reviewer-suppression) for the trade-off and failure-mode guide. |
+| `digest.enabled` | `true` | Turns the stuck-PR digest on or off. The feature is on by default: omitting this section entirely keeps the digest running. |
+| `digest.schedule` | `0 9 * * *` | Standard 5-field cron expression, evaluated in the server's local timezone. An invalid expression fails server startup. |
 
-## Dependabot / Renovate format
+### mappings
 
-| Variable | Default | Notes |
-| --- | --- | --- |
-| `NOTIFYCAT_DEPENDABOT_FORMAT` | `true` | When `true`, PRs opened by `dependabot[bot]` or `renovate[bot]` post a compact Slack message instead of the standard "please review" format: `:package: <bot> bumped <link>` for routine bumps, or `:rotating_light: <bot> security update <link>` when the PR body shows a security advisory. Set `false` to render those PRs with today's standard format. See [Operations → Dependabot / Renovate format](operations.md#dependabot--renovate-format) for detection details. |
+Routing from repositories to Slack channels lives in the `mappings:` section of `config.yaml`. The schema is identical to the previous `mappings.yaml` format. See [Mappings](mappings.md) for the full schema reference.
 
-## Reactions
+## Config CLI
 
-| Variable | Default | Notes |
-| --- | --- | --- |
-| `SLACK_REACTIONS_ENABLED` | `true` | Turns reaction updates on or off. |
-| `SLACK_REACTION_NEW_PR` | `eyes` | Added when a PR is opened. Doubles as the leading emoji of the new-PR message. |
-| `SLACK_REACTION_MERGED_PR` | `twisted_rightwards_arrows` | Added when a PR is merged. |
-| `SLACK_REACTION_CLOSED_PR` | `x` | Added when a PR is closed without merge. |
-| `SLACK_REACTION_PR_APPROVED` | `white_check_mark` | Added when a review approves the PR. |
-| `SLACK_REACTION_PR_COMMENTED` | `speech_balloon` | Added when a review comments on the PR. |
-| `SLACK_REACTION_PR_REQUEST_CHANGE` | `exclamation` | Added when a review requests changes. |
-| `SLACK_REACTION_BOT_REVIEW` | `robot_face` | Distinct marker added **alongside** the normal reaction when a bot reviewer's activity is *not* suppressed (i.e. `NOTIFYCAT_IGNORE_AI_REVIEWS=false`). Lets bot reviews stay visible but recognisable. Set empty (`SLACK_REACTION_BOT_REVIEW=`) to keep bot reviews indistinguishable from human ones. Mutually exclusive with suppression: when `NOTIFYCAT_IGNORE_AI_REVIEWS=true` the bot reaction is skipped entirely, so this marker never appears. |
-
-Use Slack emoji names without surrounding colons. For example, set `SLACK_REACTION_PR_APPROVED=shipit`, not `:shipit:`.
-
-## Mapping CLI
-
-Mappings are defined in [`mappings.yaml`](mappings.md), not in environment variables. The `notifycat-mapping` binary has
-two subcommands:
+Mappings and the full configuration are operated via the `notifycat-config` binary:
 
 ```sh
-notifycat-mapping list                    # print the parsed file (no network)
-notifycat-mapping validate                # validate every entry, cache-aware
-notifycat-mapping validate owner/repo     # validate a single entry, ignore cache for it
-notifycat-mapping validate --force        # ignore the lock entirely; revalidate everything
+notifycat-config list                    # print the parsed config (no network)
+notifycat-config validate                # validate every entry, cache-aware
+notifycat-config validate owner/repo     # validate a single entry, ignore cache for it
+notifycat-config validate --force        # ignore the lock entirely; revalidate everything
 ```
 
-`validate` checks each entry end-to-end: the Slack channel ID is well-formed, the bot token has the required scopes, the
-bot is a member of the channel, and (when `GITHUB_TOKEN` is set) the GitHub webhook is subscribed to `pull_request`,
-`pull_request_review`, and `pull_request_review_comment`. See `docs/operations.md` for the failure-mode remediation
-table. The server runs the same validation at boot and refuses to start on failure.
+`validate` checks each entry end-to-end: the Slack channel ID is well-formed, the bot token has the required scopes, the bot is a member of the channel, and (when `GITHUB_TOKEN` is set) the GitHub webhook is subscribed to `pull_request`, `pull_request_review`, and `pull_request_review_comment`. See `docs/operations.md` for the failure-mode remediation table. The server runs the same validation at boot and refuses to start on failure.
+
+Successful validation results are cached in `config.lock`. On the next boot, only entries whose hash has changed are revalidated.

@@ -34,7 +34,7 @@ func (SlackMessage) TableName() string { return "slack_messages" }
 
 // RepoMapping is the value object handlers and validators consume — a GitHub
 // repository routed to a Slack channel with an optional mentions list. The
-// source of truth lives in mappings.yaml (loaded by internal/mappings); the
+// source of truth lives in config.yaml's mappings: section (loaded by internal/config / internal/mappings); the
 // type stays here so consumers don't have to know who produced it.
 type RepoMapping struct {
 	Repository   string

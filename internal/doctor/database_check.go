@@ -9,7 +9,7 @@ import (
 func CheckDatabase(dsn string) Section {
 	sec := Section{Name: "database"}
 	if dsn == "" {
-		sec.Checks = append(sec.Checks, failResult("open", "DATABASE_URL is empty; set it to a SQLite path or file: DSN"))
+		sec.Checks = append(sec.Checks, failResult("open", "database.url is empty; set it in config.yaml to a SQLite path or file: DSN"))
 		return sec
 	}
 	db, err := store.Open(dsn)

@@ -23,7 +23,7 @@ func channelFormatCheck(m store.RepoMapping) (CheckResult, bool) {
 		return CheckResult{
 			Name:   "channel-format",
 			Status: StatusFail,
-			Detail: fmt.Sprintf("channel id %q is not a valid Slack ID (expected C…/G…/D…); rewrite with `notifycat-mapping add %s <channel-id> <mentions>`", m.SlackChannel, m.Repository),
+			Detail: fmt.Sprintf("channel id %q is not a valid Slack ID (expected C…/G…/D…); correct it in the mappings: section of config.yaml (use `notifycat-config` to inspect the current values)", m.SlackChannel),
 		}, false
 	}
 	return CheckResult{

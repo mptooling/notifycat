@@ -14,16 +14,14 @@ anything systemd-based).
 | | |
 | --- | --- |
 | Image | `ghcr.io/mptooling/notifycat:latest` (also `:<version>` / `:<major>` / `:<major>.<minor>`) |
-| Binaries | `notifycat-server`, `notifycat-mapping`, `notifycat-migrate`, `notifycat-doctor`, `notifycat-smoke`, `notifycat-reconcile` |
+| Binaries | `notifycat-server`, `notifycat-config`, `notifycat-migrate`, `notifycat-doctor`, `notifycat-smoke`, `notifycat-reconcile` |
 | WORKDIR | `/app` — every state file lives here |
-| Default `DATABASE_URL` | `file:/app/notifycat.db` |
-| Default `NOTIFYCAT_MAPPINGS_FILE` | `/app/mappings.yaml` |
+| Default `NOTIFYCAT_CONFIG_FILE` | `/app/config.yaml` |
 | HTTP port | `8080` |
 | Default user | `65532:65532` (override with `--user $(id -u):$(id -g)` for host-owned volumes) |
-| Entrypoint | none — pass the binary name as the command (`notifycat-doctor`, `notifycat-mapping validate`, …); the default `CMD` is `notifycat-server` |
+| Entrypoint | none — pass the binary name as the command (`notifycat-doctor`, `notifycat-config validate`, …); the default `CMD` is `notifycat-server` |
 
-A single host directory mounted at `/app` is the entire surface. It holds `mappings.yaml`, `mappings.lock`,
-`notifycat.db`. `.env` is passed separately via `--env-file`.
+A single host directory mounted at `/app` is the entire surface. It holds `config.yaml`, `config.lock`, `notifycat.db`. `.env` is passed separately via `--env-file`. Set `database.url` in `config.yaml` to `file:/app/notifycat.db` (or your preferred path under `/app`).
 
 ## Supported tags
 
@@ -46,8 +44,7 @@ Every open same-repo pull request also publishes `ghcr.io/mptooling/notifycat:pr
 
 ### Verifying the install bundle
 
-Every release also attaches the install files — `compose.yaml`, `Caddyfile`, the `notifycat` wrapper, `env.example`,
-`mappings.example.yaml`, and `install.sh` — together with a `SHA256SUMS` manifest. (The env template is named
+Every release also attaches the install files — `compose.yaml`, `Caddyfile`, the `notifycat` wrapper, `env.example`, `config.example.yaml`, and `install.sh` — together with a `SHA256SUMS` manifest. (The env template is named
 `env.example` because GitHub rewrites asset names that start with a dot; `install.sh` saves it as `.env.example`.)
 `install.sh` verifies them automatically; to check a manual download yourself, fetch the assets and the manifest into
 one directory and run:
@@ -67,16 +64,16 @@ for the GitHub side.
 mkdir -p ~/notifycat && cd ~/notifycat
 
 # 1. Pull the config templates
-curl -fsSL https://github.com/mptooling/notifycat/releases/latest/download/env.example           -o .env
-curl -fsSL https://github.com/mptooling/notifycat/releases/latest/download/mappings.example.yaml -o mappings.yaml
+curl -fsSL https://github.com/mptooling/notifycat/releases/latest/download/env.example            -o .env
+curl -fsSL https://github.com/mptooling/notifycat/releases/latest/download/config.example.yaml   -o config.yaml
 
 # 2. Edit them
-$EDITOR .env            # set GITHUB_WEBHOOK_SECRET and SLACK_BOT_TOKEN
-$EDITOR mappings.yaml   # point your repos at real Slack channel IDs
+$EDITOR .env           # set GITHUB_WEBHOOK_SECRET and SLACK_BOT_TOKEN
+$EDITOR config.yaml    # set database.url and point your repos at real Slack channel IDs
 
 # 3. Validate the mappings against Slack (and GitHub, if GITHUB_TOKEN is set)
 docker run --rm --user $(id -u):$(id -g) -v "$PWD:/app" --env-file .env \
-  ghcr.io/mptooling/notifycat:latest notifycat-mapping validate
+  ghcr.io/mptooling/notifycat:latest notifycat-config validate
 
 # 4. Preflight check (config + database + mappings; add owner/repo for per-repo Slack/GitHub probes)
 docker run --rm --user $(id -u):$(id -g) -v "$PWD:/app" --env-file .env \
@@ -149,13 +146,13 @@ mkdir -p ~/notifycat && cd ~/notifycat
 
 # 1. config templates
 curl -fsSL https://github.com/mptooling/notifycat/releases/latest/download/env.example           -o .env
-curl -fsSL https://github.com/mptooling/notifycat/releases/latest/download/mappings.example.yaml -o mappings.yaml
+curl -fsSL https://github.com/mptooling/notifycat/releases/latest/download/config.example.yaml   -o config.yaml
 $EDITOR .env
-$EDITOR mappings.yaml
+$EDITOR config.yaml
 
 # 2. validate mappings
 docker run --rm --user $(id -u):$(id -g) -v "$PWD:/app" --env-file .env \
-  ghcr.io/mptooling/notifycat:latest notifycat-mapping validate
+  ghcr.io/mptooling/notifycat:latest notifycat-config validate
 
 # 3. preflight
 docker run --rm --user $(id -u):$(id -g) -v "$PWD:/app" --env-file .env \
@@ -230,8 +227,7 @@ If `journalctl -u caddy` shows ACME errors:
 
 ## Migrating from a `/data`-based deployment (pre-0.4.0)
 
-`0.4.0` moves all state under `/app`. If your `0.3.x` `docker run` mounted a volume at `/data` (and possibly
-`mappings.yaml` at `/etc/notifycat/` or `/mappings.yaml`), migrate like this:
+`0.4.0` moves all state under `/app`. If your `0.3.x` `docker run` mounted a volume at `/data` (and possibly a separate config file at `/etc/notifycat/` or another path), migrate like this:
 
 ```sh
 docker stop notifycat
@@ -241,12 +237,11 @@ docker rm   notifycat
 mkdir -p ~/notifycat
 mv /path/to/old-data-dir/notifycat.db ~/notifycat/notifycat.db
 
-# Move mappings (if they were on a separate mount)
-mv /path/to/old-mappings.yaml ~/notifycat/mappings.yaml
-mv /path/to/old-mappings.lock ~/notifycat/mappings.lock   # optional
+# Move or recreate config (fold all settings and mappings into config.yaml)
+mv /path/to/old-config.yaml ~/notifycat/config.yaml
+mv /path/to/old-config.lock ~/notifycat/config.lock   # optional
 
-# Drop the `-v ...:/data`, `-v ...:/etc/notifycat/...`, and the
-# `-e NOTIFYCAT_MAPPINGS_FILE=...` flags — they are now defaults.
+# Drop the `-v ...:/data`, `-v ...:/etc/notifycat/...` flags — they are now defaults.
 # Re-run with the single mount:
 docker run -d --name notifycat --restart unless-stopped \
   -p 127.0.0.1:8080:8080 \
@@ -258,17 +253,13 @@ The migration does not touch the SQLite schema; existing `slack_messages` rows c
 
 ## Troubleshooting
 
-**`mappings: write lock tmp: open mappings.lock.tmp: permission denied`**
+**`config: write lock tmp: open config.lock.tmp: permission denied`**
 
-You're on a pre-0.4.0 image where the bind-mounted file's parent directory wasn't writable. Upgrade to `:0.4.0` (or
-`:latest`) and follow the migration above. The new image's `WORKDIR=/app` puts the lock file inside the mount, where
-atomic-write-and-rename works.
+You're on a pre-0.4.0 image where the bind-mounted file's parent directory wasn't writable. Upgrade to `:0.4.0` (or `:latest`) and follow the migration above. The new image's `WORKDIR=/app` puts the lock file inside the mount, where atomic-write-and-rename works.
 
 **`store: open: unable to open database file: out of memory (14)`**
 
-The parent directory of `DATABASE_URL` does not exist or is not writable by the container's user. With the image
-defaults, the DB is at `/app/notifycat.db` — so the `/app` mount must be writable. `--user $(id -u):$(id -g)` is the
-simplest fix; alternatively `chown 65532:65532 ~/notifycat` once.
+The parent directory of `database.url` (set in `config.yaml`) does not exist or is not writable by the container's user. With the recommended path `file:/app/notifycat.db`, the `/app` mount must be writable. `--user $(id -u):$(id -g)` is the simplest fix; alternatively `chown 65532:65532 ~/notifycat` once.
 
 **Container exits immediately on start**
 
@@ -276,8 +267,7 @@ simplest fix; alternatively `chown 65532:65532 ~/notifycat` once.
 docker logs notifycat
 ```
 
-The most common cause is `app: startup validation failed for N entries` — one or more mappings failed Slack or GitHub
-checks. Run `notifycat-mapping validate` separately to see the per-check detail.
+The most common cause is `app: startup validation failed for N entries` — one or more mappings failed Slack or GitHub checks. Run `notifycat-config validate` separately to see the per-check detail.
 
 **Caddy fails to obtain a certificate**
 

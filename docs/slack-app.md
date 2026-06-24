@@ -76,12 +76,11 @@ If the API-based setup is not available in your workspace, create the app in the
 | `chat:write` | Post, update, and delete PR messages. |
 | `chat:write.public` | Post into public channels without inviting the bot first. |
 | `reactions:write` | Add configured PR-state reactions. |
-| `channels:read` | Used by `notifycat-mapping validate` to confirm the bot can see the target channel. Add `groups:read` as well if you map private channels. |
+| `channels:read` | Used by `notifycat-config validate` to confirm the bot can see the target channel. Add `groups:read` as well if you map private channels. |
 
 The manifest includes these scopes. If you create the app manually, add the same scopes in **OAuth & Permissions**.
 
-`notifycat-mapping validate` reads `X-OAuth-Scopes` from Slack's `auth.test` response and fails fast when `chat:write`
-or `reactions:write` is missing.
+`notifycat-config validate` reads `X-OAuth-Scopes` from Slack's `auth.test` response and fails fast when `chat:write` or `reactions:write` is missing.
 
 ### Optional: `reactions:read`
 
@@ -94,7 +93,7 @@ bot at least privilege.
 
 ## Channel Access
 
-Invite the bot to every channel listed in `mappings.yaml`:
+Invite the bot to every channel listed in the `mappings:` section of `config.yaml`:
 
 ```text
 /invite @notifycat
@@ -109,7 +108,7 @@ starts with `C`.
 
 ## Mentions
 
-Each `mappings.yaml` entry lists the Slack mentions that prefix the PR notification:
+Each entry in `config.yaml`'s `mappings:` section lists the Slack mentions that prefix the PR notification:
 
 ```yaml
 mappings:

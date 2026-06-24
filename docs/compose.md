@@ -15,7 +15,7 @@ ownership concerns.
 | Docker Engine + Compose V2 | Run `docker compose version` — must be v2 (the `docker compose` subcommand, not `docker-compose`) |
 | A domain name | An A (or AAAA) record pointing at the public IP of the host |
 | Ports open | `80/tcp` (Let's Encrypt HTTP-01 challenge), `443/tcp` + `443/udp` (HTTPS + HTTP/3) must be reachable from the internet |
-| `mappings.yaml` | Copied from `mappings.example.yaml` and edited (see step 3) |
+| `config.yaml` | Copied from `config.example.yaml` and edited (see step 3) |
 
 ## Quick-start
 
@@ -27,7 +27,7 @@ cd notifycat
 ```
 
 The installer checks that Docker and Compose V2 are present, creates a `./notifycat` directory, downloads all required
-files into it (`compose.yaml`, `Caddyfile`, `notifycat` wrapper, `.env.example`, `mappings.example.yaml`), and verifies
+files into it (`compose.yaml`, `Caddyfile`, `notifycat` wrapper, `.env.example`, `config.example.yaml`), and verifies
 each against the release's `SHA256SUMS` before use. To install a specific release, swap `latest` for a tag — e.g.
 `releases/download/v0.11.0/install.sh`. See [Supported tags](docker.md#supported-tags) for what each tag means.
 
@@ -45,8 +45,7 @@ The wizard prompts for:
 - **Slack bot token** — starts with `xoxb-`
 - **First mapping** — GitHub org, repositories (`*` for all, or a comma-separated list), and Slack channel ID
 
-It writes `.env` (permissions `0600`) and a starter `mappings.yaml`. Edit `mappings.yaml` to add more repos or orgs; see
-[Mappings](mappings.md) for the full format reference.
+It writes `.env` (permissions `0600`) and a starter `config.yaml`. Edit `config.yaml` to add more repos or orgs; see [Mappings](mappings.md) for the full format reference.
 
 ### 3. Start the stack
 
@@ -72,12 +71,12 @@ All doctor entries should show `ok`.
 ### 5. Smoke-test delivery before wiring the real webhook
 
 The doctor confirms config and connectivity; the smoke test confirms the **whole path** actually delivers. It forges a
-correctly-signed `pull_request: opened` event for a repository in your `mappings.yaml`, POSTs it to the running server's
+correctly-signed `pull_request: opened` event for a repository in your `config.yaml`, POSTs it to the running server's
 `/webhook/github` (exercising the real signature check, dispatcher, and Slack client), and reports the channel and Slack
 timestamp it produced:
 
 ```sh
-./notifycat smoke <org>/<repo>              # use a repo present in mappings.yaml
+./notifycat smoke <org>/<repo>              # use a repo present in config.yaml
 ./notifycat smoke --reactions <org>/<repo>  # also exercise the review-lifecycle reactions
 ```
 
@@ -116,13 +115,11 @@ persistent state:
 
 | Volume | Contents |
 | --- | --- |
-| `notifycat_data` | SQLite database (`notifycat.db`) and `mappings.lock` |
+| `notifycat_data` | SQLite database (`notifycat.db`) and `config.lock` |
 | `caddy_data` | Let's Encrypt certificates and ACME state |
 | `caddy_config` | Caddy runtime config |
 
-`mappings.yaml` is bind-mounted read-only at `/app/mappings.yaml` inside the container. The writable `notifycat_data`
-volume covers the rest of `/app`, so `mappings.lock` (which Notifycat writes as a sibling file) lives on the named
-volume without needing write access to the bind mount.
+`config.yaml` is bind-mounted read-only at `/app/config.yaml` inside the container. The writable `notifycat_data` volume covers the rest of `/app`, so `config.lock` (which Notifycat writes as a sibling file) lives on the named volume without needing write access to the bind mount.
 
 ## Managing the stack
 
@@ -230,8 +227,8 @@ The most common cause is `app: startup validation failed for N entries` — one 
 GitHub checks at boot. Run the mapping validator to see per-entry detail:
 
 ```sh
-docker compose run --rm notifycat notifycat-mapping validate
+docker compose run --rm notifycat notifycat-config validate
 ```
 
-Fix the failing entries in `mappings.yaml`, then `docker compose up -d` again. See [Operations](operations.md) for the
+Fix the failing entries in `config.yaml`, then `docker compose up -d` again. See [Operations](operations.md) for the
 full ignored-event reason table.

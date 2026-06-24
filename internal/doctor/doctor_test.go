@@ -3,13 +3,13 @@ package doctor_test
 import (
 	"bytes"
 	"context"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/mptooling/notifycat/internal/config"
 	"github.com/mptooling/notifycat/internal/doctor"
+	"github.com/mptooling/notifycat/internal/mappings"
 	"github.com/mptooling/notifycat/internal/validate"
 )
 
@@ -26,20 +26,11 @@ func (f *fakeRepoValidator) Validate(_ context.Context, repository string) valid
 	return f.report
 }
 
-func writeMappingsFile(t *testing.T, body string) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "mappings.yaml")
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatalf("write mappings.yaml: %v", err)
-	}
-	return path
-}
-
 func validConfig() config.Config {
 	return config.Config{
 		Addr:                ":8080",
 		DatabaseURL:         "file:./data/notifycat.db",
-		MappingsFile:        "./mappings.yaml",
+		ConfigFile:          "./config.yaml",
 		MessageTTLDays:      30,
 		GitHubWebhookSecret: config.Secret("topsecret-wh"),
 		SlackBotToken:       config.Secret("xoxb-secret-token"),
@@ -171,7 +162,7 @@ func TestCheckConfig_ValidDomainReportsWebhookURL(t *testing.T) {
 	cfg := validConfig()
 	cfg.Domain = "notifycat.example.com"
 	sec := doctor.CheckConfig(cfg)
-	c := findConfigCheck(t, sec, "DOMAIN")
+	c := findConfigCheck(t, sec, "server.domain")
 	if c.Status != validate.StatusOK {
 		t.Fatalf("DOMAIN check = %+v; want OK", c)
 	}
@@ -184,7 +175,7 @@ func TestCheckConfig_DomainWithSchemeFails(t *testing.T) {
 	cfg := validConfig()
 	cfg.Domain = "https://notifycat.example.com"
 	sec := doctor.CheckConfig(cfg)
-	c := findConfigCheck(t, sec, "DOMAIN")
+	c := findConfigCheck(t, sec, "server.domain")
 	if c.Status != validate.StatusFail {
 		t.Fatalf("DOMAIN carrying a scheme should FAIL (it must be a bare host), got %+v", c)
 	}
@@ -197,7 +188,7 @@ func TestCheckConfig_MalformedDomainFails(t *testing.T) {
 	cfg := validConfig()
 	cfg.Domain = "not a valid host"
 	sec := doctor.CheckConfig(cfg)
-	c := findConfigCheck(t, sec, "DOMAIN")
+	c := findConfigCheck(t, sec, "server.domain")
 	if c.Status != validate.StatusFail {
 		t.Fatalf("malformed DOMAIN should FAIL, got %+v", c)
 	}
@@ -206,7 +197,7 @@ func TestCheckConfig_MalformedDomainFails(t *testing.T) {
 func TestCheckConfig_UnsetDomainSkips(t *testing.T) {
 	cfg := validConfig() // Domain is empty
 	sec := doctor.CheckConfig(cfg)
-	c := findConfigCheck(t, sec, "DOMAIN")
+	c := findConfigCheck(t, sec, "server.domain")
 	if c.Status != validate.StatusSkip {
 		t.Fatalf("unset DOMAIN should SKIP (local-dev/tunnel users), got %+v", c)
 	}
@@ -251,49 +242,32 @@ func TestCheckDatabase_EmptyDSNFails(t *testing.T) {
 	}
 }
 
-func TestCheckMappingsFile_ValidParses(t *testing.T) {
-	path := writeMappingsFile(t, `mappings:
-  octo:
-    channel: C0123ABCDE
-    mentions: []
-    repositories: ["widget"]
-`)
-	sec := doctor.CheckMappingsFile(path)
+func TestCheckMappings_WithEntriesIsOK(t *testing.T) {
+	m := map[string]mappings.Org{
+		"octo": {Channel: "C0123ABCDE", Repositories: mappings.Repositories{List: []string{"widget"}}},
+	}
+	sec := doctor.CheckMappings(mappings.NewProvider(m, nil))
 	if sec.Name != "mappings" {
 		t.Errorf("section name = %q; want %q", sec.Name, "mappings")
 	}
 	if !sec.OK() {
-		t.Fatalf("CheckMappingsFile FAILed on valid file: %+v", sec.Checks)
+		t.Fatalf("CheckMappings FAILed on valid provider: %+v", sec.Checks)
+	}
+	if len(sec.Checks) == 0 || !strings.Contains(sec.Checks[0].Detail, "1 entries") {
+		t.Errorf("Detail = %q; want it to contain \"1 entries\"", sec.Checks)
 	}
 }
 
-func TestCheckMappingsFile_MissingFileFails(t *testing.T) {
-	sec := doctor.CheckMappingsFile(filepath.Join(t.TempDir(), "absent.yaml"))
-	if sec.OK() {
-		t.Fatalf("CheckMappingsFile succeeded on missing file")
-	}
-}
-
-func TestCheckMappingsFile_MalformedYAMLFails(t *testing.T) {
-	path := writeMappingsFile(t, "mappings: [this-is: not, a: map]\n")
-	sec := doctor.CheckMappingsFile(path)
-	if sec.OK() {
-		t.Fatalf("CheckMappingsFile succeeded on malformed YAML")
-	}
-}
-
-func TestCheckMappingsFile_EmptyMappingsIsOK(t *testing.T) {
-	path := writeMappingsFile(t, "mappings: {}\n")
-	sec := doctor.CheckMappingsFile(path)
+func TestCheckMappings_EmptyMappingsIsOK(t *testing.T) {
+	sec := doctor.CheckMappings(mappings.NewProvider(nil, nil))
 	if !sec.OK() {
-		t.Fatalf("CheckMappingsFile FAILed on empty mappings (which the server treats as a no-op): %+v", sec.Checks)
+		t.Fatalf("CheckMappings FAILed on empty mappings (which the server treats as a no-op): %+v", sec.Checks)
 	}
 }
 
 func TestDoctorRun_AlwaysReturnsConfigDatabaseMappings(t *testing.T) {
 	cfg := validConfig()
 	cfg.DatabaseURL = "file:" + filepath.Join(t.TempDir(), "doctor.db")
-	cfg.MappingsFile = writeMappingsFile(t, "mappings: {}\n")
 
 	d := doctor.NewDoctor(cfg, nil)
 	sections := d.Run(context.Background(), "")
@@ -312,7 +286,6 @@ func TestDoctorRun_AlwaysReturnsConfigDatabaseMappings(t *testing.T) {
 func TestDoctorRun_TargetRepositoryDelegatesToValidator(t *testing.T) {
 	cfg := validConfig()
 	cfg.DatabaseURL = "file:" + filepath.Join(t.TempDir(), "doctor.db")
-	cfg.MappingsFile = writeMappingsFile(t, "mappings: {}\n")
 
 	fake := &fakeRepoValidator{
 		report: validate.Report{
@@ -344,7 +317,6 @@ func TestDoctorRun_TargetRepositoryDelegatesToValidator(t *testing.T) {
 func TestDoctorRun_TargetRepositoryWithoutValidatorIsNoop(t *testing.T) {
 	cfg := validConfig()
 	cfg.DatabaseURL = "file:" + filepath.Join(t.TempDir(), "doctor.db")
-	cfg.MappingsFile = writeMappingsFile(t, "mappings: {}\n")
 
 	d := doctor.NewDoctor(cfg, nil)
 	sections := d.Run(context.Background(), "octo/widget")

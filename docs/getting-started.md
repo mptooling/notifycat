@@ -65,14 +65,13 @@ go run ./cmd/notifycat-migrate status
 
 ## Add a Repository Mapping
 
-Mappings tell Notifycat where each repository should post in Slack. They live in a declarative YAML file (default
-`./mappings.yaml`, override with `NOTIFYCAT_MAPPINGS_FILE`). Start from the bundled example:
+Mappings tell Notifycat where each repository should post in Slack. They live in the `mappings:` section of `config.yaml` (default path `./config.yaml`, override with `NOTIFYCAT_CONFIG_FILE`). Start from the bundled example:
 
 ```sh
-cp mappings.example.yaml mappings.yaml
+cp config.example.yaml config.yaml
 ```
 
-Edit `mappings.yaml` so each org points at the right Slack channel:
+Edit `config.yaml` so each org points at the right Slack channel:
 
 ```yaml
 mappings:
@@ -95,12 +94,11 @@ mappings:
     repositories: "*"
 ```
 
-See [Mappings file](mappings.md) for the full schema, lookup rules, and the lock-file cache. Validate what you wrote
-against the live workspace before starting the server:
+See [Mappings file](mappings.md) for the full schema, lookup rules, and the lock-file cache. Validate what you wrote against the live workspace before starting the server:
 
 ```sh
-go run ./cmd/notifycat-mapping list      # show what's parsed
-go run ./cmd/notifycat-mapping validate  # check each entry end-to-end
+go run ./cmd/notifycat-config list      # show what's parsed
+go run ./cmd/notifycat-config validate  # check each entry end-to-end
 ```
 
 Repository names must use `owner/name` format. Slack channel IDs should be real Slack IDs such as `C123ABCDE`, not
@@ -119,8 +117,7 @@ Exit code is `0` on success and `1` on the first failure. See [Doctor](doctor.md
 
 On a first-time local setup the `github-webhook` check is **expected to fail or skip** here — the webhook is created
 later in [Create the GitHub Webhook](#create-the-github-webhook). With `GITHUB_TOKEN` unset, the check reports `SKIP`;
-with it set, the check reports `FAIL` because no webhook is registered yet. The same caveat applies to
-`notifycat-mapping validate` above. Both flip to `OK` once you re-run them after the webhook step.
+with it set, the check reports `FAIL` because no webhook is registered yet. The same caveat applies to `notifycat-config validate` above. Both flip to `OK` once you re-run them after the webhook step.
 
 ## Start the Server
 
