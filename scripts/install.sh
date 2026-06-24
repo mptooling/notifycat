@@ -18,7 +18,7 @@ RELEASE_BASE="https://github.com/${REPO}/releases/download/v${VERSION}"
 
 # Release-asset names to download. The env template ships as env.example because
 # GitHub rewrites asset names that start with a dot; it is saved as .env.example.
-ASSETS="compose.yaml Caddyfile env.example mappings.example.yaml notifycat"
+ASSETS="compose.yaml Caddyfile env.example config.example.yaml notifycat"
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -118,6 +118,6 @@ chmod +x "${INSTALL_DIR}/notifycat"
 
 printf '\nAll done. Run these three commands to finish setup:\n\n'
 printf '  cd %s\n' "$INSTALL_DIR"
-printf '  ./notifycat setup          # configure .env and mappings.yaml\n'
+printf '  ./notifycat setup          # configure .env and config.yaml\n'
 printf '  docker compose up -d       # start the stack\n'
 printf '  ./notifycat doctor         # run preflight checks\n\n'

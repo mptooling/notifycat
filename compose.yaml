@@ -4,13 +4,13 @@ services:
     command: ["/usr/local/bin/notifycat-server"]
     env_file: ./.env
     volumes:
-      # Named volume owns writable state: SQLite DB and mappings.lock.
+      # Named volume owns writable state: SQLite DB and config.lock.
       # Docker initialises the volume from the image's /app (UID 65532), so
       # the server can write without a chown step.
       - notifycat_data:/app
-      # mappings.yaml is operator config; mount read-only over the volume so
+      # config.yaml is operator config; mount read-only over the volume so
       # the lock (sibling file) stays on the writable named volume.
-      - ./mappings.yaml:/app/mappings.yaml:ro
+      - ./config.yaml:/app/config.yaml:ro
     restart: unless-stopped
 
   caddy:
