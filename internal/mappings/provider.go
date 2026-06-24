@@ -86,8 +86,10 @@ func (p *Provider) Get(_ context.Context, repository string) (store.RepoMapping,
 	}, nil
 }
 
-// Entries returns validation units in deterministic order: orgs sorted A→Z,
-// explicit repos within each org sorted A→Z, wildcard entries last per org.
+// Entries returns validation units in deterministic order: orgs A→Z, explicit
+// repos within each org A→Z, the wildcard entry last. Each entry's Channel is
+// the resolved channel (the tier's own, or inherited from org/*), so the
+// validator and lock operate on what a webhook would actually route to.
 func (p *Provider) Entries() []Entry {
 	orgs := make([]string, 0, len(p.file.Mappings))
 	for org := range p.file.Mappings {
@@ -98,21 +100,25 @@ func (p *Provider) Entries() []Entry {
 	var out []Entry
 	for _, org := range orgs {
 		o := p.file.Mappings[org]
-		mentions := resolveMentions(o)
-		if o.Repositories.All {
-			out = append(out, Entry{
-				Org: org, Wildcard: true,
-				Channel: o.Channel, Mentions: mentions,
-			})
-			continue
+		var starPtr *RepoConfig
+		if sc, has := o[starKey]; has {
+			starPtr = &sc
 		}
-		repos := append([]string(nil), o.Repositories.List...)
+		repos := make([]string, 0, len(o))
+		for k := range o {
+			if k != starKey {
+				repos = append(repos, k)
+			}
+		}
 		sort.Strings(repos)
 		for _, r := range repos {
-			out = append(out, Entry{
-				Org: org, Repo: r,
-				Channel: o.Channel, Mentions: mentions,
-			})
+			rc := o[r]
+			res := resolveRouting(starPtr, &rc)
+			out = append(out, Entry{Org: org, Repo: r, Channel: res.Channel, Mentions: res.Mentions})
+		}
+		if starPtr != nil {
+			res := resolveRouting(starPtr, nil)
+			out = append(out, Entry{Org: org, Wildcard: true, Channel: res.Channel, Mentions: res.Mentions})
 		}
 	}
 	return out

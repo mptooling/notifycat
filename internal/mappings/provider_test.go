@@ -127,3 +127,27 @@ func TestNewProvider_BehavesLikeLoad(t *testing.T) {
 		t.Errorf("Entries() = %d; want 1", len(p.Entries()))
 	}
 }
+
+func TestEntries_PerTierWithResolvedChannel(t *testing.T) {
+	p := NewProvider(map[string]Org{
+		"acme": {
+			"web": {}, // inherits channel from "*"
+			"api": {Channel: "C0API"},
+			"*":   {Channel: "C0DEFAULT"},
+		},
+	}, nil)
+	entries := p.Entries()
+	// deterministic order: explicit repos A→Z then wildcard last
+	if len(entries) != 3 {
+		t.Fatalf("entries = %d; want 3", len(entries))
+	}
+	if entries[0].Key() != "acme/api" || entries[0].Channel != "C0API" {
+		t.Errorf("entries[0] = %+v; want acme/api C0API", entries[0])
+	}
+	if entries[1].Key() != "acme/web" || entries[1].Channel != "C0DEFAULT" {
+		t.Errorf("entries[1] = %+v; want acme/web resolved C0DEFAULT", entries[1])
+	}
+	if !entries[2].Wildcard || entries[2].Key() != "acme/*" || entries[2].Channel != "C0DEFAULT" {
+		t.Errorf("entries[2] = %+v; want acme/* C0DEFAULT", entries[2])
+	}
+}
