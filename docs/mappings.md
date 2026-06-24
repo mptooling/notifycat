@@ -1,6 +1,6 @@
 # Mappings
 
-> **0.17 and later:** Mappings now live in the `mappings:` section of `config.yaml` — there is no separate `mappings.yaml` file. The per-org schema is unchanged. The `notifycat-config list` and `notifycat-config validate` commands operate on `config.yaml`. See the [0.17 migration guide](0.17-config-migration.md) if you are upgrading.
+> **0.18 and later:** Mappings use a per-repository-tier schema in the `mappings:` section of `config.yaml`. Each org contains named repo tiers and an optional `"*"` catch-all tier. See the [0.18 migration guide](0.18-per-repo-mappings-migration.md) if you are upgrading from 0.17.
 
 Notifycat reads its repository → Slack-channel routing from the `mappings:` section of `config.yaml`. Edit that file in your deployment directory, and `notifycat-server` picks it up on the next restart.
 
@@ -16,10 +16,13 @@ The sibling **lock file** is `config.lock`, derived by the same mechanism as the
 
 ```yaml
 mappings:
-  <org>:                       # GitHub org name; map key
-    channel: <slack-channel-id>
-    mentions: [<string>, ...]  # optional; see "Mention states" below
-    repositories: <"*" | [<repo>, ...]>
+  <org>:                          # GitHub org name; map key
+    <repo>:                       # GitHub repo name within the org, or "*" for catch-all
+      channel: <slack-channel-id>
+      mentions: [<string>, ...]   # optional; see "Mention states" below
+    "*":                          # Optional catch-all tier (supplies defaults, routes unlisted repos)
+      channel: <slack-channel-id>
+      mentions: [<string>, ...]   # optional
 ```
 
 ### Rules
@@ -27,27 +30,34 @@ mappings:
 | Field | Rule |
 | --- | --- |
 | `mappings` | Map keyed by GitHub org. Org keys match `^[A-Za-z0-9_.-]+$`. |
-| `channel` | Required. Slack channel ID, matches `^[CGD][A-Z0-9]{2,}$` (must be the ID, not `#display-name`). |
-| `mentions` | Optional. See [Mention states](#mention-states) for the three accepted shapes. `null` is rejected so the operator's intent stays explicit. |
-| `repositories` | Required. Either the literal string `"*"` (every repo in the org) or a non-empty list of bare repo names matching `^[A-Za-z0-9_.-]+$`. Names cannot contain `/`. |
-| `repositories: ["*", ...]` | Rejected. `"*"` is exclusive of named entries. |
+| `<org>.<repo>` | Repo tier keys are GitHub repo names (matching `^[A-Za-z0-9_.-]+$`) or the literal string `"*"`. |
+| `channel` | Required on at least one tier per org. Slack channel ID, matches `^[CGD][A-Z0-9]{2,}$` (must be the ID, not `#display-name`). If omitted on a repo tier, inherits from the `"*"` tier. Every resolvable org/repo pair must yield a channel. |
+| `mentions` | Optional. See [Mention states](#mention-states) for the three accepted shapes. If omitted on a repo tier, inherits from the `"*"` tier. `null` is rejected. |
+| `"*"` tier | Optional. Supplies channel/mentions defaults for repo tiers that omit them. Also acts as the catch-all: any webhook for `org/repo` without an explicit tier routes to `org/*`. An org may be wholly defined via `"*"` alone. |
 | Duplicate repo within an org | Rejected at parse time. |
 | Unknown keys anywhere | Rejected at parse time. Typos surface immediately. |
 
+### Resolution
+
+When a webhook arrives for `org/repo`:
+
+1. Look for an explicit `org/<repo>` tier. If found and it sets a key (channel or mentions), use it.
+2. Fall back to the `org/*` tier for any key not set by the repo tier. If `org/*` sets a key, use it.
+3. If `channel` is still unset after both tiers, the org is malformed and rejected at parse time.
+4. If `mentions` is still unset, fall back to `@channel` (<!channel>).
+
 ### Mention states
 
-`mentions:` has three accepted shapes; pick the one that matches operator intent for that org.
+`mentions:` has three accepted shapes; pick the one that matches operator intent.
 
 | YAML | Slack message prefix | Meaning |
 | --- | --- | --- |
-| key omitted | `<!channel> ` (renders as `@channel`) | Broadcast to everyone in the channel. Default for entries that don't opt out. |
+| key omitted | Inherits from parent tier; final fallback `<!channel> ` (renders as `@channel`) | Broadcast to everyone in the channel. |
 | `mentions: []` | _(no prefix; message starts with `please review …`)_ | Post silently — no ping. |
 | `mentions: ["<@U…>", "<!subteam^S…>"]` | `<@U…>,<!subteam^S…>, ` | Ping the listed handles. |
-| `mentions: null` / `mentions: ~` | _rejected at parse time_ | Ambiguous. Omit the key for `@channel`, or use `[]` for no ping. |
+| `mentions: null` / `mentions: ~` | _rejected at parse time_ | Ambiguous. Omit the key to inherit, or use `[]` for no ping. |
 
-The absent-vs-`[]` distinction flows through `Provider.Get` and `Provider.Entries`: the absent state is materialized as
-`Mentions: ["<!channel>"]` so downstream consumers (composer, list CLI) see a uniform slice. Entry hashes ignore
-mentions entirely, so toggling between absent and `[]` does **not** invalidate the validation cache.
+The absent state is materialized as `Mentions: ["<!channel>"]` during inheritance resolution, so downstream consumers (composer, list CLI) see a uniform slice. Entry hashes ignore mentions entirely, so toggling between absent and `[]` does **not** invalidate the validation cache.
 
 ### Mention Formats
 
@@ -66,7 +76,7 @@ wire format of an existing group mention.
 
 ## Stuck-PR digest
 
-Alongside the per-org `mappings`, an optional **global** `digest:` section configures a scheduled reminder that lists open PRs nobody has touched since the previous day. It is one schedule for every org and repo — not a per-entry setting. Both `digest:` and `mappings:` are top-level sections inside `config.yaml`.
+Alongside the per-repo-tier `mappings`, an optional **global** `digest:` section configures a scheduled reminder that lists open PRs nobody has touched since the previous day. It is one schedule for every org and repo — not a per-entry setting. Both `digest:` and `mappings:` are top-level sections inside `config.yaml`.
 
 ```yaml
 digest:
@@ -75,8 +85,8 @@ digest:
 
 mappings:
   acme:
-    channel: C0123ABCDE
-    repositories: "*"
+    "*":
+      channel: C0123ABCDE
 ```
 
 | Field | Rule |
@@ -94,12 +104,11 @@ On each tick the server posts a parent message per Slack channel and lists that 
 
 When a webhook arrives for `org/repo`, the provider resolves the mapping in this order:
 
-1. **Exact** match against `mappings.<org>.repositories[*]`.
-2. **Wildcard** match if `mappings.<org>.repositories: "*"`.
+1. **Explicit tier** match: if `mappings.<org>.<repo>` exists, resolve against that tier (channel/mentions set there, else inherit from `org/*`).
+2. **Catch-all tier** match: if `mappings.<org>."*"` exists and no explicit tier was found, resolve against the `"*"` tier.
 3. **Miss** → no Slack message is posted for that PR.
 
-`"*"` expansion is **lookup-time** and **in-memory** — the server never hits the GitHub API at webhook time, even for
-wildcard orgs.
+Tier resolution is **lookup-time** and **in-memory** — the server never hits the GitHub API at webhook time, even for orgs with only a `"*"` tier. The explicit tier (if present) always takes precedence over the catch-all.
 
 ## CLI
 
@@ -153,33 +162,41 @@ If you skip the validate step, the server runs validation itself on the next boo
 
 ### Add a repo to an existing org
 
-Add the repo name to that org's `repositories` list and revalidate:
-
-```sh
-notifycat-config validate
-```
-
-### Add a new org
-
-Append a new top-level map entry under `mappings:` and revalidate.
-
-### Remove a repo
-
-Delete its entry from the YAML. The lock cleans itself up on the next successful validate or server boot.
-
-### Switch an org to wildcard
-
-Replace the list with the string `"*"`:
+Add a new repo tier under that org's entry and set its channel (or omit to inherit from `"*"`):
 
 ```yaml
 acme:
-  channel: C0123ABCDE
-  mentions: ["<@U0123ALICE>"]
-  repositories: "*"
+  api:
+    channel: C0123ABCDE
+  web:                    # new repo tier
+    channel: C0456FGHIJ
+  "*":
+    channel: C0DEFAULT00
 ```
 
-Then `notifycat-config validate` — wildcard expansion needs `GITHUB_TOKEN` to enumerate the org's repos. Without it, wildcard entries report as `SKIP` and the server still routes them at webhook time.
+Then run `notifycat-config validate`.
+
+### Add a new org
+
+Append a new top-level map entry under `mappings:` with at least one tier that sets a channel, and revalidate.
+
+### Remove a repo
+
+Delete its tier from the YAML. The lock cleans itself up on the next successful validate or server boot.
+
+### Switch an org to wildcard-only
+
+Remove all explicit repo tiers and keep only the `"*"` tier:
+
+```yaml
+acme:
+  "*":
+    channel: C0123ABCDE
+    mentions: ["<@U0123ALICE>"]
+```
+
+Then `notifycat-config validate`. The `"*"` tier catches every repo in the org.
 
 ### Move a repo between orgs
 
-Remove it from the old org's list, add it to the new org's list, revalidate.
+Remove the repo tier from the old org, add it to the new org's entry, revalidate.

@@ -145,7 +145,7 @@ in CI logs.
 
 | Check | What it verifies | How to fix a `FAIL` |
 | --- | --- | --- |
-| `mapping` | An entry exists in `config.yaml` for `owner/repo` (explicit or wildcard). | Add the repo to that org's `repositories` list, or set `repositories: "*"`. See [Mappings file](mappings.md). |
+| `mapping` | An entry exists in `config.yaml` for `owner/repo` (explicit repo tier or wildcard `"*"` tier). | Add a repo tier for the repo, or ensure the org has a `"*"` tier. See [Mappings file](mappings.md). |
 | `channel-format` | The entry's channel ID matches `[CGD][A-Z0-9]{2,}`. | Edit `config.yaml` and use the real Slack channel ID, not the display name. |
 | `slack-auth` | `auth.test` succeeds and `X-OAuth-Scopes` includes `chat:write` and `reactions:write`. | Rotate `SLACK_BOT_TOKEN`, or reinstall the app after updating the manifest scopes. |
 | `slack-channel` | `conversations.info` reports the channel exists, is not archived, and the bot is a member. | `/invite @notifycat` in the channel; unarchive if needed; correct the channel ID. |
