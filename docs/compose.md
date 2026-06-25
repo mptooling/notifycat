@@ -121,6 +121,8 @@ persistent state:
 
 `config.yaml` is bind-mounted read-only at `/app/config.yaml` inside the container. The writable `notifycat_data` volume covers the rest of `/app`, so `config.lock` (which Notifycat writes as a sibling file) lives on the named volume without needing write access to the bind mount.
 
+> **Keep `database.url` under `/app`.** The `notifycat_data` volume is mounted at `/app`, so only paths under `/app` are persisted. The default `file:./data/notifycat.db` resolves to `/app/data/notifycat.db` (on the volume) and the historical `file:/app/notifycat.db` works too. A path *outside* `/app` — for example `file:/data/notifycat.db` — is written to the container's ephemeral layer and is **lost the next time the container is recreated**, which includes every `docker compose pull && up`. If an image upgrade makes the database appear to "disappear," the data is almost always still in the volume at a different path — inspect it with `docker run --rm -v notifycat_notifycat_data:/v alpine ls -laR /v` and point `database.url` back at the file you find.
+
 ## Managing the stack
 
 ```sh

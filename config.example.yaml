@@ -24,8 +24,12 @@ server:
 # ── Database ──────────────────────────────────────────────────────────────────────────────────────
 database:
   url: "file:./data/notifycat.db"     # SQLite path or file: DSN; stores per-PR Slack message timestamps
-  # Docker recommended: "file:/app/notifycat.db"  (historical image path)
-  # With a mounted /data volume: "file:/data/notifycat.db"
+  # Local (go run): the relative path above resolves under the repo — fine as-is.
+  # Docker/compose: the named volume is mounted at /app, so this relative path persists as
+  #   /app/data/notifycat.db. The historical absolute path "file:/app/notifycat.db" also works.
+  # WARNING: under the shipped compose ONLY /app is on the writable volume. A path outside /app
+  #   (e.g. "file:/data/notifycat.db") lives in the container layer and is LOST every time the
+  #   container is recreated — including each image upgrade. Always keep the DB under /app.
 
 # ── Slack ─────────────────────────────────────────────────────────────────────────────────────────
 slack:
