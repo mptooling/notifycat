@@ -90,7 +90,7 @@ Use Slack emoji names without surrounding colons. For example, set `approved: sh
 
 ### mappings
 
-Routing from repositories to Slack channels lives in the `mappings:` section of `config.yaml`. The per-repository-tier schema (0.18+) organizes each org into named repo tiers plus an optional `"*"` catch-all tier. Each tier sets its own channel and optional mentions; repo tiers inherit from the `"*"` tier. See [Mappings](mappings.md) for the full schema reference and examples.
+Routing from repositories to Slack channels lives in the `mappings:` section of `config.yaml`. The per-repository-tier schema (0.18+) organizes each org into named repo tiers plus an optional `"*"` catch-all tier. Each tier sets its own channel and optional mentions; repo tiers inherit from the `"*"` tier. Behavioral settings (`reactions`, `reviews`, `digest`) can also be overridden per-repo tier; when omitted they inherit from the `"*"` tier or fall back to the global values. See [Mappings](mappings.md) for the full schema reference and examples.
 
 ## Config CLI
 

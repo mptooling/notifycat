@@ -106,6 +106,25 @@ mappings:
       channel: C0234PQRST
       mentions: []                             # explicit: ping nobody on gamma/platform
 
+  # ── Per-repo behavioral overrides (0.18+) ──────────────────────────────────────────────────────
+  # Each repo tier can override behavioral settings: reactions, reviews, and digest schedule. Overrides inherit from org/* then fall back to the global section; most-specific tier wins. For example, delta/premium may use a different approval emoji or post its digest on a custom schedule while delta/standard uses the global defaults.
+  delta:
+    premium:
+      channel: C0PREMIUM00
+      # Optional: override reactions for this repo. Missing keys inherit from the org/* tier, then the global "slack.reactions:" section.
+      reactions:
+        approved: star                        # use :star: instead of the global white_check_mark
+        # other reaction keys omitted → inherit from org/* or global
+      # Optional: override review behavior (ignore_ai_reviews and dependabot_format) for this repo.
+      reviews:
+        ignore_ai_reviews: true               # suppress bot reviews on this repo specifically
+      # Optional: override digest schedule for this repo. digest.enabled and digest.schedule inherit from global "digest:" when omitted.
+      digest:
+        schedule: "0 17 * * *"                # post this repo's digest at 5pm instead of the global 9am
+    standard:
+      channel: C0STANDARD00
+      # Omit all behavioral overrides to use global defaults.
+
 # ── Mappings rules ─────────────────────────────────────────────────────────────────────────────────
 # • The org key (acme, beta, gamma, …) matches ^[A-Za-z0-9_.-]+$. Org tier keys are repo names or "*".
 # • channel must look like a Slack ID: ^[CGD][A-Z0-9]{2,}$ (C…, G…, D…). Every resolvable org/repo pair must yield a channel.

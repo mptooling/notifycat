@@ -74,9 +74,13 @@ broadcast:
 In Slack, copy a user's member ID from their profile menu. For user-group IDs, use Slack admin tooling or inspect the
 wire format of an existing group mention.
 
+## Behavioral Overrides
+
+Each repo tier can override behavioral settings: `reactions`, `reviews`, and `digest`. These settings inherit from the `org/*` tier (if present) and fall back to the global `config.yaml` section when omitted. For example, a repo can use a different approval reaction, suppress AI reviews differently, or post its digest on its own schedule. See the [0.18 migration guide](0.18-per-repo-mappings-migration.md#per-repo-behavioral-overrides) for the full list of overridable keys and the inheritance chain (most-specific tier wins).
+
 ## Stuck-PR digest
 
-Alongside the per-repo-tier `mappings`, an optional **global** `digest:` section configures a scheduled reminder that lists open PRs nobody has touched since the previous day. It is one schedule for every org and repo — not a per-entry setting. Both `digest:` and `mappings:` are top-level sections inside `config.yaml`.
+Alongside the per-repo-tier `mappings`, an optional **global** `digest:` section configures a scheduled reminder that lists open PRs nobody has touched since the previous day. The digest can also be customized per-repo tier (see above). Both `digest:` and `mappings:` are top-level sections inside `config.yaml`.
 
 ```yaml
 digest:
