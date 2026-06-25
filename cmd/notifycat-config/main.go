@@ -28,7 +28,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "notifycat-config:", err)
 		os.Exit(1)
 	}
-	provider := mappings.NewProvider(cfg.Mappings, cfg.Digest)
+	provider := mappings.NewProvider(mappings.Defaults{}, cfg.Mappings, cfg.Digest)
 	checker, lister := buildValidationDeps(cfg, provider)
 	validator := mappingcli.NewMappingsValidator(
 		provider,

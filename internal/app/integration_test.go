@@ -142,7 +142,7 @@ func newIntegrationFixtureCfg(t *testing.T, mutate func(*config.Config), seeds .
 			RequestChange: "exclamation",
 		},
 	}
-	primeLock(t, configPath, mappings.NewProvider(cfg.Mappings, cfg.Digest))
+	primeLock(t, configPath, mappings.NewProvider(mappings.Defaults{}, cfg.Mappings, cfg.Digest))
 
 	if mutate != nil {
 		mutate(&cfg)

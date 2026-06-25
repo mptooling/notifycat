@@ -40,7 +40,21 @@ type Cleanup func()
 func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, *digest.Scheduler, Cleanup, error) {
 	logger := newLogger(cfg)
 
-	provider := mappings.NewProvider(cfg.Mappings, cfg.Digest)
+	defaults := mappings.Defaults{
+		Reactions: store.Reactions{
+			Enabled:       cfg.Reactions.Enabled,
+			NewPR:         cfg.Reactions.NewPR,
+			MergedPR:      cfg.Reactions.MergedPR,
+			ClosedPR:      cfg.Reactions.ClosedPR,
+			Approved:      cfg.Reactions.Approved,
+			Commented:     cfg.Reactions.Commented,
+			RequestChange: cfg.Reactions.RequestChange,
+			BotReview:     cfg.Reactions.BotReview,
+		},
+		IgnoreAIReviews:  cfg.IgnoreAIReviews,
+		DependabotFormat: cfg.DependabotFormat,
+	}
+	provider := mappings.NewProvider(defaults, cfg.Mappings, cfg.Digest)
 
 	db, err := store.Open(cfg.DatabaseURL)
 	if err != nil {
@@ -64,7 +78,7 @@ func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, *digest.Schedule
 	}
 
 	messages := store.NewSlackMessages(db)
-	aiDetector := aireview.NewDetector(cfg.IgnoreAIReviews)
+	aiDetector := aireview.NewDetector()
 	scheduler := cleanup.NewScheduler(
 		messages,
 		time.Duration(cfg.MessageTTLDays)*24*time.Hour,
@@ -72,13 +86,14 @@ func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, *digest.Schedule
 		logger,
 	)
 
-	// The stuck-PR digest is opt-out (on by default); an explicit
-	// `digest: { enabled: false }` in config.yaml disables it. A bad cron
-	// spec fails startup here rather than silently never firing.
+	// The stuck-PR digest fires on every distinct cron spec that appears across
+	// the enabled mappings. An empty set means no mapping has a digest enabled
+	// (or there are no mappings). A bad cron spec fails startup here rather
+	// than silently never firing.
 	var digestScheduler *digest.Scheduler
-	if dcfg := provider.Digest(); dcfg.Enabled {
-		reporter := digest.NewReporter(messages, provider, slackClient, composer, logger)
-		digestScheduler, err = digest.NewScheduler(dcfg.Schedule, reporter, logger)
+	if specs := provider.Schedules(); len(specs) > 0 {
+		reporter := digest.NewReporter(messages, provider, slackClient, composer, provider, logger)
+		digestScheduler, err = digest.NewScheduler(specs, reporter, logger)
 		if err != nil {
 			closeDB(db)
 			return nil, nil, nil, nil, fmt.Errorf("app: digest scheduler: %w", err)
@@ -87,18 +102,12 @@ func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, *digest.Schedule
 
 	dispatcher := pullrequest.NewDispatcher(
 		logger,
-		pullrequest.NewOpenHandler(messages, provider, slackClient, composer, logger, cfg.DependabotFormat),
-		pullrequest.NewCloseHandler(messages, provider, slackClient, composer, logger,
-			pullrequest.CloseOptions{
-				ReactionsEnabled: cfg.Reactions.Enabled,
-				MergedEmoji:      cfg.Reactions.MergedPR,
-				ClosedEmoji:      cfg.Reactions.ClosedPR,
-			},
-		),
+		pullrequest.NewOpenHandler(messages, provider, slackClient, composer, logger),
+		pullrequest.NewCloseHandler(messages, provider, slackClient, composer, logger),
 		pullrequest.NewDraftHandler(messages, provider, slackClient, logger),
-		pullrequest.NewApproveHandler(messages, provider, slackClient, logger, cfg.Reactions.Approved, cfg.Reactions.BotReview, aiDetector),
-		pullrequest.NewCommentedHandler(messages, provider, slackClient, logger, cfg.Reactions.Commented, cfg.Reactions.BotReview, aiDetector),
-		pullrequest.NewRequestChangeHandler(messages, provider, slackClient, logger, cfg.Reactions.RequestChange, cfg.Reactions.BotReview, aiDetector),
+		pullrequest.NewApproveHandler(messages, provider, slackClient, logger, aiDetector),
+		pullrequest.NewCommentedHandler(messages, provider, slackClient, logger, aiDetector),
+		pullrequest.NewRequestChangeHandler(messages, provider, slackClient, logger, aiDetector),
 	)
 
 	mux := http.NewServeMux()

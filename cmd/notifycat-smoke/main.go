@@ -47,7 +47,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	provider := mappings.NewProvider(cfg.Mappings, cfg.Digest)
+	provider := mappings.NewProvider(mappings.Defaults{}, cfg.Mappings, cfg.Digest)
 	db, err := store.Open(cfg.DatabaseURL)
 	if err != nil {
 		fmt.Fprintln(stderr, "notifycat-smoke: cannot open database:", err)
