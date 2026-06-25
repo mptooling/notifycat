@@ -57,7 +57,7 @@ func TestOpenHandler_Handle_PostsAndStoresTS(t *testing.T) {
 	mappings := newFakeRepoMappings(store.RepoMapping{
 		Repository: "octo/widget", SlackChannel: "C123", Mentions: []string{"@alice"},
 		DependabotFormat: true,
-		Reactions: store.Reactions{NewPR: "rocket"},
+		Reactions:        store.Reactions{NewPR: "rocket"},
 	})
 	client := &fakeSlackClient{}
 	h := newOpenHandler(t, msgs, mappings, client)
@@ -95,7 +95,7 @@ func TestOpenHandler_Handle_ThreadsCreatedAtAndFallback(t *testing.T) {
 	mappings := newFakeRepoMappings(store.RepoMapping{
 		Repository: "octo/widget", SlackChannel: "C123", Mentions: []string{"@alice"},
 		DependabotFormat: true,
-		Reactions: store.Reactions{NewPR: "rocket"},
+		Reactions:        store.Reactions{NewPR: "rocket"},
 	})
 	client := &fakeSlackClient{}
 	h := newOpenHandler(t, msgs, mappings, client)
@@ -129,7 +129,7 @@ func TestOpenHandler_Handle_SkipsIfMessageAlreadyExists(t *testing.T) {
 	mappings := newFakeRepoMappings(store.RepoMapping{
 		Repository: "octo/widget", SlackChannel: "C123",
 		DependabotFormat: true,
-		Reactions: store.Reactions{NewPR: "rocket"},
+		Reactions:        store.Reactions{NewPR: "rocket"},
 	})
 	client := &fakeSlackClient{}
 	h := newOpenHandler(t, msgs, mappings, client)
@@ -171,7 +171,7 @@ func TestOpenHandler_Handle_DependabotRoutine(t *testing.T) {
 	mappings := newFakeRepoMappings(store.RepoMapping{
 		Repository: "octo/widget", SlackChannel: "C123", Mentions: []string{"@alice"},
 		DependabotFormat: true,
-		Reactions: store.Reactions{NewPR: "rocket"},
+		Reactions:        store.Reactions{NewPR: "rocket"},
 	})
 	client := &fakeSlackClient{}
 	h := newOpenHandler(t, msgs, mappings, client)
@@ -202,7 +202,7 @@ func TestOpenHandler_Handle_DependabotSecurity(t *testing.T) {
 	mappings := newFakeRepoMappings(store.RepoMapping{
 		Repository: "octo/widget", SlackChannel: "C123",
 		DependabotFormat: true,
-		Reactions: store.Reactions{NewPR: "rocket"},
+		Reactions:        store.Reactions{NewPR: "rocket"},
 	})
 	client := &fakeSlackClient{}
 	h := newOpenHandler(t, msgs, mappings, client)
@@ -233,7 +233,7 @@ func TestOpenHandler_Handle_Renovate(t *testing.T) {
 	mappings := newFakeRepoMappings(store.RepoMapping{
 		Repository: "octo/widget", SlackChannel: "C123",
 		DependabotFormat: true,
-		Reactions: store.Reactions{NewPR: "rocket"},
+		Reactions:        store.Reactions{NewPR: "rocket"},
 	})
 	client := &fakeSlackClient{}
 	h := newOpenHandler(t, msgs, mappings, client)
@@ -264,7 +264,7 @@ func TestOpenHandler_Handle_DependabotReadyForReviewByHuman(t *testing.T) {
 	mappings := newFakeRepoMappings(store.RepoMapping{
 		Repository: "octo/widget", SlackChannel: "C123",
 		DependabotFormat: true,
-		Reactions: store.Reactions{NewPR: "rocket"},
+		Reactions:        store.Reactions{NewPR: "rocket"},
 	})
 	client := &fakeSlackClient{}
 	h := newOpenHandler(t, msgs, mappings, client)
@@ -323,7 +323,7 @@ func TestOpenHandler_Handle_DependabotEmptyMentions(t *testing.T) {
 	mappings := newFakeRepoMappings(store.RepoMapping{
 		Repository: "octo/widget", SlackChannel: "C123",
 		DependabotFormat: true,
-		Reactions: store.Reactions{NewPR: "rocket"},
+		Reactions:        store.Reactions{NewPR: "rocket"},
 	})
 	client := &fakeSlackClient{}
 	h := newOpenHandler(t, msgs, mappings, client)
@@ -349,7 +349,7 @@ func TestOpenHandler_Handle_DoesNotPersistOnSlackFailure(t *testing.T) {
 	mappings := newFakeRepoMappings(store.RepoMapping{
 		Repository: "octo/widget", SlackChannel: "C123",
 		DependabotFormat: true,
-		Reactions: store.Reactions{NewPR: "rocket"},
+		Reactions:        store.Reactions{NewPR: "rocket"},
 	})
 	client := &fakeSlackClient{postErr: errInjected}
 	h := newOpenHandler(t, msgs, mappings, client)

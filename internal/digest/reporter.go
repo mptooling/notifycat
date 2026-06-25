@@ -27,8 +27,8 @@ type MappingLookup interface {
 	Get(ctx context.Context, repository string) (store.RepoMapping, error)
 }
 
-// DigestResolver looks up the effective digest configuration for a repository.
-type DigestResolver interface {
+// Resolver looks up the effective digest configuration for a repository.
+type Resolver interface {
 	DigestFor(repository string) mappings.DigestConfig
 }
 
@@ -45,7 +45,7 @@ type Poster interface {
 type Reporter struct {
 	finder   StuckFinder
 	mappings MappingLookup
-	digests  DigestResolver
+	digests  Resolver
 	slack    Poster
 	composer *slack.Composer
 	now      func() time.Time
@@ -53,7 +53,7 @@ type Reporter struct {
 }
 
 // NewReporter constructs a Reporter. now defaults to time.Now.
-func NewReporter(finder StuckFinder, mappings MappingLookup, poster Poster, composer *slack.Composer, digests DigestResolver, logger *slog.Logger) *Reporter {
+func NewReporter(finder StuckFinder, mappings MappingLookup, poster Poster, composer *slack.Composer, digests Resolver, logger *slog.Logger) *Reporter {
 	return &Reporter{
 		finder:   finder,
 		mappings: mappings,

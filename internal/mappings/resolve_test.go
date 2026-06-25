@@ -64,8 +64,8 @@ func TestResolveBehavior_RepoOverridesStarOverridesGlobal(t *testing.T) {
 	star := &RepoConfig{Reactions: &ReactionsOverride{Approved: &shipit}}
 	disabled := false
 	repo := &RepoConfig{
-		Reactions:        &ReactionsOverride{Enabled: &disabled},
-		IgnoreAIReviews:  boolPtr(true),
+		Reactions:       &ReactionsOverride{Enabled: &disabled},
+		IgnoreAIReviews: boolPtr(true),
 	}
 	rx, ignoreAI, dependabot := resolveBehavior(global, star, repo)
 	if rx.Approved != "shipit" {
