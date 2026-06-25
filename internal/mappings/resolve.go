@@ -63,9 +63,7 @@ func resolveBehavior(global Defaults, star, repo *RepoConfig) (store.Reactions, 
 			setStr(&rx.Approved, o.Approved)
 			setStr(&rx.Commented, o.Commented)
 			setStr(&rx.RequestChange, o.RequestChange)
-			if o.BotReview != nil { // empty string is a meaningful value (no marker)
-				rx.BotReview = *o.BotReview
-			}
+			setStr(&rx.BotReview, o.BotReview)
 		}
 		if rc.IgnoreAIReviews != nil {
 			ignoreAI = *rc.IgnoreAIReviews

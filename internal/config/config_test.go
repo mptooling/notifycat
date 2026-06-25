@@ -198,6 +198,36 @@ func TestLoad_UnknownKeyRejected(t *testing.T) {
 	}
 }
 
+func TestLoad_MappingsTierWithNoChannel_Rejected(t *testing.T) {
+	// api has no channel and there is no org/* to inherit from → structural error.
+	writeConfig(t, `
+mappings:
+  acme:
+    api:
+      mentions: ["<@U1>"]
+`)
+	setSecrets(t)
+	if _, err := config.Load(); err == nil {
+		t.Fatal("Load() succeeded with a tier that has no resolvable channel; want error")
+	}
+}
+
+func TestLoad_EmptyOrg_Rejected(t *testing.T) {
+	writeConfig(t, "mappings:\n  acme: {}\n")
+	setSecrets(t)
+	if _, err := config.Load(); err == nil {
+		t.Fatal("Load() succeeded with an empty org entry; want error")
+	}
+}
+
+func TestLoad_EmptyMappings_Valid(t *testing.T) {
+	writeConfig(t, "mappings: {}\n")
+	setSecrets(t)
+	if _, err := config.Load(); err != nil {
+		t.Fatalf("Load() with empty mappings returned error %v; want nil", err)
+	}
+}
+
 func TestLoad_RetiredEnvVarRejected(t *testing.T) {
 	writeConfig(t, minimalConfig)
 	setSecrets(t)

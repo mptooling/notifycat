@@ -36,7 +36,15 @@ func Parse(r io.Reader) (File, error) {
 }
 
 func (f File) validate() error {
-	for org, o := range f.Mappings {
+	return ValidateMappings(f.Mappings)
+}
+
+// ValidateMappings runs the same per-org/per-tier structural checks as Parse
+// over a mappings map. An empty map (no orgs) is valid. Returns an error for
+// invalid org names, empty orgs, bad repo keys, malformed channel IDs, or any
+// repo tier that cannot resolve a channel.
+func ValidateMappings(m map[string]Org) error {
+	for org, o := range m {
 		if !orgPattern.MatchString(org) {
 			return fmt.Errorf("mappings: org %q: invalid name (must match %s)", org, orgPattern)
 		}
