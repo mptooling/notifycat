@@ -246,7 +246,7 @@ func TestCheckMappings_WithEntriesIsOK(t *testing.T) {
 	m := map[string]mappings.Org{
 		"octo": {"widget": {Channel: "C0123ABCDE"}},
 	}
-	sec := doctor.CheckMappings(mappings.NewProvider(m, nil))
+	sec := doctor.CheckMappings(mappings.NewProvider(mappings.Defaults{}, m, nil))
 	if sec.Name != "mappings" {
 		t.Errorf("section name = %q; want %q", sec.Name, "mappings")
 	}
@@ -259,7 +259,7 @@ func TestCheckMappings_WithEntriesIsOK(t *testing.T) {
 }
 
 func TestCheckMappings_EmptyMappingsIsOK(t *testing.T) {
-	sec := doctor.CheckMappings(mappings.NewProvider(nil, nil))
+	sec := doctor.CheckMappings(mappings.NewProvider(mappings.Defaults{}, nil, nil))
 	if !sec.OK() {
 		t.Fatalf("CheckMappings FAILed on empty mappings (which the server treats as a no-op): %+v", sec.Checks)
 	}
