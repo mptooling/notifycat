@@ -85,7 +85,8 @@ Alongside the per-repo-tier `mappings`, an optional **global** `digest:` section
 ```yaml
 digest:
   enabled: true          # optional, default true — set false to turn the digest off
-  schedule: "0 9 * * *"  # optional, default 9am daily (standard 5-field cron, server-local)
+  schedule: "0 9 * * *"  # optional, default 9am daily (standard 5-field cron, in `timezone` below)
+  timezone: "UTC"        # optional, default UTC — IANA zone the schedule + cutoff run in (global only)
 
 mappings:
   acme:
@@ -95,9 +96,10 @@ mappings:
 
 | Field | Rule |
 | --- | --- |
-| `digest` | Optional. The feature is **on by default**: with no `digest:` section the server posts the digest at 9am daily, server-local time. |
+| `digest` | Optional. The feature is **on by default**: with no `digest:` section the server posts the digest at 9am daily, in UTC. |
 | `digest.enabled` | Optional bool, default `true`. Set `false` to disable the digest entirely. |
-| `digest.schedule` | Optional standard 5-field cron expression (e.g. `0 9 * * *`). Default `0 9 * * *`. Evaluated in the server's local timezone. An invalid expression fails server startup. |
+| `digest.schedule` | Optional standard 5-field cron expression (e.g. `0 9 * * *`). Default `0 9 * * *`. Evaluated in `digest.timezone`. An invalid expression fails server startup. |
+| `digest.timezone` | Optional IANA timezone name (e.g. `Europe/Kyiv`). Default `UTC`. Sets the zone for both the schedule and the "stuck since before today" cutoff. An unrecognized zone fails server startup. **Global only** — a per-repo `digest:` override that sets `timezone` is rejected at parse time. |
 | Unknown keys under `digest` | Rejected at parse time, like the rest of the file. |
 
 On each tick the server posts a parent message per Slack channel and lists that channel's stuck PRs in a single reply under it — open PRs whose last activity (the open notification, a review, or a comment) predates the start of the current day. Merged/closed PRs and PRs converted back to draft are excluded. The parent pings the same `mentions` as the channel's mapping, so it notifies the room; channels with no stuck PRs get no message. See [Operations → Stuck-PR digest](operations.md#stuck-pr-digest) for the runtime behavior and the upgrade note.

@@ -92,8 +92,8 @@ func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, *digest.Schedule
 	// than silently never firing.
 	var digestScheduler *digest.Scheduler
 	if specs := provider.Schedules(); len(specs) > 0 {
-		reporter := digest.NewReporter(messages, provider, slackClient, composer, provider, logger)
-		digestScheduler, err = digest.NewScheduler(specs, reporter, logger)
+		reporter := digest.NewReporter(messages, provider, slackClient, composer, provider, logger, cfg.DigestTimezone)
+		digestScheduler, err = digest.NewScheduler(specs, reporter, logger, cfg.DigestTimezone)
 		if err != nil {
 			closeDB(db)
 			return nil, nil, nil, nil, fmt.Errorf("app: digest scheduler: %w", err)

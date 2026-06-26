@@ -49,11 +49,18 @@ type Reporter struct {
 	slack    Poster
 	composer *slack.Composer
 	now      func() time.Time
+	tz       *time.Location
 	logger   *slog.Logger
 }
 
-// NewReporter constructs a Reporter. now defaults to time.Now.
-func NewReporter(finder StuckFinder, mappings MappingLookup, poster Poster, composer *slack.Composer, digests Resolver, logger *slog.Logger) *Reporter {
+// NewReporter constructs a Reporter. now defaults to time.Now; tz is the
+// timezone the "start of day" cutoff is computed in (nil defaults to UTC) and
+// must match the scheduler's timezone so a digest fires and cuts off in the
+// same zone.
+func NewReporter(finder StuckFinder, mappings MappingLookup, poster Poster, composer *slack.Composer, digests Resolver, logger *slog.Logger, tz *time.Location) *Reporter {
+	if tz == nil {
+		tz = time.UTC
+	}
 	return &Reporter{
 		finder:   finder,
 		mappings: mappings,
@@ -61,6 +68,7 @@ func NewReporter(finder StuckFinder, mappings MappingLookup, poster Poster, comp
 		composer: composer,
 		digests:  digests,
 		now:      time.Now,
+		tz:       tz,
 		logger:   logger,
 	}
 }
@@ -90,7 +98,9 @@ func (r *Reporter) ReportSchedule(ctx context.Context, spec string) error {
 // where include returns true), and post one reminder per channel. A failed
 // post for one channel is logged and skipped so the others still go out.
 func (r *Reporter) report(ctx context.Context, include func(repo string) bool) error {
-	now := r.now()
+	// Evaluate in the configured zone so the firing time and the cutoff agree;
+	// r.tz — not the clock's own location — drives the day boundary.
+	now := r.now().In(r.tz)
 	cutoff := startOfDay(now)
 
 	rows, err := r.finder.FindStuck(ctx, cutoff)

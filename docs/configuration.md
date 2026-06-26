@@ -86,7 +86,8 @@ Use Slack emoji names without surrounding colons. For example, set `approved: sh
 | Key | Default | Notes |
 | --- | --- | --- |
 | `digest.enabled` | `true` | Turns the stuck-PR digest on or off. The feature is on by default: omitting this section entirely keeps the digest running. |
-| `digest.schedule` | `0 9 * * *` | Standard 5-field cron expression, evaluated in the server's local timezone. An invalid expression fails server startup. |
+| `digest.schedule` | `0 9 * * *` | Standard 5-field cron expression, evaluated in `digest.timezone`. An invalid expression fails server startup. |
+| `digest.timezone` | `UTC` | IANA timezone name (e.g. `Europe/Kyiv`) the schedule and the "stuck since before today" cutoff are evaluated in. Absent/empty means UTC. An unrecognized zone fails server startup. Global only — a per-repo `digest:` override may not set it. |
 
 ### mappings
 

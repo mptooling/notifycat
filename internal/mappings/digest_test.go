@@ -60,3 +60,24 @@ func TestProvider_Digest_UnknownFieldRejected(t *testing.T) {
 		t.Fatalf("expected parse error for unknown digest field, got nil")
 	}
 }
+
+func TestProvider_Digest_Timezone(t *testing.T) {
+	body := "digest:\n  timezone: \"Europe/Kyiv\"\n" + digestMappingsTail
+	p, err := Load(writeMappingsFile(t, body))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got := p.Digest().Timezone; got != "Europe/Kyiv" {
+		t.Errorf("timezone = %q; want Europe/Kyiv", got)
+	}
+}
+
+func TestProvider_Digest_TimezoneAbsentIsEmpty(t *testing.T) {
+	p, err := Load(writeMappingsFile(t, digestMappingsTail))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got := p.Digest().Timezone; got != "" {
+		t.Errorf("timezone = %q; want empty when absent (resolved to UTC by config)", got)
+	}
+}

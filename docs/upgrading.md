@@ -6,7 +6,7 @@ Notifycat applies its database migrations automatically on server startup (see [
 
 0.16.0 adds a scheduled [stuck-PR digest](mappings.md#stuck-pr-digest): a per-channel reminder listing open PRs nobody has touched since before today. Two things make this upgrade more than a restart.
 
-> ⚠️ **The digest is on by default.** With no `digest:` section in `config.yaml`, the server starts posting a digest at **9am daily, server-local time**, to every mapped channel. This is a deliberate opt-out design. To keep the previous quiet behavior, add the section and disable it:
+> ⚠️ **The digest is on by default.** With no `digest:` section in `config.yaml`, the server starts posting a digest at **9am daily, UTC** (configurable via `digest.timezone` since 0.19.0 — see below), to every mapped channel. This is a deliberate opt-out design. To keep the previous quiet behavior, add the section and disable it:
 >
 > ```yaml
 > digest:
@@ -24,7 +24,8 @@ Notifycat applies its database migrations automatically on server startup (see [
    ```yaml
    digest:
      enabled: true          # default true
-     schedule: "0 9 * * *"  # standard 5-field cron, server-local
+     schedule: "0 9 * * *"  # standard 5-field cron, evaluated in `timezone`
+     timezone: "UTC"        # IANA zone; default UTC (since 0.19.0)
    ```
 
 3. **Reconcile the closed-PR backlog (one-time).** This drops already-merged PRs out of the digest by marking their rows closed from their real GitHub state. It needs `GITHUB_TOKEN` (read access) and the same `DATABASE_URL` the server uses. Preview, then apply:
@@ -40,3 +41,20 @@ Notifycat applies its database migrations automatically on server startup (see [
 
 - **`updated_at` now tracks activity.** Reviews and comments bump it (previously only the PR-open notification did). Side effect: the stale-row cleanup ages an actively-reviewed PR from its last activity rather than its open time — generally more correct.
 - **Rollback is partial.** Migrating `00004` down drops `closed_at` but cannot undo the `updated_at` backfill; restore from a database backup if you need the old values. The feature is otherwise safe to disable in place via `digest: { enabled: false }`.
+
+## 0.19.0 — Configurable digest timezone (default UTC)
+
+The stuck-PR digest now runs in an explicit, configurable timezone via the new `digest.timezone` key, defaulting to **UTC**. Previously the schedule was interpreted in Go's `time.Local`, which on the published `FROM scratch` image is always UTC regardless of the `TZ` environment variable (the image ships no timezone database). The docs nonetheless described it as "server-local time" — this release makes the behavior explicit and gives you a knob.
+
+> ⚠️ **The effective default clock is now UTC, stated explicitly.** On the published Docker image the digest already fired on a UTC clock, so for those deployments nothing changes. If you run a binary you built yourself on a host with a non-UTC `time.Local`, the digest previously fired at "9am" in that local zone; with this release it fires at 9am **UTC** unless you set `digest.timezone`. To keep a non-UTC time, set the zone explicitly:
+>
+> ```yaml
+> digest:
+>   timezone: "Europe/Kyiv"   # IANA zone name; both the firing time and the cutoff use it
+> ```
+
+Notes:
+
+- Named zones (e.g. `Europe/Kyiv`) resolve on the `scratch` image because the binary now embeds the IANA timezone database (`time/tzdata`, ~450KB). Setting `TZ` alone still does nothing — use `digest.timezone`.
+- An unrecognized zone fails startup with a descriptive error, the same fail-fast contract as an invalid cron spec.
+- `timezone` is **global only**. A per-repo `digest:` override may still set its own `schedule`, but setting `timezone` on a per-repo tier is rejected at parse time — the server runs a single cron clock.
