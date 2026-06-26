@@ -67,18 +67,19 @@ func fixedClock() func() time.Time {
 
 const explicitYAML = `mappings:
   acme:
-    channel: C0123ABCDE
-    mentions: ["@a"]
-    repositories:
-      - api
-      - web
+    api:
+      channel: C0123ABCDE
+      mentions: ["@a"]
+    web:
+      channel: C0123ABCDE
+      mentions: ["@a"]
 `
 
 const wildcardYAML = `mappings:
   beta:
-    channel: C0456FGHIJ
-    mentions: ["@b"]
-    repositories: "*"
+    "*":
+      channel: C0456FGHIJ
+      mentions: ["@b"]
 `
 
 func TestMappingsValidator_Targeted_AllPass_WritesLock(t *testing.T) {

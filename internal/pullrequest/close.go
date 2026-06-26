@@ -9,14 +9,6 @@ import (
 	"github.com/mptooling/notifycat/internal/store"
 )
 
-// CloseOptions tunes the CloseHandler. Reactions on close are toggleable
-// because that's how the legacy PHP service exposed them.
-type CloseOptions struct {
-	ReactionsEnabled bool
-	MergedEmoji      string
-	ClosedEmoji      string
-}
-
 // CloseHandler reacts to a PR being closed (merged or not). It updates the
 // original Slack message with a [Merged]/[Closed] decoration and, if enabled,
 // adds the corresponding reaction emoji.
@@ -26,7 +18,6 @@ type CloseHandler struct {
 	slack    SlackClient
 	composer *slack.Composer
 	logger   *slog.Logger
-	opts     CloseOptions
 }
 
 // NewCloseHandler builds a CloseHandler.
@@ -36,7 +27,6 @@ func NewCloseHandler(
 	slackClient SlackClient,
 	composer *slack.Composer,
 	logger *slog.Logger,
-	opts CloseOptions,
 ) *CloseHandler {
 	return &CloseHandler{
 		messages: messages,
@@ -44,7 +34,6 @@ func NewCloseHandler(
 		slack:    slackClient,
 		composer: composer,
 		logger:   logger,
-		opts:     opts,
 	}
 }
 
@@ -85,25 +74,18 @@ func (h *CloseHandler) Handle(ctx context.Context, e Event) error {
 		return err
 	}
 
-	// The merged/closed reaction emoji doubles as the message's leading emoji,
-	// so it is selected regardless of whether reactions are also added.
-	emoji := h.opts.ClosedEmoji
+	emoji := mapping.Reactions.ClosedPR
 	if e.PR.Merged {
-		emoji = h.opts.MergedEmoji
+		emoji = mapping.Reactions.MergedPR
 	}
-
 	updated := h.composer.UpdatedMessage(slackPRFrom(e), e.PR.Merged, emoji)
 	if err := h.slack.UpdateMessage(ctx, mapping.SlackChannel, stored.TS, updated); err != nil {
 		return err
 	}
-
-	// Drop the PR from the stuck-PR digest now that it's merged/closed. The row
-	// itself stays until the cleanup TTL; closed_at just hides it from reminders.
 	if err := h.messages.MarkClosed(ctx, e.Repository, e.PR.Number); err != nil {
 		return err
 	}
-
-	if !h.opts.ReactionsEnabled {
+	if !mapping.Reactions.Enabled {
 		return nil
 	}
 	return h.slack.AddReaction(ctx, mapping.SlackChannel, stored.TS, emoji)

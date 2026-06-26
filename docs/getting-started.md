@@ -76,22 +76,21 @@ Edit `config.yaml` so each org points at the right Slack channel:
 ```yaml
 mappings:
   owner:
-    channel: C123ABCDE             # the Slack channel ID, not "#name"
-    mentions:
-      - "<@U123456>"               # user
-      - "<!subteam^S123456>"       # user group
-    repositories:
-      - repo
+    repo:
+      channel: C123ABCDE             # the Slack channel ID, not "#name"
+      mentions:
+        - "<@U123456>"               # user
+        - "<!subteam^S123456>"       # user group
 ```
 
-For a whole-org rule, use a wildcard:
+For a whole-org rule, use the `"*"` catch-all tier:
 
 ```yaml
 mappings:
   owner:
-    channel: C123ABCDE
-    mentions: ["<!channel>"]
-    repositories: "*"
+    "*":
+      channel: C123ABCDE
+      mentions: ["<!channel>"]
 ```
 
 See [Mappings file](mappings.md) for the full schema, lookup rules, and the lock-file cache. Validate what you wrote against the live workspace before starting the server:

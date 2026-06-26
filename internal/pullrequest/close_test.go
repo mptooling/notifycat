@@ -12,22 +12,17 @@ import (
 	"github.com/mptooling/notifycat/internal/store"
 )
 
-func newCloseHandler(t *testing.T, msgs *fakeSlackMessages, mappings *fakeRepoMappings, client *fakeSlackClient, reactionsEnabled bool) *pullrequest.CloseHandler {
+func newCloseHandler(t *testing.T, msgs *fakeSlackMessages, mappings *fakeRepoMappings, client *fakeSlackClient) *pullrequest.CloseHandler {
 	t.Helper()
 	return pullrequest.NewCloseHandler(
 		msgs, mappings, client,
 		slack.NewComposer("rocket"),
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
-		pullrequest.CloseOptions{
-			ReactionsEnabled: reactionsEnabled,
-			MergedEmoji:      "twisted_rightwards_arrows",
-			ClosedEmoji:      "x",
-		},
 	)
 }
 
 func TestCloseHandler_Applicable(t *testing.T) {
-	h := newCloseHandler(t, newFakeSlackMessages(), newFakeRepoMappings(), &fakeSlackClient{}, false)
+	h := newCloseHandler(t, newFakeSlackMessages(), newFakeRepoMappings(), &fakeSlackClient{})
 
 	if !h.Applicable(pullrequest.Event{Action: "closed"}) {
 		t.Error("closed should be applicable")
@@ -44,9 +39,14 @@ func TestCloseHandler_Handle_UpdatesMessage(t *testing.T) {
 	})
 	mappings := newFakeRepoMappings(store.RepoMapping{
 		Repository: "octo/widget", SlackChannel: "C123", Mentions: []string{"@a"},
+		Reactions: store.Reactions{
+			Enabled:  true,
+			MergedPR: "twisted_rightwards_arrows",
+			ClosedPR: "x",
+		},
 	})
 	client := &fakeSlackClient{}
-	h := newCloseHandler(t, msgs, mappings, client, true)
+	h := newCloseHandler(t, msgs, mappings, client)
 
 	e := pullrequest.Event{
 		Action:     "closed",
@@ -92,9 +92,14 @@ func TestCloseHandler_Handle_ClosedNotMergedUsesClosedEmoji(t *testing.T) {
 	})
 	mappings := newFakeRepoMappings(store.RepoMapping{
 		Repository: "octo/widget", SlackChannel: "C123",
+		Reactions: store.Reactions{
+			Enabled:  true,
+			MergedPR: "twisted_rightwards_arrows",
+			ClosedPR: "x",
+		},
 	})
 	client := &fakeSlackClient{}
-	h := newCloseHandler(t, msgs, mappings, client, true)
+	h := newCloseHandler(t, msgs, mappings, client)
 
 	e := pullrequest.Event{
 		Action:     "closed",
@@ -116,9 +121,16 @@ func TestCloseHandler_Handle_NoReactionWhenDisabled(t *testing.T) {
 	_ = msgs.Save(context.Background(), store.SlackMessage{
 		PRNumber: 42, Repository: "octo/widget", TS: "ts1",
 	})
-	mappings := newFakeRepoMappings(store.RepoMapping{Repository: "octo/widget", SlackChannel: "C123"})
+	mappings := newFakeRepoMappings(store.RepoMapping{
+		Repository: "octo/widget", SlackChannel: "C123",
+		Reactions: store.Reactions{
+			Enabled:  false,
+			MergedPR: "twisted_rightwards_arrows",
+			ClosedPR: "x",
+		},
+	})
 	client := &fakeSlackClient{}
-	h := newCloseHandler(t, msgs, mappings, client, false)
+	h := newCloseHandler(t, msgs, mappings, client)
 
 	e := pullrequest.Event{
 		Action:     "closed",
@@ -136,11 +148,18 @@ func TestCloseHandler_Handle_NoReactionWhenDisabled(t *testing.T) {
 func TestCloseHandler_Handle_MarksClosed(t *testing.T) {
 	msgs := newFakeSlackMessages()
 	_ = msgs.Save(context.Background(), store.SlackMessage{PRNumber: 42, Repository: "octo/widget", TS: "ts1"})
-	mappings := newFakeRepoMappings(store.RepoMapping{Repository: "octo/widget", SlackChannel: "C123"})
+	mappings := newFakeRepoMappings(store.RepoMapping{
+		Repository: "octo/widget", SlackChannel: "C123",
+		Reactions: store.Reactions{
+			Enabled:  false,
+			MergedPR: "twisted_rightwards_arrows",
+			ClosedPR: "x",
+		},
+	})
 	client := &fakeSlackClient{}
 
 	// Reactions disabled, to prove MarkClosed is independent of reactions.
-	h := newCloseHandler(t, msgs, mappings, client, false)
+	h := newCloseHandler(t, msgs, mappings, client)
 	e := pullrequest.Event{
 		Action:     "closed",
 		Repository: "octo/widget",
@@ -156,8 +175,15 @@ func TestCloseHandler_Handle_MarksClosed(t *testing.T) {
 
 func TestCloseHandler_Handle_NoStoredMessageDoesNotMarkClosed(t *testing.T) {
 	msgs := newFakeSlackMessages() // empty
-	mappings := newFakeRepoMappings(store.RepoMapping{Repository: "octo/widget", SlackChannel: "C123"})
-	h := newCloseHandler(t, msgs, mappings, &fakeSlackClient{}, true)
+	mappings := newFakeRepoMappings(store.RepoMapping{
+		Repository: "octo/widget", SlackChannel: "C123",
+		Reactions: store.Reactions{
+			Enabled:  true,
+			MergedPR: "twisted_rightwards_arrows",
+			ClosedPR: "x",
+		},
+	})
+	h := newCloseHandler(t, msgs, mappings, &fakeSlackClient{})
 
 	e := pullrequest.Event{Action: "closed", Repository: "octo/widget", PR: pullrequest.PR{Number: 42}}
 	if err := h.Handle(context.Background(), e); err != nil {
@@ -170,9 +196,16 @@ func TestCloseHandler_Handle_NoStoredMessageDoesNotMarkClosed(t *testing.T) {
 
 func TestCloseHandler_Handle_NoStoredMessageIsNoop(t *testing.T) {
 	msgs := newFakeSlackMessages() // empty
-	mappings := newFakeRepoMappings(store.RepoMapping{Repository: "octo/widget", SlackChannel: "C123"})
+	mappings := newFakeRepoMappings(store.RepoMapping{
+		Repository: "octo/widget", SlackChannel: "C123",
+		Reactions: store.Reactions{
+			Enabled:  true,
+			MergedPR: "twisted_rightwards_arrows",
+			ClosedPR: "x",
+		},
+	})
 	client := &fakeSlackClient{}
-	h := newCloseHandler(t, msgs, mappings, client, true)
+	h := newCloseHandler(t, msgs, mappings, client)
 
 	e := pullrequest.Event{
 		Action:     "closed",

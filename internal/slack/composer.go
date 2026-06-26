@@ -65,10 +65,15 @@ func NewComposer(newPREmoji string) *Composer {
 // top-level text — a context block renders the mention as gray text but does
 // not ping. When the mentions list is empty the prefix is omitted entirely so
 // the message has no stranded ", ".
-func (c *Composer) NewMessage(pr PRDetails, mentions []string) Message {
+// newPREmoji is the per-repo reaction emoji name (without colons). If empty,
+// falls back to the composer's default emoji.
+func (c *Composer) NewMessage(pr PRDetails, mentions []string, newPREmoji string) Message {
+	if newPREmoji == "" {
+		newPREmoji = c.newPREmoji
+	}
 	headline := fmt.Sprintf(
 		":%s: %splease review <%s|PR #%d: %s>",
-		c.newPREmoji, mentionsPrefix(mentions), pr.URL, pr.Number, pr.Title,
+		newPREmoji, mentionsPrefix(mentions), pr.URL, pr.Number, pr.Title,
 	)
 	fallback := fmt.Sprintf(
 		"%splease review PR #%d: %s by %s",

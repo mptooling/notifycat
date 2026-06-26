@@ -11,11 +11,10 @@ import (
 
 // reactionHandler is the shared implementation behind the three review-state
 // handlers (Approve, Commented, RequestChange). Each handler is just this
-// struct + a different Applicable rule and a different emoji.
+// struct + a different Applicable rule and an emojiOf function.
 type reactionHandler struct {
 	name       string // "approve" | "commented" | "request_change"
-	emoji      string
-	botEmoji   string // distinct marker for non-suppressed bot reviewers; "" disables it
+	emojiOf    func(store.Reactions) string
 	applicable func(Event) bool
 
 	messages SlackMessages
@@ -60,7 +59,7 @@ func (h *reactionHandler) Handle(ctx context.Context, e Event) error {
 		return err
 	}
 
-	if h.detector.ShouldSuppress(e.Sender.Type) {
+	if mapping.IgnoreAIReviews && h.detector.IsBot(e.Sender.Type) {
 		h.logger.Debug("skipped bot reviewer reaction",
 			slog.String("login", e.Sender.Login),
 			slog.String("event", e.GitHubEvent),
@@ -71,11 +70,12 @@ func (h *reactionHandler) Handle(ctx context.Context, e Event) error {
 		return nil
 	}
 
+	emoji := h.emojiOf(mapping.Reactions)
 	// The slack.Client treats Slack's "already_reacted" error as a non-error,
 	// so AddReaction is naturally idempotent. We don't need a GetReactions
 	// pre-check (the PHP service did one, but it's redundant once the client
 	// handles the duplicate-add case directly).
-	if err := h.slack.AddReaction(ctx, mapping.SlackChannel, stored.TS, h.emoji); err != nil {
+	if err := h.slack.AddReaction(ctx, mapping.SlackChannel, stored.TS, emoji); err != nil {
 		return err
 	}
 
@@ -88,9 +88,9 @@ func (h *reactionHandler) Handle(ctx context.Context, e Event) error {
 
 	// A bot reviewer that survived the suppression gate above gets a distinct
 	// marker alongside the normal state reaction, so its activity stays visible
-	// but recognisably non-human. Empty botEmoji turns the marker off.
-	if h.botEmoji != "" && h.detector.IsBot(e.Sender.Type) {
-		return h.slack.AddReaction(ctx, mapping.SlackChannel, stored.TS, h.botEmoji)
+	// but recognisably non-human. Empty BotReview turns the marker off.
+	if mapping.Reactions.BotReview != "" && h.detector.IsBot(e.Sender.Type) {
+		return h.slack.AddReaction(ctx, mapping.SlackChannel, stored.TS, mapping.Reactions.BotReview)
 	}
 	return nil
 }
@@ -99,21 +99,19 @@ func (h *reactionHandler) Handle(ctx context.Context, e Event) error {
 // "approved".
 type ApproveHandler struct{ reactionHandler }
 
-// NewApproveHandler builds an ApproveHandler. detector must be non-nil; pass
-// aireview.NewDetector(false) for the disabled state.
+// NewApproveHandler builds an ApproveHandler.
 func NewApproveHandler(
 	messages SlackMessages,
 	mappings RepoMappings,
 	slackClient SlackClient,
 	logger *slog.Logger,
-	emoji string,
-	botEmoji string,
 	detector *aireview.Detector,
 ) *ApproveHandler {
 	return &ApproveHandler{reactionHandler{
-		name:     "approve",
-		emoji:    emoji,
-		botEmoji: botEmoji,
+		name: "approve",
+		emojiOf: func(r store.Reactions) string {
+			return r.Approved
+		},
 		messages: messages, mappings: mappings, slack: slackClient, logger: logger, detector: detector,
 		applicable: func(e Event) bool {
 			return e.Action == "submitted" && e.Review != nil && e.Review.State == "approved"
@@ -125,21 +123,19 @@ func NewApproveHandler(
 // state "commented".
 type CommentedHandler struct{ reactionHandler }
 
-// NewCommentedHandler builds a CommentedHandler. detector must be non-nil;
-// pass aireview.NewDetector(false) for the disabled state.
+// NewCommentedHandler builds a CommentedHandler.
 func NewCommentedHandler(
 	messages SlackMessages,
 	mappings RepoMappings,
 	slackClient SlackClient,
 	logger *slog.Logger,
-	emoji string,
-	botEmoji string,
 	detector *aireview.Detector,
 ) *CommentedHandler {
 	return &CommentedHandler{reactionHandler{
-		name:     "commented",
-		emoji:    emoji,
-		botEmoji: botEmoji,
+		name: "commented",
+		emojiOf: func(r store.Reactions) string {
+			return r.Commented
+		},
 		messages: messages, mappings: mappings, slack: slackClient, logger: logger, detector: detector,
 		applicable: func(e Event) bool {
 			if e.GitHubEvent == "pull_request_review_comment" {
@@ -160,21 +156,19 @@ func NewCommentedHandler(
 // "changes_requested".
 type RequestChangeHandler struct{ reactionHandler }
 
-// NewRequestChangeHandler builds a RequestChangeHandler. detector must be
-// non-nil; pass aireview.NewDetector(false) for the disabled state.
+// NewRequestChangeHandler builds a RequestChangeHandler.
 func NewRequestChangeHandler(
 	messages SlackMessages,
 	mappings RepoMappings,
 	slackClient SlackClient,
 	logger *slog.Logger,
-	emoji string,
-	botEmoji string,
 	detector *aireview.Detector,
 ) *RequestChangeHandler {
 	return &RequestChangeHandler{reactionHandler{
-		name:     "request_change",
-		emoji:    emoji,
-		botEmoji: botEmoji,
+		name: "request_change",
+		emojiOf: func(r store.Reactions) string {
+			return r.RequestChange
+		},
 		messages: messages, mappings: mappings, slack: slackClient, logger: logger, detector: detector,
 		applicable: func(e Event) bool {
 			return e.Action == "submitted" && e.Review != nil && e.Review.State == "changes_requested"

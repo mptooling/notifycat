@@ -54,9 +54,9 @@ func TestComposer_NewMessage(t *testing.T) {
 		URL:        "https://github.com/octo/widget/pull/42",
 		Author:     "alice",
 		CreatedAt:  created,
-	}, []string{"@bob", "@carol"})
+	}, []string{"@bob", "@carol"}, "rocket")
 
-	wantSection := ":eyes: @bob,@carol, please review <https://github.com/octo/widget/pull/42|PR #42: fix the thing>"
+	wantSection := ":rocket: @bob,@carol, please review <https://github.com/octo/widget/pull/42|PR #42: fix the thing>"
 	if s := sectionText(t, got); s != wantSection {
 		t.Errorf("section =\n  %q\nwant\n  %q", s, wantSection)
 	}
@@ -78,9 +78,9 @@ func TestComposer_NewMessage_NoMentions(t *testing.T) {
 
 	got := c.NewMessage(slack.PRDetails{
 		Repository: "octo/widget", Number: 1, Title: "t", URL: "u", Author: "a", CreatedAt: created,
-	}, nil)
+	}, nil, "rocket")
 
-	wantSection := ":eyes: please review <u|PR #1: t>"
+	wantSection := ":rocket: please review <u|PR #1: t>"
 	if s := sectionText(t, got); s != wantSection {
 		t.Errorf("section = %q, want %q", s, wantSection)
 	}
@@ -94,9 +94,9 @@ func TestComposer_NewMessage_ChannelFallback(t *testing.T) {
 
 	got := c.NewMessage(slack.PRDetails{
 		Repository: "octo/widget", Number: 1, Title: "t", URL: "u", Author: "a", CreatedAt: created,
-	}, []string{"<!channel>"})
+	}, []string{"<!channel>"}, "rocket")
 
-	wantSection := ":eyes: <!channel>, please review <u|PR #1: t>"
+	wantSection := ":rocket: <!channel>, please review <u|PR #1: t>"
 	if s := sectionText(t, got); s != wantSection {
 		t.Errorf("section = %q, want %q", s, wantSection)
 	}
@@ -107,7 +107,7 @@ func TestComposer_NewMessage_NoCreatedAt(t *testing.T) {
 
 	got := c.NewMessage(slack.PRDetails{
 		Repository: "octo/widget", Number: 1, Title: "t", URL: "u", Author: "a",
-	}, nil)
+	}, nil, "rocket")
 
 	ctx, ok := contextText(t, got)
 	if !ok {

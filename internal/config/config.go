@@ -179,6 +179,9 @@ func Load() (Config, error) {
 	cfg.ConfigFile = path
 	applyFileSchema(&cfg, fs)
 
+	if err := mappings.ValidateMappings(cfg.Mappings); err != nil {
+		return Config{}, fmt.Errorf("config: %w", err)
+	}
 	if err := readSecrets(&cfg); err != nil {
 		return Config{}, err
 	}

@@ -113,11 +113,11 @@ Each entry in `config.yaml`'s `mappings:` section lists the Slack mentions that 
 ```yaml
 mappings:
   owner:
-    channel: C123ABCDE
-    mentions:
-      - "<@U123456>"
-      - "<!subteam^S123456>"
-    repositories: ["repo"]
+    repo:
+      channel: C123ABCDE
+      mentions:
+        - "<@U123456>"
+        - "<!subteam^S123456>"
 ```
 
 Common formats:

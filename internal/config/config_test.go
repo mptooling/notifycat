@@ -120,9 +120,8 @@ digest:
   enabled: false
 mappings:
   acme:
-    channel: C0123ABCDE
-    repositories:
-      - web
+    web:
+      channel: C0123ABCDE
 `)
 	setSecrets(t)
 
@@ -157,8 +156,20 @@ mappings:
 	if cfg.Digest == nil || cfg.Digest.Enabled {
 		t.Errorf("Digest = %+v; want non-nil, disabled", cfg.Digest)
 	}
-	if _, ok := cfg.Mappings["acme"]; !ok {
-		t.Errorf("Mappings missing acme: %+v", cfg.Mappings)
+	org, ok := cfg.Mappings["acme"]
+	if !ok {
+		t.Fatalf("Mappings missing acme: %+v", cfg.Mappings)
+	}
+	if org["web"].Channel != "C0123ABCDE" {
+		t.Errorf("acme/web channel = %q; want C0123ABCDE", org["web"].Channel)
+	}
+}
+
+func TestLoad_RejectsUnknownTierKey(t *testing.T) {
+	writeConfig(t, "mappings:\n  acme:\n    api:\n      channel: C0API\n      bogus: x\n")
+	setSecrets(t)
+	if _, err := config.Load(); err == nil {
+		t.Fatal("expected error for unknown tier key in mappings")
 	}
 }
 
@@ -184,6 +195,36 @@ func TestLoad_UnknownKeyRejected(t *testing.T) {
 	setSecrets(t)
 	if _, err := config.Load(); err == nil {
 		t.Fatal("Load() succeeded with an unknown key; want error")
+	}
+}
+
+func TestLoad_MappingsTierWithNoChannel_Rejected(t *testing.T) {
+	// api has no channel and there is no org/* to inherit from → structural error.
+	writeConfig(t, `
+mappings:
+  acme:
+    api:
+      mentions: ["<@U1>"]
+`)
+	setSecrets(t)
+	if _, err := config.Load(); err == nil {
+		t.Fatal("Load() succeeded with a tier that has no resolvable channel; want error")
+	}
+}
+
+func TestLoad_EmptyOrg_Rejected(t *testing.T) {
+	writeConfig(t, "mappings:\n  acme: {}\n")
+	setSecrets(t)
+	if _, err := config.Load(); err == nil {
+		t.Fatal("Load() succeeded with an empty org entry; want error")
+	}
+}
+
+func TestLoad_EmptyMappings_Valid(t *testing.T) {
+	writeConfig(t, "mappings: {}\n")
+	setSecrets(t)
+	if _, err := config.Load(); err != nil {
+		t.Fatalf("Load() with empty mappings returned error %v; want nil", err)
 	}
 }
 

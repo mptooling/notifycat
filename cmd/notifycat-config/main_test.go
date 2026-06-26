@@ -15,13 +15,11 @@ func testProvider(t *testing.T) *mappings.Provider {
 	t.Helper()
 	m := map[string]mappings.Org{
 		"acme": {
-			Channel:         "C0123ABCDE",
-			Mentions:        []string{"@a"},
-			MentionsPresent: true,
-			Repositories:    mappings.Repositories{List: []string{"api", "web"}},
+			"api": {Channel: "C0123ABCDE", Mentions: []string{"@a"}, MentionsPresent: true},
+			"web": {Channel: "C0123ABCDE", Mentions: []string{"@a"}, MentionsPresent: true},
 		},
 	}
-	return mappings.NewProvider(m, nil)
+	return mappings.NewProvider(mappings.Defaults{}, m, nil)
 }
 
 // fakeMappingsValidator records inputs so dispatch tests can assert the

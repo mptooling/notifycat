@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mptooling/notifycat/internal/mappings"
 	"github.com/mptooling/notifycat/internal/slack"
 	"github.com/mptooling/notifycat/internal/store"
 )
@@ -41,6 +42,18 @@ func (f fakeMappings) Get(_ context.Context, repo string) (store.RepoMapping, er
 	return m, nil
 }
 
+type fakeDigestResolver struct {
+	digests map[string]mappings.DigestConfig
+}
+
+func (f fakeDigestResolver) DigestFor(repo string) mappings.DigestConfig {
+	if d, ok := f.digests[repo]; ok {
+		return d
+	}
+	// Default: enabled with 9am schedule
+	return mappings.DigestConfig{Enabled: true, Schedule: "0 9 * * *"}
+}
+
 type postCall struct {
 	channel  string
 	threadTS string // "" for a parent post, the parent ts for a reply
@@ -69,14 +82,19 @@ func TestReporter_Report_PostsParentThenThreadedListPerChannel(t *testing.T) {
 		{PRNumber: 88, Repository: "beta/x", TS: "t3", UpdatedAt: twoDaysAgo},
 		{PRNumber: 99, Repository: "ghost/unmapped", TS: "t4", UpdatedAt: twoDaysAgo},
 	}}
-	mappings := fakeMappings{byRepo: map[string]store.RepoMapping{
+	mapp := fakeMappings{byRepo: map[string]store.RepoMapping{
 		"acme/api": {Repository: "acme/api", SlackChannel: "C_ACME", Mentions: []string{"<!channel>"}},
 		"acme/web": {Repository: "acme/web", SlackChannel: "C_ACME", Mentions: []string{"<!channel>"}},
 		"beta/x":   {Repository: "beta/x", SlackChannel: "C_BETA", Mentions: []string{"<@U1>"}},
 	}}
+	digests := fakeDigestResolver{digests: map[string]mappings.DigestConfig{
+		"acme/api": {Enabled: true, Schedule: "0 9 * * *"},
+		"acme/web": {Enabled: true, Schedule: "0 9 * * *"},
+		"beta/x":   {Enabled: true, Schedule: "0 9 * * *"},
+	}}
 	poster := &fakePoster{}
 
-	r := NewReporter(finder, mappings, poster, slack.NewComposer("eyes"), discardLogger())
+	r := NewReporter(finder, mapp, poster, slack.NewComposer("eyes"), digests, discardLogger())
 	r.now = func() time.Time { return now }
 
 	if err := r.Report(context.Background()); err != nil {
@@ -141,13 +159,17 @@ func TestReporter_Report_NoPRDuplicatedAcrossChannels(t *testing.T) {
 		{PRNumber: 42, Repository: "acme/api", TS: "t1", UpdatedAt: twoDaysAgo},
 		{PRNumber: 42, Repository: "beta/web", TS: "t2", UpdatedAt: twoDaysAgo}, // same number, different repo
 	}}
-	mappings := fakeMappings{byRepo: map[string]store.RepoMapping{
+	mapp := fakeMappings{byRepo: map[string]store.RepoMapping{
 		"acme/api": {Repository: "acme/api", SlackChannel: "C_ACME"},
 		"beta/web": {Repository: "beta/web", SlackChannel: "C_BETA"},
 	}}
+	digests := fakeDigestResolver{digests: map[string]mappings.DigestConfig{
+		"acme/api": {Enabled: true, Schedule: "0 9 * * *"},
+		"beta/web": {Enabled: true, Schedule: "0 9 * * *"},
+	}}
 	poster := &fakePoster{}
 
-	r := NewReporter(finder, mappings, poster, slack.NewComposer("eyes"), discardLogger())
+	r := NewReporter(finder, mapp, poster, slack.NewComposer("eyes"), digests, discardLogger())
 	r.now = func() time.Time { return now }
 
 	if err := r.Report(context.Background()); err != nil {
@@ -180,13 +202,86 @@ func TestReporter_Report_NoPRDuplicatedAcrossChannels(t *testing.T) {
 
 func TestReporter_Report_NoStuckPRsPostsNothing(t *testing.T) {
 	poster := &fakePoster{}
-	r := NewReporter(fakeFinder{}, fakeMappings{}, poster, slack.NewComposer("eyes"), discardLogger())
+	r := NewReporter(fakeFinder{}, fakeMappings{}, poster, slack.NewComposer("eyes"), fakeDigestResolver{}, discardLogger())
 
 	if err := r.Report(context.Background()); err != nil {
 		t.Fatalf("Report: %v", err)
 	}
 	if len(poster.calls) != 0 {
 		t.Fatalf("posted %d digests on an empty result; want 0", len(poster.calls))
+	}
+}
+
+func TestReporter_ReportSchedule_FiltersReposBySchedule(t *testing.T) {
+	now := time.Date(2026, 6, 8, 9, 0, 0, 0, time.Local)
+	twoDaysAgo := time.Date(2026, 6, 6, 12, 0, 0, 0, time.Local)
+
+	finder := fakeFinder{rows: []store.SlackMessage{
+		{PRNumber: 42, Repository: "acme/api", TS: "t1", UpdatedAt: twoDaysAgo},      // 9am schedule
+		{PRNumber: 51, Repository: "acme/web", TS: "t2", UpdatedAt: twoDaysAgo},      // 6pm schedule
+		{PRNumber: 88, Repository: "beta/disabled", TS: "t3", UpdatedAt: twoDaysAgo}, // disabled
+	}}
+	mapp := fakeMappings{byRepo: map[string]store.RepoMapping{
+		"acme/api":      {Repository: "acme/api", SlackChannel: "C_ACME", Mentions: []string{"<!channel>"}},
+		"acme/web":      {Repository: "acme/web", SlackChannel: "C_ACME", Mentions: []string{"<!channel>"}},
+		"beta/disabled": {Repository: "beta/disabled", SlackChannel: "C_BETA", Mentions: []string{"<@U1>"}},
+	}}
+	digests := fakeDigestResolver{digests: map[string]mappings.DigestConfig{
+		"acme/api":      {Enabled: true, Schedule: "0 9 * * *"},
+		"acme/web":      {Enabled: true, Schedule: "0 18 * * *"},
+		"beta/disabled": {Enabled: false, Schedule: "0 9 * * *"},
+	}}
+	poster := &fakePoster{}
+
+	r := NewReporter(finder, mapp, poster, slack.NewComposer("eyes"), digests, discardLogger())
+	r.now = func() time.Time { return now }
+
+	// Run for the 9am spec: should only include acme/api.
+	if err := r.ReportSchedule(context.Background(), "0 9 * * *"); err != nil {
+		t.Fatalf("ReportSchedule(0 9 * * *): %v", err)
+	}
+
+	// Should have posted 2 calls: parent for C_ACME + list reply.
+	if len(poster.calls) != 2 {
+		t.Fatalf("after ReportSchedule(0 9 * * *): posted %d messages; want 2", len(poster.calls))
+	}
+	if poster.calls[0].channel != "C_ACME" || poster.calls[0].threadTS != "" {
+		t.Fatalf("call[0] = %+v; want a C_ACME parent post", poster.calls[0])
+	}
+	if poster.calls[1].channel != "C_ACME" || poster.calls[1].threadTS != "ts-C_ACME" {
+		t.Fatalf("call[1] = %+v; want a C_ACME reply", poster.calls[1])
+	}
+
+	listText := sectionTextOf(poster.calls[1].msg)
+	if !strings.Contains(listText, "acme/api/pull/42") {
+		t.Errorf("acme/api PR not in list: %s", listText)
+	}
+	if strings.Contains(listText, "acme/web/pull/51") {
+		t.Errorf("acme/web PR should not appear in 9am schedule: %s", listText)
+	}
+	if strings.Contains(listText, "beta/disabled/pull/88") {
+		t.Errorf("disabled PR should not appear: %s", listText)
+	}
+
+	// Clear and run for 6pm spec: should only include acme/web.
+	poster.calls = nil
+	if err := r.ReportSchedule(context.Background(), "0 18 * * *"); err != nil {
+		t.Fatalf("ReportSchedule(0 18 * * *): %v", err)
+	}
+
+	if len(poster.calls) != 2 {
+		t.Fatalf("after ReportSchedule(0 18 * * *): posted %d messages; want 2", len(poster.calls))
+	}
+
+	listText = sectionTextOf(poster.calls[1].msg)
+	if !strings.Contains(listText, "acme/web/pull/51") {
+		t.Errorf("acme/web PR not in list: %s", listText)
+	}
+	if strings.Contains(listText, "acme/api/pull/42") {
+		t.Errorf("acme/api PR should not appear in 6pm schedule: %s", listText)
+	}
+	if strings.Contains(listText, "beta/disabled/pull/88") {
+		t.Errorf("disabled PR should not appear: %s", listText)
 	}
 }
 

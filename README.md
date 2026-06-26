@@ -70,7 +70,7 @@ The binaries pick up `.env` from the current working directory and default to `.
 - `pull_request_review` webhooks for approved, commented, and changes-requested reviews.
 - `pull_request_review_comment` webhooks for line-specific PR comments.
 - GitHub HMAC-SHA256 verification through `X-Hub-Signature-256`.
-- Repository routing from the `mappings:` section of `config.yaml` — explicit lists or `repositories: "*"` for a whole org. See [`config.example.yaml`](config.example.yaml).
+- Repository routing from the `mappings:` section of `config.yaml` — per-repo tiers (`org → {repo|*: {channel, mentions}}`) where `*` acts as the org-wide default and catch-all. See [`config.example.yaml`](config.example.yaml).
 - Slack message updates instead of repeated new messages for the same PR.
 
 ## Binaries

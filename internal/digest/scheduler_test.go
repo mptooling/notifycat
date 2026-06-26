@@ -6,28 +6,41 @@ import (
 	"time"
 )
 
-type stubJob struct{}
+type fakeScheduleJob struct {
+	specsCalled []string
+}
 
-func (stubJob) Report(context.Context) error { return nil }
+func (f *fakeScheduleJob) ReportSchedule(_ context.Context, spec string) error {
+	f.specsCalled = append(f.specsCalled, spec)
+	return nil
+}
 
 func TestNewScheduler_RejectsInvalidSpec(t *testing.T) {
-	if _, err := NewScheduler("not-a-cron-spec", stubJob{}, discardLogger()); err == nil {
+	if _, err := NewScheduler([]string{"not-a-cron-spec"}, &fakeScheduleJob{}, discardLogger()); err == nil {
 		t.Fatal("expected an error for an invalid cron spec, got nil")
 	}
 }
 
-func TestNewScheduler_AcceptsValidSpec(t *testing.T) {
-	s, err := NewScheduler("0 9 * * *", stubJob{}, discardLogger())
+func TestNewScheduler_AcceptsValidSpecs(t *testing.T) {
+	specs := []string{"0 9 * * *", "0 18 * * *"}
+	s, err := NewScheduler(specs, &fakeScheduleJob{}, discardLogger())
 	if err != nil {
-		t.Fatalf("valid spec rejected: %v", err)
+		t.Fatalf("valid specs rejected: %v", err)
 	}
 	if s == nil {
-		t.Fatal("nil scheduler for valid spec")
+		t.Fatal("nil scheduler for valid specs")
+	}
+}
+
+func TestNewScheduler_RejectsBadSpecAmongMany(t *testing.T) {
+	specs := []string{"0 9 * * *", "bad-spec", "0 18 * * *"}
+	if _, err := NewScheduler(specs, &fakeScheduleJob{}, discardLogger()); err == nil {
+		t.Fatal("expected an error when one spec is invalid, got nil")
 	}
 }
 
 func TestScheduler_Run_StopsOnContextCancel(t *testing.T) {
-	s, err := NewScheduler("0 9 * * *", stubJob{}, discardLogger())
+	s, err := NewScheduler([]string{"0 9 * * *"}, &fakeScheduleJob{}, discardLogger())
 	if err != nil {
 		t.Fatalf("NewScheduler: %v", err)
 	}

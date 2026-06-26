@@ -12,7 +12,8 @@ import (
 // Provider serves repository → mapping lookups from a parsed mappings.yaml.
 // Construct with Load; safe for concurrent reads (no mutation after Load).
 type Provider struct {
-	file File
+	defaults Defaults
+	file     File
 }
 
 // Load reads and validates the file at path.
@@ -33,8 +34,8 @@ func Load(path string) (*Provider, error) {
 // NewProvider builds a Provider from already-decoded sections (config.yaml's
 // `mappings:` map and `digest:` block), the in-memory counterpart to Load.
 // A nil digest leaves the feature on by default (see Digest).
-func NewProvider(m map[string]Org, digest *DigestConfig) *Provider {
-	return &Provider{file: File{Mappings: m, Digest: digest}}
+func NewProvider(defaults Defaults, m map[string]Org, digest *DigestConfig) *Provider {
+	return &Provider{defaults: defaults, file: File{Mappings: m, Digest: digest}}
 }
 
 // DefaultDigestSchedule is the cron spec used when the digest section is
@@ -56,8 +57,9 @@ func (p *Provider) Digest() DigestConfig {
 	return cfg
 }
 
-// Get returns the mapping for "org/repo": exact match first, then wildcard
-// on the org. Returns store.ErrNotFound when nothing matches.
+// Get returns the resolved mapping for "org/repo": the org/repo tier merged
+// over the org/* tier. Returns store.ErrNotFound when the org is unmapped or
+// neither an explicit tier nor a wildcard tier matches.
 func (p *Provider) Get(_ context.Context, repository string) (store.RepoMapping, error) {
 	org, repo, ok := splitRepo(repository)
 	if !ok {
@@ -67,37 +69,32 @@ func (p *Provider) Get(_ context.Context, repository string) (store.RepoMapping,
 	if !ok {
 		return store.RepoMapping{}, store.ErrNotFound
 	}
-	if !o.Repositories.All {
-		matched := false
-		for _, r := range o.Repositories.List {
-			if r == repo {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			return store.RepoMapping{}, store.ErrNotFound
-		}
+	var repoPtr, starPtr *RepoConfig
+	if rc, has := o[repo]; has {
+		repoPtr = &rc
 	}
+	if sc, has := o[starKey]; has {
+		starPtr = &sc
+	}
+	if repoPtr == nil && starPtr == nil {
+		return store.RepoMapping{}, store.ErrNotFound
+	}
+	res := resolveRouting(starPtr, repoPtr)
+	rx, ignoreAI, dependabot := resolveBehavior(p.defaults, starPtr, repoPtr)
 	return store.RepoMapping{
-		Repository:   repository,
-		SlackChannel: o.Channel,
-		Mentions:     resolveMentions(o),
+		Repository:       repository,
+		SlackChannel:     res.Channel,
+		Mentions:         res.Mentions,
+		Reactions:        rx,
+		IgnoreAIReviews:  ignoreAI,
+		DependabotFormat: dependabot,
 	}, nil
 }
 
-// resolveMentions materializes the absent-mentions case as @channel so
-// downstream consumers (composer, list CLI) don't need to know about
-// MentionsPresent. Returns a fresh slice to keep the parsed file immutable.
-func resolveMentions(o Org) []string {
-	if !o.MentionsPresent {
-		return []string{ChannelMention}
-	}
-	return append([]string(nil), o.Mentions...)
-}
-
-// Entries returns validation units in deterministic order: orgs sorted A→Z,
-// explicit repos within each org sorted A→Z, wildcard entries last per org.
+// Entries returns validation units in deterministic order: orgs A→Z, explicit
+// repos within each org A→Z, the wildcard entry last. Each entry's Channel is
+// the resolved channel (the tier's own, or inherited from org/*), so the
+// validator and lock operate on what a webhook would actually route to.
 func (p *Provider) Entries() []Entry {
 	orgs := make([]string, 0, len(p.file.Mappings))
 	for org := range p.file.Mappings {
@@ -108,23 +105,75 @@ func (p *Provider) Entries() []Entry {
 	var out []Entry
 	for _, org := range orgs {
 		o := p.file.Mappings[org]
-		mentions := resolveMentions(o)
-		if o.Repositories.All {
-			out = append(out, Entry{
-				Org: org, Wildcard: true,
-				Channel: o.Channel, Mentions: mentions,
-			})
-			continue
+		var starPtr *RepoConfig
+		if sc, has := o[starKey]; has {
+			starPtr = &sc
 		}
-		repos := append([]string(nil), o.Repositories.List...)
+		repos := make([]string, 0, len(o))
+		for k := range o {
+			if k != starKey {
+				repos = append(repos, k)
+			}
+		}
 		sort.Strings(repos)
 		for _, r := range repos {
-			out = append(out, Entry{
-				Org: org, Repo: r,
-				Channel: o.Channel, Mentions: mentions,
-			})
+			rc := o[r]
+			res := resolveRouting(starPtr, &rc)
+			out = append(out, Entry{Org: org, Repo: r, Channel: res.Channel, Mentions: res.Mentions})
+		}
+		if starPtr != nil {
+			res := resolveRouting(starPtr, nil)
+			out = append(out, Entry{Org: org, Wildcard: true, Channel: res.Channel, Mentions: res.Mentions})
 		}
 	}
+	return out
+}
+
+// DigestFor returns the effective digest config for a repository: the global
+// Digest() merged with the org/* and org/repo tiers (most-specific tier that
+// sets enabled/schedule wins). An unmapped repo yields the global digest.
+func (p *Provider) DigestFor(repository string) DigestConfig {
+	d := p.Digest() // global default (enabled + DefaultDigestSchedule)
+	org, repo, ok := splitRepo(repository)
+	if !ok {
+		return d
+	}
+	o, ok := p.file.Mappings[org]
+	if !ok {
+		return d
+	}
+	apply := func(rc RepoConfig, has bool) {
+		if has && rc.Digest != nil {
+			d.Enabled = rc.Digest.Enabled
+			if s := strings.TrimSpace(rc.Digest.Schedule); s != "" {
+				d.Schedule = s
+			}
+		}
+	}
+	star, hasStar := o[starKey]
+	apply(star, hasStar)
+	rc, hasRepo := o[repo]
+	apply(rc, hasRepo)
+	return d
+}
+
+// Schedules returns the sorted distinct set of effective digest schedules
+// across every mapping entry whose effective digest is enabled. The scheduler
+// registers one cron per returned spec.
+func (p *Provider) Schedules() []string {
+	seen := map[string]struct{}{}
+	for _, e := range p.Entries() {
+		d := p.DigestFor(e.Key())
+		if !d.Enabled {
+			continue
+		}
+		seen[d.Schedule] = struct{}{}
+	}
+	out := make([]string, 0, len(seen))
+	for s := range seen {
+		out = append(out, s)
+	}
+	sort.Strings(out)
 	return out
 }
 

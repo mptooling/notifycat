@@ -5,8 +5,8 @@ import "testing"
 const digestMappingsTail = `
 mappings:
   acme:
-    channel: C0123ABCDE
-    repositories: "*"
+    "*":
+      channel: C0123ABCDE
 `
 
 func TestProvider_Digest_AbsentDefaultsToEnabled(t *testing.T) {

@@ -51,7 +51,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 // buildValidator constructs a RepoValidator from in-memory config.
 func buildValidator(cfg config.Config) doctor.RepoValidator {
-	provider := mappings.NewProvider(cfg.Mappings, cfg.Digest)
+	provider := mappings.NewProvider(mappings.Defaults{}, cfg.Mappings, cfg.Digest)
 	hc := &http.Client{Timeout: 10 * time.Second}
 	slackClient := slack.NewClient(hc, cfg.SlackBotToken.Reveal(), slack.WithBaseURL(cfg.SlackBaseURL))
 	var ghChecker validate.GitHubChecker

@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/mptooling/notifycat/internal/mappings"
 	"github.com/mptooling/notifycat/internal/slack"
 	"github.com/mptooling/notifycat/internal/store"
 )
@@ -24,6 +25,11 @@ type StuckFinder interface {
 // MappingLookup resolves a repository to its Slack channel and mentions.
 type MappingLookup interface {
 	Get(ctx context.Context, repository string) (store.RepoMapping, error)
+}
+
+// Resolver looks up the effective digest configuration for a repository.
+type Resolver interface {
+	DigestFor(repository string) mappings.DigestConfig
 }
 
 // Poster posts a composed message to a Slack channel, either as a top-level
@@ -39,6 +45,7 @@ type Poster interface {
 type Reporter struct {
 	finder   StuckFinder
 	mappings MappingLookup
+	digests  Resolver
 	slack    Poster
 	composer *slack.Composer
 	now      func() time.Time
@@ -46,21 +53,43 @@ type Reporter struct {
 }
 
 // NewReporter constructs a Reporter. now defaults to time.Now.
-func NewReporter(finder StuckFinder, mappings MappingLookup, poster Poster, composer *slack.Composer, logger *slog.Logger) *Reporter {
+func NewReporter(finder StuckFinder, mappings MappingLookup, poster Poster, composer *slack.Composer, digests Resolver, logger *slog.Logger) *Reporter {
 	return &Reporter{
 		finder:   finder,
 		mappings: mappings,
 		slack:    poster,
 		composer: composer,
+		digests:  digests,
 		now:      time.Now,
 		logger:   logger,
 	}
 }
 
-// Report runs one digest pass: find open PRs idle since the start of today,
-// group them by Slack channel, and post one reminder per channel. A failed
-// post for one channel is logged and skipped so the others still go out.
+// Report runs one digest pass including all enabled repos: find open PRs idle
+// since the start of today, group them by Slack channel, and post one reminder
+// per channel. A failed post for one channel is logged and skipped so the
+// others still go out.
 func (r *Reporter) Report(ctx context.Context) error {
+	return r.report(ctx, func(repo string) bool {
+		d := r.digests.DigestFor(repo)
+		return d.Enabled
+	})
+}
+
+// ReportSchedule runs one digest pass for a single cron spec: it includes only
+// stuck PRs whose repo's effective digest is enabled and scheduled at spec.
+func (r *Reporter) ReportSchedule(ctx context.Context, spec string) error {
+	return r.report(ctx, func(repo string) bool {
+		d := r.digests.DigestFor(repo)
+		return d.Enabled && d.Schedule == spec
+	})
+}
+
+// report runs one digest pass with a custom inclusion filter: find open PRs idle
+// since the start of today, group them by Slack channel (including only rows
+// where include returns true), and post one reminder per channel. A failed
+// post for one channel is logged and skipped so the others still go out.
+func (r *Reporter) report(ctx context.Context, include func(repo string) bool) error {
 	now := r.now()
 	cutoff := startOfDay(now)
 
@@ -73,7 +102,7 @@ func (r *Reporter) Report(ctx context.Context) error {
 		return nil
 	}
 
-	for _, g := range r.groupByChannel(ctx, rows, now) {
+	for _, g := range r.groupByChannel(ctx, rows, now, include) {
 		ts, err := r.slack.PostMessage(ctx, g.channel, r.composer.StuckDigestParent(g.mentions, len(g.prs)))
 		if err != nil {
 			r.logger.Error("stuck-pr digest: parent post failed",
@@ -104,13 +133,21 @@ type channelGroup struct {
 
 // groupByChannel buckets stuck rows by their mapped Slack channel, preserving
 // first-seen channel order for stable output and unioning mentions across the
-// entries that feed one channel. Rows whose repo has no mapping are skipped.
-func (r *Reporter) groupByChannel(ctx context.Context, rows []store.SlackMessage, now time.Time) []channelGroup {
+// entries that feed one channel. Rows whose repo has no mapping, or for which
+// include returns false, are skipped.
+func (r *Reporter) groupByChannel(ctx context.Context, rows []store.SlackMessage, now time.Time, include func(repo string) bool) []channelGroup {
 	var order []string
 	byChannel := map[string]*channelGroup{}
 	mentionSeen := map[string]map[string]bool{}
 
 	for _, row := range rows {
+		if !include(row.Repository) {
+			r.logger.Debug("stuck-pr digest: skipping repo by schedule filter",
+				slog.String("repository", row.Repository),
+				slog.Int("pr", row.PRNumber))
+			continue
+		}
+
 		mapping, err := r.mappings.Get(ctx, row.Repository)
 		if errors.Is(err, store.ErrNotFound) {
 			r.logger.Debug("stuck-pr digest: skipping unmapped repo",

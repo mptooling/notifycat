@@ -25,65 +25,6 @@ func writeMappingsFile(t *testing.T, body string) string {
 	return p
 }
 
-func TestProvider_Get_ExactMatch(t *testing.T) {
-	p, err := Load(writeMappingsFile(t, validYAML))
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	got, err := p.Get(context.Background(), "acme/api")
-	if err != nil {
-		t.Fatalf("get acme/api: %v", err)
-	}
-	if got.Repository != "acme/api" || got.SlackChannel != "C0123ABCDE" || len(got.Mentions) != 2 {
-		t.Errorf("get acme/api: %+v", got)
-	}
-}
-
-func TestProvider_Get_Wildcard(t *testing.T) {
-	p, err := Load(writeMappingsFile(t, validYAML))
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	got, err := p.Get(context.Background(), "beta/anything")
-	if err != nil {
-		t.Fatalf("get beta/anything: %v", err)
-	}
-	if got.Repository != "beta/anything" || got.SlackChannel != "C0456FGHIJ" {
-		t.Errorf("wildcard get: %+v", got)
-	}
-}
-
-func TestProvider_Get_NotFound(t *testing.T) {
-	p, err := Load(writeMappingsFile(t, validYAML))
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	_, err = p.Get(context.Background(), "other/repo")
-	if !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("unknown repo err = %v; want ErrNotFound", err)
-	}
-}
-
-func TestProvider_Entries(t *testing.T) {
-	p, err := Load(writeMappingsFile(t, validYAML))
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	entries := p.Entries()
-	if len(entries) != 3 {
-		t.Fatalf("entries = %d; want 3", len(entries))
-	}
-	keys := make(map[string]bool)
-	for _, e := range entries {
-		keys[e.Key()] = true
-	}
-	for _, want := range []string{"acme/api", "acme/web", "beta/*"} {
-		if !keys[want] {
-			t.Errorf("missing entry %q; got %v", want, keys)
-		}
-	}
-}
-
 func TestProvider_Load_MissingFile_ReturnsFileNotFoundError(t *testing.T) {
 	_, err := Load("/no/such/path/mappings.yaml")
 	if err == nil {
@@ -119,74 +60,57 @@ func TestProvider_Load_MalformedFile_ReturnsParseError(t *testing.T) {
 	}
 }
 
-const absentMentionsYAML = `
-mappings:
-  acme:
-    channel: C0123ABCDE
-    repositories: ["api"]
-  beta:
-    channel: C0456FGHIJ
-    mentions: []
-    repositories: ["web"]
-`
+func tierProvider() *Provider {
+	return NewProvider(Defaults{}, map[string]Org{
+		"acme": {
+			"api": {Channel: "C0API", Mentions: []string{"<@U1>"}, MentionsPresent: true},
+			"*":   {Channel: "C0DEFAULT"},
+		},
+	}, nil)
+}
 
-func TestProvider_Get_AbsentMentions_FallsBackToChannel(t *testing.T) {
-	p, err := Load(writeMappingsFile(t, absentMentionsYAML))
+func TestGet_ExplicitRepo(t *testing.T) {
+	got, err := tierProvider().Get(context.Background(), "acme/api")
 	if err != nil {
-		t.Fatalf("load: %v", err)
+		t.Fatalf("Get: %v", err)
 	}
-	got, err := p.Get(context.Background(), "acme/api")
+	if got.SlackChannel != "C0API" || len(got.Mentions) != 1 || got.Mentions[0] != "<@U1>" {
+		t.Errorf("got %+v; want C0API + [<@U1>]", got)
+	}
+}
+
+func TestGet_WildcardFallback(t *testing.T) {
+	got, err := tierProvider().Get(context.Background(), "acme/unlisted")
 	if err != nil {
-		t.Fatalf("get acme/api: %v", err)
+		t.Fatalf("Get: %v", err)
+	}
+	if got.SlackChannel != "C0DEFAULT" {
+		t.Errorf("channel = %q; want C0DEFAULT", got.SlackChannel)
 	}
 	if len(got.Mentions) != 1 || got.Mentions[0] != ChannelMention {
-		t.Errorf("absent mentions = %v; want [%q]", got.Mentions, ChannelMention)
+		t.Errorf("mentions = %v; want @channel default", got.Mentions)
 	}
 }
 
-func TestProvider_Get_EmptyMentions_StaysEmpty(t *testing.T) {
-	p, err := Load(writeMappingsFile(t, absentMentionsYAML))
-	if err != nil {
-		t.Fatalf("load: %v", err)
+func TestGet_NoOrgOrNoTier(t *testing.T) {
+	p := NewProvider(Defaults{}, map[string]Org{
+		"acme": {"api": {Channel: "C0API"}}, // no "*"
+	}, nil)
+	if _, err := p.Get(context.Background(), "acme/other"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("err = %v; want ErrNotFound (no tier, no wildcard)", err)
 	}
-	got, err := p.Get(context.Background(), "beta/web")
-	if err != nil {
-		t.Fatalf("get beta/web: %v", err)
-	}
-	if len(got.Mentions) != 0 {
-		t.Errorf("empty mentions = %v; want empty", got.Mentions)
-	}
-}
-
-func TestProvider_Entries_AbsentMentionsMaterialized(t *testing.T) {
-	p, err := Load(writeMappingsFile(t, absentMentionsYAML))
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	for _, e := range p.Entries() {
-		switch e.Key() {
-		case "acme/api":
-			if len(e.Mentions) != 1 || e.Mentions[0] != ChannelMention {
-				t.Errorf("acme/api mentions = %v; want [%q]", e.Mentions, ChannelMention)
-			}
-		case "beta/web":
-			if len(e.Mentions) != 0 {
-				t.Errorf("beta/web mentions = %v; want empty", e.Mentions)
-			}
-		}
+	if _, err := p.Get(context.Background(), "ghost/api"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("err = %v; want ErrNotFound (no org)", err)
 	}
 }
 
 func TestNewProvider_BehavesLikeLoad(t *testing.T) {
 	m := map[string]Org{
 		"acme": {
-			Channel:         "C0123ABCDE",
-			Mentions:        []string{"<@U1>"},
-			MentionsPresent: true,
-			Repositories:    Repositories{List: []string{"web"}},
+			"web": {Channel: "C0123ABCDE", Mentions: []string{"<@U1>"}, MentionsPresent: true},
 		},
 	}
-	p := NewProvider(m, nil)
+	p := NewProvider(Defaults{}, m, nil)
 
 	got, err := p.Get(context.Background(), "acme/web")
 	if err != nil {
@@ -201,5 +125,93 @@ func TestNewProvider_BehavesLikeLoad(t *testing.T) {
 	}
 	if len(p.Entries()) != 1 {
 		t.Errorf("Entries() = %d; want 1", len(p.Entries()))
+	}
+}
+
+func TestEntries_PerTierWithResolvedChannel(t *testing.T) {
+	p := NewProvider(Defaults{}, map[string]Org{
+		"acme": {
+			"web": {}, // inherits channel from "*"
+			"api": {Channel: "C0API"},
+			"*":   {Channel: "C0DEFAULT"},
+		},
+	}, nil)
+	entries := p.Entries()
+	// deterministic order: explicit repos A→Z then wildcard last
+	if len(entries) != 3 {
+		t.Fatalf("entries = %d; want 3", len(entries))
+	}
+	if entries[0].Key() != "acme/api" || entries[0].Channel != "C0API" {
+		t.Errorf("entries[0] = %+v; want acme/api C0API", entries[0])
+	}
+	if entries[1].Key() != "acme/web" || entries[1].Channel != "C0DEFAULT" {
+		t.Errorf("entries[1] = %+v; want acme/web resolved C0DEFAULT", entries[1])
+	}
+	if !entries[2].Wildcard || entries[2].Key() != "acme/*" || entries[2].Channel != "C0DEFAULT" {
+		t.Errorf("entries[2] = %+v; want acme/* C0DEFAULT", entries[2])
+	}
+}
+
+func TestGet_PopulatesResolvedBehavior(t *testing.T) {
+	global := Defaults{
+		Reactions:        store.Reactions{Enabled: true, NewPR: "eyes", Approved: "white_check_mark"},
+		DependabotFormat: true,
+	}
+	shipit := "shipit"
+	p := NewProvider(global, map[string]Org{
+		"acme": {
+			"api": {Channel: "C0API", Reactions: &ReactionsOverride{Approved: &shipit}},
+			"*":   {Channel: "C0DEFAULT"},
+		},
+	}, nil)
+	got, err := p.Get(context.Background(), "acme/api")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.SlackChannel != "C0API" {
+		t.Errorf("channel = %q", got.SlackChannel)
+	}
+	if got.Reactions.Approved != "shipit" {
+		t.Errorf("approved = %q; want repo override shipit", got.Reactions.Approved)
+	}
+	if got.Reactions.NewPR != "eyes" || !got.DependabotFormat {
+		t.Errorf("global defaults lost: %+v dependabot=%v", got.Reactions, got.DependabotFormat)
+	}
+}
+
+func TestDigestFor_RepoOverridesGlobal(t *testing.T) {
+	weekdays := "0 8 * * 1-5"
+	p := NewProvider(Defaults{}, map[string]Org{
+		"acme": {
+			"web": {Channel: "C0WEB", Digest: &DigestConfig{Enabled: true, Schedule: weekdays}},
+			"*":   {Channel: "C0DEFAULT"},
+		},
+	}, nil) // global digest absent → default on, 9am
+	d := p.DigestFor("acme/web")
+	if !d.Enabled || d.Schedule != weekdays {
+		t.Errorf("web digest = %+v; want enabled weekdays", d)
+	}
+	dd := p.DigestFor("acme/other") // matches "*", no digest override → global default
+	if !dd.Enabled || dd.Schedule != DefaultDigestSchedule {
+		t.Errorf("default digest = %+v; want global default", dd)
+	}
+}
+
+func TestSchedules_DistinctEnabledOnly(t *testing.T) {
+	weekdays := "0 8 * * 1-5"
+	off := false
+	p := NewProvider(Defaults{}, map[string]Org{
+		"acme": {
+			"web":  {Channel: "C0WEB", Digest: &DigestConfig{Enabled: true, Schedule: weekdays}},
+			"api":  {Channel: "C0API"}, // global default schedule
+			"mute": {Channel: "C0MUTE", Digest: &DigestConfig{Enabled: off}},
+			"*":    {Channel: "C0DEFAULT"},
+		},
+	}, nil)
+	got := p.Schedules()
+	// weekdays + default 9am; "mute" disabled contributes nothing
+	want := map[string]bool{weekdays: true, DefaultDigestSchedule: true}
+	if len(got) != 2 || !want[got[0]] || !want[got[1]] {
+		t.Errorf("Schedules() = %v; want the two distinct enabled schedules", got)
 	}
 }
