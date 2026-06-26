@@ -32,6 +32,15 @@ func (f fakeFinder) FindStuck(context.Context, time.Time) ([]store.SlackMessage,
 	return f.rows, nil
 }
 
+// recordingFinder captures the cutoff it was asked for so a test can assert the
+// digest computed "start of day" in the configured timezone.
+type recordingFinder struct{ cutoff time.Time }
+
+func (f *recordingFinder) FindStuck(_ context.Context, cutoff time.Time) ([]store.SlackMessage, error) {
+	f.cutoff = cutoff
+	return nil, nil
+}
+
 type fakeMappings struct{ byRepo map[string]store.RepoMapping }
 
 func (f fakeMappings) Get(_ context.Context, repo string) (store.RepoMapping, error) {
@@ -94,7 +103,7 @@ func TestReporter_Report_PostsParentThenThreadedListPerChannel(t *testing.T) {
 	}}
 	poster := &fakePoster{}
 
-	r := NewReporter(finder, mapp, poster, slack.NewComposer("eyes"), digests, discardLogger())
+	r := NewReporter(finder, mapp, poster, slack.NewComposer("eyes"), digests, discardLogger(), time.Local)
 	r.now = func() time.Time { return now }
 
 	if err := r.Report(context.Background()); err != nil {
@@ -169,7 +178,7 @@ func TestReporter_Report_NoPRDuplicatedAcrossChannels(t *testing.T) {
 	}}
 	poster := &fakePoster{}
 
-	r := NewReporter(finder, mapp, poster, slack.NewComposer("eyes"), digests, discardLogger())
+	r := NewReporter(finder, mapp, poster, slack.NewComposer("eyes"), digests, discardLogger(), time.Local)
 	r.now = func() time.Time { return now }
 
 	if err := r.Report(context.Background()); err != nil {
@@ -202,7 +211,7 @@ func TestReporter_Report_NoPRDuplicatedAcrossChannels(t *testing.T) {
 
 func TestReporter_Report_NoStuckPRsPostsNothing(t *testing.T) {
 	poster := &fakePoster{}
-	r := NewReporter(fakeFinder{}, fakeMappings{}, poster, slack.NewComposer("eyes"), fakeDigestResolver{}, discardLogger())
+	r := NewReporter(fakeFinder{}, fakeMappings{}, poster, slack.NewComposer("eyes"), fakeDigestResolver{}, discardLogger(), time.Local)
 
 	if err := r.Report(context.Background()); err != nil {
 		t.Fatalf("Report: %v", err)
@@ -233,7 +242,7 @@ func TestReporter_ReportSchedule_FiltersReposBySchedule(t *testing.T) {
 	}}
 	poster := &fakePoster{}
 
-	r := NewReporter(finder, mapp, poster, slack.NewComposer("eyes"), digests, discardLogger())
+	r := NewReporter(finder, mapp, poster, slack.NewComposer("eyes"), digests, discardLogger(), time.Local)
 	r.now = func() time.Time { return now }
 
 	// Run for the 9am spec: should only include acme/api.
@@ -282,6 +291,31 @@ func TestReporter_ReportSchedule_FiltersReposBySchedule(t *testing.T) {
 	}
 	if strings.Contains(listText, "beta/disabled/pull/88") {
 		t.Errorf("disabled PR should not appear: %s", listText)
+	}
+}
+
+func TestReporter_CutoffHonorsTimezone(t *testing.T) {
+	ny, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatalf("load location: %v", err)
+	}
+	rec := &recordingFinder{}
+	r := NewReporter(rec, fakeMappings{}, &fakePoster{}, slack.NewComposer("eyes"), fakeDigestResolver{}, discardLogger(), ny)
+	// 2026-06-08 02:00 UTC is 2026-06-07 22:00 in New York (EDT). The digest's
+	// "start of day" cutoff must therefore be 2026-06-07 00:00 NY, not 06-08:
+	// the configured zone — not the instant's own zone — drives the boundary.
+	r.now = func() time.Time { return time.Date(2026, 6, 8, 2, 0, 0, 0, time.UTC) }
+
+	if err := r.Report(context.Background()); err != nil {
+		t.Fatalf("Report: %v", err)
+	}
+
+	want := time.Date(2026, 6, 7, 0, 0, 0, 0, ny)
+	if !rec.cutoff.Equal(want) {
+		t.Errorf("cutoff = %v; want %v (start of day in NY)", rec.cutoff, want)
+	}
+	if loc := rec.cutoff.Location().String(); loc != "America/New_York" {
+		t.Errorf("cutoff location = %q; want America/New_York", loc)
 	}
 }
 

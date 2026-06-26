@@ -8,6 +8,8 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
@@ -40,6 +42,10 @@ type Config struct {
 
 	Digest   *mappings.DigestConfig
 	Mappings map[string]mappings.Org
+
+	// DigestTimezone is the resolved timezone the digest scheduler and reporter
+	// run in. Derived from Digest.Timezone at Load (default UTC); never nil.
+	DigestTimezone *time.Location
 
 	GitHubWebhookSecret Secret
 	SlackBotToken       Secret
@@ -179,6 +185,12 @@ func Load() (Config, error) {
 	cfg.ConfigFile = path
 	applyFileSchema(&cfg, fs)
 
+	tz, err := resolveDigestTimezone(cfg.Digest)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.DigestTimezone = tz
+
 	if err := mappings.ValidateMappings(cfg.Mappings); err != nil {
 		return Config{}, fmt.Errorf("config: %w", err)
 	}
@@ -227,6 +239,24 @@ func applyFileSchema(cfg *Config, fs fileSchema) {
 	}
 	cfg.Digest = fs.Digest
 	cfg.Mappings = fs.Mappings
+}
+
+// resolveDigestTimezone turns the optional digest.timezone into a *time.Location.
+// An absent/empty zone defaults to UTC; an unrecognized zone is a startup error,
+// matching the fail-fast contract for an invalid cron spec. Named zones rely on
+// the embedded tzdata (see tzdata.go) to resolve on the scratch image.
+func resolveDigestTimezone(d *mappings.DigestConfig) (*time.Location, error) {
+	name := "UTC"
+	if d != nil {
+		if z := strings.TrimSpace(d.Timezone); z != "" {
+			name = z
+		}
+	}
+	tz, err := time.LoadLocation(name)
+	if err != nil {
+		return nil, fmt.Errorf("config: digest.timezone %q: %w", name, err)
+	}
+	return tz, nil
 }
 
 func setString(dst *string, v string) {

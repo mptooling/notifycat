@@ -165,6 +165,38 @@ mappings:
 	}
 }
 
+func TestLoad_DigestTimezone_DefaultsToUTC(t *testing.T) {
+	writeConfig(t, minimalConfig)
+	setSecrets(t)
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.DigestTimezone == nil || cfg.DigestTimezone.String() != "UTC" {
+		t.Errorf("DigestTimezone = %v; want UTC when timezone absent", cfg.DigestTimezone)
+	}
+}
+
+func TestLoad_DigestTimezone_Valid(t *testing.T) {
+	writeConfig(t, "digest:\n  timezone: \"Europe/Kyiv\"\n")
+	setSecrets(t)
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.DigestTimezone == nil || cfg.DigestTimezone.String() != "Europe/Kyiv" {
+		t.Errorf("DigestTimezone = %v; want Europe/Kyiv", cfg.DigestTimezone)
+	}
+}
+
+func TestLoad_DigestTimezone_InvalidRejected(t *testing.T) {
+	writeConfig(t, "digest:\n  timezone: \"Mars/Phobos\"\n")
+	setSecrets(t)
+	if _, err := config.Load(); err == nil {
+		t.Fatal("Load() succeeded with an invalid timezone; want a descriptive error")
+	}
+}
+
 func TestLoad_RejectsUnknownTierKey(t *testing.T) {
 	writeConfig(t, "mappings:\n  acme:\n    api:\n      channel: C0API\n      bogus: x\n")
 	setSecrets(t)

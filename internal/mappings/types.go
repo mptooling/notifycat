@@ -16,14 +16,20 @@ type File struct {
 	Mappings map[string]Org `yaml:"mappings"`
 }
 
-// DigestConfig is the optional global `digest:` section: a scheduled reminder
-// that lists open PRs nobody has touched since the previous day. It is a
-// global parameter — one schedule for every org/repo, not per-entry. The
-// section is optional and the feature is on by default, so an absent section
-// behaves like `{enabled: true}` with the default schedule.
+// DigestConfig is the `digest:` section: a scheduled reminder that lists open
+// PRs nobody has touched since the previous day. The global section is optional
+// and the feature is on by default, so an absent section behaves like
+// `{enabled: true}` with the default schedule. Per-repo tiers reuse this type
+// to override Enabled/Schedule.
+//
+// Timezone is global-only — the server runs a single cron clock, so the zone
+// belongs on the global section and is rejected on a per-repo tier. Empty means
+// the default (UTC); config.Load resolves it to a *time.Location and fails fast
+// on an invalid zone.
 type DigestConfig struct {
 	Enabled  bool
 	Schedule string
+	Timezone string
 }
 
 // UnmarshalYAML walks the mapping node by hand (like Org) so we can default
@@ -51,6 +57,10 @@ func (d *DigestConfig) UnmarshalYAML(node *yaml.Node) error {
 		case "schedule":
 			if err := valNode.Decode(&d.Schedule); err != nil {
 				return fmt.Errorf("digest: schedule: %w", err)
+			}
+		case "timezone":
+			if err := valNode.Decode(&d.Timezone); err != nil {
+				return fmt.Errorf("digest: timezone: %w", err)
 			}
 		default:
 			return fmt.Errorf("digest: unknown field %q", keyNode.Value)
@@ -215,6 +225,9 @@ func (rc *RepoConfig) UnmarshalYAML(node *yaml.Node) error {
 			d := &DigestConfig{}
 			if err := valNode.Decode(d); err != nil {
 				return fmt.Errorf("digest: %w", err)
+			}
+			if d.Timezone != "" {
+				return fmt.Errorf("digest: timezone is only valid in the global digest section, not per-repo")
 			}
 			rc.Digest = d
 		default:

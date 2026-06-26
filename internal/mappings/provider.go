@@ -39,7 +39,8 @@ func NewProvider(defaults Defaults, m map[string]Org, digest *DigestConfig) *Pro
 }
 
 // DefaultDigestSchedule is the cron spec used when the digest section is
-// absent or omits `schedule`: 9am every morning, server-local time.
+// absent or omits `schedule`: 9am every morning, in the configured digest
+// timezone (default UTC; see DigestConfig.Timezone).
 const DefaultDigestSchedule = "0 9 * * *"
 
 // Digest returns the effective stuck-PR digest configuration. The feature is
@@ -53,6 +54,7 @@ func (p *Provider) Digest() DigestConfig {
 		if s := strings.TrimSpace(p.file.Digest.Schedule); s != "" {
 			cfg.Schedule = s
 		}
+		cfg.Timezone = p.file.Digest.Timezone
 	}
 	return cfg
 }

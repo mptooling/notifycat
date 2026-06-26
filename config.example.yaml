@@ -61,13 +61,16 @@ reviews:
 
 # ── Stuck-PR digest ───────────────────────────────────────────────────────────────────────────────
 # A scheduled reminder listing open PRs nobody has touched since before today. ON BY DEFAULT — omit
-# this whole section and the server posts a digest at 9am daily (server-local time).
+# this whole section and the server posts a digest at 9am daily (in the timezone below; default UTC).
 #
 # On each tick the server posts one parent message per Slack channel and threads the stuck-PR list
 # under it, pinging the channel's mentions. Channels with no stuck PRs get no message.
 digest:
   enabled: true                       # default true; set false to turn the digest off globally
-  schedule: "0 9 * * *"              # standard 5-field cron; server-local time; default 9am daily
+  schedule: "0 9 * * *"              # standard 5-field cron; evaluated in `timezone` below; default 9am daily
+  timezone: "UTC"                     # IANA zone (e.g. Europe/Kyiv); default UTC. Both the firing time and
+                                      # the "since before today" cutoff use this zone. An invalid zone fails
+                                      # startup. Global only — a per-repo digest may not set it.
 
 # ── Mappings ──────────────────────────────────────────────────────────────────────────────────────
 # Repository → Slack-channel routing. Per-repo tier schema (0.18+): each org contains zero or more

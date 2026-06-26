@@ -108,6 +108,17 @@ func TestRepoConfig_BehavioralAbsentMeansNil(t *testing.T) {
 	}
 }
 
+func TestRepoConfig_DigestTimezoneRejected(t *testing.T) {
+	// timezone is a global-only knob (one cron location for the whole server);
+	// setting it on a per-repo tier must fail rather than be silently ignored.
+	var o mappings.Org
+	dec := yaml.NewDecoder(strings.NewReader("api:\n  channel: C0API\n  digest:\n    timezone: Europe/Kyiv\n"))
+	dec.KnownFields(true)
+	if err := dec.Decode(&o); err == nil {
+		t.Fatal("expected error for per-repo digest.timezone")
+	}
+}
+
 func TestRepoConfig_UnknownReactionKeyRejected(t *testing.T) {
 	var o mappings.Org
 	dec := yaml.NewDecoder(strings.NewReader("api:\n  channel: C0API\n  reactions:\n    bogus: x\n"))
