@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.18.0](https://github.com/mptooling/notifycat/compare/v0.17.0...v0.18.0) (2026-06-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* per-repo mapping configuration ([#113](https://github.com/mptooling/notifycat/issues/113))
+
+### 🚀 Features
+
+* per-repo mapping configuration ([#113](https://github.com/mptooling/notifycat/issues/113)) ([26a4383](https://github.com/mptooling/notifycat/commit/26a438363db0c4dc2930733acbf70e3041944cdd))
+
 ## [0.17.0](https://github.com/mptooling/notifycat/compare/v0.16.0...v0.17.0) (2026-06-24)
 
 
