@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/mptooling/notifycat/compare/v0.18.0...v0.19.0) (2026-06-26)
+
+
+### 🚀 Features
+
+* configurable digest timezone (default UTC) ([#122](https://github.com/mptooling/notifycat/issues/122)) ([b013ec2](https://github.com/mptooling/notifycat/commit/b013ec201dd63210be39203cad9c69c2f90ebe22))
+
 ## [0.18.0](https://github.com/mptooling/notifycat/compare/v0.17.0...v0.18.0) (2026-06-26)
 
 
