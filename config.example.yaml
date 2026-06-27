@@ -67,7 +67,7 @@ reviews:
 # under it, pinging the channel's mentions. Channels with no stuck PRs get no message.
 digest:
   enabled: true                       # default true; set false to turn the digest off globally
-  schedule: "0 9 * * *"              # standard 5-field cron; evaluated in `timezone` below; default 9am daily
+  schedule: "0 9 * * *"               # standard 5-field cron; evaluated in `timezone` below; default 9am daily
   timezone: "UTC"                     # IANA zone (e.g. Europe/Kyiv); default UTC. Both the firing time and
                                       # the "since before today" cutoff use this zone. An invalid zone fails
                                       # startup. Global only — a per-repo digest may not set it.
@@ -132,6 +132,34 @@ mappings:
       channel: C0STANDARD00
       # Omit all behavioral overrides to use global defaults.
 
+  # ── Per-path routing for monorepos (0.19+) ───────────────────────────────────────────────────────
+  # A named repo tier may add `paths:` — per-directory channel/mentions overrides keyed by directory.
+  # A PR is routed by the directories its changed files touch; the most-specific (longest) matching
+  # directory wins the channel, and the mentions of every matched directory are unioned into that one
+  # message (single message per PR). A PR matching no path falls back to the repo tier, exactly as today.
+  # NOTE: path matching reads a PR's changed files from the GitHub API, so it requires GITHUB_TOKEN.
+  # Without a token the path rules are inert and the repo tier applies (surfaced by the doctor).
+  epsilon:
+    the-monorepo:
+      channel: C0MONO00000                      # base channel for any PR that matches no path below
+      mentions: ["<!subteam^S0ENGLEADS>"]       # base ping for unmatched PRs
+      paths:
+        # channel omitted → inherits C0MONO00000; only the team is pinged
+        "/modules/acme":
+          mentions: ["<!subteam^S0TEAMA000>"]
+        "/modules/betta":
+          mentions: ["<!subteam^S0TEAMB000>"]
+        # shared dir → ping several groups (leading slash optional; "config" is equivalent)
+        "/config":
+          mentions: ["<!subteam^S0TEAMA000>", "<!subteam^S0TEAMB000>", "<@U0TEAMLEAD>"]
+        # this dir also overrides the channel
+        "/src/AuthBundle":
+          channel: C0AUTH00000
+          mentions: ["<!subteam^S0TEAMAUTH>"]
+        # matches the directory but pings nobody (silent route)
+        "/vendor":
+          mentions: []
+
 # ── Mappings rules ─────────────────────────────────────────────────────────────────────────────────
 # • The org key (acme, beta, gamma, …) matches ^[A-Za-z0-9_.-]+$. Org tier keys are repo names or "*".
 # • channel must look like a Slack ID: ^[CGD][A-Z0-9]{2,}$ (C…, G…, D…). Every resolvable org/repo pair must yield a channel.
@@ -139,4 +167,7 @@ mappings:
 # • For org/repo, the org/repo tier merges over the org/* tier; most-specific tier that sets a key wins. Channel inherits (repo's own, else "*"'s). Mentions: absent → inherit, [] → nobody, or explicit handles.
 # • "*" is both the org-level default tier (explicit repos inherit from it) AND the catch-all (unlisted repos route to it). Every org must have at least one tier with a channel set.
 # • Duplicate repo names in the same org are rejected at parse time.
+# • paths: is allowed only on a named repo tier (not "*"). Keys are directories; "/config", "config",
+#   and "config/" are equivalent. Keys that are empty, root, or contain ".." are rejected, as are two
+#   keys that normalize to the same directory. A path channel (if set) must be a valid Slack ID.
 # • Unknown YAML keys anywhere are rejected — typos surface immediately.
