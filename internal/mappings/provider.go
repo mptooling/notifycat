@@ -142,20 +142,20 @@ func (p *Provider) Entries() []Entry {
 // Digest() merged with the org/* and org/repo tiers (most-specific tier that
 // sets enabled/schedule wins). An unmapped repo yields the global digest.
 func (p *Provider) DigestFor(repository string) DigestConfig {
-	d := p.Digest() // global default (enabled + DefaultDigestSchedule)
+	digest := p.Digest() // global default (enabled + DefaultDigestSchedule)
 	org, repo, ok := splitRepo(repository)
 	if !ok {
-		return d
+		return digest
 	}
 	o, ok := p.file.Mappings[org]
 	if !ok {
-		return d
+		return digest
 	}
 	apply := func(rc RepoConfig, has bool) {
 		if has && rc.Digest != nil {
-			d.Enabled = rc.Digest.Enabled
+			digest.Enabled = rc.Digest.Enabled
 			if s := strings.TrimSpace(rc.Digest.Schedule); s != "" {
-				d.Schedule = s
+				digest.Schedule = s
 			}
 		}
 	}
@@ -163,7 +163,7 @@ func (p *Provider) DigestFor(repository string) DigestConfig {
 	apply(star, hasStar)
 	rc, hasRepo := o[repo]
 	apply(rc, hasRepo)
-	return d
+	return digest
 }
 
 // Schedules returns the sorted distinct set of effective digest schedules
@@ -172,11 +172,11 @@ func (p *Provider) DigestFor(repository string) DigestConfig {
 func (p *Provider) Schedules() []string {
 	seen := map[string]struct{}{}
 	for _, e := range p.Entries() {
-		d := p.DigestFor(e.Key())
-		if !d.Enabled {
+		digestConfig := p.DigestFor(e.Key())
+		if !digestConfig.Enabled {
 			continue
 		}
-		seen[d.Schedule] = struct{}{}
+		seen[digestConfig.Schedule] = struct{}{}
 	}
 	out := make([]string, 0, len(seen))
 	for s := range seen {

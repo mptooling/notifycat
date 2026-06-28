@@ -19,9 +19,9 @@ const maxMatchedPathOwners = 5
 // `paths:` block. Used to gate the "path routing needs GITHUB_TOKEN" warnings:
 // without paths there is nothing to warn about.
 func (p *Provider) HasPathRules() bool {
-	for _, o := range p.file.Mappings {
-		for _, rc := range o {
-			if len(rc.Paths) > 0 {
+	for _, org := range p.file.Mappings {
+		for _, reportConfig := range org {
+			if len(reportConfig.Paths) > 0 {
 				return true
 			}
 		}
@@ -39,19 +39,19 @@ func (p *Provider) HasPathRules() bool {
 // safety valve firing, and mentions bottoming out at @channel (M3). The caller
 // supplies the changed files — GetForFiles makes no GitHub API call.
 func (p *Provider) GetForFiles(ctx context.Context, logger *slog.Logger, repository string, files []string) (store.RepoMapping, error) {
-	m, err := p.Get(ctx, repository)
+	repoMapping, err := p.Get(ctx, repository)
 	if err != nil {
 		return store.RepoMapping{}, err
 	}
-	_, repoPtr := p.lookup(repository)
-	if repoPtr == nil || len(repoPtr.Paths) == 0 {
-		return m, nil
+	_, repoCfg := p.lookup(repository)
+	if repoCfg == nil || len(repoCfg.Paths) == 0 {
+		return repoMapping, nil
 	}
 
-	base := Resolved{Channel: m.SlackChannel, Mentions: m.Mentions}
-	res, out := resolvePaths(base, repoPtr.Paths, files)
+	base := Resolved{Channel: repoMapping.SlackChannel, Mentions: repoMapping.Mentions}
+	res, out := resolvePaths(base, repoCfg.Paths, files)
 	if !out.matched {
-		return m, nil
+		return repoMapping, nil
 	}
 	if out.valveTripped && logger != nil {
 		logger.Warn("path routing: too many matched directories; routing to the repo base channel",
@@ -64,9 +64,9 @@ func (p *Provider) GetForFiles(ctx context.Context, logger *slog.Logger, reposit
 			slog.String("repository", repository),
 			slog.String("channel", res.Channel))
 	}
-	m.SlackChannel = res.Channel
-	m.Mentions = res.Mentions
-	return m, nil
+	repoMapping.SlackChannel = res.Channel
+	repoMapping.Mentions = res.Mentions
+	return repoMapping, nil
 }
 
 // pathOutcome carries the non-routing facts the caller logs about.
