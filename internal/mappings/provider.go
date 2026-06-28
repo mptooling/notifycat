@@ -128,7 +128,13 @@ func (p *Provider) Entries() []Entry {
 		for _, r := range repos {
 			rc := o[r]
 			res := resolveRouting(starPtr, &rc)
-			out = append(out, Entry{Org: org, Repo: r, Channel: res.Channel, Mentions: res.Mentions})
+			out = append(out, Entry{
+				Org:          org,
+				Repo:         r,
+				Channel:      res.Channel,
+				Mentions:     res.Mentions,
+				PathChannels: pathChannels(rc.Paths),
+			})
 		}
 		if starPtr != nil {
 			res := resolveRouting(starPtr, nil)

@@ -26,3 +26,15 @@ func TestEntry_Hash_DiffersOnWildcardVsExplicit(t *testing.T) {
 		t.Errorf("wildcard hash must differ from explicit hash")
 	}
 }
+
+func TestEntry_Hash_DiffersOnPathChannels(t *testing.T) {
+	a := Entry{Org: "acme", Repo: "api", Channel: "C1"}
+	b := Entry{Org: "acme", Repo: "api", Channel: "C1", PathChannels: []string{"C2"}}
+	c := Entry{Org: "acme", Repo: "api", Channel: "C1", PathChannels: []string{"C3"}}
+	if a.Hash() == b.Hash() {
+		t.Errorf("adding a path channel must change the hash (so validation re-runs)")
+	}
+	if b.Hash() == c.Hash() {
+		t.Errorf("repointing a path channel must change the hash")
+	}
+}

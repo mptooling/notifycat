@@ -58,17 +58,34 @@ func (v *Validator) validateMapping(ctx context.Context, m store.RepoMapping) Re
 		)
 		return r
 	}
-	r.Checks = append(r.Checks, v.slackChecks(ctx, m.SlackChannel)...)
+	r.Checks = append(r.Checks, v.slackChecks(ctx, m.SlackChannel, v.mappings.PathChannels(m.Repository))...)
 	r.Checks = append(r.Checks, v.githubCheck(ctx, m.Repository))
 	return r
 }
 
-// slackChecks returns the auth + channel result pair, short-circuiting the
-// channel probe when auth itself failed.
-func (v *Validator) slackChecks(ctx context.Context, channel string) []CheckResult {
+// slackChecks returns the auth check followed by a channel probe for the base
+// channel and each per-path channel, short-circuiting every probe when auth
+// itself failed. Path channels are checked so a channel the bot isn't in fails
+// at validation, not at post time.
+func (v *Validator) slackChecks(ctx context.Context, channel string, pathChannels []string) []CheckResult {
 	auth := v.slackAuthCheck(ctx)
 	if auth.Status != StatusOK {
-		return []CheckResult{auth, skip("slack-channel", "slack auth failed; skipping channel probe")}
+		checks := []CheckResult{auth, skip("slack-channel", "slack auth failed; skipping channel probe")}
+		for _, pc := range pathChannels {
+			checks = append(checks, skip("slack-channel "+pc, "slack auth failed; skipping channel probe"))
+		}
+		return checks
 	}
-	return []CheckResult{auth, v.slackChannelCheck(ctx, channel)}
+	checks := []CheckResult{auth, v.slackChannelCheck(ctx, channel)}
+	for _, pc := range pathChannels {
+		checks = append(checks, named("slack-channel "+pc, v.slackChannelCheck(ctx, pc)))
+	}
+	return checks
+}
+
+// named overrides a CheckResult's Name, used to disambiguate the per-path
+// channel probes from the base "slack-channel" check in the report.
+func named(name string, c CheckResult) CheckResult {
+	c.Name = name
+	return c
 }

@@ -174,3 +174,62 @@ func TestGetPullRequest_NotFoundIsAPIError(t *testing.T) {
 		t.Fatalf("want APIError 404; got %T %v", err, err)
 	}
 }
+
+func TestListPullRequestFiles_SinglePage(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/acme/web/pulls/42/files" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		_, _ = io.WriteString(w, `[{"filename":"modules/acme/x.go"},{"filename":"README.md"}]`)
+	}))
+	defer srv.Close()
+
+	c := github.NewClient(srv.Client(), "tok", github.WithBaseURL(srv.URL))
+	got, err := c.ListPullRequestFiles(context.Background(), "acme", "web", 42)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(got) != 2 || got[0] != "modules/acme/x.go" || got[1] != "README.md" {
+		t.Errorf("got %v; want [modules/acme/x.go README.md]", got)
+	}
+}
+
+func TestListPullRequestFiles_FollowsLinkHeader(t *testing.T) {
+	var page atomic.Int32
+	var base string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		switch page.Add(1) {
+		case 1:
+			w.Header().Set("Link", `<`+base+`/repos/acme/web/pulls/42/files?page=2>; rel="next"`)
+			_, _ = io.WriteString(w, `[{"filename":"a.go"}]`)
+		default:
+			_, _ = io.WriteString(w, `[{"filename":"b.go"}]`)
+		}
+	}))
+	defer srv.Close()
+	base = srv.URL
+
+	c := github.NewClient(srv.Client(), "tok", github.WithBaseURL(srv.URL))
+	got, err := c.ListPullRequestFiles(context.Background(), "acme", "web", 42)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(got) != 2 || got[0] != "a.go" || got[1] != "b.go" {
+		t.Errorf("got %v; want [a.go b.go]", got)
+	}
+}
+
+func TestListPullRequestFiles_Non2xxIsAPIError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = io.WriteString(w, `{"message":"Not Found"}`)
+	}))
+	defer srv.Close()
+
+	c := github.NewClient(srv.Client(), "tok", github.WithBaseURL(srv.URL))
+	_, err := c.ListPullRequestFiles(context.Background(), "acme", "web", 99)
+	var apiErr *github.APIError
+	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusNotFound {
+		t.Fatalf("want APIError 404; got %T %v", err, err)
+	}
+}

@@ -15,7 +15,7 @@ import (
 // the message TS for later updates.
 type OpenHandler struct {
 	messages SlackMessages
-	mappings RepoMappings
+	resolver Resolver
 	slack    SlackClient
 	composer *slack.Composer
 	logger   *slog.Logger
@@ -24,14 +24,14 @@ type OpenHandler struct {
 // NewOpenHandler builds an OpenHandler.
 func NewOpenHandler(
 	messages SlackMessages,
-	mappings RepoMappings,
+	resolver Resolver,
 	slackClient SlackClient,
 	composer *slack.Composer,
 	logger *slog.Logger,
 ) *OpenHandler {
 	return &OpenHandler{
 		messages: messages,
-		mappings: mappings,
+		resolver: resolver,
 		slack:    slackClient,
 		composer: composer,
 		logger:   logger,
@@ -65,7 +65,7 @@ func (h *OpenHandler) Handle(ctx context.Context, e Event) error {
 		return err
 	}
 
-	mapping, err := h.mappings.Get(ctx, e.Repository)
+	mapping, err := h.resolver.Resolve(ctx, e.Repository, e.PR.Number)
 	if errors.Is(err, store.ErrNotFound) {
 		h.logger.Warn("ignored webhook event",
 			slog.String("reason", "no_mapping"),

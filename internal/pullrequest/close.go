@@ -14,7 +14,7 @@ import (
 // adds the corresponding reaction emoji.
 type CloseHandler struct {
 	messages SlackMessages
-	mappings RepoMappings
+	resolver Resolver
 	slack    SlackClient
 	composer *slack.Composer
 	logger   *slog.Logger
@@ -23,14 +23,14 @@ type CloseHandler struct {
 // NewCloseHandler builds a CloseHandler.
 func NewCloseHandler(
 	messages SlackMessages,
-	mappings RepoMappings,
+	resolver Resolver,
 	slackClient SlackClient,
 	composer *slack.Composer,
 	logger *slog.Logger,
 ) *CloseHandler {
 	return &CloseHandler{
 		messages: messages,
-		mappings: mappings,
+		resolver: resolver,
 		slack:    slackClient,
 		composer: composer,
 		logger:   logger,
@@ -58,7 +58,7 @@ func (h *CloseHandler) Handle(ctx context.Context, e Event) error {
 		return err
 	}
 
-	mapping, err := h.mappings.Get(ctx, e.Repository)
+	mapping, err := h.resolver.Resolve(ctx, e.Repository, e.PR.Number)
 	if errors.Is(err, store.ErrNotFound) {
 		h.logger.Warn("ignored webhook event",
 			slog.String("reason", "no_mapping"),

@@ -54,8 +54,9 @@ func (f *fakeSlackMessages) MarkClosed(_ context.Context, repository string, prN
 	return nil
 }
 
-// fakeRepoMappings is an in-memory implementation of the RepoMappings
-// dependency.
+// fakeRepoMappings is an in-memory Resolver: the handlers route through
+// Resolve, which here ignores the PR number and returns the stored mapping by
+// repository (path resolution itself is covered by router_test.go).
 type fakeRepoMappings struct {
 	byRepo map[string]store.RepoMapping
 }
@@ -68,7 +69,7 @@ func newFakeRepoMappings(initial ...store.RepoMapping) *fakeRepoMappings {
 	return f
 }
 
-func (f *fakeRepoMappings) Get(_ context.Context, repository string) (store.RepoMapping, error) {
+func (f *fakeRepoMappings) Resolve(_ context.Context, repository string, _ int) (store.RepoMapping, error) {
 	m, ok := f.byRepo[repository]
 	if !ok {
 		return store.RepoMapping{}, store.ErrNotFound

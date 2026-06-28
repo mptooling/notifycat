@@ -13,7 +13,7 @@ import (
 // when it's marked ready_for_review again.
 type DraftHandler struct {
 	messages SlackMessages
-	mappings RepoMappings
+	resolver Resolver
 	slack    SlackClient
 	logger   *slog.Logger
 }
@@ -21,13 +21,13 @@ type DraftHandler struct {
 // NewDraftHandler builds a DraftHandler.
 func NewDraftHandler(
 	messages SlackMessages,
-	mappings RepoMappings,
+	resolver Resolver,
 	slackClient SlackClient,
 	logger *slog.Logger,
 ) *DraftHandler {
 	return &DraftHandler{
 		messages: messages,
-		mappings: mappings,
+		resolver: resolver,
 		slack:    slackClient,
 		logger:   logger,
 	}
@@ -54,7 +54,7 @@ func (h *DraftHandler) Handle(ctx context.Context, e Event) error {
 		return err
 	}
 
-	mapping, err := h.mappings.Get(ctx, e.Repository)
+	mapping, err := h.resolver.Resolve(ctx, e.Repository, e.PR.Number)
 	if errors.Is(err, store.ErrNotFound) {
 		h.logger.Warn("ignored webhook event",
 			slog.String("reason", "no_mapping"),

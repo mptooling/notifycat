@@ -26,7 +26,8 @@ Exit code is `0` when every check passes (`SKIP` does not count as a failure) an
 | `database` | `open` | Opens the SQLite database and pings the underlying connection. Reports the DSN that was used. |
 | `mappings` | `file` | Loads the YAML via the same parser the server uses. Surfaces schema errors and missing files. |
 | `mappings` | `entries` | Number of parsed entries (`0` is allowed — the server boots and routes nothing). |
-| `owner/repo` | `mapping` / `channel-format` / `slack-auth` / `slack-channel` / `github-webhook` | Only when a positional argument is given. Delegates to `internal/validate` — same checks `notifycat-config validate owner/repo` runs. |
+| `mappings` | `path routing` | Only when some tier uses [per-path routing](mappings.md#per-path-routing-monorepos). `OK` when `GITHUB_TOKEN` is set (path rules active); `SKIP` when it is unset (rules inert — PRs route to the repo tier). |
+| `owner/repo` | `mapping` / `channel-format` / `slack-auth` / `slack-channel` / `github-webhook` | Only when a positional argument is given. Delegates to `internal/validate` — same checks `notifycat-config validate owner/repo` runs. A per-path channel adds its own `slack-channel <id>` membership check. |
 
 ## Output format
 

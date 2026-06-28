@@ -18,7 +18,7 @@ type reactionHandler struct {
 	applicable func(Event) bool
 
 	messages SlackMessages
-	mappings RepoMappings
+	resolver Resolver
 	slack    SlackClient
 	logger   *slog.Logger
 	detector *aireview.Detector
@@ -43,7 +43,7 @@ func (h *reactionHandler) Handle(ctx context.Context, e Event) error {
 		return err
 	}
 
-	mapping, err := h.mappings.Get(ctx, e.Repository)
+	mapping, err := h.resolver.Resolve(ctx, e.Repository, e.PR.Number)
 	if errors.Is(err, store.ErrNotFound) {
 		h.logger.Warn("ignored webhook event",
 			slog.String("reason", "no_mapping"),
@@ -102,7 +102,7 @@ type ApproveHandler struct{ reactionHandler }
 // NewApproveHandler builds an ApproveHandler.
 func NewApproveHandler(
 	messages SlackMessages,
-	mappings RepoMappings,
+	resolver Resolver,
 	slackClient SlackClient,
 	logger *slog.Logger,
 	detector *aireview.Detector,
@@ -112,7 +112,7 @@ func NewApproveHandler(
 		emojiOf: func(r store.Reactions) string {
 			return r.Approved
 		},
-		messages: messages, mappings: mappings, slack: slackClient, logger: logger, detector: detector,
+		messages: messages, resolver: resolver, slack: slackClient, logger: logger, detector: detector,
 		applicable: func(e Event) bool {
 			return e.Action == "submitted" && e.Review != nil && e.Review.State == "approved"
 		},
@@ -126,7 +126,7 @@ type CommentedHandler struct{ reactionHandler }
 // NewCommentedHandler builds a CommentedHandler.
 func NewCommentedHandler(
 	messages SlackMessages,
-	mappings RepoMappings,
+	resolver Resolver,
 	slackClient SlackClient,
 	logger *slog.Logger,
 	detector *aireview.Detector,
@@ -136,7 +136,7 @@ func NewCommentedHandler(
 		emojiOf: func(r store.Reactions) string {
 			return r.Commented
 		},
-		messages: messages, mappings: mappings, slack: slackClient, logger: logger, detector: detector,
+		messages: messages, resolver: resolver, slack: slackClient, logger: logger, detector: detector,
 		applicable: func(e Event) bool {
 			if e.GitHubEvent == "pull_request_review_comment" {
 				return e.Action == "created"
@@ -159,7 +159,7 @@ type RequestChangeHandler struct{ reactionHandler }
 // NewRequestChangeHandler builds a RequestChangeHandler.
 func NewRequestChangeHandler(
 	messages SlackMessages,
-	mappings RepoMappings,
+	resolver Resolver,
 	slackClient SlackClient,
 	logger *slog.Logger,
 	detector *aireview.Detector,
@@ -169,7 +169,7 @@ func NewRequestChangeHandler(
 		emojiOf: func(r store.Reactions) string {
 			return r.RequestChange
 		},
-		messages: messages, mappings: mappings, slack: slackClient, logger: logger, detector: detector,
+		messages: messages, resolver: resolver, slack: slackClient, logger: logger, detector: detector,
 		applicable: func(e Event) bool {
 			return e.Action == "submitted" && e.Review != nil && e.Review.State == "changes_requested"
 		},

@@ -23,11 +23,6 @@ type SlackMessages interface {
 	MarkClosed(ctx context.Context, repository string, prNumber int) error
 }
 
-// RepoMappings reads the per-repository routing to a Slack channel.
-type RepoMappings interface {
-	Get(ctx context.Context, repository string) (store.RepoMapping, error)
-}
-
 // SlackClient is the subset of the slack package's client that handlers use.
 type SlackClient interface {
 	PostMessage(ctx context.Context, channel string, msg slack.Message) (ts string, err error)
