@@ -78,6 +78,46 @@ wire format of an existing group mention.
 
 Each repo tier can override behavioral settings: `reactions`, `reviews`, and `digest`. These settings inherit from the `org/*` tier (if present) and fall back to the global `config.yaml` section when omitted. For example, a repo can use a different approval reaction, suppress AI reviews differently, or post its digest on its own schedule. See the [0.18 migration guide](0.18-per-repo-mappings-migration.md#per-repo-behavioral-overrides) for the full list of overridable keys and the inheritance chain (most-specific tier wins).
 
+## Per-path routing (monorepos)
+
+A named repo tier may add a `paths:` block that routes a PR by the directories its changed files touch — so each team in a monorepo hears about the directories it owns. This section documents the **schema and validation**; how a PR's files select a path (most-specific wins, mentions union, single message per PR) is covered under [routing behavior](#per-path-resolution) and requires a GitHub token to read a PR's changed files.
+
+```yaml
+mappings:
+  acme:
+    the-monorepo:
+      channel: C0MONO00000                 # base channel for PRs that match no path
+      mentions: ["<!subteam^S0ENG>"]       # base ping for unmatched PRs
+      paths:
+        "/modules/acme":                   # directory key (see normalization below)
+          mentions: ["<!subteam^S0TEAMA>"] # channel omitted → inherits C0MONO00000
+        "/src/AuthBundle":
+          channel: C0AUTH00000             # this directory also overrides the channel
+          mentions: ["<!subteam^S0AUTH>"]
+        "/vendor":
+          mentions: []                     # matches the dir, pings nobody
+```
+
+A path entry accepts exactly two optional keys:
+
+| Key | Rule |
+| --- | --- |
+| `channel` | Optional Slack channel ID. Omitted → inherits the repo tier's channel. If set, must match `^[CGD][A-Z0-9]{2,}$`. |
+| `mentions` | Optional. Same tri-state as a repo tier: **absent** → inherit; `[]` → ping nobody; `["<@U…>", "<!subteam^S…>"]` → ping those; `["<!channel>"]` → explicit @channel. `mentions: null` is rejected. |
+
+Validation rules (all enforced at parse time — the server fails fast):
+
+- **Named tiers only.** `paths:` on the `"*"` org-default tier is rejected (it would apply to every repo in the org). Put path rules on a named repo tier.
+- **Directory keys are normalized.** Leading/trailing slashes are stripped and the path is cleaned, so `/config`, `config`, and `config/` are equivalent. Keys are matched against repo-relative file paths (GitHub returns paths with no leading slash).
+- **Keys are case-sensitive** — they must match the repository's real directory casing, exactly as GitHub reports it.
+- **Rejected keys:** empty, root (`/`), or any key containing a `..` segment.
+- **No collisions:** two keys that normalize to the same directory (e.g. `/config` and `config/`) are rejected.
+- **No duplicate keys** within a tier or a path node — duplicates are an error, not a silent last-wins.
+- **A base channel is still required.** A repo with `paths:` must still resolve a channel from its own tier or the org `"*"` tier, so a PR that matches no path always has a destination.
+
+<a id="per-path-resolution"></a>
+> **Routing behavior & worked example** — the rules for how multiple matched directories resolve to a single channel and a unioned mentions list, plus the token requirement and a worked example, are documented with the path-routing runtime (forthcoming). Until then, `paths:` is parsed and validated but not yet consulted at delivery time.
+
 ## Stuck-PR digest
 
 Alongside the per-repo-tier `mappings`, an optional **global** `digest:` section configures a scheduled reminder that lists open PRs nobody has touched since the previous day. The digest can also be customized per-repo tier (see above). Both `digest:` and `mappings:` are top-level sections inside `config.yaml`.

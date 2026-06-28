@@ -65,6 +65,29 @@ func ValidateMappings(m map[string]Org) error {
 			if rc.Channel == "" && !starHasChannel {
 				return fmt.Errorf("mappings: org %q repo %q: no channel (set channel here or in the org's \"*\" entry)", org, repo)
 			}
+			if err := validatePaths(org, repo, rc.Paths); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// validatePaths enforces the per-path constraints that need tier context:
+// `paths:` is rejected on the "*" org-default tier (it would apply to every
+// repo in the org), and any path channel must be a well-formed Slack ID. Path
+// channels are optional (they inherit the repo/org channel); only a set one is
+// format-checked.
+func validatePaths(org, repo string, paths []PathRule) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	if repo == starKey {
+		return fmt.Errorf("mappings: org %q: paths are not allowed on the \"*\" tier (set them on a named repo)", org)
+	}
+	for _, p := range paths {
+		if p.Channel != "" && !channelPattern.MatchString(p.Channel) {
+			return fmt.Errorf("mappings: org %q repo %q path %q: invalid channel %q", org, repo, p.Dir, p.Channel)
 		}
 	}
 	return nil
