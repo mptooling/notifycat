@@ -116,6 +116,15 @@ agree by construction.
   into a "production wiring" façade plus a "test seam" constructor.
   If a test needs different deps, pass them through the same
   constructor.
+- **Readable names over terse Go idiom.** Prefer descriptive,
+  meaningful identifiers (`repoMapping`, `digestConfig`, `starTier`)
+  over the conventional one- or two-letter Go style (`m`, `d`, `rc`),
+  including for locals and parameters. The goal is code that reads
+  without a mental decode step. Genuinely small scopes are the
+  exception — a loop index (`i`), a method receiver, or a trivial
+  one-line throwaway can stay short — but any value that carries domain
+  meaning should be spelled out. Match this when editing existing code:
+  don't reintroduce short names a file has already spelled out.
 - **No comments restating the code.** Only add a comment when the
   *why* is non-obvious (hidden constraint, subtle invariant,
   workaround). Method-level docs that summarize the method name are
