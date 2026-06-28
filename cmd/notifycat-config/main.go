@@ -29,6 +29,9 @@ func main() {
 		os.Exit(1)
 	}
 	provider := mappings.NewProvider(mappings.Defaults{}, cfg.Mappings, cfg.Digest)
+	if w := pathTokenWarning(provider, cfg.GitHubToken.Reveal() != ""); w != "" {
+		fmt.Fprintln(os.Stderr, w)
+	}
 	checker, lister := buildValidationDeps(cfg, provider)
 	validator := mappingcli.NewMappingsValidator(
 		provider,
@@ -57,6 +60,18 @@ func buildValidationDeps(cfg config.Config, provider *mappings.Provider) (valida
 		lister = gh
 	}
 	return validate.NewValidator(provider, slackClient, ghChecker), lister
+}
+
+// pathTokenWarning returns a warning when per-path routing is configured but no
+// GitHub token is available — path rules are inert without one (a token is
+// needed to read a PR's changed files). It returns "" when there is nothing to
+// warn about. Kept separate from main so it can be unit-tested.
+func pathTokenWarning(provider *mappings.Provider, hasGitHubToken bool) string {
+	if provider.HasPathRules() && !hasGitHubToken {
+		return "warning: path routing is configured but GITHUB_TOKEN is unset; " +
+			"path rules are inert and PRs route to the repo tier until a token is set"
+	}
+	return ""
 }
 
 func dispatch(args []string, provider *mappings.Provider, validator mappingcli.MappingsValidator, stdout, stderr io.Writer) int {

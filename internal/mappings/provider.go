@@ -59,25 +59,32 @@ func (p *Provider) Digest() DigestConfig {
 	return cfg
 }
 
+// lookup returns the org/repo and org/* tiers for repository, either of which
+// may be nil. Both nil means the repository resolves to nothing (unmapped org,
+// malformed key, or no matching tier).
+func (p *Provider) lookup(repository string) (star, repo *RepoConfig) {
+	org, r, ok := splitRepo(repository)
+	if !ok {
+		return nil, nil
+	}
+	o, ok := p.file.Mappings[org]
+	if !ok {
+		return nil, nil
+	}
+	if rc, has := o[r]; has {
+		repo = &rc
+	}
+	if sc, has := o[starKey]; has {
+		star = &sc
+	}
+	return star, repo
+}
+
 // Get returns the resolved mapping for "org/repo": the org/repo tier merged
 // over the org/* tier. Returns store.ErrNotFound when the org is unmapped or
 // neither an explicit tier nor a wildcard tier matches.
 func (p *Provider) Get(_ context.Context, repository string) (store.RepoMapping, error) {
-	org, repo, ok := splitRepo(repository)
-	if !ok {
-		return store.RepoMapping{}, store.ErrNotFound
-	}
-	o, ok := p.file.Mappings[org]
-	if !ok {
-		return store.RepoMapping{}, store.ErrNotFound
-	}
-	var repoPtr, starPtr *RepoConfig
-	if rc, has := o[repo]; has {
-		repoPtr = &rc
-	}
-	if sc, has := o[starKey]; has {
-		starPtr = &sc
-	}
+	starPtr, repoPtr := p.lookup(repository)
 	if repoPtr == nil && starPtr == nil {
 		return store.RepoMapping{}, store.ErrNotFound
 	}

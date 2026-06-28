@@ -56,6 +56,11 @@ func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, *digest.Schedule
 	}
 	provider := mappings.NewProvider(defaults, cfg.Mappings, cfg.Digest)
 
+	if provider.HasPathRules() && cfg.GitHubToken.Reveal() == "" {
+		logger.Warn("path routing is configured but GITHUB_TOKEN is unset; " +
+			"path rules are inert and PRs route to the repo tier (a token is needed to read a PR's changed files)")
+	}
+
 	db, err := store.Open(cfg.DatabaseURL)
 	if err != nil {
 		return nil, nil, nil, nil, err
