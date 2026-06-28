@@ -50,7 +50,7 @@ func (d *Doctor) Run(ctx context.Context, target string) []Section {
 	sections := []Section{
 		CheckConfig(d.cfg),
 		CheckDatabase(d.cfg.DatabaseURL),
-		CheckMappings(provider),
+		CheckMappings(provider, d.cfg.GitHubToken.Reveal() != ""),
 	}
 	if target == "" || d.validator == nil {
 		return sections

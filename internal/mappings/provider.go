@@ -59,25 +59,32 @@ func (p *Provider) Digest() DigestConfig {
 	return cfg
 }
 
+// lookup returns the org/repo and org/* tiers for repository, either of which
+// may be nil. Both nil means the repository resolves to nothing (unmapped org,
+// malformed key, or no matching tier).
+func (p *Provider) lookup(repository string) (star, repo *RepoConfig) {
+	org, r, ok := splitRepo(repository)
+	if !ok {
+		return nil, nil
+	}
+	o, ok := p.file.Mappings[org]
+	if !ok {
+		return nil, nil
+	}
+	if rc, has := o[r]; has {
+		repo = &rc
+	}
+	if sc, has := o[starKey]; has {
+		star = &sc
+	}
+	return star, repo
+}
+
 // Get returns the resolved mapping for "org/repo": the org/repo tier merged
 // over the org/* tier. Returns store.ErrNotFound when the org is unmapped or
 // neither an explicit tier nor a wildcard tier matches.
 func (p *Provider) Get(_ context.Context, repository string) (store.RepoMapping, error) {
-	org, repo, ok := splitRepo(repository)
-	if !ok {
-		return store.RepoMapping{}, store.ErrNotFound
-	}
-	o, ok := p.file.Mappings[org]
-	if !ok {
-		return store.RepoMapping{}, store.ErrNotFound
-	}
-	var repoPtr, starPtr *RepoConfig
-	if rc, has := o[repo]; has {
-		repoPtr = &rc
-	}
-	if sc, has := o[starKey]; has {
-		starPtr = &sc
-	}
+	starPtr, repoPtr := p.lookup(repository)
 	if repoPtr == nil && starPtr == nil {
 		return store.RepoMapping{}, store.ErrNotFound
 	}
@@ -135,20 +142,20 @@ func (p *Provider) Entries() []Entry {
 // Digest() merged with the org/* and org/repo tiers (most-specific tier that
 // sets enabled/schedule wins). An unmapped repo yields the global digest.
 func (p *Provider) DigestFor(repository string) DigestConfig {
-	d := p.Digest() // global default (enabled + DefaultDigestSchedule)
+	digest := p.Digest() // global default (enabled + DefaultDigestSchedule)
 	org, repo, ok := splitRepo(repository)
 	if !ok {
-		return d
+		return digest
 	}
 	o, ok := p.file.Mappings[org]
 	if !ok {
-		return d
+		return digest
 	}
 	apply := func(rc RepoConfig, has bool) {
 		if has && rc.Digest != nil {
-			d.Enabled = rc.Digest.Enabled
+			digest.Enabled = rc.Digest.Enabled
 			if s := strings.TrimSpace(rc.Digest.Schedule); s != "" {
-				d.Schedule = s
+				digest.Schedule = s
 			}
 		}
 	}
@@ -156,7 +163,7 @@ func (p *Provider) DigestFor(repository string) DigestConfig {
 	apply(star, hasStar)
 	rc, hasRepo := o[repo]
 	apply(rc, hasRepo)
-	return d
+	return digest
 }
 
 // Schedules returns the sorted distinct set of effective digest schedules
@@ -165,11 +172,11 @@ func (p *Provider) DigestFor(repository string) DigestConfig {
 func (p *Provider) Schedules() []string {
 	seen := map[string]struct{}{}
 	for _, e := range p.Entries() {
-		d := p.DigestFor(e.Key())
-		if !d.Enabled {
+		digestConfig := p.DigestFor(e.Key())
+		if !digestConfig.Enabled {
 			continue
 		}
-		seen[d.Schedule] = struct{}{}
+		seen[digestConfig.Schedule] = struct{}{}
 	}
 	out := make([]string, 0, len(seen))
 	for s := range seen {

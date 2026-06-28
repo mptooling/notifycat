@@ -160,3 +160,22 @@ func TestDispatch_Validate_UnknownFlag(t *testing.T) {
 		t.Fatalf("unknown-flag exit = %d; want 2", code)
 	}
 }
+
+func TestPathTokenWarning(t *testing.T) {
+	f, err := mappings.Parse(strings.NewReader(
+		"mappings:\n  acme:\n    mono:\n      channel: C0BASE00000\n      paths:\n        \"/src\": {mentions: []}\n"))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	withPaths := mappings.NewProvider(mappings.Defaults{}, f.Mappings, nil)
+
+	if w := pathTokenWarning(withPaths, false); !strings.Contains(w, "GITHUB_TOKEN") {
+		t.Errorf("paths + no token: got %q; want a GITHUB_TOKEN warning", w)
+	}
+	if w := pathTokenWarning(withPaths, true); w != "" {
+		t.Errorf("paths + token: got %q; want no warning", w)
+	}
+	if w := pathTokenWarning(testProvider(t), false); w != "" {
+		t.Errorf("no paths: got %q; want no warning", w)
+	}
+}

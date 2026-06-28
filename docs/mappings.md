@@ -116,7 +116,35 @@ Validation rules (all enforced at parse time — the server fails fast):
 - **A base channel is still required.** A repo with `paths:` must still resolve a channel from its own tier or the org `"*"` tier, so a PR that matches no path always has a destination.
 
 <a id="per-path-resolution"></a>
-> **Routing behavior & worked example** — the rules for how multiple matched directories resolve to a single channel and a unioned mentions list, plus the token requirement and a worked example, are documented with the path-routing runtime (forthcoming). Until then, `paths:` is parsed and validated but not yet consulted at delivery time.
+
+### Routing behavior
+
+A PR still gets **one** message. When `paths:` are configured, the destination is computed from the PR's changed files (which notifycat reads from the GitHub API — see [token requirement](#token-requirement)):
+
+1. **Each changed file picks its most-specific rule.** A rule matches a file when the file lives under the rule's directory (segment-aware: `modules/acme` matches `modules/acme/x.go` but not `modules/acmexyz/x.go`). When several rules match one file, the **longest** directory wins.
+2. **One rule owns the channel.** Across every matched rule, the most-specific wins the channel — longest directory, then fewest path segments, then declaration order. That rule's `channel` is used (or the repo base channel if it sets none).
+3. **Mentions are unioned.** Every matched rule contributes its mentions (a rule with no `mentions:` key contributes the repo base mentions; `mentions: []` contributes nobody). The result is deduped.
+4. **No match → the repo tier.** A PR whose files match no rule routes to the repo/org tier exactly as a non-monorepo repo would.
+
+Two safety behaviors are logged as warnings:
+
+- **@channel fallback.** If the unioned mentions resolve to just `@channel` (because matched rules set no team and the base tier sets none either), notifycat posts but logs a warning — that usually means a directory is missing a `mentions:` entry.
+- **Too many directories.** If a single PR matches more than five directory rules, the message would ping too many teams to be useful, so notifycat routes to the repo base channel + base mentions instead and logs a warning.
+
+### Worked example
+
+Given the `the-monorepo` tier above, a PR that changes **both** `modules/acme/handler.go` and `src/AuthBundle/auth.go`:
+
+- `modules/acme/handler.go` → matches `modules/acme` → mentions `<!subteam^S0TEAMA>`, no channel of its own.
+- `src/AuthBundle/auth.go` → matches `src/AuthBundle` → channel `C0AUTH00000`, mentions `<!subteam^S0AUTH>`.
+
+`src/AuthBundle` is the longer directory, so it **owns the channel**: the message posts to **`C0AUTH00000`**. Mentions are the **union** of both matched rules: **`<!subteam^S0TEAMA>` and `<!subteam^S0AUTH>`**. A PR touching only `README.md` matches nothing and routes to the repo base channel `C0MONO00000` with the base mentions.
+
+<a id="token-requirement"></a>
+
+### Token requirement
+
+Path routing reads a PR's changed files from the GitHub API, so it needs a `GITHUB_TOKEN` (set in `.env`). **Without a token the path rules are inert** — every PR routes to the repo tier as if `paths:` were absent. `notifycat-doctor` reports this as a `SKIP` on the `path routing` check, `notifycat-config` prints a warning, and the server logs one at startup.
 
 ## Stuck-PR digest
 

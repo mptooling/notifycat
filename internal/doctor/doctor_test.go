@@ -246,7 +246,7 @@ func TestCheckMappings_WithEntriesIsOK(t *testing.T) {
 	m := map[string]mappings.Org{
 		"octo": {"widget": {Channel: "C0123ABCDE"}},
 	}
-	sec := doctor.CheckMappings(mappings.NewProvider(mappings.Defaults{}, m, nil))
+	sec := doctor.CheckMappings(mappings.NewProvider(mappings.Defaults{}, m, nil), false)
 	if sec.Name != "mappings" {
 		t.Errorf("section name = %q; want %q", sec.Name, "mappings")
 	}
@@ -259,9 +259,51 @@ func TestCheckMappings_WithEntriesIsOK(t *testing.T) {
 }
 
 func TestCheckMappings_EmptyMappingsIsOK(t *testing.T) {
-	sec := doctor.CheckMappings(mappings.NewProvider(mappings.Defaults{}, nil, nil))
+	sec := doctor.CheckMappings(mappings.NewProvider(mappings.Defaults{}, nil, nil), false)
 	if !sec.OK() {
 		t.Fatalf("CheckMappings FAILed on empty mappings (which the server treats as a no-op): %+v", sec.Checks)
+	}
+}
+
+func pathRoutingProvider(t *testing.T) *mappings.Provider {
+	t.Helper()
+	doc := "mappings:\n  acme:\n    mono:\n      channel: C0BASE00000\n      paths:\n        \"/src\": {mentions: []}\n"
+	f, err := mappings.Parse(strings.NewReader(doc))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	return mappings.NewProvider(mappings.Defaults{}, f.Mappings, nil)
+}
+
+func pathRoutingCheck(t *testing.T, sec doctor.Section) validate.CheckResult {
+	t.Helper()
+	for _, c := range sec.Checks {
+		if c.Name == "path routing" {
+			return c
+		}
+	}
+	t.Fatalf("no \"path routing\" check in section: %+v", sec.Checks)
+	return validate.CheckResult{}
+}
+
+func TestCheckMappings_PathRoutingActiveWithToken(t *testing.T) {
+	sec := doctor.CheckMappings(pathRoutingProvider(t), true)
+	if c := pathRoutingCheck(t, sec); c.Status != validate.StatusOK {
+		t.Errorf("path routing status = %v; want OK with a token", c.Status)
+	}
+	if !sec.OK() {
+		t.Errorf("section should be OK with token: %+v", sec.Checks)
+	}
+}
+
+func TestCheckMappings_PathRoutingInertWithoutToken(t *testing.T) {
+	sec := doctor.CheckMappings(pathRoutingProvider(t), false)
+	c := pathRoutingCheck(t, sec)
+	if c.Status != validate.StatusSkip {
+		t.Errorf("path routing status = %v; want SKIP without a token", c.Status)
+	}
+	if !sec.OK() {
+		t.Errorf("inert path routing is a SKIP, not a failure: %+v", sec.Checks)
 	}
 }
 
