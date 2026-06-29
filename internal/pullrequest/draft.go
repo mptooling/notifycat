@@ -12,13 +12,13 @@ import (
 // stored Slack message and deletes the PR row — the PR will be re-announced
 // when it's marked ready_for_review again.
 type DraftHandler struct {
-	store     PullRequestStore
+	store     Store
 	messenger Messenger
 	logger    *slog.Logger
 }
 
 // NewDraftHandler builds a DraftHandler.
-func NewDraftHandler(store PullRequestStore, messenger Messenger, logger *slog.Logger) *DraftHandler {
+func NewDraftHandler(store Store, messenger Messenger, logger *slog.Logger) *DraftHandler {
 	return &DraftHandler{store: store, messenger: messenger, logger: logger}
 }
 

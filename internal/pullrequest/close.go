@@ -13,7 +13,7 @@ import (
 // stored Slack message with a [Merged]/[Closed] decoration and, if enabled,
 // adds the corresponding reaction emoji to each one.
 type CloseHandler struct {
-	store     PullRequestStore
+	store     Store
 	behavior  RepoBehavior
 	messenger Messenger
 	composer  *slack.Composer
@@ -22,7 +22,7 @@ type CloseHandler struct {
 
 // NewCloseHandler builds a CloseHandler.
 func NewCloseHandler(
-	store PullRequestStore,
+	store Store,
 	behavior RepoBehavior,
 	messenger Messenger,
 	composer *slack.Composer,

@@ -14,7 +14,7 @@ import (
 // ready_for_review. It fans out one Slack message per resolved target channel
 // and records each message for later updates.
 type OpenHandler struct {
-	store     PullRequestStore
+	store     Store
 	resolver  TargetResolver
 	messenger Messenger
 	composer  *slack.Composer
@@ -23,7 +23,7 @@ type OpenHandler struct {
 
 // NewOpenHandler builds an OpenHandler.
 func NewOpenHandler(
-	store PullRequestStore,
+	store Store,
 	resolver TargetResolver,
 	messenger Messenger,
 	composer *slack.Composer,

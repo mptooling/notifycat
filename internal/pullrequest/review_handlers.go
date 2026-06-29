@@ -17,17 +17,21 @@ type reactionHandler struct {
 	emojiOf    func(store.Reactions) string
 	applicable func(Event) bool
 
-	messages  SlackMessages
-	resolver  Resolver
+	store     Store
+	behavior  RepoBehavior
 	messenger Messenger
 	logger    *slog.Logger
 	detector  *aireview.Detector
 }
 
+func approvedEmoji(r store.Reactions) string      { return r.Approved }
+func commentedEmoji(r store.Reactions) string     { return r.Commented }
+func requestChangeEmoji(r store.Reactions) string { return r.RequestChange }
+
 func (h *reactionHandler) Applicable(e Event) bool { return h.applicable(e) }
 
 func (h *reactionHandler) Handle(ctx context.Context, e Event) error {
-	stored, err := h.messages.Get(ctx, e.Repository, e.PR.Number)
+	messages, err := h.store.Messages(ctx, e.Repository, e.PR.Number)
 	if errors.Is(err, store.ErrNotFound) {
 		h.logger.Info("ignored webhook event",
 			slog.String("reason", "no_stored_message"),
@@ -43,7 +47,7 @@ func (h *reactionHandler) Handle(ctx context.Context, e Event) error {
 		return err
 	}
 
-	mapping, err := h.resolver.Resolve(ctx, e.Repository, e.PR.Number)
+	behavior, err := h.behavior.Get(ctx, e.Repository)
 	if errors.Is(err, store.ErrNotFound) {
 		h.logger.Warn("ignored webhook event",
 			slog.String("reason", "no_mapping"),
@@ -59,7 +63,7 @@ func (h *reactionHandler) Handle(ctx context.Context, e Event) error {
 		return err
 	}
 
-	if mapping.IgnoreAIReviews && h.detector.IsBot(e.Sender.Type) {
+	if behavior.IgnoreAIReviews && h.detector.IsBot(e.Sender.Type) {
 		h.logger.Debug("skipped bot reviewer reaction",
 			slog.String("login", e.Sender.Login),
 			slog.String("event", e.GitHubEvent),
@@ -70,29 +74,27 @@ func (h *reactionHandler) Handle(ctx context.Context, e Event) error {
 		return nil
 	}
 
-	emoji := h.emojiOf(mapping.Reactions)
-	// The slack.Client treats Slack's "already_reacted" error as a non-error,
-	// so AddReaction is naturally idempotent. We don't need a GetReactions
-	// pre-check (the PHP service did one, but it's redundant once the client
-	// handles the duplicate-add case directly).
-	if err := h.messenger.AddReaction(ctx, mapping.SlackChannel, stored.TS, emoji); err != nil {
-		return err
+	emoji := h.emojiOf(behavior.Reactions)
+	isBot := h.detector.IsBot(e.Sender.Type)
+	// AddReaction is idempotent — the messenger treats an "already reacted"
+	// response as success — so reacting on every stored message is safe to
+	// replay. A surviving bot reviewer also gets a distinct marker per message
+	// (empty BotReview turns the marker off).
+	for _, m := range messages {
+		if err := h.messenger.AddReaction(ctx, m.Channel, m.MessageID, emoji); err != nil {
+			return err
+		}
+		if behavior.Reactions.BotReview != "" && isBot {
+			if err := h.messenger.AddReaction(ctx, m.Channel, m.MessageID, behavior.Reactions.BotReview); err != nil {
+				return err
+			}
+		}
 	}
 
 	// Record this review as activity so the stuck-PR digest stops nagging about
 	// the PR until it next goes quiet. Suppressed bot reviews return above and
 	// intentionally do not count — an ignored AI review is not human attention.
-	if err := h.messages.Touch(ctx, e.Repository, e.PR.Number); err != nil {
-		return err
-	}
-
-	// A bot reviewer that survived the suppression gate above gets a distinct
-	// marker alongside the normal state reaction, so its activity stays visible
-	// but recognisably non-human. Empty BotReview turns the marker off.
-	if mapping.Reactions.BotReview != "" && h.detector.IsBot(e.Sender.Type) {
-		return h.messenger.AddReaction(ctx, mapping.SlackChannel, stored.TS, mapping.Reactions.BotReview)
-	}
-	return nil
+	return h.store.Touch(ctx, e.Repository, e.PR.Number)
 }
 
 // ApproveHandler adds a reaction when a review is submitted with state
@@ -101,18 +103,16 @@ type ApproveHandler struct{ reactionHandler }
 
 // NewApproveHandler builds an ApproveHandler.
 func NewApproveHandler(
-	messages SlackMessages,
-	resolver Resolver,
+	store Store,
+	behavior RepoBehavior,
 	messenger Messenger,
 	logger *slog.Logger,
 	detector *aireview.Detector,
 ) *ApproveHandler {
 	return &ApproveHandler{reactionHandler{
-		name: "approve",
-		emojiOf: func(r store.Reactions) string {
-			return r.Approved
-		},
-		messages: messages, resolver: resolver, messenger: messenger, logger: logger, detector: detector,
+		name:    "approve",
+		emojiOf: approvedEmoji,
+		store:   store, behavior: behavior, messenger: messenger, logger: logger, detector: detector,
 		applicable: func(e Event) bool {
 			return e.Action == "submitted" && e.Review != nil && e.Review.State == "approved"
 		},
@@ -125,18 +125,16 @@ type CommentedHandler struct{ reactionHandler }
 
 // NewCommentedHandler builds a CommentedHandler.
 func NewCommentedHandler(
-	messages SlackMessages,
-	resolver Resolver,
+	store Store,
+	behavior RepoBehavior,
 	messenger Messenger,
 	logger *slog.Logger,
 	detector *aireview.Detector,
 ) *CommentedHandler {
 	return &CommentedHandler{reactionHandler{
-		name: "commented",
-		emojiOf: func(r store.Reactions) string {
-			return r.Commented
-		},
-		messages: messages, resolver: resolver, messenger: messenger, logger: logger, detector: detector,
+		name:    "commented",
+		emojiOf: commentedEmoji,
+		store:   store, behavior: behavior, messenger: messenger, logger: logger, detector: detector,
 		applicable: func(e Event) bool {
 			if e.GitHubEvent == "pull_request_review_comment" {
 				return e.Action == "created"
@@ -158,18 +156,16 @@ type RequestChangeHandler struct{ reactionHandler }
 
 // NewRequestChangeHandler builds a RequestChangeHandler.
 func NewRequestChangeHandler(
-	messages SlackMessages,
-	resolver Resolver,
+	store Store,
+	behavior RepoBehavior,
 	messenger Messenger,
 	logger *slog.Logger,
 	detector *aireview.Detector,
 ) *RequestChangeHandler {
 	return &RequestChangeHandler{reactionHandler{
-		name: "request_change",
-		emojiOf: func(r store.Reactions) string {
-			return r.RequestChange
-		},
-		messages: messages, resolver: resolver, messenger: messenger, logger: logger, detector: detector,
+		name:    "request_change",
+		emojiOf: requestChangeEmoji,
+		store:   store, behavior: behavior, messenger: messenger, logger: logger, detector: detector,
 		applicable: func(e Event) bool {
 			return e.Action == "submitted" && e.Review != nil && e.Review.State == "changes_requested"
 		},

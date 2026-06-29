@@ -8,12 +8,6 @@ import (
 	"github.com/mptooling/notifycat/internal/store"
 )
 
-// Resolver is temporarily kept as a stub while handlers are being migrated
-// from Resolve to ResolveTargets. Handlers will be updated in later tasks.
-type Resolver interface {
-	Resolve(ctx context.Context, repository string, prNumber int) (store.RepoMapping, error)
-}
-
 // PathMappings is the slice of the mappings provider the Router consumes.
 type PathMappings interface {
 	Get(ctx context.Context, repository string) (store.RepoMapping, error)
