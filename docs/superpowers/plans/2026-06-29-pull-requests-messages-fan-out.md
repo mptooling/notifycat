@@ -794,12 +794,12 @@ git commit -m "feat: Router.ResolveTargets returns fan-out targets"
   - `PullRequestStore` (consumed by all handlers): `AddMessage(ctx, repository string, prNumber int, channel, messageID string) error`, `Messages(ctx, repository string, prNumber int) ([]store.Message, error)`, `Touch(...)`, `MarkClosed(...)`, `Delete(...)`.
   - `RepoBehavior` (close/draft/review): `Get(ctx, repository string) (store.RepoMapping, error)`.
   - `TargetResolver` (open): `ResolveTargets(ctx, repository string, prNumber int) (store.RepoMapping, []store.Target, error)`.
-- Removes: `SlackMessages` interface (replaced by `PullRequestStore`).
+- Keeps (for now): the existing `SlackMessages` interface and the `Resolver` stub (router.go) stay so the not-yet-migrated handlers keep compiling. They are deleted in Task 12's cleanup once every handler has migrated. This task is purely ADDITIVE — the package still compiles and its tests still pass.
 
-- [ ] **Step 1: Replace the interfaces in `deps.go`**
+- [ ] **Step 1: Add the new interfaces in `deps.go`** (do NOT remove `SlackMessages`)
 
 ```go
-// internal/pullrequest/deps.go (replace SlackMessages with these; keep Messenger from Task 4)
+// internal/pullrequest/deps.go (ADD these alongside the existing SlackMessages + Messenger)
 
 // PullRequestStore persists tracked PRs and their per-channel messages.
 type PullRequestStore interface {
@@ -822,11 +822,16 @@ type TargetResolver interface {
 }
 ```
 
-- [ ] **Step 2: Commit** (build still red mid-cutover; that's fine — handlers come next)
+- [ ] **Step 2: Build + test** (additive — must stay green)
+
+Run: `go build ./internal/pullrequest/ && go test ./internal/pullrequest/`
+Expected: PASS (the new interfaces are unused for now; nothing else changed).
+
+- [ ] **Step 3: Commit**
 
 ```bash
 git add internal/pullrequest/deps.go
-git commit -m "refactor: pullrequest store/behavior/target interfaces for fan-out"
+git commit -m "refactor: add pullrequest store/behavior/target interfaces for fan-out"
 ```
 
 ### Task 9: Open handler fan-out
