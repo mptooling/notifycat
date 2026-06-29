@@ -9,12 +9,12 @@ import (
 	"github.com/mptooling/notifycat/internal/store"
 )
 
-// CloseHandler reacts to a PR being closed (merged or not). It updates the
-// original Slack message with a [Merged]/[Closed] decoration and, if enabled,
-// adds the corresponding reaction emoji.
+// CloseHandler reacts to a PR being closed (merged or not). It updates every
+// stored Slack message with a [Merged]/[Closed] decoration and, if enabled,
+// adds the corresponding reaction emoji to each one.
 type CloseHandler struct {
-	messages  SlackMessages
-	resolver  Resolver
+	store     PullRequestStore
+	behavior  RepoBehavior
 	messenger Messenger
 	composer  *slack.Composer
 	logger    *slog.Logger
@@ -22,16 +22,16 @@ type CloseHandler struct {
 
 // NewCloseHandler builds a CloseHandler.
 func NewCloseHandler(
-	messages SlackMessages,
-	resolver Resolver,
-	messenger Messenger,
+	store PullRequestStore,
+	behavior RepoBehavior,
+	slackClient Messenger,
 	composer *slack.Composer,
 	logger *slog.Logger,
 ) *CloseHandler {
 	return &CloseHandler{
-		messages:  messages,
-		resolver:  resolver,
-		messenger: messenger,
+		store:     store,
+		behavior:  behavior,
+		messenger: slackClient,
 		composer:  composer,
 		logger:    logger,
 	}
@@ -40,53 +40,51 @@ func NewCloseHandler(
 // Applicable returns true when the action is "closed".
 func (h *CloseHandler) Applicable(e Event) bool { return e.Action == "closed" }
 
-// Handle updates the stored Slack message and optionally adds a reaction.
+// Handle updates every stored Slack message and optionally adds a reaction to each.
 func (h *CloseHandler) Handle(ctx context.Context, e Event) error {
-	stored, err := h.messages.Get(ctx, e.Repository, e.PR.Number)
+	messages, err := h.store.Messages(ctx, e.Repository, e.PR.Number)
 	if errors.Is(err, store.ErrNotFound) {
-		h.logger.Info("ignored webhook event",
-			slog.String("reason", "no_stored_message"),
-			slog.String("handler", "close"),
-			slog.String("github_event", e.GitHubEvent),
-			slog.String("action", e.Action),
-			slog.String("repository", e.Repository),
-			slog.Int("pr", e.PR.Number),
-		)
+		h.logIgnored(e, "no_stored_message")
 		return nil
 	}
 	if err != nil {
 		return err
 	}
 
-	mapping, err := h.resolver.Resolve(ctx, e.Repository, e.PR.Number)
+	behavior, err := h.behavior.Get(ctx, e.Repository)
 	if errors.Is(err, store.ErrNotFound) {
-		h.logger.Warn("ignored webhook event",
-			slog.String("reason", "no_mapping"),
-			slog.String("handler", "close"),
-			slog.String("github_event", e.GitHubEvent),
-			slog.String("action", e.Action),
-			slog.String("repository", e.Repository),
-			slog.Int("pr", e.PR.Number),
-		)
+		h.logIgnored(e, "no_mapping")
 		return nil
 	}
 	if err != nil {
 		return err
 	}
 
-	emoji := mapping.Reactions.ClosedPR
+	emoji := behavior.Reactions.ClosedPR
 	if e.PR.Merged {
-		emoji = mapping.Reactions.MergedPR
+		emoji = behavior.Reactions.MergedPR
 	}
 	updated := h.composer.UpdatedMessage(slackPRFrom(e), e.PR.Merged, emoji)
-	if err := h.messenger.UpdateMessage(ctx, mapping.SlackChannel, stored.TS, updated); err != nil {
-		return err
+	for _, m := range messages {
+		if err := h.messenger.UpdateMessage(ctx, m.Channel, m.MessageID, updated); err != nil {
+			return err
+		}
+		if behavior.Reactions.Enabled {
+			if err := h.messenger.AddReaction(ctx, m.Channel, m.MessageID, emoji); err != nil {
+				return err
+			}
+		}
 	}
-	if err := h.messages.MarkClosed(ctx, e.Repository, e.PR.Number); err != nil {
-		return err
-	}
-	if !mapping.Reactions.Enabled {
-		return nil
-	}
-	return h.messenger.AddReaction(ctx, mapping.SlackChannel, stored.TS, emoji)
+	return h.store.MarkClosed(ctx, e.Repository, e.PR.Number)
+}
+
+func (h *CloseHandler) logIgnored(e Event, reason string) {
+	h.logger.Warn("ignored webhook event",
+		slog.String("reason", reason),
+		slog.String("handler", "close"),
+		slog.String("github_event", e.GitHubEvent),
+		slog.String("action", e.Action),
+		slog.String("repository", e.Repository),
+		slog.Int("pr", e.PR.Number),
+	)
 }

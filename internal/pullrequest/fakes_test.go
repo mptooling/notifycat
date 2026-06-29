@@ -263,3 +263,39 @@ func (f *fakeMessenger) postsByChannel() map[string]int {
 	}
 	return out
 }
+
+// updates returns the total number of UpdateMessage calls recorded.
+func (f *fakeMessenger) updates() int {
+	n := 0
+	for _, c := range f.calls {
+		if c.Method == "UpdateMessage" {
+			n++
+		}
+	}
+	return n
+}
+
+// reactions returns the total number of AddReaction calls recorded.
+func (f *fakeMessenger) reactions() int {
+	n := 0
+	for _, c := range f.calls {
+		if c.Method == "AddReaction" {
+			n++
+		}
+	}
+	return n
+}
+
+// fakeBehavior is an in-memory RepoBehavior that returns a fixed RepoMapping
+// (or a fixed error). Use err = store.ErrNotFound to simulate no mapping.
+type fakeBehavior struct {
+	m   store.RepoMapping
+	err error
+}
+
+func (f *fakeBehavior) Get(_ context.Context, _ string) (store.RepoMapping, error) {
+	if f.err != nil {
+		return store.RepoMapping{}, f.err
+	}
+	return f.m, nil
+}
