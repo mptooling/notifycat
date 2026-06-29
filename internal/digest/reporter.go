@@ -17,9 +17,9 @@ import (
 	"github.com/mptooling/notifycat/internal/store"
 )
 
-// StuckFinder returns open PRs whose last activity predates cutoff.
+// StuckFinder returns open PRs (with their messages) idle since before cutoff.
 type StuckFinder interface {
-	FindStuck(ctx context.Context, cutoff time.Time) ([]store.SlackMessage, error)
+	FindStuck(ctx context.Context, cutoff time.Time) ([]store.PullRequest, error)
 }
 
 // MappingLookup resolves a repository to its Slack channel and mentions.
@@ -103,16 +103,16 @@ func (r *Reporter) report(ctx context.Context, include func(repo string) bool) e
 	now := r.now().In(r.tz)
 	cutoff := startOfDay(now)
 
-	rows, err := r.finder.FindStuck(ctx, cutoff)
+	prs, err := r.finder.FindStuck(ctx, cutoff)
 	if err != nil {
 		return fmt.Errorf("digest: find stuck: %w", err)
 	}
-	if len(rows) == 0 {
+	if len(prs) == 0 {
 		r.logger.Debug("stuck-pr digest: nothing to report")
 		return nil
 	}
 
-	for _, g := range r.groupByChannel(ctx, rows, now, include) {
+	for _, g := range r.groupByChannel(ctx, prs, now, include) {
 		ts, err := r.slack.PostMessage(ctx, g.channel, r.composer.StuckDigestParent(g.mentions, len(g.prs)))
 		if err != nil {
 			r.logger.Error("stuck-pr digest: parent post failed",
@@ -141,56 +141,53 @@ type channelGroup struct {
 	prs      []slack.StuckPR
 }
 
-// groupByChannel buckets stuck rows by their mapped Slack channel, preserving
-// first-seen channel order for stable output and unioning mentions across the
-// entries that feed one channel. Rows whose repo has no mapping, or for which
-// include returns false, are skipped.
-func (r *Reporter) groupByChannel(ctx context.Context, rows []store.SlackMessage, now time.Time, include func(repo string) bool) []channelGroup {
+// groupByChannel buckets stuck PRs by their stored message channels, preserving
+// first-seen channel order for stable output. Base mentions are added to a
+// channel group only when that channel equals the repo's base SlackChannel;
+// messages living in path (fan-out) channels get no @-ping. PRs whose repo has
+// no mapping, or for which include returns false, are skipped.
+func (r *Reporter) groupByChannel(ctx context.Context, prs []store.PullRequest, now time.Time, include func(repo string) bool) []channelGroup {
 	var order []string
 	byChannel := map[string]*channelGroup{}
 	mentionSeen := map[string]map[string]bool{}
 
-	for _, row := range rows {
-		if !include(row.Repository) {
-			r.logger.Debug("stuck-pr digest: skipping repo by schedule filter",
-				slog.String("repository", row.Repository),
-				slog.Int("pr", row.PRNumber))
+	for _, pr := range prs {
+		if !include(pr.Repository) {
 			continue
 		}
-
-		mapping, err := r.mappings.Get(ctx, row.Repository)
+		mapping, err := r.mappings.Get(ctx, pr.Repository)
 		if errors.Is(err, store.ErrNotFound) {
-			r.logger.Debug("stuck-pr digest: skipping unmapped repo",
-				slog.String("repository", row.Repository),
-				slog.Int("pr", row.PRNumber))
 			continue
 		}
 		if err != nil {
 			r.logger.Error("stuck-pr digest: mapping lookup failed",
-				slog.String("repository", row.Repository),
-				slog.Any("err", err))
+				slog.String("repository", pr.Repository), slog.Any("err", err))
 			continue
 		}
-
-		g := byChannel[mapping.SlackChannel]
-		if g == nil {
-			g = &channelGroup{channel: mapping.SlackChannel}
-			byChannel[mapping.SlackChannel] = g
-			mentionSeen[mapping.SlackChannel] = map[string]bool{}
-			order = append(order, mapping.SlackChannel)
-		}
-		for _, m := range mapping.Mentions {
-			if !mentionSeen[g.channel][m] {
-				mentionSeen[g.channel][m] = true
-				g.mentions = append(g.mentions, m)
+		for _, m := range pr.Messages {
+			g := byChannel[m.Channel]
+			if g == nil {
+				g = &channelGroup{channel: m.Channel}
+				byChannel[m.Channel] = g
+				mentionSeen[m.Channel] = map[string]bool{}
+				order = append(order, m.Channel)
 			}
+			// Base mentions only when the stored channel is the repo's base channel.
+			if m.Channel == mapping.SlackChannel {
+				for _, mention := range mapping.Mentions {
+					if !mentionSeen[m.Channel][mention] {
+						mentionSeen[m.Channel][mention] = true
+						g.mentions = append(g.mentions, mention)
+					}
+				}
+			}
+			g.prs = append(g.prs, slack.StuckPR{
+				Repository: pr.Repository,
+				Number:     pr.PRNumber,
+				URL:        prURL(pr.Repository, pr.PRNumber),
+				IdleDays:   idleDays(now, pr.UpdatedAt),
+			})
 		}
-		g.prs = append(g.prs, slack.StuckPR{
-			Repository: row.Repository,
-			Number:     row.PRNumber,
-			URL:        prURL(row.Repository, row.PRNumber),
-			IdleDays:   idleDays(now, row.UpdatedAt),
-		})
 	}
 
 	out := make([]channelGroup, 0, len(order))

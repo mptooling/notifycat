@@ -26,29 +26,36 @@ func sectionTextOf(m slack.Message) string {
 	return ""
 }
 
-type fakeFinder struct{ rows []store.SlackMessage }
+type fakeFinder struct{ prs []store.PullRequest }
 
-func (f fakeFinder) FindStuck(context.Context, time.Time) ([]store.SlackMessage, error) {
-	return f.rows, nil
+func (f fakeFinder) FindStuck(context.Context, time.Time) ([]store.PullRequest, error) {
+	return f.prs, nil
 }
 
 // recordingFinder captures the cutoff it was asked for so a test can assert the
 // digest computed "start of day" in the configured timezone.
 type recordingFinder struct{ cutoff time.Time }
 
-func (f *recordingFinder) FindStuck(_ context.Context, cutoff time.Time) ([]store.SlackMessage, error) {
+func (f *recordingFinder) FindStuck(_ context.Context, cutoff time.Time) ([]store.PullRequest, error) {
 	f.cutoff = cutoff
 	return nil, nil
 }
 
-type fakeMappings struct{ byRepo map[string]store.RepoMapping }
+type fakeMappings struct {
+	byRepo map[string]store.RepoMapping
+	// base is returned for every repository when byRepo is nil.
+	base store.RepoMapping
+}
 
 func (f fakeMappings) Get(_ context.Context, repo string) (store.RepoMapping, error) {
-	m, ok := f.byRepo[repo]
-	if !ok {
-		return store.RepoMapping{}, store.ErrNotFound
+	if f.byRepo != nil {
+		m, ok := f.byRepo[repo]
+		if !ok {
+			return store.RepoMapping{}, store.ErrNotFound
+		}
+		return m, nil
 	}
-	return m, nil
+	return f.base, nil
 }
 
 type fakeDigestResolver struct {
@@ -81,15 +88,55 @@ func (f *fakePoster) PostReply(_ context.Context, channel, threadTS string, msg 
 	return "reply-" + channel, nil
 }
 
+// channels returns the set of channels that received at least one post.
+func (f *fakePoster) channels() map[string]bool {
+	m := map[string]bool{}
+	for _, c := range f.calls {
+		m[c.channel] = true
+	}
+	return m
+}
+
+// mentionsFor returns the mention tokens from the parent (non-threaded) post for
+// channel. The StuckDigestParent format is ":emoji: m1,m2, N open PR..."; this
+// extracts the comma-separated mention list that precedes the count. Returns nil
+// when no mentions were included.
+func (f *fakePoster) mentionsFor(channel string) []string {
+	for _, c := range f.calls {
+		if c.channel != channel || c.threadTS != "" {
+			continue
+		}
+		text := sectionTextOf(c.msg)
+		// Skip past the leading ":emoji: " token.
+		const sep = ": "
+		start := strings.Index(text, sep)
+		if start < 0 || start+len(sep) >= len(text) {
+			return nil
+		}
+		rest := text[start+len(sep):]
+		if !strings.HasPrefix(rest, "<") {
+			return nil // no mentions prefix
+		}
+		// Mentions prefix ends at ", N" where N is a digit (the PR count).
+		for i := 0; i < len(rest)-2; i++ {
+			if rest[i] == ',' && rest[i+1] == ' ' && rest[i+2] >= '0' && rest[i+2] <= '9' {
+				return strings.Split(rest[:i], ",")
+			}
+		}
+		return nil
+	}
+	return nil
+}
+
 func TestReporter_Report_PostsParentThenThreadedListPerChannel(t *testing.T) {
 	now := time.Date(2026, 6, 8, 9, 0, 0, 0, time.Local)
 	twoDaysAgo := time.Date(2026, 6, 6, 12, 0, 0, 0, time.Local)
 
-	finder := fakeFinder{rows: []store.SlackMessage{
-		{PRNumber: 42, Repository: "acme/api", TS: "t1", UpdatedAt: twoDaysAgo},
-		{PRNumber: 51, Repository: "acme/web", TS: "t2", UpdatedAt: twoDaysAgo},
-		{PRNumber: 88, Repository: "beta/x", TS: "t3", UpdatedAt: twoDaysAgo},
-		{PRNumber: 99, Repository: "ghost/unmapped", TS: "t4", UpdatedAt: twoDaysAgo},
+	finder := fakeFinder{prs: []store.PullRequest{
+		{PRNumber: 42, Repository: "acme/api", UpdatedAt: twoDaysAgo, Messages: []store.Message{{Channel: "C_ACME", MessageID: "t1"}}},
+		{PRNumber: 51, Repository: "acme/web", UpdatedAt: twoDaysAgo, Messages: []store.Message{{Channel: "C_ACME", MessageID: "t2"}}},
+		{PRNumber: 88, Repository: "beta/x", UpdatedAt: twoDaysAgo, Messages: []store.Message{{Channel: "C_BETA", MessageID: "t3"}}},
+		{PRNumber: 99, Repository: "ghost/unmapped", UpdatedAt: twoDaysAgo, Messages: []store.Message{{Channel: "C_GHOST", MessageID: "t4"}}},
 	}}
 	mapp := fakeMappings{byRepo: map[string]store.RepoMapping{
 		"acme/api": {Repository: "acme/api", SlackChannel: "C_ACME", Mentions: []string{"<!channel>"}},
@@ -164,9 +211,9 @@ func TestReporter_Report_NoPRDuplicatedAcrossChannels(t *testing.T) {
 	now := time.Date(2026, 6, 8, 9, 0, 0, 0, time.Local)
 	twoDaysAgo := time.Date(2026, 6, 6, 12, 0, 0, 0, time.Local)
 
-	finder := fakeFinder{rows: []store.SlackMessage{
-		{PRNumber: 42, Repository: "acme/api", TS: "t1", UpdatedAt: twoDaysAgo},
-		{PRNumber: 42, Repository: "beta/web", TS: "t2", UpdatedAt: twoDaysAgo}, // same number, different repo
+	finder := fakeFinder{prs: []store.PullRequest{
+		{PRNumber: 42, Repository: "acme/api", UpdatedAt: twoDaysAgo, Messages: []store.Message{{Channel: "C_ACME", MessageID: "t1"}}},
+		{PRNumber: 42, Repository: "beta/web", UpdatedAt: twoDaysAgo, Messages: []store.Message{{Channel: "C_BETA", MessageID: "t2"}}}, // same number, different repo
 	}}
 	mapp := fakeMappings{byRepo: map[string]store.RepoMapping{
 		"acme/api": {Repository: "acme/api", SlackChannel: "C_ACME"},
@@ -211,7 +258,7 @@ func TestReporter_Report_NoPRDuplicatedAcrossChannels(t *testing.T) {
 
 func TestReporter_Report_NoStuckPRsPostsNothing(t *testing.T) {
 	poster := &fakePoster{}
-	r := NewReporter(fakeFinder{}, fakeMappings{}, poster, slack.NewComposer("eyes"), fakeDigestResolver{}, discardLogger(), time.Local)
+	r := NewReporter(fakeFinder{}, fakeMappings{byRepo: map[string]store.RepoMapping{}}, poster, slack.NewComposer("eyes"), fakeDigestResolver{}, discardLogger(), time.Local)
 
 	if err := r.Report(context.Background()); err != nil {
 		t.Fatalf("Report: %v", err)
@@ -225,10 +272,10 @@ func TestReporter_ReportSchedule_FiltersReposBySchedule(t *testing.T) {
 	now := time.Date(2026, 6, 8, 9, 0, 0, 0, time.Local)
 	twoDaysAgo := time.Date(2026, 6, 6, 12, 0, 0, 0, time.Local)
 
-	finder := fakeFinder{rows: []store.SlackMessage{
-		{PRNumber: 42, Repository: "acme/api", TS: "t1", UpdatedAt: twoDaysAgo},      // 9am schedule
-		{PRNumber: 51, Repository: "acme/web", TS: "t2", UpdatedAt: twoDaysAgo},      // 6pm schedule
-		{PRNumber: 88, Repository: "beta/disabled", TS: "t3", UpdatedAt: twoDaysAgo}, // disabled
+	finder := fakeFinder{prs: []store.PullRequest{
+		{PRNumber: 42, Repository: "acme/api", UpdatedAt: twoDaysAgo, Messages: []store.Message{{Channel: "C_ACME", MessageID: "t1"}}},      // 9am schedule
+		{PRNumber: 51, Repository: "acme/web", UpdatedAt: twoDaysAgo, Messages: []store.Message{{Channel: "C_ACME", MessageID: "t2"}}},      // 6pm schedule
+		{PRNumber: 88, Repository: "beta/disabled", UpdatedAt: twoDaysAgo, Messages: []store.Message{{Channel: "C_BETA", MessageID: "t3"}}}, // disabled
 	}}
 	mapp := fakeMappings{byRepo: map[string]store.RepoMapping{
 		"acme/api":      {Repository: "acme/api", SlackChannel: "C_ACME", Mentions: []string{"<!channel>"}},
@@ -300,7 +347,7 @@ func TestReporter_CutoffHonorsTimezone(t *testing.T) {
 		t.Fatalf("load location: %v", err)
 	}
 	rec := &recordingFinder{}
-	r := NewReporter(rec, fakeMappings{}, &fakePoster{}, slack.NewComposer("eyes"), fakeDigestResolver{}, discardLogger(), ny)
+	r := NewReporter(rec, fakeMappings{byRepo: map[string]store.RepoMapping{}}, &fakePoster{}, slack.NewComposer("eyes"), fakeDigestResolver{}, discardLogger(), ny)
 	// 2026-06-08 02:00 UTC is 2026-06-07 22:00 in New York (EDT). The digest's
 	// "start of day" cutoff must therefore be 2026-06-07 00:00 NY, not 06-08:
 	// the configured zone — not the instant's own zone — drives the boundary.
@@ -316,6 +363,38 @@ func TestReporter_CutoffHonorsTimezone(t *testing.T) {
 	}
 	if loc := rec.cutoff.Location().String(); loc != "America/New_York" {
 		t.Errorf("cutoff location = %q; want America/New_York", loc)
+	}
+}
+
+// TestDigest_GroupsByStoredMessageChannel verifies that a PR with messages in
+// multiple channels produces a reminder in each stored channel, and that base
+// mentions are only added to the repo's base channel (not fan-out channels).
+func TestDigest_GroupsByStoredMessageChannel(t *testing.T) {
+	longAgo := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	finder := fakeFinder{prs: []store.PullRequest{{
+		Repository: "acme/mono", PRNumber: 7, UpdatedAt: longAgo,
+		Messages: []store.Message{
+			{Channel: "C0BASE", MessageID: "1"},
+			{Channel: "C0AUTH", MessageID: "2"},
+		},
+	}}}
+	mapp := fakeMappings{base: store.RepoMapping{SlackChannel: "C0BASE", Mentions: []string{"<!subteam^S0ENG>"}}}
+	poster := &fakePoster{}
+	r := NewReporter(finder, mapp, poster, slack.NewComposer("eyes"), fakeDigestResolver{}, discardLogger(), time.UTC)
+
+	if err := r.Report(context.Background()); err != nil {
+		t.Fatalf("Report: %v", err)
+	}
+	posted := poster.channels()
+	if !posted["C0BASE"] || !posted["C0AUTH"] {
+		t.Fatalf("want a reminder in each stored channel; got %+v", posted)
+	}
+	// Base mentions only on the base channel.
+	if got := poster.mentionsFor("C0AUTH"); len(got) != 0 {
+		t.Errorf("path channel should get no ping without stored mentions; got %v", got)
+	}
+	if got := poster.mentionsFor("C0BASE"); len(got) == 0 {
+		t.Errorf("base channel should carry base mentions; got none")
 	}
 }
 
