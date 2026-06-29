@@ -16,6 +16,12 @@ import (
 const (
 	defaultBaseURL    = "https://api.github.com"
 	defaultMaxRespMiB = 1
+	// filesMaxRespMiB is a roomier per-page cap for the pull-request files
+	// endpoint, whose rows embed the file patch and so run far larger than the
+	// other endpoints' JSON. Oversized responses are truncated (then fail to
+	// decode), which path routing treats as a soft failure and falls back to the
+	// repo tier.
+	filesMaxRespMiB = 16
 )
 
 // Client talks to the GitHub REST API.
@@ -253,6 +259,68 @@ func (c *Client) listOrgReposPage(ctx context.Context, target string) ([]string,
 	out := make([]string, 0, len(page))
 	for _, r := range page {
 		out = append(out, r.Name)
+	}
+	return out, parseNextLink(resp.Header.Get("Link")), nil
+}
+
+// ListPullRequestFiles returns the repo-relative paths of every file changed in
+// a PR, following GitHub's Link header for pagination. Path routing uses it to
+// decide which directory rules a PR touches. An empty result is possible (a PR
+// with no file changes).
+func (c *Client) ListPullRequestFiles(ctx context.Context, owner, repo string, number int) ([]string, error) {
+	next := fmt.Sprintf("/repos/%s/%s/pulls/%d/files?per_page=100",
+		url.PathEscape(owner), url.PathEscape(repo), number)
+	var files []string
+	for next != "" {
+		page, nextURL, err := c.listPullRequestFilesPage(ctx, next)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, page...)
+		next = nextURL
+	}
+	return files, nil
+}
+
+func (c *Client) listPullRequestFilesPage(ctx context.Context, target string) ([]string, string, error) {
+	reqURL := target
+	if strings.HasPrefix(target, "/") {
+		reqURL = c.baseURL + target
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("github: build list-pull-request-files request: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+
+	resp, err := c.httpClient.Do(req) //nolint:gosec // baseURL operator-controlled
+	if err != nil {
+		return nil, "", fmt.Errorf("github: list-pull-request-files: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	const maxBytes int64 = filesMaxRespMiB << 20
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes))
+	if err != nil {
+		return nil, "", fmt.Errorf("github: list-pull-request-files: read body: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, "", &APIError{Method: "list-pull-request-files", Status: resp.StatusCode, Message: extractMessage(body)}
+	}
+
+	var page []struct {
+		Filename string `json:"filename"`
+	}
+	if err := json.Unmarshal(body, &page); err != nil {
+		return nil, "", fmt.Errorf("github: list-pull-request-files: decode: %w", err)
+	}
+	out := make([]string, 0, len(page))
+	for _, file := range page {
+		out = append(out, file.Filename)
 	}
 	return out, parseNextLink(resp.Header.Get("Link")), nil
 }

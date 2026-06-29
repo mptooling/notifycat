@@ -14,6 +14,11 @@ type Entry struct {
 	Wildcard bool
 	Channel  string
 	Mentions []string
+	// PathChannels are the distinct channels a repo's `paths:` rules add on top
+	// of Channel (sorted, deduped). They feed both validation (bot membership)
+	// and the entry hash, so adding or repointing a path channel re-triggers
+	// validation. Always empty for a wildcard entry (paths are named-tier only).
+	PathChannels []string
 }
 
 // Key returns the lock-file key for the entry: "org/repo" or "org/*".
@@ -35,10 +40,11 @@ func (e Entry) Hash() string {
 		repo = "*"
 	}
 	payload := struct {
-		Org     string `json:"org"`
-		Repo    string `json:"repo"`
-		Channel string `json:"channel"`
-	}{e.Org, repo, e.Channel}
+		Org          string   `json:"org"`
+		Repo         string   `json:"repo"`
+		Channel      string   `json:"channel"`
+		PathChannels []string `json:"path_channels,omitempty"`
+	}{e.Org, repo, e.Channel, e.PathChannels}
 	// json.Marshal cannot fail for a fixed struct of supported types.
 	b, _ := json.Marshal(payload)
 	sum := sha256.Sum256(b)

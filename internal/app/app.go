@@ -105,14 +105,24 @@ func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, *digest.Schedule
 		}
 	}
 
+	// Path routing needs a GitHub token to read a PR's changed files; without
+	// one the Router has no fetcher and resolves to the repo/org tier (the
+	// inert-paths case is warned above). The validation client is request-scoped
+	// to startup, so build a dedicated long-lived files fetcher here.
+	var filesFetcher pullrequest.ChangedFiles
+	if cfg.GitHubToken.Reveal() != "" {
+		filesFetcher = github.NewClient(httpClient, cfg.GitHubToken.Reveal(), github.WithBaseURL(cfg.GitHubBaseURL))
+	}
+	router := pullrequest.NewRouter(provider, filesFetcher, logger)
+
 	dispatcher := pullrequest.NewDispatcher(
 		logger,
-		pullrequest.NewOpenHandler(messages, provider, slackClient, composer, logger),
-		pullrequest.NewCloseHandler(messages, provider, slackClient, composer, logger),
-		pullrequest.NewDraftHandler(messages, provider, slackClient, logger),
-		pullrequest.NewApproveHandler(messages, provider, slackClient, logger, aiDetector),
-		pullrequest.NewCommentedHandler(messages, provider, slackClient, logger, aiDetector),
-		pullrequest.NewRequestChangeHandler(messages, provider, slackClient, logger, aiDetector),
+		pullrequest.NewOpenHandler(messages, router, slackClient, composer, logger),
+		pullrequest.NewCloseHandler(messages, router, slackClient, composer, logger),
+		pullrequest.NewDraftHandler(messages, router, slackClient, logger),
+		pullrequest.NewApproveHandler(messages, router, slackClient, logger, aiDetector),
+		pullrequest.NewCommentedHandler(messages, router, slackClient, logger, aiDetector),
+		pullrequest.NewRequestChangeHandler(messages, router, slackClient, logger, aiDetector),
 	)
 
 	mux := http.NewServeMux()

@@ -3,6 +3,7 @@ package mappings
 import (
 	"context"
 	"log/slog"
+	"sort"
 	"strings"
 
 	"github.com/mptooling/notifycat/internal/store"
@@ -27,6 +28,43 @@ func (p *Provider) HasPathRules() bool {
 		}
 	}
 	return false
+}
+
+// RepoHasPathRules reports whether the specific repository's tier configures a
+// `paths:` block. The runtime uses it to decide, per webhook, whether fetching
+// the PR's changed files is worthwhile — repos without path rules skip the
+// GitHub call entirely.
+func (p *Provider) RepoHasPathRules(repository string) bool {
+	_, repoCfg := p.lookup(repository)
+	return repoCfg != nil && len(repoCfg.Paths) > 0
+}
+
+// PathChannels returns the distinct channels explicitly set on the repository's
+// path rules (those that override the base channel), in sorted order. The base
+// channel is validated separately; these are the extra Slack channels path
+// routing can post to, so validation must confirm the bot is in each.
+func (p *Provider) PathChannels(repository string) []string {
+	_, repoCfg := p.lookup(repository)
+	if repoCfg == nil {
+		return nil
+	}
+	return pathChannels(repoCfg.Paths)
+}
+
+// pathChannels returns the distinct, sorted channels explicitly set on a set of
+// path rules. Rules that omit a channel (they inherit the base) contribute
+// nothing.
+func pathChannels(paths []PathRule) []string {
+	seen := map[string]bool{}
+	var channels []string
+	for _, rule := range paths {
+		if rule.Channel != "" && !seen[rule.Channel] {
+			seen[rule.Channel] = true
+			channels = append(channels, rule.Channel)
+		}
+	}
+	sort.Strings(channels)
+	return channels
 }
 
 // GetForFiles resolves routing for a PR whose changed files are `files`

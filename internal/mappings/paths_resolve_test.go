@@ -233,3 +233,33 @@ func TestHasPathRules(t *testing.T) {
 		t.Error("HasPathRules() = true; want false")
 	}
 }
+
+func TestRepoHasPathRules(t *testing.T) {
+	p := providerDoc(t, monorepoDoc)
+	if !p.RepoHasPathRules("acme/the-monorepo") {
+		t.Error("RepoHasPathRules(acme/the-monorepo) = false; want true")
+	}
+	if p.RepoHasPathRules("acme/other") {
+		t.Error("RepoHasPathRules(acme/other) = true; want false (unmapped)")
+	}
+	plain := providerDoc(t, "mappings:\n  acme:\n    plain:\n      channel: C0PLAIN0000\n")
+	if plain.RepoHasPathRules("acme/plain") {
+		t.Error("RepoHasPathRules(acme/plain) = true; want false (no paths)")
+	}
+}
+
+func TestPathChannels_DistinctSorted(t *testing.T) {
+	doc := "mappings:\n  acme:\n    mono:\n      channel: C0BASE00000\n      paths:\n" +
+		"        \"/a\": {channel: C0ZZZ00000}\n" +
+		"        \"/b\": {channel: C0AAA00000}\n" +
+		"        \"/c\": {channel: C0AAA00000}\n" + // duplicate
+		"        \"/d\": {mentions: []}\n" // no channel → not listed
+	p := providerDoc(t, doc)
+	got := p.PathChannels("acme/mono")
+	if !slices.Equal(got, []string{"C0AAA00000", "C0ZZZ00000"}) {
+		t.Errorf("PathChannels = %v; want sorted distinct [C0AAA00000 C0ZZZ00000]", got)
+	}
+	if p.PathChannels("acme/unmapped") != nil {
+		t.Error("PathChannels(unmapped) should be nil")
+	}
+}

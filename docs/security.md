@@ -13,9 +13,8 @@ Run through this before you point a production webhook at Notifycat:
   [File permissions](#file-permissions) to confirm or fix an existing install.
 - [ ] `GITHUB_WEBHOOK_SECRET` is a long random string (32+ characters), set to the **same** value in `.env` and in the
   GitHub webhook settings.
-- [ ] The running server has **no** GitHub token configured — it needs only the webhook secret to verify deliveries.
-- [ ] If you set the optional `GITHUB_TOKEN`, it is read-only (fine-grained **Webhooks: Read**), not a write-scoped
-  `repo` PAT.
+- [ ] Unless you use per-path routing, the running server has **no** GitHub token configured — it needs only the webhook secret to verify deliveries.
+- [ ] If you set the optional `GITHUB_TOKEN`, it is read-only (fine-grained **Webhooks: Read**, plus **Pull requests: Read** if you use per-path routing), not a write-scoped `repo` PAT.
 - [ ] The Slack bot has only the [documented scopes](slack-app.md#bot-scopes) — nothing broader.
 - [ ] Public traffic terminates TLS in front of Notifycat (the Compose install does this with Caddy); the server itself
   speaks plain HTTP only on the internal network.
@@ -37,11 +36,12 @@ as `chat:write` on every channel. If a setup guide ever asks you to over-provisi
 
 ### The optional read-only GitHub token
 
-`GITHUB_TOKEN` is **not** used by the server. It is read only by `notifycat-config validate` (and the doctor, which delegates to the same check) to query a repository's webhook configuration and confirm the expected PR events are subscribed. Without it, that one coverage check is skipped and everything else works.
+By default `GITHUB_TOKEN` is **not** used by the server. It is read by `notifycat-config validate` (and the doctor, which delegates to the same check) to query a repository's webhook configuration and confirm the expected PR events are subscribed. Without it, that one coverage check is skipped and everything else works.
 
-When you do set it, a fine-grained token with **Webhooks: Read** on the target repository is enough. Creating a webhook
-in the first place needs **Webhooks: Read and write** (or classic `admin:repo_hook`); see
-[GitHub webhook setup](github-webhook.md#security-notes) — but the ongoing validation token never needs write.
+The one runtime use is **[per-path routing](mappings.md#per-path-routing-monorepos)**: when a repo's mapping has a `paths:` block, the server reads each PR's changed files (`GET /repos/{o}/{r}/pulls/{n}/files`) to pick the path channel. Without a token those path rules are inert and PRs route to the repo tier (the doctor and startup log say so). If you don't use `paths:`, the server still needs no token.
+
+When you do set it, a fine-grained token with **Webhooks: Read** on the target repository is enough for validation; add **Pull requests: Read** if you use per-path routing. Creating a webhook in the first place needs **Webhooks: Read and write** (or classic `admin:repo_hook`); see
+[GitHub webhook setup](github-webhook.md#security-notes) — but neither validation nor path routing ever needs write.
 
 ## Signature validation — why the secret matters
 
