@@ -77,8 +77,8 @@ func (f *fakeRepoMappings) Resolve(_ context.Context, repository string, _ int) 
 	return m, nil
 }
 
-// fakeSlackClient is a fake Messenger implementation that records every call so tests can assert what happened.
-type fakeSlackClient struct {
+// fakeMessenger is a fake Messenger implementation that records every call so tests can assert what happened.
+type fakeMessenger struct {
 	postedTSCounter int
 	calls           []slackCall
 
@@ -101,7 +101,7 @@ type slackCall struct {
 	Name string
 }
 
-func (f *fakeSlackClient) PostMessage(_ context.Context, channel string, msg slack.Message) (string, error) {
+func (f *fakeMessenger) PostMessage(_ context.Context, channel string, msg slack.Message) (string, error) {
 	if f.postErr != nil {
 		return "", f.postErr
 	}
@@ -111,11 +111,11 @@ func (f *fakeSlackClient) PostMessage(_ context.Context, channel string, msg sla
 	return ts, nil
 }
 
-func (f *fakeSlackClient) UpdateMessage(_ context.Context, channel, ts string, msg slack.Message) error {
+func (f *fakeMessenger) UpdateMessage(_ context.Context, channel, messageID string, msg slack.Message) error {
 	if f.updateErr != nil {
 		return f.updateErr
 	}
-	f.calls = append(f.calls, slackCall{Method: "UpdateMessage", Channel: channel, TS: ts, Msg: msg, Text: sectionTextOf(msg)})
+	f.calls = append(f.calls, slackCall{Method: "UpdateMessage", Channel: channel, TS: messageID, Msg: msg, Text: sectionTextOf(msg)})
 	return nil
 }
 
@@ -139,23 +139,23 @@ func contextTextOf(m slack.Message) string {
 	return ""
 }
 
-func (f *fakeSlackClient) DeleteMessage(_ context.Context, channel, ts string) error {
+func (f *fakeMessenger) DeleteMessage(_ context.Context, channel, messageID string) error {
 	if f.deleteErr != nil {
 		return f.deleteErr
 	}
-	f.calls = append(f.calls, slackCall{Method: "DeleteMessage", Channel: channel, TS: ts})
+	f.calls = append(f.calls, slackCall{Method: "DeleteMessage", Channel: channel, TS: messageID})
 	return nil
 }
 
-func (f *fakeSlackClient) AddReaction(_ context.Context, channel, ts, name string) error {
+func (f *fakeMessenger) AddReaction(_ context.Context, channel, messageID, name string) error {
 	if f.reactErr != nil {
 		return f.reactErr
 	}
-	f.calls = append(f.calls, slackCall{Method: "AddReaction", Channel: channel, TS: ts, Name: name})
+	f.calls = append(f.calls, slackCall{Method: "AddReaction", Channel: channel, TS: messageID, Name: name})
 	return nil
 }
 
-func (f *fakeSlackClient) methods() []string {
+func (f *fakeMessenger) methods() []string {
 	out := make([]string, len(f.calls))
 	for i, c := range f.calls {
 		out[i] = c.Method

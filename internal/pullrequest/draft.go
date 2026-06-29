@@ -12,24 +12,24 @@ import (
 // Slack notification and forgets the message TS — the PR will be re-announced
 // when it's marked ready_for_review again.
 type DraftHandler struct {
-	messages SlackMessages
-	resolver Resolver
-	slack    Messenger
-	logger   *slog.Logger
+	messages  SlackMessages
+	resolver  Resolver
+	messenger Messenger
+	logger    *slog.Logger
 }
 
 // NewDraftHandler builds a DraftHandler.
 func NewDraftHandler(
 	messages SlackMessages,
 	resolver Resolver,
-	slackClient Messenger,
+	messenger Messenger,
 	logger *slog.Logger,
 ) *DraftHandler {
 	return &DraftHandler{
-		messages: messages,
-		resolver: resolver,
-		slack:    slackClient,
-		logger:   logger,
+		messages:  messages,
+		resolver:  resolver,
+		messenger: messenger,
+		logger:    logger,
 	}
 }
 
@@ -70,7 +70,7 @@ func (h *DraftHandler) Handle(ctx context.Context, e Event) error {
 		return err
 	}
 
-	if err := h.slack.DeleteMessage(ctx, mapping.SlackChannel, stored.TS); err != nil {
+	if err := h.messenger.DeleteMessage(ctx, mapping.SlackChannel, stored.TS); err != nil {
 		return err
 	}
 	return h.messages.Delete(ctx, e.Repository, e.PR.Number)

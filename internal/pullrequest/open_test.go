@@ -19,7 +19,7 @@ func newOpenHandler(
 	t *testing.T,
 	msgs *fakeSlackMessages,
 	mappings *fakeRepoMappings,
-	client *fakeSlackClient,
+	client *fakeMessenger,
 ) *pullrequest.OpenHandler {
 	t.Helper()
 	return pullrequest.NewOpenHandler(
@@ -30,7 +30,7 @@ func newOpenHandler(
 }
 
 func TestOpenHandler_Applicable(t *testing.T) {
-	h := newOpenHandler(t, newFakeSlackMessages(), newFakeRepoMappings(), &fakeSlackClient{})
+	h := newOpenHandler(t, newFakeSlackMessages(), newFakeRepoMappings(), &fakeMessenger{})
 
 	cases := []struct {
 		name string
@@ -59,7 +59,7 @@ func TestOpenHandler_Handle_PostsAndStoresTS(t *testing.T) {
 		DependabotFormat: true,
 		Reactions:        store.Reactions{NewPR: "rocket"},
 	})
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := newOpenHandler(t, msgs, mappings, client)
 
 	e := pullrequest.Event{
@@ -97,7 +97,7 @@ func TestOpenHandler_Handle_ThreadsCreatedAtAndFallback(t *testing.T) {
 		DependabotFormat: true,
 		Reactions:        store.Reactions{NewPR: "rocket"},
 	})
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := newOpenHandler(t, msgs, mappings, client)
 
 	created := time.Date(2026, 6, 5, 14, 4, 0, 0, time.UTC)
@@ -131,7 +131,7 @@ func TestOpenHandler_Handle_SkipsIfMessageAlreadyExists(t *testing.T) {
 		DependabotFormat: true,
 		Reactions:        store.Reactions{NewPR: "rocket"},
 	})
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := newOpenHandler(t, msgs, mappings, client)
 
 	e := pullrequest.Event{
@@ -150,7 +150,7 @@ func TestOpenHandler_Handle_SkipsIfMessageAlreadyExists(t *testing.T) {
 func TestOpenHandler_Handle_SkipsIfNoMapping(t *testing.T) {
 	msgs := newFakeSlackMessages()
 	mappings := newFakeRepoMappings() // empty
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := newOpenHandler(t, msgs, mappings, client)
 
 	e := pullrequest.Event{
@@ -173,7 +173,7 @@ func TestOpenHandler_Handle_DependabotRoutine(t *testing.T) {
 		DependabotFormat: true,
 		Reactions:        store.Reactions{NewPR: "rocket"},
 	})
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := newOpenHandler(t, msgs, mappings, client)
 
 	e := pullrequest.Event{
@@ -204,7 +204,7 @@ func TestOpenHandler_Handle_DependabotSecurity(t *testing.T) {
 		DependabotFormat: true,
 		Reactions:        store.Reactions{NewPR: "rocket"},
 	})
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := newOpenHandler(t, msgs, mappings, client)
 
 	e := pullrequest.Event{
@@ -235,7 +235,7 @@ func TestOpenHandler_Handle_Renovate(t *testing.T) {
 		DependabotFormat: true,
 		Reactions:        store.Reactions{NewPR: "rocket"},
 	})
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := newOpenHandler(t, msgs, mappings, client)
 
 	e := pullrequest.Event{
@@ -266,7 +266,7 @@ func TestOpenHandler_Handle_DependabotReadyForReviewByHuman(t *testing.T) {
 		DependabotFormat: true,
 		Reactions:        store.Reactions{NewPR: "rocket"},
 	})
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := newOpenHandler(t, msgs, mappings, client)
 
 	e := pullrequest.Event{
@@ -296,7 +296,7 @@ func TestOpenHandler_Handle_DependabotFormatDisabled(t *testing.T) {
 		Repository: "octo/widget", SlackChannel: "C123",
 		DependabotFormat: false,
 	})
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := newOpenHandler(t, msgs, mappings, client)
 
 	e := pullrequest.Event{
@@ -325,7 +325,7 @@ func TestOpenHandler_Handle_DependabotEmptyMentions(t *testing.T) {
 		DependabotFormat: true,
 		Reactions:        store.Reactions{NewPR: "rocket"},
 	})
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := newOpenHandler(t, msgs, mappings, client)
 
 	e := pullrequest.Event{
@@ -351,7 +351,7 @@ func TestOpenHandler_Handle_DoesNotPersistOnSlackFailure(t *testing.T) {
 		DependabotFormat: true,
 		Reactions:        store.Reactions{NewPR: "rocket"},
 	})
-	client := &fakeSlackClient{postErr: errInjected}
+	client := &fakeMessenger{postErr: errInjected}
 	h := newOpenHandler(t, msgs, mappings, client)
 
 	e := pullrequest.Event{

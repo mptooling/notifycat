@@ -14,27 +14,27 @@ import (
 // ready_for_review. It posts the first Slack message for the PR and records
 // the message TS for later updates.
 type OpenHandler struct {
-	messages SlackMessages
-	resolver Resolver
-	slack    Messenger
-	composer *slack.Composer
-	logger   *slog.Logger
+	messages  SlackMessages
+	resolver  Resolver
+	messenger Messenger
+	composer  *slack.Composer
+	logger    *slog.Logger
 }
 
 // NewOpenHandler builds an OpenHandler.
 func NewOpenHandler(
 	messages SlackMessages,
 	resolver Resolver,
-	slackClient Messenger,
+	messenger Messenger,
 	composer *slack.Composer,
 	logger *slog.Logger,
 ) *OpenHandler {
 	return &OpenHandler{
-		messages: messages,
-		resolver: resolver,
-		slack:    slackClient,
-		composer: composer,
-		logger:   logger,
+		messages:  messages,
+		resolver:  resolver,
+		messenger: messenger,
+		composer:  composer,
+		logger:    logger,
 	}
 }
 
@@ -82,7 +82,7 @@ func (h *OpenHandler) Handle(ctx context.Context, e Event) error {
 	}
 
 	msg := h.composeMessage(e, mapping)
-	ts, err := h.slack.PostMessage(ctx, mapping.SlackChannel, msg)
+	ts, err := h.messenger.PostMessage(ctx, mapping.SlackChannel, msg)
 	if err != nil {
 		return err
 	}

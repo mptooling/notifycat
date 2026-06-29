@@ -12,7 +12,7 @@ import (
 	"github.com/mptooling/notifycat/internal/store"
 )
 
-func newCloseHandler(t *testing.T, msgs *fakeSlackMessages, mappings *fakeRepoMappings, client *fakeSlackClient) *pullrequest.CloseHandler {
+func newCloseHandler(t *testing.T, msgs *fakeSlackMessages, mappings *fakeRepoMappings, client *fakeMessenger) *pullrequest.CloseHandler {
 	t.Helper()
 	return pullrequest.NewCloseHandler(
 		msgs, mappings, client,
@@ -22,7 +22,7 @@ func newCloseHandler(t *testing.T, msgs *fakeSlackMessages, mappings *fakeRepoMa
 }
 
 func TestCloseHandler_Applicable(t *testing.T) {
-	h := newCloseHandler(t, newFakeSlackMessages(), newFakeRepoMappings(), &fakeSlackClient{})
+	h := newCloseHandler(t, newFakeSlackMessages(), newFakeRepoMappings(), &fakeMessenger{})
 
 	if !h.Applicable(pullrequest.Event{Action: "closed"}) {
 		t.Error("closed should be applicable")
@@ -45,7 +45,7 @@ func TestCloseHandler_Handle_UpdatesMessage(t *testing.T) {
 			ClosedPR: "x",
 		},
 	})
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := newCloseHandler(t, msgs, mappings, client)
 
 	e := pullrequest.Event{
@@ -98,7 +98,7 @@ func TestCloseHandler_Handle_ClosedNotMergedUsesClosedEmoji(t *testing.T) {
 			ClosedPR: "x",
 		},
 	})
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := newCloseHandler(t, msgs, mappings, client)
 
 	e := pullrequest.Event{
@@ -129,7 +129,7 @@ func TestCloseHandler_Handle_NoReactionWhenDisabled(t *testing.T) {
 			ClosedPR: "x",
 		},
 	})
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := newCloseHandler(t, msgs, mappings, client)
 
 	e := pullrequest.Event{
@@ -156,7 +156,7 @@ func TestCloseHandler_Handle_MarksClosed(t *testing.T) {
 			ClosedPR: "x",
 		},
 	})
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 
 	// Reactions disabled, to prove MarkClosed is independent of reactions.
 	h := newCloseHandler(t, msgs, mappings, client)
@@ -183,7 +183,7 @@ func TestCloseHandler_Handle_NoStoredMessageDoesNotMarkClosed(t *testing.T) {
 			ClosedPR: "x",
 		},
 	})
-	h := newCloseHandler(t, msgs, mappings, &fakeSlackClient{})
+	h := newCloseHandler(t, msgs, mappings, &fakeMessenger{})
 
 	e := pullrequest.Event{Action: "closed", Repository: "octo/widget", PR: pullrequest.PR{Number: 42}}
 	if err := h.Handle(context.Background(), e); err != nil {
@@ -204,7 +204,7 @@ func TestCloseHandler_Handle_NoStoredMessageIsNoop(t *testing.T) {
 			ClosedPR: "x",
 		},
 	})
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := newCloseHandler(t, msgs, mappings, client)
 
 	e := pullrequest.Event{
