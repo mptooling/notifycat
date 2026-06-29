@@ -67,7 +67,7 @@ func run(args []string) error {
 		}
 	}()
 
-	messages := store.NewSlackMessages(db)
+	messages := store.NewPullRequests(db)
 	httpClient := &http.Client{Timeout: 10 * time.Second}
 	gh := github.NewClient(httpClient, cfg.GitHubToken.Reveal(), github.WithBaseURL(cfg.GitHubBaseURL))
 	rec := reconcile.NewReconciler(messages, reconcile.NewGitHubChecker(gh), messages, messages, logger, *dryRun)

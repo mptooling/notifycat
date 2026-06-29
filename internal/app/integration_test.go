@@ -222,11 +222,11 @@ func (f *integrationFixture) seedSlackMessage(t *testing.T, repository string, p
 			_ = sqlDB.Close()
 		}
 	}()
-	repo := store.NewSlackMessages(db)
-	if err := repo.Save(context.Background(), store.SlackMessage{
-		PRNumber: prNumber, Repository: repository, TS: ts,
-	}); err != nil {
-		t.Fatalf("seed Save: %v", err)
+	// Seed one stored message in the repo's mapped channel so the
+	// close/draft/review handlers (which read stored messages) have something
+	// to act on. All integration seeds target octo/widget → C123ABCDE.
+	if err := store.NewPullRequests(db).AddMessage(context.Background(), repository, prNumber, "C123ABCDE", ts); err != nil {
+		t.Fatalf("seed AddMessage: %v", err)
 	}
 }
 
@@ -263,19 +263,24 @@ func (f *integrationFixture) postEvent(t *testing.T, event, payload string) int 
 	return resp.StatusCode
 }
 
-// loadMessage helper used to verify the stored TS post-flow.
-func (f *integrationFixture) loadMessage(t *testing.T, repository string, prNumber int) (store.SlackMessage, error) {
+// loadMessage returns the first stored message for a PR, or ErrNotFound when
+// the PR has no stored messages — used to verify the stored message post-flow.
+func (f *integrationFixture) loadMessage(t *testing.T, repository string, prNumber int) (store.Message, error) {
 	t.Helper()
 	db, err := store.Open(f.cfg.DatabaseURL)
 	if err != nil {
-		return store.SlackMessage{}, err
+		return store.Message{}, err
 	}
 	defer func() {
 		if sqlDB, err := store.SQLDB(db); err == nil {
 			_ = sqlDB.Close()
 		}
 	}()
-	return store.NewSlackMessages(db).Get(context.Background(), repository, prNumber)
+	msgs, err := store.NewPullRequests(db).Messages(context.Background(), repository, prNumber)
+	if err != nil {
+		return store.Message{}, err
+	}
+	return msgs[0], nil
 }
 
 // ---------- the 6 event-type tests ----------
@@ -322,8 +327,8 @@ func TestIntegration_OpenedPR(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadMessage: %v", err)
 	}
-	if saved.TS == "" {
-		t.Errorf("saved TS is empty")
+	if saved.MessageID == "" {
+		t.Errorf("saved message id is empty")
 	}
 }
 

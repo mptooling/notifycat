@@ -56,13 +56,13 @@ type fakeStore struct {
 	gotNumber int
 }
 
-func (f *fakeStore) Get(_ context.Context, repository string, prNumber int) (store.SlackMessage, error) {
+func (f *fakeStore) Messages(_ context.Context, repository string, prNumber int) ([]store.Message, error) {
 	f.gotRepo = repository
 	f.gotNumber = prNumber
 	if f.ts == "" {
-		return store.SlackMessage{}, store.ErrNotFound
+		return nil, store.ErrNotFound
 	}
-	return store.SlackMessage{Repository: repository, PRNumber: prNumber, TS: f.ts}, nil
+	return []store.Message{{Channel: "C0SMOKE", MessageID: f.ts}}, nil
 }
 
 // fakeReactions stands in for the Slack reactions.get call.
