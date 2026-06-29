@@ -488,7 +488,7 @@ type Messenger interface {
 }
 ```
 
-- [ ] **Step 2: Update each handler's field type** — change `slack SlackClient` to `slack Messenger` in `open.go`, `close.go`, `draft.go`, `review_handlers.go` (field name `slack` stays; only the type changes). Constructor params `slackClient SlackClient` → `slackClient Messenger`.
+- [ ] **Step 2: Update each handler's field type** — change `slack SlackClient` to `messenger Messenger` in `open.go`, `close.go`, `draft.go`, `review_handlers.go` (field name `slack` stays; only the type changes). Constructor params `slackClient SlackClient` → `messenger Messenger`.
 
 - [ ] **Step 3: Build and test**
 
@@ -851,7 +851,7 @@ func TestOpenHandler_FansOutToEachTarget(t *testing.T) {
 			{Channel: "C0B", Mentions: []string{"<@U0B>"}},
 		},
 	}
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := pullrequest.NewOpenHandler(store, resolver, client, testComposer(), discardLogger())
 
 	if err := h.Handle(context.Background(), openedEvent("acme/web", 7)); err != nil {
@@ -867,7 +867,7 @@ func TestOpenHandler_FansOutToEachTarget(t *testing.T) {
 }
 ```
 
-**Note on fakes:** add to `internal/pullrequest/fakes_test.go` a `fakePRStore` implementing `PullRequestStore` (a `map[string][]store.Message` keyed by `repo#number`, with `AddMessage` deduping by channel), a `fakeTargetResolver{behavior, targets, err}` implementing `TargetResolver`, and on `fakeSlackClient` a `postsByChannel()` helper counting posts per channel. Replace the old `newFakeRepoMappings`/`Resolve`-based wiring used by the existing handler tests with these in this task and Tasks 10–12.
+**Note on fakes:** add to `internal/pullrequest/fakes_test.go` a `fakePRStore` implementing `PullRequestStore` (a `map[string][]store.Message` keyed by `repo#number`, with `AddMessage` deduping by channel), a `fakeTargetResolver{behavior, targets, err}` implementing `TargetResolver`, and on `fakeMessenger` a `postsByChannel()` helper counting posts per channel. Replace the old `newFakeRepoMappings`/`Resolve`-based wiring used by the existing handler tests with these in this task and Tasks 10–12.
 
 - [ ] **Step 2: Run test, verify it fails**
 
@@ -882,13 +882,13 @@ Expected: FAIL — constructor signature / behavior mismatch.
 type OpenHandler struct {
 	store    PullRequestStore
 	resolver TargetResolver
-	slack    Messenger
+	messenger    Messenger
 	composer *slack.Composer
 	logger   *slog.Logger
 }
 
-func NewOpenHandler(store PullRequestStore, resolver TargetResolver, slackClient Messenger, composer *slack.Composer, logger *slog.Logger) *OpenHandler {
-	return &OpenHandler{store: store, resolver: resolver, slack: slackClient, composer: composer, logger: logger}
+func NewOpenHandler(store PullRequestStore, resolver TargetResolver, messenger Messenger, composer *slack.Composer, logger *slog.Logger) *OpenHandler {
+	return &OpenHandler{store: store, resolver: resolver, messenger: messenger, composer: composer, logger: logger}
 }
 
 func (h *OpenHandler) Applicable(e Event) bool {
@@ -925,7 +925,7 @@ func (h *OpenHandler) Handle(ctx context.Context, e Event) error {
 			continue
 		}
 		msg := h.composeMessage(e, behavior, target.Mentions)
-		messageID, err := h.slack.PostMessage(ctx, target.Channel, msg)
+		messageID, err := h.messenger.PostMessage(ctx, target.Channel, msg)
 		if err != nil {
 			return err // successful channels are already saved; retry skips them
 		}
@@ -988,7 +988,7 @@ func TestCloseHandler_ActsOnEveryMessage(t *testing.T) {
 	_ = st.AddMessage(context.Background(), "acme/web", 7, "C0A", "100.1")
 	_ = st.AddMessage(context.Background(), "acme/web", 7, "C0B", "200.1")
 	behavior := &fakeBehavior{m: storepkg.RepoMapping{Reactions: storepkg.Reactions{Enabled: true, MergedPR: "tada"}}}
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := pullrequest.NewCloseHandler(st, behavior, client, testComposer(), discardLogger())
 
 	if err := h.Handle(context.Background(), closedMergedEvent("acme/web", 7)); err != nil {
@@ -1000,7 +1000,7 @@ func TestCloseHandler_ActsOnEveryMessage(t *testing.T) {
 }
 ```
 
-(Add `fakeBehavior{ m store.RepoMapping }` implementing `RepoBehavior.Get` to `fakes_test.go`, plus `updates()`/`reactions()` counters on `fakeSlackClient`.)
+(Add `fakeBehavior{ m store.RepoMapping }` implementing `RepoBehavior.Get` to `fakes_test.go`, plus `updates()`/`reactions()` counters on `fakeMessenger`.)
 
 - [ ] **Step 2: Run test, verify it fails**
 
@@ -1015,13 +1015,13 @@ Expected: FAIL — constructor signature mismatch.
 type CloseHandler struct {
 	store    PullRequestStore
 	behavior RepoBehavior
-	slack    Messenger
+	messenger    Messenger
 	composer *slack.Composer
 	logger   *slog.Logger
 }
 
-func NewCloseHandler(store PullRequestStore, behavior RepoBehavior, slackClient Messenger, composer *slack.Composer, logger *slog.Logger) *CloseHandler {
-	return &CloseHandler{store: store, behavior: behavior, slack: slackClient, composer: composer, logger: logger}
+func NewCloseHandler(store PullRequestStore, behavior RepoBehavior, messenger Messenger, composer *slack.Composer, logger *slog.Logger) *CloseHandler {
+	return &CloseHandler{store: store, behavior: behavior, messenger: messenger, composer: composer, logger: logger}
 }
 
 func (h *CloseHandler) Applicable(e Event) bool { return e.Action == "closed" }
@@ -1050,11 +1050,11 @@ func (h *CloseHandler) Handle(ctx context.Context, e Event) error {
 	}
 	updated := h.composer.UpdatedMessage(slackPRFrom(e), e.PR.Merged, emoji)
 	for _, m := range messages {
-		if err := h.slack.UpdateMessage(ctx, m.Channel, m.MessageID, updated); err != nil {
+		if err := h.messenger.UpdateMessage(ctx, m.Channel, m.MessageID, updated); err != nil {
 			return err
 		}
 		if behavior.Reactions.Enabled {
-			if err := h.slack.AddReaction(ctx, m.Channel, m.MessageID, emoji); err != nil {
+			if err := h.messenger.AddReaction(ctx, m.Channel, m.MessageID, emoji); err != nil {
 				return err
 			}
 		}
@@ -1098,7 +1098,7 @@ func TestDraftHandler_DeletesEveryMessageAndRow(t *testing.T) {
 	st := newFakePRStore()
 	_ = st.AddMessage(context.Background(), "acme/web", 7, "C0A", "100.1")
 	_ = st.AddMessage(context.Background(), "acme/web", 7, "C0B", "200.1")
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := pullrequest.NewDraftHandler(st, client, discardLogger())
 
 	if err := h.Handle(context.Background(), draftEvent("acme/web", 7)); err != nil {
@@ -1113,7 +1113,7 @@ func TestDraftHandler_DeletesEveryMessageAndRow(t *testing.T) {
 }
 ```
 
-(Add `deletes()` counter to `fakeSlackClient`.)
+(Add `deletes()` counter to `fakeMessenger`.)
 
 - [ ] **Step 2: Run test, verify it fails**
 
@@ -1127,12 +1127,12 @@ Expected: FAIL — constructor signature mismatch.
 
 type DraftHandler struct {
 	store  PullRequestStore
-	slack  Messenger
+	messenger  Messenger
 	logger *slog.Logger
 }
 
-func NewDraftHandler(store PullRequestStore, slackClient Messenger, logger *slog.Logger) *DraftHandler {
-	return &DraftHandler{store: store, slack: slackClient, logger: logger}
+func NewDraftHandler(store PullRequestStore, messenger Messenger, logger *slog.Logger) *DraftHandler {
+	return &DraftHandler{store: store, messenger: messenger, logger: logger}
 }
 
 func (h *DraftHandler) Applicable(e Event) bool { return e.Action == "converted_to_draft" }
@@ -1150,7 +1150,7 @@ func (h *DraftHandler) Handle(ctx context.Context, e Event) error {
 		return err
 	}
 	for _, m := range messages {
-		if err := h.slack.DeleteMessage(ctx, m.Channel, m.MessageID); err != nil {
+		if err := h.messenger.DeleteMessage(ctx, m.Channel, m.MessageID); err != nil {
 			return err
 		}
 	}
@@ -1187,7 +1187,7 @@ func TestReactionHandler_ReactsOnEveryMessage(t *testing.T) {
 	_ = st.AddMessage(context.Background(), "acme/web", 7, "C0A", "100.1")
 	_ = st.AddMessage(context.Background(), "acme/web", 7, "C0B", "200.1")
 	behavior := &fakeBehavior{m: storepkg.RepoMapping{Reactions: storepkg.Reactions{Approved: "white_check_mark"}}}
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := pullrequest.NewApproveHandler(st, behavior, client, discardLogger(), testDetector())
 
 	if err := h.Handle(context.Background(), approvedEvent("acme/web", 7)); err != nil {
@@ -1218,7 +1218,7 @@ type reactionHandler struct {
 
 	store    PullRequestStore
 	behavior RepoBehavior
-	slack    Messenger
+	messenger    Messenger
 	logger   *slog.Logger
 	detector *aireview.Detector
 }
@@ -1251,11 +1251,11 @@ func (h *reactionHandler) Handle(ctx context.Context, e Event) error {
 
 	emoji := h.emojiOf(behavior.Reactions)
 	for _, m := range messages {
-		if err := h.slack.AddReaction(ctx, m.Channel, m.MessageID, emoji); err != nil {
+		if err := h.messenger.AddReaction(ctx, m.Channel, m.MessageID, emoji); err != nil {
 			return err
 		}
 		if behavior.Reactions.BotReview != "" && h.detector.IsBot(e.Sender.Type) {
-			if err := h.slack.AddReaction(ctx, m.Channel, m.MessageID, behavior.Reactions.BotReview); err != nil {
+			if err := h.messenger.AddReaction(ctx, m.Channel, m.MessageID, behavior.Reactions.BotReview); err != nil {
 				return err
 			}
 		}
@@ -1271,7 +1271,7 @@ func (h *reactionHandler) logIgnored(e Event, reason string) {
 }
 ```
 
-Update the three constructors `NewApproveHandler`/`NewCommentedHandler`/`NewRequestChangeHandler` to the signature `(store PullRequestStore, behavior RepoBehavior, slackClient Messenger, logger *slog.Logger, detector *aireview.Detector)` and set `store: store, behavior: behavior, slack: slackClient, logger: logger, detector: detector` in each literal.
+Update the three constructors `NewApproveHandler`/`NewCommentedHandler`/`NewRequestChangeHandler` to the signature `(store PullRequestStore, behavior RepoBehavior, messenger Messenger, logger *slog.Logger, detector *aireview.Detector)` and set `store: store, behavior: behavior, messenger: messenger, logger: logger, detector: detector` in each literal.
 
 - [ ] **Step 4: Run test, verify it passes**
 
