@@ -18,8 +18,8 @@ type DraftHandler struct {
 }
 
 // NewDraftHandler builds a DraftHandler.
-func NewDraftHandler(store PullRequestStore, slackClient Messenger, logger *slog.Logger) *DraftHandler {
-	return &DraftHandler{store: store, messenger: slackClient, logger: logger}
+func NewDraftHandler(store PullRequestStore, messenger Messenger, logger *slog.Logger) *DraftHandler {
+	return &DraftHandler{store: store, messenger: messenger, logger: logger}
 }
 
 // Applicable returns true when the action is "converted_to_draft".

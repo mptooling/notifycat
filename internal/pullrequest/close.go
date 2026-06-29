@@ -24,14 +24,14 @@ type CloseHandler struct {
 func NewCloseHandler(
 	store PullRequestStore,
 	behavior RepoBehavior,
-	slackClient Messenger,
+	messenger Messenger,
 	composer *slack.Composer,
 	logger *slog.Logger,
 ) *CloseHandler {
 	return &CloseHandler{
 		store:     store,
 		behavior:  behavior,
-		messenger: slackClient,
+		messenger: messenger,
 		composer:  composer,
 		logger:    logger,
 	}

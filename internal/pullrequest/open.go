@@ -14,8 +14,8 @@ import (
 // ready_for_review. It fans out one Slack message per resolved target channel
 // and records each message for later updates.
 type OpenHandler struct {
-	store    PullRequestStore
-	resolver TargetResolver
+	store     PullRequestStore
+	resolver  TargetResolver
 	messenger Messenger
 	composer  *slack.Composer
 	logger    *slog.Logger
@@ -25,14 +25,14 @@ type OpenHandler struct {
 func NewOpenHandler(
 	store PullRequestStore,
 	resolver TargetResolver,
-	slackClient Messenger,
+	messenger Messenger,
 	composer *slack.Composer,
 	logger *slog.Logger,
 ) *OpenHandler {
 	return &OpenHandler{
 		store:     store,
 		resolver:  resolver,
-		messenger: slackClient,
+		messenger: messenger,
 		composer:  composer,
 		logger:    logger,
 	}
