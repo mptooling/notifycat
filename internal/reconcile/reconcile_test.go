@@ -13,9 +13,9 @@ import (
 
 func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
 
-type fakeLister struct{ rows []store.SlackMessage }
+type fakeLister struct{ rows []store.PullRequest }
 
-func (f fakeLister) ListOpen(context.Context) ([]store.SlackMessage, error) { return f.rows, nil }
+func (f fakeLister) ListOpen(context.Context) ([]store.PullRequest, error) { return f.rows, nil }
 
 // fakeChecker reports openness by (repo,pr) key; missing key returns an error.
 type fakeChecker struct {
@@ -61,11 +61,11 @@ func (f *fakeStore) Delete(_ context.Context, repo string, pr int) error {
 	return nil
 }
 
-func rows() []store.SlackMessage {
-	return []store.SlackMessage{
-		{PRNumber: 1, Repository: "o/r", TS: "t1"}, // open
-		{PRNumber: 2, Repository: "o/r", TS: "t2"}, // closed → mark
-		{PRNumber: 3, Repository: "o/r", TS: "t3"}, // errors → skip
+func rows() []store.PullRequest {
+	return []store.PullRequest{
+		{PRNumber: 1, Repository: "o/r"}, // open
+		{PRNumber: 2, Repository: "o/r"}, // closed → mark
+		{PRNumber: 3, Repository: "o/r"}, // errors → skip
 	}
 }
 
@@ -92,7 +92,7 @@ func TestReconciler_MarksClosedOnly(t *testing.T) {
 func TestReconciler_NotFoundIsRemovedNotErrored(t *testing.T) {
 	checker := fakeChecker{err: map[string]error{key("o/r", 9): reconcile.ErrPRNotFound}}
 	closer := &fakeStore{}
-	rows := []store.SlackMessage{{PRNumber: 9, Repository: "o/r", TS: "t9"}}
+	rows := []store.PullRequest{{PRNumber: 9, Repository: "o/r"}}
 	r := reconcile.NewReconciler(fakeLister{rows}, checker, closer, closer, discardLogger(), false)
 
 	s, err := r.Run(context.Background())
@@ -110,7 +110,7 @@ func TestReconciler_NotFoundIsRemovedNotErrored(t *testing.T) {
 func TestReconciler_DraftIsRemovedNotErrored(t *testing.T) {
 	checker := fakeChecker{err: map[string]error{key("o/r", 7): reconcile.ErrPRDraft}}
 	closer := &fakeStore{}
-	rows := []store.SlackMessage{{PRNumber: 7, Repository: "o/r", TS: "t7"}}
+	rows := []store.PullRequest{{PRNumber: 7, Repository: "o/r"}}
 	r := reconcile.NewReconciler(fakeLister{rows}, checker, closer, closer, discardLogger(), false)
 
 	s, err := r.Run(context.Background())
@@ -131,7 +131,7 @@ func TestReconciler_DraftIsRemovedNotErrored(t *testing.T) {
 func TestReconciler_DryRunDoesNotDeleteDraft(t *testing.T) {
 	checker := fakeChecker{err: map[string]error{key("o/r", 7): reconcile.ErrPRDraft}}
 	closer := &fakeStore{}
-	rows := []store.SlackMessage{{PRNumber: 7, Repository: "o/r", TS: "t7"}}
+	rows := []store.PullRequest{{PRNumber: 7, Repository: "o/r"}}
 	r := reconcile.NewReconciler(fakeLister{rows}, checker, closer, closer, discardLogger(), true)
 
 	s, err := r.Run(context.Background())
@@ -149,7 +149,7 @@ func TestReconciler_DryRunDoesNotDeleteDraft(t *testing.T) {
 func TestReconciler_DryRunDoesNotRemoveNotFound(t *testing.T) {
 	checker := fakeChecker{err: map[string]error{key("o/r", 9): reconcile.ErrPRNotFound}}
 	closer := &fakeStore{}
-	rows := []store.SlackMessage{{PRNumber: 9, Repository: "o/r", TS: "t9"}}
+	rows := []store.PullRequest{{PRNumber: 9, Repository: "o/r"}}
 	r := reconcile.NewReconciler(fakeLister{rows}, checker, closer, closer, discardLogger(), true)
 
 	s, err := r.Run(context.Background())
