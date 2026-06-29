@@ -31,3 +31,23 @@ type Messenger interface {
 	DeleteMessage(ctx context.Context, channel, messageID string) error
 	AddReaction(ctx context.Context, channel, messageID, name string) error
 }
+
+// PullRequestStore persists tracked PRs and their per-channel messages.
+type PullRequestStore interface {
+	AddMessage(ctx context.Context, repository string, prNumber int, channel, messageID string) error
+	Messages(ctx context.Context, repository string, prNumber int) ([]store.Message, error)
+	Touch(ctx context.Context, repository string, prNumber int) error
+	MarkClosed(ctx context.Context, repository string, prNumber int) error
+	Delete(ctx context.Context, repository string, prNumber int) error
+}
+
+// RepoBehavior resolves a repository's per-repo behavioral config (reactions,
+// review flags). Close/draft/review need it but not the per-channel targets.
+type RepoBehavior interface {
+	Get(ctx context.Context, repository string) (store.RepoMapping, error)
+}
+
+// TargetResolver resolves the open fan-out: per-repo behavior + per-channel targets.
+type TargetResolver interface {
+	ResolveTargets(ctx context.Context, repository string, prNumber int) (store.RepoMapping, []store.Target, error)
+}
