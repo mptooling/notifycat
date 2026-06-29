@@ -210,8 +210,8 @@ func primeLock(t *testing.T, configPath string, p *mappings.Provider) {
 	}
 }
 
-// seedSlackMessage inserts a SlackMessage row directly.
-func (f *integrationFixture) seedSlackMessage(t *testing.T, repository string, prNumber int, ts string) {
+// seedMessage seeds one stored message for a PR.
+func (f *integrationFixture) seedMessage(t *testing.T, repository string, prNumber int, ts string) {
 	t.Helper()
 	db, err := store.Open(f.cfg.DatabaseURL)
 	if err != nil {
@@ -334,7 +334,7 @@ func TestIntegration_OpenedPR(t *testing.T) {
 
 func TestIntegration_ClosedMerged(t *testing.T) {
 	f := newIntegrationFixture(t, mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: []string{"@alice"}})
-	f.seedSlackMessage(t, "octo/widget", 42, "prev-ts")
+	f.seedMessage(t, "octo/widget", 42, "prev-ts")
 
 	status := f.post(t, `{
 		"action": "closed",
@@ -363,7 +363,7 @@ func TestIntegration_ClosedMerged(t *testing.T) {
 
 func TestIntegration_ConvertedToDraft(t *testing.T) {
 	f := newIntegrationFixture(t, mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: []string{"@alice"}})
-	f.seedSlackMessage(t, "octo/widget", 42, "prev-ts")
+	f.seedMessage(t, "octo/widget", 42, "prev-ts")
 
 	status := f.post(t, `{
 		"action": "converted_to_draft",
@@ -384,7 +384,7 @@ func TestIntegration_ConvertedToDraft(t *testing.T) {
 
 func TestIntegration_ReviewApproved(t *testing.T) {
 	f := newIntegrationFixture(t, mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: nil})
-	f.seedSlackMessage(t, "octo/widget", 42, "prev-ts")
+	f.seedMessage(t, "octo/widget", 42, "prev-ts")
 
 	status := f.post(t, `{
 		"action": "submitted",
@@ -407,7 +407,7 @@ func TestIntegration_ReviewApproved(t *testing.T) {
 
 func TestIntegration_ReviewCommented(t *testing.T) {
 	f := newIntegrationFixture(t, mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: nil})
-	f.seedSlackMessage(t, "octo/widget", 42, "prev-ts")
+	f.seedMessage(t, "octo/widget", 42, "prev-ts")
 
 	status := f.post(t, `{
 		"action": "submitted",
@@ -430,7 +430,7 @@ func TestIntegration_ReviewCommented(t *testing.T) {
 
 func TestIntegration_PullRequestReviewLineComment(t *testing.T) {
 	f := newIntegrationFixture(t, mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: nil})
-	f.seedSlackMessage(t, "octo/widget", 42, "prev-ts")
+	f.seedMessage(t, "octo/widget", 42, "prev-ts")
 
 	status := f.postEvent(t, "pull_request_review_comment", `{
 		"action": "created",
@@ -453,7 +453,7 @@ func TestIntegration_PullRequestReviewLineComment(t *testing.T) {
 
 func TestIntegration_IssueCommentOnPR(t *testing.T) {
 	f := newIntegrationFixture(t, mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: nil})
-	f.seedSlackMessage(t, "octo/widget", 42, "prev-ts")
+	f.seedMessage(t, "octo/widget", 42, "prev-ts")
 
 	status := f.postEvent(t, "issue_comment", `{
 		"action": "created",
@@ -476,7 +476,7 @@ func TestIntegration_IssueCommentOnPR(t *testing.T) {
 
 func TestIntegration_IssueCommentOnPlainIssueIsIgnored(t *testing.T) {
 	f := newIntegrationFixture(t, mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: nil})
-	f.seedSlackMessage(t, "octo/widget", 42, "prev-ts")
+	f.seedMessage(t, "octo/widget", 42, "prev-ts")
 
 	status := f.postEvent(t, "issue_comment", `{
 		"action": "created",
@@ -495,7 +495,7 @@ func TestIntegration_IssueCommentOnPlainIssueIsIgnored(t *testing.T) {
 
 func TestIntegration_ReviewRequestChange(t *testing.T) {
 	f := newIntegrationFixture(t, mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: nil})
-	f.seedSlackMessage(t, "octo/widget", 42, "prev-ts")
+	f.seedMessage(t, "octo/widget", 42, "prev-ts")
 
 	status := f.post(t, `{
 		"action": "submitted",
@@ -671,7 +671,7 @@ func TestIntegration_IgnoreAIReviews_BotReviewSuppressesReaction(t *testing.T) {
 		func(c *config.Config) { c.IgnoreAIReviews = true },
 		mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: nil},
 	)
-	f.seedSlackMessage(t, "octo/widget", 42, "prev-ts")
+	f.seedMessage(t, "octo/widget", 42, "prev-ts")
 
 	status := f.post(t, `{
 		"action": "submitted",
@@ -694,7 +694,7 @@ func TestIntegration_IgnoreAIReviews_BotLineCommentSuppressesReaction(t *testing
 		func(c *config.Config) { c.IgnoreAIReviews = true },
 		mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: nil},
 	)
-	f.seedSlackMessage(t, "octo/widget", 42, "prev-ts")
+	f.seedMessage(t, "octo/widget", 42, "prev-ts")
 
 	status := f.postEvent(t, "pull_request_review_comment", `{
 		"action": "created",
@@ -716,7 +716,7 @@ func TestIntegration_IgnoreAIReviews_HumanReviewerStillReacts(t *testing.T) {
 		func(c *config.Config) { c.IgnoreAIReviews = true },
 		mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: nil},
 	)
-	f.seedSlackMessage(t, "octo/widget", 42, "prev-ts")
+	f.seedMessage(t, "octo/widget", 42, "prev-ts")
 
 	status := f.post(t, `{
 		"action": "submitted",
@@ -737,7 +737,7 @@ func TestIntegration_IgnoreAIReviews_HumanReviewerStillReacts(t *testing.T) {
 func TestIntegration_IgnoreAIReviewsDisabled_BotReviewerStillReacts(t *testing.T) {
 	// Flag defaults to false — bot reviewers behave exactly like humans.
 	f := newIntegrationFixture(t, mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: nil})
-	f.seedSlackMessage(t, "octo/widget", 42, "prev-ts")
+	f.seedMessage(t, "octo/widget", 42, "prev-ts")
 
 	status := f.post(t, `{
 		"action": "submitted",

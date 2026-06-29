@@ -12,26 +12,6 @@ import (
 // ErrNotFound is returned when a lookup matches no row.
 var ErrNotFound = errors.New("store: not found")
 
-// SlackMessage tracks the Slack message thread-timestamp for one PR in one
-// repository. (PRNumber, Repository) is the composite primary key — replaying
-// the same PR event simply updates the TS.
-//
-// UpdatedAt is bumped on Save (autoUpdateTime) and on Touch (review/comment
-// activity); it drives both the scheduled cleanup of stale rows and the
-// stuck-PR digest's idle detection. ClosedAt is set when the PR is
-// merged/closed so the digest skips it; nil means the PR is still open.
-type SlackMessage struct {
-	PRNumber   int        `gorm:"column:pr_number;primaryKey"`
-	Repository string     `gorm:"column:gh_repository;primaryKey"`
-	TS         string     `gorm:"column:ts;not null"`
-	UpdatedAt  time.Time  `gorm:"column:updated_at;autoUpdateTime;not null"`
-	ClosedAt   *time.Time `gorm:"column:closed_at"`
-}
-
-// TableName pins the table name to match the migration; do not rely on GORM's
-// pluralisation heuristics.
-func (SlackMessage) TableName() string { return "slack_messages" }
-
 // Reactions is the resolved per-repo reaction-emoji set (Slack emoji names
 // without colons). Enabled gates whether close/review reactions are added at
 // all. Empty BotReview disables the bot-reviewer marker.
