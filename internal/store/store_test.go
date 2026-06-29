@@ -305,3 +305,16 @@ func TestSlackMessages_DeleteStaleBefore_Empty(t *testing.T) {
 		t.Fatalf("DeleteStaleBefore on empty returned %d; want 0", deleted)
 	}
 }
+
+func TestMigrate_CreatesPullRequestsAndMessages(t *testing.T) {
+	db := store.NewTestDB(t)
+	for _, table := range []string{"pull_requests", "messages"} {
+		var name string
+		err := db.Raw(
+			"SELECT name FROM sqlite_master WHERE type='table' AND name=?", table,
+		).Scan(&name).Error
+		if err != nil || name != table {
+			t.Fatalf("table %q missing after migrate (got %q, err %v)", table, name, err)
+		}
+	}
+}
