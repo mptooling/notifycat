@@ -79,12 +79,19 @@ func (h *CloseHandler) Handle(ctx context.Context, e Event) error {
 }
 
 func (h *CloseHandler) logIgnored(e Event, reason string) {
-	h.logger.Warn("ignored webhook event",
+	attrs := []any{
 		slog.String("reason", reason),
 		slog.String("handler", "close"),
 		slog.String("github_event", e.GitHubEvent),
 		slog.String("action", e.Action),
 		slog.String("repository", e.Repository),
 		slog.Int("pr", e.PR.Number),
-	)
+	}
+	// no_mapping is an operator misconfiguration (warn); a missing stored
+	// message is a normal no-op (info), matching the pre-fan-out behavior.
+	if reason == "no_mapping" {
+		h.logger.Warn("ignored webhook event", attrs...)
+		return
+	}
+	h.logger.Info("ignored webhook event", attrs...)
 }
