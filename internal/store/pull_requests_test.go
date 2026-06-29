@@ -54,8 +54,9 @@ func TestPullRequests_FindStuckPreloadsMessages(t *testing.T) {
 	repo := store.NewPullRequests(store.NewTestDB(t))
 	ctx := context.Background()
 	_ = repo.AddMessage(ctx, "acme/web", 7, "C0A", "100.1")
-	// Age it past the cutoff.
 	_ = repo.Touch(ctx, "acme/web", 7)
+	// A far-future cutoff returns the (recently-touched) PR so we can assert its
+	// messages were preloaded.
 	stuck, err := repo.FindStuck(ctx, time.Now().Add(time.Hour))
 	if err != nil {
 		t.Fatalf("FindStuck: %v", err)

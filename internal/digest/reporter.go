@@ -153,6 +153,9 @@ func (r *Reporter) groupByChannel(ctx context.Context, prs []store.PullRequest, 
 
 	for _, pr := range prs {
 		if !include(pr.Repository) {
+			r.logger.Debug("stuck-pr digest: skipping repo by schedule filter",
+				slog.String("repository", pr.Repository),
+				slog.Int("pr", pr.PRNumber))
 			continue
 		}
 		mapping, err := r.mappings.Get(ctx, pr.Repository)

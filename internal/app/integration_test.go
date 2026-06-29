@@ -280,6 +280,9 @@ func (f *integrationFixture) loadMessage(t *testing.T, repository string, prNumb
 	if err != nil {
 		return store.Message{}, err
 	}
+	if len(msgs) == 0 {
+		return store.Message{}, store.ErrNotFound
+	}
 	return msgs[0], nil
 }
 
