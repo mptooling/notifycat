@@ -119,7 +119,7 @@ func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, *digest.Schedule
 		logger,
 		pullrequest.NewOpenHandler(messages, router, slackClient, composer, logger),
 		pullrequest.NewCloseHandler(messages, router, slackClient, composer, logger),
-		pullrequest.NewDraftHandler(messages, router, slackClient, logger),
+		pullrequest.NewDraftHandler(messages, slackClient, logger),
 		pullrequest.NewApproveHandler(messages, router, slackClient, logger, aiDetector),
 		pullrequest.NewCommentedHandler(messages, router, slackClient, logger, aiDetector),
 		pullrequest.NewRequestChangeHandler(messages, router, slackClient, logger, aiDetector),

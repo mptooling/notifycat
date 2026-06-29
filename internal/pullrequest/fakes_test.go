@@ -286,6 +286,17 @@ func (f *fakeMessenger) reactions() int {
 	return n
 }
 
+// deletes returns the total number of DeleteMessage calls recorded.
+func (f *fakeMessenger) deletes() int {
+	n := 0
+	for _, c := range f.calls {
+		if c.Method == "DeleteMessage" {
+			n++
+		}
+	}
+	return n
+}
+
 // fakeBehavior is an in-memory RepoBehavior that returns a fixed RepoMapping
 // (or a fixed error). Use err = store.ErrNotFound to simulate no mapping.
 type fakeBehavior struct {

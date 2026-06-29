@@ -3,26 +3,24 @@ package pullrequest_test
 import (
 	"bytes"
 	"context"
-	"errors"
 	"log/slog"
 	"testing"
 
 	"github.com/mptooling/notifycat/internal/pullrequest"
-	"github.com/mptooling/notifycat/internal/store"
+	storepkg "github.com/mptooling/notifycat/internal/store"
 )
 
-func newDraftHandler(t *testing.T, msgs *fakeSlackMessages, mappings *fakeRepoMappings, client *fakeMessenger) *pullrequest.DraftHandler {
-	t.Helper()
-	return pullrequest.NewDraftHandler(msgs, mappings, client, discardLogger())
-}
-
-func newDraftHandlerWithLogger(t *testing.T, msgs *fakeSlackMessages, mappings *fakeRepoMappings, client *fakeMessenger, logger *slog.Logger) *pullrequest.DraftHandler {
-	t.Helper()
-	return pullrequest.NewDraftHandler(msgs, mappings, client, logger)
+func draftEvent(repo string, prNumber int) pullrequest.Event {
+	return pullrequest.Event{
+		GitHubEvent: "pull_request",
+		Action:      "converted_to_draft",
+		Repository:  repo,
+		PR:          pullrequest.PR{Number: prNumber},
+	}
 }
 
 func TestDraftHandler_Applicable(t *testing.T) {
-	h := newDraftHandler(t, newFakeSlackMessages(), newFakeRepoMappings(), &fakeMessenger{})
+	h := pullrequest.NewDraftHandler(newFakePRStore(), &fakeMessenger{}, discardLogger())
 
 	if !h.Applicable(pullrequest.Event{Action: "converted_to_draft"}) {
 		t.Error("converted_to_draft should be applicable")
@@ -33,41 +31,30 @@ func TestDraftHandler_Applicable(t *testing.T) {
 }
 
 func TestDraftHandler_Handle_DeletesMessageAndRow(t *testing.T) {
-	msgs := newFakeSlackMessages()
-	_ = msgs.Save(context.Background(), store.SlackMessage{
-		PRNumber: 42, Repository: "octo/widget", TS: "ts1",
-	})
-	mappings := newFakeRepoMappings(store.RepoMapping{
-		Repository: "octo/widget", SlackChannel: "C123",
-	})
+	st := newFakePRStore()
+	_ = st.AddMessage(context.Background(), "octo/widget", 42, "C123", "ts1")
 	client := &fakeMessenger{}
-	h := newDraftHandler(t, msgs, mappings, client)
+	h := pullrequest.NewDraftHandler(st, client, discardLogger())
 
-	e := pullrequest.Event{
-		Action:     "converted_to_draft",
-		Repository: "octo/widget",
-		PR:         pullrequest.PR{Number: 42},
-	}
-	if err := h.Handle(context.Background(), e); err != nil {
+	if err := h.Handle(context.Background(), draftEvent("octo/widget", 42)); err != nil {
 		t.Fatalf("Handle: %v", err)
 	}
 
 	if !containsMethod(client.methods(), "DeleteMessage") {
 		t.Errorf("DeleteMessage not called: %v", client.methods())
 	}
-	if _, err := msgs.Get(context.Background(), "octo/widget", 42); !errors.Is(err, store.ErrNotFound) {
+	if _, err := st.Messages(context.Background(), "octo/widget", 42); err != storepkg.ErrNotFound {
 		t.Errorf("store row not deleted: err = %v", err)
 	}
 }
 
 func TestDraftHandler_Handle_NoStoredMessageIsNoop(t *testing.T) {
-	msgs := newFakeSlackMessages()
-	mappings := newFakeRepoMappings(store.RepoMapping{Repository: "octo/widget", SlackChannel: "C123"})
+	st := newFakePRStore()
 	client := &fakeMessenger{}
 
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	h := newDraftHandlerWithLogger(t, msgs, mappings, client, logger)
+	h := pullrequest.NewDraftHandler(st, client, logger)
 
 	e := pullrequest.Event{
 		GitHubEvent: "pull_request",
@@ -93,4 +80,22 @@ func TestDraftHandler_Handle_NoStoredMessageIsNoop(t *testing.T) {
 		"repository":   "octo/widget",
 		"pr":           float64(42),
 	})
+}
+
+func TestDraftHandler_DeletesEveryMessageAndRow(t *testing.T) {
+	st := newFakePRStore()
+	_ = st.AddMessage(context.Background(), "acme/web", 7, "C0A", "100.1")
+	_ = st.AddMessage(context.Background(), "acme/web", 7, "C0B", "200.1")
+	client := &fakeMessenger{}
+	h := pullrequest.NewDraftHandler(st, client, discardLogger())
+
+	if err := h.Handle(context.Background(), draftEvent("acme/web", 7)); err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+	if client.deletes() != 2 {
+		t.Fatalf("want 2 deletes; got %d", client.deletes())
+	}
+	if _, err := st.Messages(context.Background(), "acme/web", 7); err != storepkg.ErrNotFound {
+		t.Fatalf("PR row should be deleted; got %v", err)
+	}
 }
