@@ -134,9 +134,10 @@ mappings:
 
   # ── Per-path routing for monorepos (0.19+) ───────────────────────────────────────────────────────
   # A named repo tier may add `paths:` — per-directory channel/mentions overrides keyed by directory.
-  # A PR is routed by the directories its changed files touch; the most-specific (longest) matching
-  # directory wins the channel, and the mentions of every matched directory are unioned into that one
-  # message (single message per PR). A PR matching no path falls back to the repo tier, exactly as today.
+  # A PR is routed by the directories its changed files touch (most-specific/longest match per file).
+  # Matched rules are grouped by channel and the PR FANS OUT to one Slack message per matched channel,
+  # each pinging that channel's unioned mentions. A PR matching no path falls back to a single message
+  # on the repo tier, exactly as today. Later events (close/review) act on every fanned-out message.
   # NOTE: path matching reads a PR's changed files from the GitHub API, so it requires GITHUB_TOKEN.
   # Without a token the path rules are inert and the repo tier applies (surfaced by the doctor).
   epsilon:
