@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -26,14 +25,9 @@ func newOpenHandler(
 	return pullrequest.NewOpenHandler(
 		st, resolver, client,
 		testComposer(),
-		slog.New(slog.NewTextHandler(devNull{}, nil)),
+		discardLogger(),
 	)
 }
-
-// devNull satisfies io.Writer for the discard logger in this file.
-type devNull struct{}
-
-func (devNull) Write(p []byte) (int, error) { return len(p), nil }
 
 func openedEvent(repo string, prNumber int) pullrequest.Event {
 	return pullrequest.Event{
