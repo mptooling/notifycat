@@ -6,6 +6,15 @@ import (
 	"github.com/mptooling/notifycat/internal/store"
 )
 
+func TestPullRequestTableName(t *testing.T) {
+	if (store.PullRequest{}).TableName() != "pull_requests" {
+		t.Errorf("PullRequest.TableName = %q; want pull_requests", (store.PullRequest{}).TableName())
+	}
+	if (store.Message{}).TableName() != "messages" {
+		t.Errorf("Message.TableName = %q; want messages", (store.Message{}).TableName())
+	}
+}
+
 func TestRepoMapping_CarriesBehavioralConfig(t *testing.T) {
 	m := store.RepoMapping{
 		Repository:       "o/r",

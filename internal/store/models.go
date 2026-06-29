@@ -46,6 +46,44 @@ type Reactions struct {
 	BotReview     string
 }
 
+// PullRequest is one tracked PR. (Repository, PRNumber) is the natural key;
+// CreatedAt is kept for later statistics, UpdatedAt is the activity clock
+// (bumped on open and every review/comment) driving digest idle-detection and
+// cleanup, and ClosedAt (nil = open) marks merged/closed so the digest skips it.
+type PullRequest struct {
+	ID         uint       `gorm:"primaryKey"`
+	Repository string     `gorm:"column:gh_repository;not null"`
+	PRNumber   int        `gorm:"column:pr_number;not null"`
+	CreatedAt  time.Time  `gorm:"column:created_at;not null"`
+	UpdatedAt  time.Time  `gorm:"column:updated_at;not null"`
+	ClosedAt   *time.Time `gorm:"column:closed_at"`
+	Messages   []Message  `gorm:"foreignKey:PullRequestID;constraint:OnDelete:CASCADE"`
+}
+
+// TableName pins the table name; do not rely on GORM pluralization.
+func (PullRequest) TableName() string { return "pull_requests" }
+
+// Message is one posted messenger message for a PR. (PullRequestID, Channel) is
+// unique — at most one message per channel per PR. Channel is a room in the
+// messenger; MessageID is the messenger's id for the post (Slack's ts).
+type Message struct {
+	ID            uint   `gorm:"primaryKey"`
+	PullRequestID uint   `gorm:"column:pull_request_id;not null"`
+	Channel       string `gorm:"column:channel;not null"`
+	MessageID     string `gorm:"column:message_id;not null"`
+}
+
+// TableName pins the table name.
+func (Message) TableName() string { return "messages" }
+
+// Target is one fan-out destination resolved for a PR: a channel and the
+// mentions to ping there. Produced by the mappings resolver, consumed by the
+// open handler.
+type Target struct {
+	Channel  string
+	Mentions []string
+}
+
 // RepoMapping is the value object handlers and validators consume — a GitHub
 // repository routed to a Slack channel with an optional mentions list, and
 // resolved behavioral config (global defaults merged with org/* and org/repo
