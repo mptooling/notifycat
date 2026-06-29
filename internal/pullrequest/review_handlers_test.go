@@ -18,7 +18,7 @@ func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-func setupReviewFixture(t *testing.T) (*fakeSlackMessages, *fakeRepoMappings, *fakeSlackClient) {
+func setupReviewFixture(t *testing.T) (*fakeSlackMessages, *fakeRepoMappings, *fakeMessenger) {
 	t.Helper()
 	msgs := newFakeSlackMessages()
 	_ = msgs.Save(context.Background(), store.SlackMessage{
@@ -34,7 +34,7 @@ func setupReviewFixture(t *testing.T) (*fakeSlackMessages, *fakeRepoMappings, *f
 			RequestChange: "exclamation",
 		},
 	})
-	return msgs, mappings, &fakeSlackClient{}
+	return msgs, mappings, &fakeMessenger{}
 }
 
 // ----- Approve -----
@@ -105,7 +105,7 @@ func TestApproveHandler_IgnoreAIReviews_BotSenderDoesNotTouch(t *testing.T) {
 			Approved: "white_check_mark",
 		},
 	})
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), testDetector())
 
 	e := pullrequest.Event{
@@ -232,7 +232,7 @@ func TestApproveHandler_IgnoreAIReviews_BotSenderSuppressesReaction(t *testing.T
 			Approved: "white_check_mark",
 		},
 	})
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), testDetector())
 
 	e := pullrequest.Event{
@@ -262,7 +262,7 @@ func TestApproveHandler_IgnoreAIReviews_HumanSenderReacts(t *testing.T) {
 			Approved: "white_check_mark",
 		},
 	})
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), testDetector())
 
 	e := pullrequest.Event{
@@ -292,7 +292,7 @@ func TestApproveHandler_IgnoreAIReviewsFalse_BotSenderStillReacts(t *testing.T) 
 			Approved: "white_check_mark",
 		},
 	})
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), testDetector())
 
 	e := pullrequest.Event{
@@ -322,7 +322,7 @@ func TestCommentedHandler_IgnoreAIReviews_BotSenderSuppressesReaction(t *testing
 			Commented: "speech_balloon",
 		},
 	})
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), testDetector())
 
 	e := pullrequest.Event{
@@ -352,7 +352,7 @@ func TestCommentedHandler_IgnoreAIReviews_BotLineCommentSuppressed(t *testing.T)
 			Commented: "speech_balloon",
 		},
 	})
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), testDetector())
 
 	e := pullrequest.Event{
@@ -383,7 +383,7 @@ func TestRequestChangeHandler_IgnoreAIReviews_BotSenderSuppressesReaction(t *tes
 			RequestChange: "exclamation",
 		},
 	})
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := pullrequest.NewRequestChangeHandler(msgs, mappings, client, discardLogger(), testDetector())
 
 	e := pullrequest.Event{
@@ -413,7 +413,7 @@ func TestReactionHandler_SuppressedReactionLogsAtDebug(t *testing.T) {
 			Approved: "white_check_mark",
 		},
 	})
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	h := pullrequest.NewApproveHandler(msgs, mappings, client, logger, testDetector())
@@ -452,7 +452,7 @@ func TestCommentedHandler_BotMarker_AddsMarkerAlongsideStateReaction(t *testing.
 			BotReview: "robot_face",
 		},
 	})
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), testDetector())
 
 	e := pullrequest.Event{
@@ -486,7 +486,7 @@ func TestApproveHandler_BotMarker_AddsMarkerAlongsideStateReaction(t *testing.T)
 			BotReview: "robot_face",
 		},
 	})
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := pullrequest.NewApproveHandler(msgs, mappings, client, discardLogger(), testDetector())
 
 	e := pullrequest.Event{
@@ -517,7 +517,7 @@ func TestCommentedHandler_BotMarker_LineCommentBotGetsMarker(t *testing.T) {
 			BotReview: "robot_face",
 		},
 	})
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), testDetector())
 
 	e := pullrequest.Event{
@@ -549,7 +549,7 @@ func TestCommentedHandler_BotMarker_HumanGetsOnlyStateReaction(t *testing.T) {
 			BotReview: "robot_face",
 		},
 	})
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), testDetector())
 
 	e := pullrequest.Event{
@@ -582,7 +582,7 @@ func TestCommentedHandler_BotMarker_SuppressedBotGetsNothing(t *testing.T) {
 			BotReview: "robot_face",
 		},
 	})
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := pullrequest.NewCommentedHandler(msgs, mappings, client, discardLogger(), testDetector())
 
 	e := pullrequest.Event{
@@ -633,7 +633,7 @@ func TestReviewHandlers_NoStoredMessageIsNoop(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			msgs := newFakeSlackMessages() // empty
-			client := &fakeSlackClient{}
+			client := &fakeMessenger{}
 			var h pullrequest.EventHandler
 			switch c.name {
 			case "approve":

@@ -11,18 +11,18 @@ import (
 	"github.com/mptooling/notifycat/internal/store"
 )
 
-func newDraftHandler(t *testing.T, msgs *fakeSlackMessages, mappings *fakeRepoMappings, client *fakeSlackClient) *pullrequest.DraftHandler {
+func newDraftHandler(t *testing.T, msgs *fakeSlackMessages, mappings *fakeRepoMappings, client *fakeMessenger) *pullrequest.DraftHandler {
 	t.Helper()
 	return pullrequest.NewDraftHandler(msgs, mappings, client, discardLogger())
 }
 
-func newDraftHandlerWithLogger(t *testing.T, msgs *fakeSlackMessages, mappings *fakeRepoMappings, client *fakeSlackClient, logger *slog.Logger) *pullrequest.DraftHandler {
+func newDraftHandlerWithLogger(t *testing.T, msgs *fakeSlackMessages, mappings *fakeRepoMappings, client *fakeMessenger, logger *slog.Logger) *pullrequest.DraftHandler {
 	t.Helper()
 	return pullrequest.NewDraftHandler(msgs, mappings, client, logger)
 }
 
 func TestDraftHandler_Applicable(t *testing.T) {
-	h := newDraftHandler(t, newFakeSlackMessages(), newFakeRepoMappings(), &fakeSlackClient{})
+	h := newDraftHandler(t, newFakeSlackMessages(), newFakeRepoMappings(), &fakeMessenger{})
 
 	if !h.Applicable(pullrequest.Event{Action: "converted_to_draft"}) {
 		t.Error("converted_to_draft should be applicable")
@@ -40,7 +40,7 @@ func TestDraftHandler_Handle_DeletesMessageAndRow(t *testing.T) {
 	mappings := newFakeRepoMappings(store.RepoMapping{
 		Repository: "octo/widget", SlackChannel: "C123",
 	})
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 	h := newDraftHandler(t, msgs, mappings, client)
 
 	e := pullrequest.Event{
@@ -63,7 +63,7 @@ func TestDraftHandler_Handle_DeletesMessageAndRow(t *testing.T) {
 func TestDraftHandler_Handle_NoStoredMessageIsNoop(t *testing.T) {
 	msgs := newFakeSlackMessages()
 	mappings := newFakeRepoMappings(store.RepoMapping{Repository: "octo/widget", SlackChannel: "C123"})
-	client := &fakeSlackClient{}
+	client := &fakeMessenger{}
 
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))

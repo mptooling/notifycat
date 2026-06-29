@@ -13,27 +13,27 @@ import (
 // original Slack message with a [Merged]/[Closed] decoration and, if enabled,
 // adds the corresponding reaction emoji.
 type CloseHandler struct {
-	messages SlackMessages
-	resolver Resolver
-	slack    SlackClient
-	composer *slack.Composer
-	logger   *slog.Logger
+	messages  SlackMessages
+	resolver  Resolver
+	messenger Messenger
+	composer  *slack.Composer
+	logger    *slog.Logger
 }
 
 // NewCloseHandler builds a CloseHandler.
 func NewCloseHandler(
 	messages SlackMessages,
 	resolver Resolver,
-	slackClient SlackClient,
+	messenger Messenger,
 	composer *slack.Composer,
 	logger *slog.Logger,
 ) *CloseHandler {
 	return &CloseHandler{
-		messages: messages,
-		resolver: resolver,
-		slack:    slackClient,
-		composer: composer,
-		logger:   logger,
+		messages:  messages,
+		resolver:  resolver,
+		messenger: messenger,
+		composer:  composer,
+		logger:    logger,
 	}
 }
 
@@ -79,7 +79,7 @@ func (h *CloseHandler) Handle(ctx context.Context, e Event) error {
 		emoji = mapping.Reactions.MergedPR
 	}
 	updated := h.composer.UpdatedMessage(slackPRFrom(e), e.PR.Merged, emoji)
-	if err := h.slack.UpdateMessage(ctx, mapping.SlackChannel, stored.TS, updated); err != nil {
+	if err := h.messenger.UpdateMessage(ctx, mapping.SlackChannel, stored.TS, updated); err != nil {
 		return err
 	}
 	if err := h.messages.MarkClosed(ctx, e.Repository, e.PR.Number); err != nil {
@@ -88,5 +88,5 @@ func (h *CloseHandler) Handle(ctx context.Context, e Event) error {
 	if !mapping.Reactions.Enabled {
 		return nil
 	}
-	return h.slack.AddReaction(ctx, mapping.SlackChannel, stored.TS, emoji)
+	return h.messenger.AddReaction(ctx, mapping.SlackChannel, stored.TS, emoji)
 }

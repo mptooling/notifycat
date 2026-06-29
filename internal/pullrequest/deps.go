@@ -23,10 +23,11 @@ type SlackMessages interface {
 	MarkClosed(ctx context.Context, repository string, prNumber int) error
 }
 
-// SlackClient is the subset of the slack package's client that handlers use.
-type SlackClient interface {
-	PostMessage(ctx context.Context, channel string, msg slack.Message) (ts string, err error)
-	UpdateMessage(ctx context.Context, channel, ts string, msg slack.Message) error
-	DeleteMessage(ctx context.Context, channel, ts string) error
-	AddReaction(ctx context.Context, channel, ts, name string) error
+// Messenger is the subset of a chat messenger the handlers use. Slack is the
+// only implementation today (slack.Client satisfies it).
+type Messenger interface {
+	PostMessage(ctx context.Context, channel string, msg slack.Message) (messageID string, err error)
+	UpdateMessage(ctx context.Context, channel, messageID string, msg slack.Message) error
+	DeleteMessage(ctx context.Context, channel, messageID string) error
+	AddReaction(ctx context.Context, channel, messageID, name string) error
 }
