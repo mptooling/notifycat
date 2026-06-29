@@ -15,7 +15,7 @@ import (
 type CloseHandler struct {
 	messages SlackMessages
 	resolver Resolver
-	slack    SlackClient
+	slack    Messenger
 	composer *slack.Composer
 	logger   *slog.Logger
 }
@@ -24,7 +24,7 @@ type CloseHandler struct {
 func NewCloseHandler(
 	messages SlackMessages,
 	resolver Resolver,
-	slackClient SlackClient,
+	slackClient Messenger,
 	composer *slack.Composer,
 	logger *slog.Logger,
 ) *CloseHandler {

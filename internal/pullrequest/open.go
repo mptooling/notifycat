@@ -16,7 +16,7 @@ import (
 type OpenHandler struct {
 	messages SlackMessages
 	resolver Resolver
-	slack    SlackClient
+	slack    Messenger
 	composer *slack.Composer
 	logger   *slog.Logger
 }
@@ -25,7 +25,7 @@ type OpenHandler struct {
 func NewOpenHandler(
 	messages SlackMessages,
 	resolver Resolver,
-	slackClient SlackClient,
+	slackClient Messenger,
 	composer *slack.Composer,
 	logger *slog.Logger,
 ) *OpenHandler {

@@ -19,7 +19,7 @@ type reactionHandler struct {
 
 	messages SlackMessages
 	resolver Resolver
-	slack    SlackClient
+	slack    Messenger
 	logger   *slog.Logger
 	detector *aireview.Detector
 }
@@ -103,7 +103,7 @@ type ApproveHandler struct{ reactionHandler }
 func NewApproveHandler(
 	messages SlackMessages,
 	resolver Resolver,
-	slackClient SlackClient,
+	slackClient Messenger,
 	logger *slog.Logger,
 	detector *aireview.Detector,
 ) *ApproveHandler {
@@ -127,7 +127,7 @@ type CommentedHandler struct{ reactionHandler }
 func NewCommentedHandler(
 	messages SlackMessages,
 	resolver Resolver,
-	slackClient SlackClient,
+	slackClient Messenger,
 	logger *slog.Logger,
 	detector *aireview.Detector,
 ) *CommentedHandler {
@@ -160,7 +160,7 @@ type RequestChangeHandler struct{ reactionHandler }
 func NewRequestChangeHandler(
 	messages SlackMessages,
 	resolver Resolver,
-	slackClient SlackClient,
+	slackClient Messenger,
 	logger *slog.Logger,
 	detector *aireview.Detector,
 ) *RequestChangeHandler {

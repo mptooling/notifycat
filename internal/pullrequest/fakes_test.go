@@ -77,7 +77,7 @@ func (f *fakeRepoMappings) Resolve(_ context.Context, repository string, _ int) 
 	return m, nil
 }
 
-// fakeSlackClient records every call so tests can assert what happened.
+// fakeSlackClient is a fake Messenger implementation that records every call so tests can assert what happened.
 type fakeSlackClient struct {
 	postedTSCounter int
 	calls           []slackCall

@@ -14,7 +14,7 @@ import (
 type DraftHandler struct {
 	messages SlackMessages
 	resolver Resolver
-	slack    SlackClient
+	slack    Messenger
 	logger   *slog.Logger
 }
 
@@ -22,7 +22,7 @@ type DraftHandler struct {
 func NewDraftHandler(
 	messages SlackMessages,
 	resolver Resolver,
-	slackClient SlackClient,
+	slackClient Messenger,
 	logger *slog.Logger,
 ) *DraftHandler {
 	return &DraftHandler{
