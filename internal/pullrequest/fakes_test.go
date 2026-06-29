@@ -3,6 +3,7 @@ package pullrequest_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 
 	"github.com/mptooling/notifycat/internal/slack"
@@ -173,3 +174,92 @@ var errInjected = errors.New("injected failure")
 
 // containsMethod returns true if methods contains m.
 func containsMethod(methods []string, m string) bool { return slices.Contains(methods, m) }
+
+// fakePRStore is an in-memory PullRequestStore. Messages are keyed by
+// "repo#prNumber" and deduped by channel within each PR.
+type fakePRStore struct {
+	rows    map[string][]store.Message
+	touched map[string]int
+	closed  map[string]int
+	deleted map[string]int
+}
+
+func newFakePRStore() *fakePRStore {
+	return &fakePRStore{
+		rows:    map[string][]store.Message{},
+		touched: map[string]int{},
+		closed:  map[string]int{},
+		deleted: map[string]int{},
+	}
+}
+
+func prStoreKey(repository string, prNumber int) string {
+	return fmt.Sprintf("%s#%d", repository, prNumber)
+}
+
+func (f *fakePRStore) AddMessage(_ context.Context, repository string, prNumber int, channel, messageID string) error {
+	key := prStoreKey(repository, prNumber)
+	for _, m := range f.rows[key] {
+		if m.Channel == channel {
+			return nil // dedupe by channel
+		}
+	}
+	f.rows[key] = append(f.rows[key], store.Message{Channel: channel, MessageID: messageID})
+	return nil
+}
+
+func (f *fakePRStore) Messages(_ context.Context, repository string, prNumber int) ([]store.Message, error) {
+	key := prStoreKey(repository, prNumber)
+	msgs, ok := f.rows[key]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	return msgs, nil
+}
+
+func (f *fakePRStore) Touch(_ context.Context, repository string, prNumber int) error {
+	f.touched[prStoreKey(repository, prNumber)]++
+	return nil
+}
+
+func (f *fakePRStore) MarkClosed(_ context.Context, repository string, prNumber int) error {
+	f.closed[prStoreKey(repository, prNumber)]++
+	return nil
+}
+
+func (f *fakePRStore) Delete(_ context.Context, repository string, prNumber int) error {
+	f.deleted[prStoreKey(repository, prNumber)]++
+	delete(f.rows, prStoreKey(repository, prNumber))
+	return nil
+}
+
+// touched returns the touch call count for a given PR.
+func (f *fakePRStore) touchedCount(repository string, prNumber int) int {
+	return f.touched[prStoreKey(repository, prNumber)]
+}
+
+// fakeTargetResolver is an in-memory TargetResolver that returns fixed
+// behavior+targets (or a fixed error).
+type fakeTargetResolver struct {
+	behavior store.RepoMapping
+	targets  []store.Target
+	err      error
+}
+
+func (f *fakeTargetResolver) ResolveTargets(_ context.Context, _ string, _ int) (store.RepoMapping, []store.Target, error) {
+	if f.err != nil {
+		return store.RepoMapping{}, nil, f.err
+	}
+	return f.behavior, f.targets, nil
+}
+
+// postsByChannel counts PostMessage calls per channel on fakeMessenger.
+func (f *fakeMessenger) postsByChannel() map[string]int {
+	out := map[string]int{}
+	for _, c := range f.calls {
+		if c.Method == "PostMessage" {
+			out[c.Channel]++
+		}
+	}
+	return out
+}
