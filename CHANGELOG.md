@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.20.1](https://github.com/mptooling/notifycat/compare/v0.20.0...v0.20.1) (2026-06-30)
+
+
+### 🐛 Bug fixes
+
+* delete synthetic pull_requests row after smoke run ([#137](https://github.com/mptooling/notifycat/issues/137)) ([f7f8b08](https://github.com/mptooling/notifycat/commit/f7f8b086de2c71baa6b6d7fdefebccab629950c3))
+
+
+### 🧹 Maintenance
+
+* **deps:** bump gorm.io/gorm from 1.31.1 to 1.31.2 in the go-modules group ([#135](https://github.com/mptooling/notifycat/issues/135)) ([d327110](https://github.com/mptooling/notifycat/commit/d327110d566809129636338941d7ecd37fd1da98))
+
 ## [0.20.0](https://github.com/mptooling/notifycat/compare/v0.19.0...v0.20.0) (2026-06-30)
 
 
