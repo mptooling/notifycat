@@ -53,7 +53,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "notifycat-smoke: cannot open database:", err)
 		return 1
 	}
-	messages := store.NewSlackMessages(db)
+	messages := store.NewPullRequests(db)
 
 	hc := &http.Client{Timeout: 15 * time.Second}
 	slackClient := slack.NewClient(hc, cfg.SlackBotToken.Reveal(), slack.WithBaseURL(cfg.SlackBaseURL))

@@ -54,9 +54,9 @@ type RepoMappings interface {
 }
 
 // MessageStore reads back the stored Slack message timestamp for a PR.
-// *store.SlackMessages satisfies it.
+// *store.PullRequests satisfies it.
 type MessageStore interface {
-	Get(ctx context.Context, repository string, prNumber int) (store.SlackMessage, error)
+	Messages(ctx context.Context, repository string, prNumber int) ([]store.Message, error)
 }
 
 // ReactionReader reads the reactions attached to a Slack message, so the smoke
@@ -193,12 +193,16 @@ func (s *Smoke) Run(ctx context.Context, target string, withReactions bool) (Res
 		return Result{}, err
 	}
 
-	msg, err := s.store.Get(ctx, target, prNumber)
+	msgs, err := s.store.Messages(ctx, target, prNumber)
 	if err != nil {
-		return Result{}, fmt.Errorf("smoke: server returned 200 but the Slack message timestamp was not stored "+
+		return Result{}, fmt.Errorf("smoke: server returned 200 but no Slack message was stored "+
 			"(was the repo mapped to a channel the bot can post to?): %w", err)
 	}
-	res.Timestamp = msg.TS
+	if len(msgs) == 0 {
+		return Result{}, fmt.Errorf("smoke: server returned 200 but stored no Slack message for the PR")
+	}
+	msg := msgs[0]
+	res.Timestamp = msg.MessageID
 
 	if !withReactions || !s.rxCfg.Enabled {
 		return res, nil
@@ -225,7 +229,7 @@ func (s *Smoke) Run(ctx context.Context, target string, withReactions bool) (Res
 			return res, err
 		}
 		check := ReactionCheck{Step: step.name, Emoji: step.emoji}
-		reactions, gerr := s.reactions.GetReactions(ctx, mapping.SlackChannel, msg.TS)
+		reactions, gerr := s.reactions.GetReactions(ctx, msg.Channel, msg.MessageID)
 		if gerr != nil {
 			check.VerifyErr = gerr
 		} else {

@@ -82,10 +82,10 @@ func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, *digest.Schedule
 		return nil, nil, nil, nil, err
 	}
 
-	messages := store.NewSlackMessages(db)
+	pullRequests := store.NewPullRequests(db)
 	aiDetector := aireview.NewDetector()
 	scheduler := cleanup.NewScheduler(
-		messages,
+		pullRequests,
 		time.Duration(cfg.MessageTTLDays)*24*time.Hour,
 		cleanup.Interval,
 		logger,
@@ -97,7 +97,7 @@ func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, *digest.Schedule
 	// than silently never firing.
 	var digestScheduler *digest.Scheduler
 	if specs := provider.Schedules(); len(specs) > 0 {
-		reporter := digest.NewReporter(messages, provider, slackClient, composer, provider, logger, cfg.DigestTimezone)
+		reporter := digest.NewReporter(pullRequests, provider, slackClient, composer, provider, logger, cfg.DigestTimezone)
 		digestScheduler, err = digest.NewScheduler(specs, reporter, logger, cfg.DigestTimezone)
 		if err != nil {
 			closeDB(db)
@@ -117,12 +117,12 @@ func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, *digest.Schedule
 
 	dispatcher := pullrequest.NewDispatcher(
 		logger,
-		pullrequest.NewOpenHandler(messages, router, slackClient, composer, logger),
-		pullrequest.NewCloseHandler(messages, router, slackClient, composer, logger),
-		pullrequest.NewDraftHandler(messages, router, slackClient, logger),
-		pullrequest.NewApproveHandler(messages, router, slackClient, logger, aiDetector),
-		pullrequest.NewCommentedHandler(messages, router, slackClient, logger, aiDetector),
-		pullrequest.NewRequestChangeHandler(messages, router, slackClient, logger, aiDetector),
+		pullrequest.NewOpenHandler(pullRequests, router, slackClient, composer, logger),
+		pullrequest.NewCloseHandler(pullRequests, provider, slackClient, composer, logger),
+		pullrequest.NewDraftHandler(pullRequests, slackClient, logger),
+		pullrequest.NewApproveHandler(pullRequests, provider, slackClient, logger, aiDetector),
+		pullrequest.NewCommentedHandler(pullRequests, provider, slackClient, logger, aiDetector),
+		pullrequest.NewRequestChangeHandler(pullRequests, provider, slackClient, logger, aiDetector),
 	)
 
 	mux := http.NewServeMux()

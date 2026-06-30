@@ -11,11 +11,11 @@ import (
 )
 
 // OpenHandler reacts to a PR being opened (non-draft) or marked
-// ready_for_review. It posts the first Slack message for the PR and records
-// the message TS for later updates.
+// ready_for_review. It fans out one Slack message per resolved target channel
+// and records each message for later updates.
 type OpenHandler struct {
-	messages  SlackMessages
-	resolver  Resolver
+	store     Store
+	resolver  TargetResolver
 	messenger Messenger
 	composer  *slack.Composer
 	logger    *slog.Logger
@@ -23,14 +23,14 @@ type OpenHandler struct {
 
 // NewOpenHandler builds an OpenHandler.
 func NewOpenHandler(
-	messages SlackMessages,
-	resolver Resolver,
+	store Store,
+	resolver TargetResolver,
 	messenger Messenger,
 	composer *slack.Composer,
 	logger *slog.Logger,
 ) *OpenHandler {
 	return &OpenHandler{
-		messages:  messages,
+		store:     store,
 		resolver:  resolver,
 		messenger: messenger,
 		composer:  composer,
@@ -46,52 +46,42 @@ func (h *OpenHandler) Applicable(e Event) bool {
 	return e.Action == "opened" && !e.PR.Draft
 }
 
-// Handle posts the initial Slack message and stores its TS.
-//
-// Idempotency: if a SlackMessage already exists for this PR (same composite
-// key) the handler returns silently — we never post twice for the same PR.
+// Handle posts one message per resolved target channel and records each. It is
+// idempotent per channel: an existing message for a channel is skipped, so a
+// redelivery or a partial-failure retry only posts the missing channels.
 func (h *OpenHandler) Handle(ctx context.Context, e Event) error {
-	if _, err := h.messages.Get(ctx, e.Repository, e.PR.Number); err == nil {
-		h.logger.Info("ignored webhook event",
-			slog.String("reason", "already_sent"),
-			slog.String("handler", "open"),
-			slog.String("github_event", e.GitHubEvent),
-			slog.String("action", e.Action),
-			slog.String("repository", e.Repository),
-			slog.Int("pr", e.PR.Number),
-		)
-		return nil
-	} else if !errors.Is(err, store.ErrNotFound) {
-		return err
-	}
-
-	mapping, err := h.resolver.Resolve(ctx, e.Repository, e.PR.Number)
+	behavior, targets, err := h.resolver.ResolveTargets(ctx, e.Repository, e.PR.Number)
 	if errors.Is(err, store.ErrNotFound) {
-		h.logger.Warn("ignored webhook event",
-			slog.String("reason", "no_mapping"),
-			slog.String("handler", "open"),
-			slog.String("github_event", e.GitHubEvent),
-			slog.String("action", e.Action),
-			slog.String("repository", e.Repository),
-			slog.Int("pr", e.PR.Number),
-		)
+		h.logIgnored(e, "no_mapping")
 		return nil
 	}
 	if err != nil {
 		return err
 	}
 
-	msg := h.composeMessage(e, mapping)
-	ts, err := h.messenger.PostMessage(ctx, mapping.SlackChannel, msg)
-	if err != nil {
+	existing, err := h.store.Messages(ctx, e.Repository, e.PR.Number)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return err
 	}
+	already := map[string]bool{}
+	for _, m := range existing {
+		already[m.Channel] = true
+	}
 
-	return h.messages.Save(ctx, store.SlackMessage{
-		PRNumber:   e.PR.Number,
-		Repository: e.Repository,
-		TS:         ts,
-	})
+	for _, target := range targets {
+		if already[target.Channel] {
+			continue
+		}
+		msg := h.composeMessage(e, behavior, target.Mentions)
+		messageID, err := h.messenger.PostMessage(ctx, target.Channel, msg)
+		if err != nil {
+			return err // successful channels are already saved; retry skips them
+		}
+		if err := h.store.AddMessage(ctx, e.Repository, e.PR.Number, target.Channel, messageID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // composeMessage renders the message for an opened PR. When the dependabot
@@ -100,14 +90,24 @@ func (h *OpenHandler) Handle(ctx context.Context, e Event) error {
 // Block Kit message. Detection keys off the PR author, not the webhook sender:
 // on a ready_for_review event the sender is the human who marked a bot's draft
 // PR ready, while the author stays the bot.
-func (h *OpenHandler) composeMessage(e Event, mapping store.RepoMapping) slack.Message {
-	if mapping.DependabotFormat {
+func (h *OpenHandler) composeMessage(e Event, behavior store.RepoMapping, mentions []string) slack.Message {
+	if behavior.DependabotFormat {
 		if kind := botpr.DetectBot(e.PR.Author); kind != botpr.BotKindNone {
-			security := botpr.IsSecurityAdvisory(e.PR.Body)
-			return h.composer.BotMessage(slackPRFrom(e), mapping.Mentions, kind.Name(), security)
+			return h.composer.BotMessage(slackPRFrom(e), mentions, kind.Name(), botpr.IsSecurityAdvisory(e.PR.Body))
 		}
 	}
-	return h.composer.NewMessage(slackPRFrom(e), mapping.Mentions, mapping.Reactions.NewPR)
+	return h.composer.NewMessage(slackPRFrom(e), mentions, behavior.Reactions.NewPR)
+}
+
+func (h *OpenHandler) logIgnored(e Event, reason string) {
+	h.logger.Warn("ignored webhook event",
+		slog.String("reason", reason),
+		slog.String("handler", "open"),
+		slog.String("github_event", e.GitHubEvent),
+		slog.String("action", e.Action),
+		slog.String("repository", e.Repository),
+		slog.Int("pr", e.PR.Number),
+	)
 }
 
 // slackPRFrom adapts an Event's PR fields to the slack.PRDetails shape used

@@ -1,20 +1,11 @@
 package mappings
 
 import (
-	"context"
-	"log/slog"
 	"sort"
 	"strings"
 
 	"github.com/mptooling/notifycat/internal/store"
 )
-
-// maxMatchedPathOwners caps how many distinct directory rules a single PR may
-// match before path routing gives up and posts to the repo base channel with
-// the base mentions (hazard M5). A PR sprawling across more directories than
-// this would union too many teams into one ping to be useful, so the base tier
-// (one channel, one audience) is the safer destination.
-const maxMatchedPathOwners = 5
 
 // HasPathRules reports whether any repo tier in the mappings configures a
 // `paths:` block. Used to gate the "path routing needs GITHUB_TOKEN" warnings:
@@ -67,75 +58,44 @@ func pathChannels(paths []PathRule) []string {
 	return channels
 }
 
-// GetForFiles resolves routing for a PR whose changed files are `files`
-// (repo-relative paths, as GitHub reports them), applying the repo tier's
-// `paths:` rules on top of the base org/repo resolution from Get. With no path
-// rules, no files, or no path match, the result is identical to Get's — the PR
-// routes to the repo/org tier exactly as today.
-//
-// It logs (via logger, if non-nil) two operator-relevant outcomes: the M5
-// safety valve firing, and mentions bottoming out at @channel (M3). The caller
-// supplies the changed files — GetForFiles makes no GitHub API call.
-func (p *Provider) GetForFiles(ctx context.Context, logger *slog.Logger, repository string, files []string) (store.RepoMapping, error) {
-	repoMapping, err := p.Get(ctx, repository)
-	if err != nil {
-		return store.RepoMapping{}, err
+// TargetsForFiles returns the fan-out destinations for a PR touching files: one
+// Target per distinct matched channel, mentions unioned within each channel.
+// With no path rules, no files, or no match it returns a single base target.
+func (p *Provider) TargetsForFiles(repository string, files []string) []store.Target {
+	starPtr, repoPtr := p.lookup(repository)
+	base := resolveRouting(starPtr, repoPtr)
+	baseTarget := []store.Target{{Channel: base.Channel, Mentions: base.Mentions}}
+	if repoPtr == nil || len(repoPtr.Paths) == 0 {
+		return baseTarget
 	}
-	_, repoCfg := p.lookup(repository)
-	if repoCfg == nil || len(repoCfg.Paths) == 0 {
-		return repoMapping, nil
-	}
-
-	base := Resolved{Channel: repoMapping.SlackChannel, Mentions: repoMapping.Mentions}
-	res, out := resolvePaths(base, repoCfg.Paths, files)
-	if !out.matched {
-		return repoMapping, nil
-	}
-	if out.valveTripped && logger != nil {
-		logger.Warn("path routing: too many matched directories; routing to the repo base channel",
-			slog.String("repository", repository),
-			slog.Int("matched", out.owners),
-			slog.Int("limit", maxMatchedPathOwners))
-	}
-	if out.fellBackToChannel && logger != nil {
-		logger.Warn("path routing resolved to @channel; matched directories set no team mentions",
-			slog.String("repository", repository),
-			slog.String("channel", res.Channel))
-	}
-	repoMapping.SlackChannel = res.Channel
-	repoMapping.Mentions = res.Mentions
-	return repoMapping, nil
-}
-
-// pathOutcome carries the non-routing facts the caller logs about.
-type pathOutcome struct {
-	matched           bool // at least one path rule matched a changed file
-	owners            int  // distinct matched directory rules
-	fellBackToChannel bool // resolved mentions are exactly @channel (M3)
-	valveTripped      bool // owners exceeded the cap; fell back to base (M5)
-}
-
-// resolvePaths layers path rules over base for a PR touching files. Each file
-// picks its most-specific matching rule; across the PR the most-specific
-// winning rule owns the channel and the winners' mentions are unioned. No match
-// (or no rules/files) returns base unchanged.
-func resolvePaths(base Resolved, paths []PathRule, files []string) (Resolved, pathOutcome) {
-	if len(paths) == 0 || len(files) == 0 {
-		return base, pathOutcome{}
-	}
-	winners := matchedRules(paths, files)
+	winners := matchedRules(repoPtr.Paths, files)
 	if len(winners) == 0 {
-		return base, pathOutcome{}
+		return baseTarget
 	}
-	if len(winners) > maxMatchedPathOwners {
-		return base, pathOutcome{matched: true, owners: len(winners), valveTripped: true}
+
+	// Group matched rules by resolved channel, preserving first-seen order, and
+	// union each channel's mentions (a rule with no mentions inherits base).
+	order := []string{}
+	byChannel := map[string][]PathRule{}
+	for _, rule := range winners {
+		channel := rule.Channel
+		if channel == "" {
+			channel = base.Channel
+		}
+		if _, seen := byChannel[channel]; !seen {
+			order = append(order, channel)
+		}
+		byChannel[channel] = append(byChannel[channel], rule)
 	}
-	res := Resolved{
-		Channel:  channelWinner(winners, base.Channel),
-		Mentions: unionMentions(winners, base.Mentions),
+
+	targets := make([]store.Target, 0, len(order))
+	for _, channel := range order {
+		targets = append(targets, store.Target{
+			Channel:  channel,
+			Mentions: unionMentions(byChannel[channel], base.Mentions),
+		})
 	}
-	fellBack := len(res.Mentions) == 1 && res.Mentions[0] == ChannelMention
-	return res, pathOutcome{matched: true, owners: len(winners), fellBackToChannel: fellBack}
+	return targets
 }
 
 // matchedRules returns the distinct path rules that win at least one file, in
@@ -171,28 +131,6 @@ func fileUnder(file, dir string) bool {
 	return strings.HasPrefix(file, dir+"/")
 }
 
-// channelWinner picks the channel from the most-specific winning rule:
-// longest directory → fewest path segments → declaration order (winners is
-// already in declaration order, so equal-on-both keeps the earlier rule; a
-// lexical fallback is documented but unreachable for distinct dirs). A winner
-// with no channel of its own inherits the base channel.
-func channelWinner(winners []PathRule, baseChannel string) string {
-	best := 0
-	for i := 1; i < len(winners); i++ {
-		switch {
-		case len(winners[i].Dir) > len(winners[best].Dir):
-			best = i
-		case len(winners[i].Dir) == len(winners[best].Dir) &&
-			segments(winners[i].Dir) < segments(winners[best].Dir):
-			best = i
-		}
-	}
-	if winners[best].Channel != "" {
-		return winners[best].Channel
-	}
-	return baseChannel
-}
-
 // unionMentions unions the winners' effective mentions, deduped, in declaration
 // order. A winner with no mentions key inherits base mentions (hazard M2); an
 // explicit empty list contributes nothing.
@@ -215,10 +153,4 @@ func unionMentions(winners []PathRule, baseMentions []string) []string {
 		}
 	}
 	return out
-}
-
-// segments counts the path components in a normalized (no leading/trailing
-// slash, non-empty) directory.
-func segments(dir string) int {
-	return strings.Count(dir, "/") + 1
 }

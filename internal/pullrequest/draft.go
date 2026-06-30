@@ -8,37 +8,26 @@ import (
 	"github.com/mptooling/notifycat/internal/store"
 )
 
-// DraftHandler reacts to a PR being converted back to draft. It removes the
-// Slack notification and forgets the message TS — the PR will be re-announced
+// DraftHandler reacts to a PR being converted back to draft. It removes every
+// stored Slack message and deletes the PR row — the PR will be re-announced
 // when it's marked ready_for_review again.
 type DraftHandler struct {
-	messages  SlackMessages
-	resolver  Resolver
+	store     Store
 	messenger Messenger
 	logger    *slog.Logger
 }
 
 // NewDraftHandler builds a DraftHandler.
-func NewDraftHandler(
-	messages SlackMessages,
-	resolver Resolver,
-	messenger Messenger,
-	logger *slog.Logger,
-) *DraftHandler {
-	return &DraftHandler{
-		messages:  messages,
-		resolver:  resolver,
-		messenger: messenger,
-		logger:    logger,
-	}
+func NewDraftHandler(store Store, messenger Messenger, logger *slog.Logger) *DraftHandler {
+	return &DraftHandler{store: store, messenger: messenger, logger: logger}
 }
 
 // Applicable returns true when the action is "converted_to_draft".
 func (h *DraftHandler) Applicable(e Event) bool { return e.Action == "converted_to_draft" }
 
-// Handle deletes the Slack message and the stored message row.
+// Handle deletes every stored Slack message and the PR row.
 func (h *DraftHandler) Handle(ctx context.Context, e Event) error {
-	stored, err := h.messages.Get(ctx, e.Repository, e.PR.Number)
+	messages, err := h.store.Messages(ctx, e.Repository, e.PR.Number)
 	if errors.Is(err, store.ErrNotFound) {
 		h.logger.Info("ignored webhook event",
 			slog.String("reason", "no_stored_message"),
@@ -54,24 +43,10 @@ func (h *DraftHandler) Handle(ctx context.Context, e Event) error {
 		return err
 	}
 
-	mapping, err := h.resolver.Resolve(ctx, e.Repository, e.PR.Number)
-	if errors.Is(err, store.ErrNotFound) {
-		h.logger.Warn("ignored webhook event",
-			slog.String("reason", "no_mapping"),
-			slog.String("handler", "draft"),
-			slog.String("github_event", e.GitHubEvent),
-			slog.String("action", e.Action),
-			slog.String("repository", e.Repository),
-			slog.Int("pr", e.PR.Number),
-		)
-		return nil
+	for _, m := range messages {
+		if err := h.messenger.DeleteMessage(ctx, m.Channel, m.MessageID); err != nil {
+			return err
+		}
 	}
-	if err != nil {
-		return err
-	}
-
-	if err := h.messenger.DeleteMessage(ctx, mapping.SlackChannel, stored.TS); err != nil {
-		return err
-	}
-	return h.messages.Delete(ctx, e.Repository, e.PR.Number)
+	return h.store.Delete(ctx, e.Repository, e.PR.Number)
 }

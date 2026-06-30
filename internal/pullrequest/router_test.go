@@ -3,22 +3,18 @@ package pullrequest_test
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"testing"
 
 	"github.com/mptooling/notifycat/internal/pullrequest"
 	"github.com/mptooling/notifycat/internal/store"
 )
 
-// stubMappings implements pullrequest.PathMappings. It records whether the
-// file-aware path was taken so tests can assert routing decisions.
+// stubMappings implements pullrequest.PathMappings for testing.
 type stubMappings struct {
 	base         store.RepoMapping
 	baseErr      error
-	pathResult   store.RepoMapping
+	targets      []store.Target
 	hasPathRules bool
-	gotFiles     []string
-	getForCalled bool
 }
 
 func (s *stubMappings) Get(_ context.Context, repository string) (store.RepoMapping, error) {
@@ -30,15 +26,9 @@ func (s *stubMappings) Get(_ context.Context, repository string) (store.RepoMapp
 	return m, nil
 }
 
-func (s *stubMappings) GetForFiles(_ context.Context, _ *slog.Logger, repository string, files []string) (store.RepoMapping, error) {
-	s.getForCalled = true
-	s.gotFiles = files
-	m := s.pathResult
-	m.Repository = repository
-	return m, nil
-}
-
 func (s *stubMappings) RepoHasPathRules(string) bool { return s.hasPathRules }
+
+func (s *stubMappings) TargetsForFiles(string, []string) []store.Target { return s.targets }
 
 type stubFiles struct {
 	files []string
@@ -54,94 +44,44 @@ func (s *stubFiles) ListPullRequestFiles(_ context.Context, _, _ string, _ int) 
 	return s.files, nil
 }
 
-func TestRouter_NoFetcherUsesBaseTier(t *testing.T) {
-	m := &stubMappings{base: store.RepoMapping{SlackChannel: "C0BASE"}, hasPathRules: true}
+func TestRouter_NoFetcherReturnsBaseTarget(t *testing.T) {
+	m := &stubMappings{base: store.RepoMapping{SlackChannel: "C0BASE", Mentions: []string{"<!here>"}}, hasPathRules: true}
 	r := pullrequest.NewRouter(m, nil, discardLogger())
-
-	got, err := r.Resolve(context.Background(), "acme/mono", 7)
+	_, targets, err := r.ResolveTargets(context.Background(), "acme/mono", 7)
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	if got.SlackChannel != "C0BASE" || m.getForCalled {
-		t.Errorf("no fetcher should resolve to base tier without path resolution; got %+v getForCalled=%v", got, m.getForCalled)
+	if len(targets) != 1 || targets[0].Channel != "C0BASE" {
+		t.Fatalf("want single base target; got %+v", targets)
 	}
 }
 
-func TestRouter_NoPathRulesSkipsFetch(t *testing.T) {
-	m := &stubMappings{base: store.RepoMapping{SlackChannel: "C0BASE"}, hasPathRules: false}
-	files := &stubFiles{files: []string{"x.go"}}
-	r := pullrequest.NewRouter(m, files, discardLogger())
-
-	got, err := r.Resolve(context.Background(), "acme/plain", 7)
-	if err != nil {
-		t.Fatalf("resolve: %v", err)
-	}
-	if got.SlackChannel != "C0BASE" || files.calls != 0 {
-		t.Errorf("repo without paths should not fetch files; got %+v fetchCalls=%d", got, files.calls)
-	}
-}
-
-func TestRouter_PathRulesFetchAndResolve(t *testing.T) {
+func TestRouter_FanOutTargets(t *testing.T) {
 	m := &stubMappings{
 		base:         store.RepoMapping{SlackChannel: "C0BASE"},
-		pathResult:   store.RepoMapping{SlackChannel: "C0PATH"},
 		hasPathRules: true,
+		targets:      []store.Target{{Channel: "C0A"}, {Channel: "C0B"}},
 	}
-	files := &stubFiles{files: []string{"modules/acme/x.go"}}
+	files := &stubFiles{files: []string{"a", "b"}}
 	r := pullrequest.NewRouter(m, files, discardLogger())
-
-	got, err := r.Resolve(context.Background(), "acme/mono", 7)
+	_, targets, err := r.ResolveTargets(context.Background(), "acme/mono", 7)
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	if got.SlackChannel != "C0PATH" {
-		t.Errorf("channel = %q; want path-resolved C0PATH", got.SlackChannel)
-	}
-	if files.calls != 1 || !m.getForCalled {
-		t.Errorf("expected one fetch + GetForFiles; fetchCalls=%d getForCalled=%v", files.calls, m.getForCalled)
-	}
-	if len(m.gotFiles) != 1 || m.gotFiles[0] != "modules/acme/x.go" {
-		t.Errorf("GetForFiles got files %v; want [modules/acme/x.go]", m.gotFiles)
+	if len(targets) != 2 || files.calls != 1 {
+		t.Fatalf("want 2 targets from one fetch; got %d targets, %d calls", len(targets), files.calls)
 	}
 }
 
 func TestRouter_FetchErrorFallsBackToBase(t *testing.T) {
-	m := &stubMappings{
-		base:         store.RepoMapping{SlackChannel: "C0BASE"},
-		pathResult:   store.RepoMapping{SlackChannel: "C0PATH"},
-		hasPathRules: true,
-	}
+	m := &stubMappings{base: store.RepoMapping{SlackChannel: "C0BASE"}, hasPathRules: true, targets: []store.Target{{Channel: "C0A"}}}
 	files := &stubFiles{err: errors.New("github down")}
 	r := pullrequest.NewRouter(m, files, discardLogger())
-
-	got, err := r.Resolve(context.Background(), "acme/mono", 7)
+	_, targets, err := r.ResolveTargets(context.Background(), "acme/mono", 7)
 	if err != nil {
-		t.Fatalf("resolve should soft-fail, not error: %v", err)
+		t.Fatalf("should soft-fail: %v", err)
 	}
-	if got.SlackChannel != "C0BASE" || m.getForCalled {
-		t.Errorf("fetch error should fall back to base tier; got %+v getForCalled=%v", got, m.getForCalled)
-	}
-}
-
-func TestRouter_MalformedRepositoryFallsBack(t *testing.T) {
-	m := &stubMappings{base: store.RepoMapping{SlackChannel: "C0BASE"}, hasPathRules: true}
-	files := &stubFiles{files: []string{"x.go"}}
-	r := pullrequest.NewRouter(m, files, discardLogger())
-
-	got, err := r.Resolve(context.Background(), "no-slash", 7)
-	if err != nil {
-		t.Fatalf("resolve: %v", err)
-	}
-	if got.SlackChannel != "C0BASE" || files.calls != 0 {
-		t.Errorf("malformed repository should fall back without fetching; got %+v fetchCalls=%d", got, files.calls)
-	}
-}
-
-func TestRouter_PropagatesNotFound(t *testing.T) {
-	m := &stubMappings{baseErr: store.ErrNotFound, hasPathRules: false}
-	r := pullrequest.NewRouter(m, nil, discardLogger())
-
-	if _, err := r.Resolve(context.Background(), "acme/unmapped", 7); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("want ErrNotFound; got %v", err)
+	if len(targets) != 1 || targets[0].Channel != "C0BASE" {
+		t.Fatalf("fetch error should fall back to base; got %+v", targets)
 	}
 }

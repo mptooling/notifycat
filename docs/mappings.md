@@ -80,7 +80,7 @@ Each repo tier can override behavioral settings: `reactions`, `reviews`, and `di
 
 ## Per-path routing (monorepos)
 
-A named repo tier may add a `paths:` block that routes a PR by the directories its changed files touch — so each team in a monorepo hears about the directories it owns. This section documents the **schema and validation**; how a PR's files select a path (most-specific wins, mentions union, single message per PR) is covered under [routing behavior](#per-path-resolution) and requires a GitHub token to read a PR's changed files.
+A named repo tier may add a `paths:` block that routes a PR by the directories its changed files touch — so each team in a monorepo hears about the directories it owns. A PR **fans out to one Slack message per matched channel**. This section documents the **schema and validation**; how a PR's files select channels (most-specific rule per file, grouped by channel, mentions unioned) is covered under [routing behavior](#per-path-resolution) and requires a GitHub token to read a PR's changed files.
 
 ```yaml
 mappings:
@@ -119,26 +119,23 @@ Validation rules (all enforced at parse time — the server fails fast):
 
 ### Routing behavior
 
-A PR still gets **one** message. When `paths:` are configured, the destination is computed from the PR's changed files (which notifycat reads from the GitHub API — see [token requirement](#token-requirement)):
+A PR **fans out to every matched channel** — one tracked Slack message per channel. When `paths:` are configured, the destinations are computed from the PR's changed files (which notifycat reads from the GitHub API — see [token requirement](#token-requirement)):
 
 1. **Each changed file picks its most-specific rule.** A rule matches a file when the file lives under the rule's directory (segment-aware: `modules/acme` matches `modules/acme/x.go` but not `modules/acmexyz/x.go`). When several rules match one file, the **longest** directory wins.
-2. **One rule owns the channel.** Across every matched rule, the most-specific wins the channel — longest directory, then fewest path segments, then declaration order. That rule's `channel` is used (or the repo base channel if it sets none).
-3. **Mentions are unioned.** Every matched rule contributes its mentions (a rule with no `mentions:` key contributes the repo base mentions; `mentions: []` contributes nobody). The result is deduped.
-4. **No match → the repo tier.** A PR whose files match no rule routes to the repo/org tier exactly as a non-monorepo repo would.
+2. **Matched rules are grouped by channel.** Each rule resolves to its own `channel` (or the repo base channel if it sets none). Rules sharing a channel are merged into a single message for that channel.
+3. **One message per channel, mentions unioned within it.** Each channel's message pings the union of its rules' mentions (a rule with no `mentions:` key contributes the repo base mentions; `mentions: []` contributes nobody). Deduped per channel.
+4. **No match → the repo tier.** A PR whose files match no rule (or a repo with no token) posts a single message to the repo/org tier exactly as a non-monorepo repo would.
 
-Two safety behaviors are logged as warnings:
-
-- **@channel fallback.** If the unioned mentions resolve to just `@channel` (because matched rules set no team and the base tier sets none either), notifycat posts but logs a warning — that usually means a directory is missing a `mentions:` entry.
-- **Too many directories.** If a single PR matches more than five directory rules, the message would ping too many teams to be useful, so notifycat routes to the repo base channel + base mentions instead and logs a warning.
+Later events (close, review, draft) act on **every** message the PR fanned out to — each gets the same update/reaction/deletion. The message set is fixed when the PR is first announced; a file added later that touches a new directory does not add a message.
 
 ### Worked example
 
 Given the `the-monorepo` tier above, a PR that changes **both** `modules/acme/handler.go` and `src/AuthBundle/auth.go`:
 
-- `modules/acme/handler.go` → matches `modules/acme` → mentions `<!subteam^S0TEAMA>`, no channel of its own.
+- `modules/acme/handler.go` → matches `modules/acme` → inherits the base channel `C0MONO00000`, mentions `<!subteam^S0TEAMA>`.
 - `src/AuthBundle/auth.go` → matches `src/AuthBundle` → channel `C0AUTH00000`, mentions `<!subteam^S0AUTH>`.
 
-`src/AuthBundle` is the longer directory, so it **owns the channel**: the message posts to **`C0AUTH00000`**. Mentions are the **union** of both matched rules: **`<!subteam^S0TEAMA>` and `<!subteam^S0AUTH>`**. A PR touching only `README.md` matches nothing and routes to the repo base channel `C0MONO00000` with the base mentions.
+These resolve to **two** messages: one in **`C0MONO00000`** pinging `<!subteam^S0TEAMA>`, and one in **`C0AUTH00000`** pinging `<!subteam^S0AUTH>`. When the PR is approved, both messages get the approval reaction. A PR touching only `README.md` matches nothing and posts a single message to the repo base channel `C0MONO00000` with the base mentions.
 
 <a id="token-requirement"></a>
 

@@ -17,7 +17,7 @@ import (
 
 // OpenLister returns the rows not yet marked closed.
 type OpenLister interface {
-	ListOpen(ctx context.Context) ([]store.SlackMessage, error)
+	ListOpen(ctx context.Context) ([]store.PullRequest, error)
 }
 
 // Closer marks a PR's row closed.
@@ -104,7 +104,7 @@ func (r *Reconciler) Run(ctx context.Context) (Summary, error) {
 
 // markClosed records a PR that GitHub reports as merged/closed, so the digest
 // skips it. Honours dry-run and counts the outcome on s.
-func (r *Reconciler) markClosed(ctx context.Context, row store.SlackMessage, url string, s *Summary) {
+func (r *Reconciler) markClosed(ctx context.Context, row store.PullRequest, url string, s *Summary) {
 	if r.dryRun {
 		s.Closed++
 		r.logger.Info("reconcile: would mark closed (dry-run)",
@@ -134,7 +134,7 @@ func (r *Reconciler) markClosed(ctx context.Context, row store.SlackMessage, url
 // logs at WARN with the underlying cause and the PR link so an operator can
 // tell a genuinely-gone PR from a wrongly-removed one (e.g. a token-scope 404)
 // and navigate to check.
-func (r *Reconciler) removeNotFound(ctx context.Context, row store.SlackMessage, url string, cause error, s *Summary) {
+func (r *Reconciler) removeNotFound(ctx context.Context, row store.PullRequest, url string, cause error, s *Summary) {
 	if r.dryRun {
 		s.Removed++
 		r.logger.Warn("reconcile: pull request not found; would remove from digest (dry-run)",
@@ -166,7 +166,7 @@ func (r *Reconciler) removeNotFound(ctx context.Context, row store.SlackMessage,
 // converted_to_draft webhook (DraftHandler), and means a later ready_for_review
 // re-announces the PR from a clean slate. Logs at INFO since a draft is a
 // normal state, not a fault.
-func (r *Reconciler) removeDraft(ctx context.Context, row store.SlackMessage, url string, s *Summary) {
+func (r *Reconciler) removeDraft(ctx context.Context, row store.PullRequest, url string, s *Summary) {
 	if r.dryRun {
 		s.Removed++
 		r.logger.Info("reconcile: pull request is a draft; would delete row (dry-run)",

@@ -2,6 +2,14 @@
 
 Notifycat applies its database migrations automatically on server startup (see [Operations → Startup](operations.md#startup-and-shutdown)), so most upgrades are "pull the new image and restart." This page calls out the releases that need an operator action beyond that.
 
+## 0.20.0 — Multi-message fan-out
+
+This release replaces the single `slack_messages` table with normalized `pull_requests` and `messages` tables, so a monorepo PR can fan out to [one Slack message per matched path channel](mappings.md#per-path-routing-monorepos).
+
+> ⚠️ **All in-flight PR tracking is lost on upgrade.** The migration (`00006`) **drops `slack_messages`**. PRs opened *before* the upgrade keep their existing Slack messages, but the server can no longer find them — they receive **no further updates, reactions, or digest entries**. PRs opened *after* the upgrade work normally. This is a deliberate clean cutover: the table holds only transient PR↔message bookkeeping (subject to the cleanup TTL), so it self-heals as new PRs come in. There is no migration of existing rows.
+
+No operator action is required beyond the normal restart. If you want close/merge reactions on a PR that is open across the upgrade, re-announce it (toggle it to draft and back to `ready_for_review`) so the new schema records its messages.
+
 ## 0.16.0 — Stuck-PR digest
 
 0.16.0 adds a scheduled [stuck-PR digest](mappings.md#stuck-pr-digest): a per-channel reminder listing open PRs nobody has touched since before today. Two things make this upgrade more than a restart.

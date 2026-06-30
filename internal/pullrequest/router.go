@@ -8,17 +8,11 @@ import (
 	"github.com/mptooling/notifycat/internal/store"
 )
 
-// Resolver yields the effective routing for a PR. The PR number lets the
-// resolver consult per-path rules, which depend on the PR's changed files.
-type Resolver interface {
-	Resolve(ctx context.Context, repository string, prNumber int) (store.RepoMapping, error)
-}
-
 // PathMappings is the slice of the mappings provider the Router consumes.
 type PathMappings interface {
 	Get(ctx context.Context, repository string) (store.RepoMapping, error)
-	GetForFiles(ctx context.Context, logger *slog.Logger, repository string, files []string) (store.RepoMapping, error)
 	RepoHasPathRules(repository string) bool
+	TargetsForFiles(repository string, files []string) []store.Target
 }
 
 // ChangedFiles fetches the repo-relative paths a PR touches.
@@ -43,14 +37,22 @@ func NewRouter(mappings PathMappings, files ChangedFiles, logger *slog.Logger) *
 	return &Router{mappings: mappings, files: files, logger: logger}
 }
 
-// Resolve returns the routing for a PR, consulting path rules when applicable.
-func (r *Router) Resolve(ctx context.Context, repository string, prNumber int) (store.RepoMapping, error) {
+// ResolveTargets returns the per-repo behavior plus the fan-out targets for a
+// PR. With no fetcher (no token) or no path rules it returns a single base
+// target. A files-API error is soft: it logs and returns the base target.
+func (r *Router) ResolveTargets(ctx context.Context, repository string, prNumber int) (store.RepoMapping, []store.Target, error) {
+	behavior, err := r.mappings.Get(ctx, repository)
+	if err != nil {
+		return store.RepoMapping{}, nil, err
+	}
+	baseTarget := []store.Target{{Channel: behavior.SlackChannel, Mentions: behavior.Mentions}}
+
 	if r.files == nil || !r.mappings.RepoHasPathRules(repository) {
-		return r.mappings.Get(ctx, repository)
+		return behavior, baseTarget, nil
 	}
 	owner, repo, ok := splitOwnerRepo(repository)
 	if !ok {
-		return r.mappings.Get(ctx, repository)
+		return behavior, baseTarget, nil
 	}
 	files, err := r.files.ListPullRequestFiles(ctx, owner, repo, prNumber)
 	if err != nil {
@@ -58,9 +60,9 @@ func (r *Router) Resolve(ctx context.Context, repository string, prNumber int) (
 			slog.String("repository", repository),
 			slog.Int("pr", prNumber),
 			slog.Any("err", err))
-		return r.mappings.Get(ctx, repository)
+		return behavior, baseTarget, nil
 	}
-	return r.mappings.GetForFiles(ctx, r.logger, repository, files)
+	return behavior, r.mappings.TargetsForFiles(repository, files), nil
 }
 
 // splitOwnerRepo splits "owner/repo" into its parts. ok is false when the input
