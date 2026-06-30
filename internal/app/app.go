@@ -40,7 +40,42 @@ type Cleanup func()
 // refuses to start if any entry fails validation (against the per-entry lock).
 func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, *digest.Scheduler, Cleanup, error) {
 	logger := newLogger(cfg)
+	provider := buildProvider(cfg, logger)
 
+	db, err := openAndMigrate(cfg)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+	slackClient := buildSlackClient(httpClient, cfg)
+	composer := slack.NewComposer(cfg.Reactions.NewPR)
+
+	if err := startupValidate(provider, cfg, slackClient, httpClient, logger); err != nil {
+		closeDB(db)
+		return nil, nil, nil, nil, err
+	}
+
+	pullRequests := store.NewPullRequests(db)
+	scheduler := buildCleanupScheduler(cfg, pullRequests, logger)
+
+	digestScheduler, err := buildDigestScheduler(cfg, provider, pullRequests, slackClient, composer, logger)
+	if err != nil {
+		closeDB(db)
+		return nil, nil, nil, nil, err
+	}
+
+	router := buildRouter(httpClient, cfg, provider, logger)
+	dispatcher := buildDispatcher(pullRequests, provider, router, slackClient, composer, logger)
+
+	server := buildServer(cfg, buildMux(cfg, dispatcher, logger))
+	return server, scheduler, digestScheduler, func() { closeDB(db) }, nil
+}
+
+// buildProvider constructs the mappings provider from config and warns when
+// path routing is configured but no GitHub token is available to read a PR's
+// changed files — path rules are then inert and PRs route to the repo tier.
+func buildProvider(cfg config.Config, logger *slog.Logger) *mappings.Provider {
 	defaults := mappings.Defaults{
 		Reactions: store.Reactions{
 			Enabled:       cfg.Reactions.Enabled,
@@ -56,67 +91,81 @@ func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, *digest.Schedule
 		DependabotFormat: cfg.DependabotFormat,
 	}
 	provider := mappings.NewProvider(defaults, cfg.Mappings, cfg.Digest)
-
 	if provider.HasPathRules() && cfg.GitHubToken.Reveal() == "" {
 		logger.Warn("path routing is configured but GITHUB_TOKEN is unset; " +
 			"path rules are inert and PRs route to the repo tier (a token is needed to read a PR's changed files)")
 	}
+	return provider
+}
 
+// openAndMigrate opens the database and applies pending migrations. On any
+// failure it releases the handle, so the caller never holds an unclosed db.
+func openAndMigrate(cfg config.Config) (*gorm.DB, error) {
 	db, err := store.Open(cfg.DatabaseURL)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, err
 	}
 	if err := store.MigrateUp(context.Background(), db); err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("app: migrate: %w", err)
+		closeDB(db)
+		return nil, fmt.Errorf("app: migrate: %w", err)
 	}
+	return db, nil
+}
 
-	httpClient := &http.Client{Timeout: 10 * time.Second}
+// buildSlackClient builds the Slack API client, overriding the base URL only
+// when the operator set a non-default one (tests point it at a fake server).
+func buildSlackClient(httpClient *http.Client, cfg config.Config) *slack.Client {
 	slackOpts := []slack.Option{}
 	if cfg.SlackBaseURL != "" && cfg.SlackBaseURL != "https://slack.com" {
 		slackOpts = append(slackOpts, slack.WithBaseURL(cfg.SlackBaseURL))
 	}
-	slackClient := slack.NewClient(httpClient, cfg.SlackBotToken.Reveal(), slackOpts...)
-	composer := slack.NewComposer(cfg.Reactions.NewPR)
+	return slack.NewClient(httpClient, cfg.SlackBotToken.Reveal(), slackOpts...)
+}
 
-	if err := startupValidate(provider, cfg, slackClient, httpClient, logger); err != nil {
-		closeDB(db)
-		return nil, nil, nil, nil, err
-	}
-
-	pullRequests := store.NewPullRequests(db)
-	aiDetector := aireview.NewDetector()
-	scheduler := cleanup.NewScheduler(
+// buildCleanupScheduler builds the scheduler that deletes stored-message rows
+// older than the configured TTL.
+func buildCleanupScheduler(cfg config.Config, pullRequests *store.PullRequests, logger *slog.Logger) *cleanup.Scheduler {
+	return cleanup.NewScheduler(
 		pullRequests,
 		time.Duration(cfg.MessageTTLDays)*24*time.Hour,
 		cleanup.Interval,
 		logger,
 	)
+}
 
-	// The stuck-PR digest fires on every distinct cron spec that appears across
-	// the enabled mappings. An empty set means no mapping has a digest enabled
-	// (or there are no mappings). A bad cron spec fails startup here rather
-	// than silently never firing.
-	var digestScheduler *digest.Scheduler
-	if specs := provider.Schedules(); len(specs) > 0 {
-		reporter := digest.NewReporter(pullRequests, provider, slackClient, composer, provider, logger, cfg.DigestTimezone)
-		digestScheduler, err = digest.NewScheduler(specs, reporter, logger, cfg.DigestTimezone)
-		if err != nil {
-			closeDB(db)
-			return nil, nil, nil, nil, fmt.Errorf("app: digest scheduler: %w", err)
-		}
+// buildDigestScheduler builds the stuck-PR digest scheduler, which fires on
+// every distinct cron spec across the enabled mappings. It returns a nil
+// scheduler (and nil error) when no mapping enables a digest; a bad cron spec
+// fails startup here rather than silently never firing.
+func buildDigestScheduler(cfg config.Config, provider *mappings.Provider, pullRequests *store.PullRequests, slackClient *slack.Client, composer *slack.Composer, logger *slog.Logger) (*digest.Scheduler, error) {
+	specs := provider.Schedules()
+	if len(specs) == 0 {
+		return nil, nil
 	}
+	reporter := digest.NewReporter(pullRequests, provider, slackClient, composer, provider, logger, cfg.DigestTimezone)
+	scheduler, err := digest.NewScheduler(specs, reporter, logger, cfg.DigestTimezone)
+	if err != nil {
+		return nil, fmt.Errorf("app: digest scheduler: %w", err)
+	}
+	return scheduler, nil
+}
 
-	// Path routing needs a GitHub token to read a PR's changed files; without
-	// one the Router has no fetcher and resolves to the repo/org tier (the
-	// inert-paths case is warned above). The validation client is request-scoped
-	// to startup, so build a dedicated long-lived files fetcher here.
+// buildRouter builds the per-PR target router. Path routing needs a GitHub
+// token to read a PR's changed files; without one the router has no fetcher and
+// resolves to the repo/org tier. The validation client is scoped to startup, so
+// this builds a dedicated long-lived files fetcher.
+func buildRouter(httpClient *http.Client, cfg config.Config, provider *mappings.Provider, logger *slog.Logger) *pullrequest.Router {
 	var filesFetcher pullrequest.ChangedFiles
 	if cfg.GitHubToken.Reveal() != "" {
 		filesFetcher = github.NewClient(httpClient, cfg.GitHubToken.Reveal(), github.WithBaseURL(cfg.GitHubBaseURL))
 	}
-	router := pullrequest.NewRouter(provider, filesFetcher, logger)
+	return pullrequest.NewRouter(provider, filesFetcher, logger)
+}
 
-	dispatcher := pullrequest.NewDispatcher(
+// buildDispatcher wires the PR-event handlers behind the dispatcher.
+func buildDispatcher(pullRequests *store.PullRequests, provider *mappings.Provider, router *pullrequest.Router, slackClient *slack.Client, composer *slack.Composer, logger *slog.Logger) *pullrequest.Dispatcher {
+	aiDetector := aireview.NewDetector()
+	return pullrequest.NewDispatcher(
 		logger,
 		pullrequest.NewOpenHandler(pullRequests, router, slackClient, composer, logger),
 		pullrequest.NewCloseHandler(pullRequests, provider, slackClient, composer, logger),
@@ -125,7 +174,13 @@ func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, *digest.Schedule
 		pullrequest.NewCommentedHandler(pullRequests, provider, slackClient, logger, aiDetector),
 		pullrequest.NewRequestChangeHandler(pullRequests, provider, slackClient, logger, aiDetector),
 	)
+}
 
+// buildMux builds the HTTP routes: health check, the GitHub webhook, and the
+// optional inbound Slack interactivity endpoint. The Slack route is registered
+// only when a signing secret is configured; otherwise notifycat stays
+// outbound-only and the route is absent.
+func buildMux(cfg config.Config, dispatcher *pullrequest.Dispatcher, logger *slog.Logger) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -137,9 +192,6 @@ func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, *digest.Schedule
 		),
 	)
 
-	// The inbound Slack interactivity endpoint is optional: it activates only
-	// when a signing secret is configured. With no secret the route is absent
-	// and notifycat stays outbound-only, exactly as before.
 	if cfg.SlackSigningSecret.Reveal() == "" {
 		logger.Info("slack interactivity disabled", slog.String("reason", "SLACK_SIGNING_SECRET unset"))
 	} else {
@@ -151,8 +203,12 @@ func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, *digest.Schedule
 		)
 		logger.Info("slack interactivity enabled", slog.String("route", "POST /webhook/slack/interactions"))
 	}
+	return mux
+}
 
-	server := &http.Server{
+// buildServer builds the HTTP server with notifycat's hardened timeouts.
+func buildServer(cfg config.Config, mux *http.ServeMux) *http.Server {
+	return &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
@@ -161,8 +217,6 @@ func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, *digest.Schedule
 		IdleTimeout:       60 * time.Second,
 		MaxHeaderBytes:    1 << 14, // 16 KiB
 	}
-
-	return server, scheduler, digestScheduler, func() { closeDB(db) }, nil
 }
 
 // startupValidate runs the cache-aware validation pipeline before the
