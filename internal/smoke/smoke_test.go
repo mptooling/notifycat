@@ -49,11 +49,17 @@ func (f fakeMappings) Get(_ context.Context, repository string) (store.RepoMappi
 	return store.RepoMapping{Repository: repository, SlackChannel: f.channel}, nil
 }
 
-// fakeStore returns a fixed message, or ErrNotFound when ts is empty.
+// fakeStore returns a fixed message, or ErrNotFound when ts is empty, and
+// records the Delete the smoke run issues to clean up its synthetic row.
 type fakeStore struct {
 	ts        string
 	gotRepo   string
 	gotNumber int
+
+	deleteErr     error
+	deleteCalled  bool
+	deletedRepo   string
+	deletedNumber int
 }
 
 func (f *fakeStore) Messages(_ context.Context, repository string, prNumber int) ([]store.Message, error) {
@@ -63,6 +69,13 @@ func (f *fakeStore) Messages(_ context.Context, repository string, prNumber int)
 		return nil, store.ErrNotFound
 	}
 	return []store.Message{{Channel: "C0SMOKE", MessageID: f.ts}}, nil
+}
+
+func (f *fakeStore) Delete(_ context.Context, repository string, prNumber int) error {
+	f.deleteCalled = true
+	f.deletedRepo = repository
+	f.deletedNumber = prNumber
+	return f.deleteErr
 }
 
 // fakeReactions stands in for the Slack reactions.get call.
@@ -466,5 +479,53 @@ func TestRun_ServerUnreachable_ReportsUnreachable(t *testing.T) {
 	_, err := newSmoke(t, url, &fakeStore{ts: testTS}, &fakeReactions{}, testReactions).Run(context.Background(), testRepo, false)
 	if !errors.Is(err, smoke.ErrUnreachable) {
 		t.Fatalf("Run error = %v; want ErrUnreachable", err)
+	}
+}
+
+func TestRun_DeletesSyntheticRow_OnSuccess(t *testing.T) {
+	srv, _ := recordingServer(t)
+	defer srv.Close()
+
+	st := &fakeStore{ts: testTS}
+	res, err := newSmoke(t, srv.URL, st, &fakeReactions{}, testReactions).Run(context.Background(), testRepo, false)
+	if err != nil {
+		t.Fatalf("Run returned %v; want nil", err)
+	}
+	if !st.deleteCalled {
+		t.Fatal("Delete was not called; the synthetic pull_requests row would be orphaned")
+	}
+	if st.deletedRepo != testRepo || st.deletedNumber != res.PRNumber {
+		t.Errorf("Delete(%q, %d); want (%q, %d)", st.deletedRepo, st.deletedNumber, testRepo, res.PRNumber)
+	}
+}
+
+func TestRun_DeletesSyntheticRow_WithReactions(t *testing.T) {
+	srv, _ := recordingServer(t)
+	defer srv.Close()
+
+	rx := &fakeReactions{reactions: []slack.Reaction{
+		{Name: testReactions.Commented},
+		{Name: testReactions.Approved},
+		{Name: testReactions.MergedPR},
+	}}
+	st := &fakeStore{ts: testTS}
+	res, err := newSmoke(t, srv.URL, st, rx, testReactions).Run(context.Background(), testRepo, true)
+	if err != nil {
+		t.Fatalf("Run returned %v; want nil", err)
+	}
+	if !st.deleteCalled || st.deletedRepo != testRepo || st.deletedNumber != res.PRNumber {
+		t.Errorf("Delete called=%v (%q, %d); want true (%q, %d)", st.deleteCalled, st.deletedRepo, st.deletedNumber, testRepo, res.PRNumber)
+	}
+}
+
+func TestRun_CleanupFailure_IsReported(t *testing.T) {
+	srv, _ := recordingServer(t)
+	defer srv.Close()
+
+	sentinel := errors.New("db is locked")
+	st := &fakeStore{ts: testTS, deleteErr: sentinel}
+	_, err := newSmoke(t, srv.URL, st, &fakeReactions{}, testReactions).Run(context.Background(), testRepo, false)
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("Run error = %v; want it to wrap the cleanup failure", err)
 	}
 }
