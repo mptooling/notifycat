@@ -53,10 +53,12 @@ type RepoMappings interface {
 	Get(ctx context.Context, repository string) (store.RepoMapping, error)
 }
 
-// MessageStore reads back the stored Slack message timestamp for a PR.
-// *store.PullRequests satisfies it.
+// MessageStore reads back the stored Slack message timestamp for a PR, and
+// deletes the row again so a smoke run leaves no orphan behind in a live
+// database. *store.PullRequests satisfies it.
 type MessageStore interface {
 	Messages(ctx context.Context, repository string, prNumber int) ([]store.Message, error)
+	Delete(ctx context.Context, repository string, prNumber int) error
 }
 
 // ReactionReader reads the reactions attached to a Slack message, so the smoke
@@ -166,18 +168,33 @@ type lifecycleStep struct {
 // replays a comment, an approval, and a merge for the same PR and verifies the
 // configured emoji appeared on the message. A missing emoji is recorded in the
 // Result (not returned as an error) so the CLI can report every step.
-func (s *Smoke) Run(ctx context.Context, target string, withReactions bool) (Result, error) {
-	mapping, err := s.mappings.Get(ctx, target)
-	if errors.Is(err, store.ErrNotFound) {
+func (s *Smoke) Run(ctx context.Context, target string, withReactions bool) (res Result, err error) {
+	mapping, lookupErr := s.mappings.Get(ctx, target)
+	if errors.Is(lookupErr, store.ErrNotFound) {
 		return Result{}, fmt.Errorf("%w: %s", ErrNoMapping, target)
 	}
-	if err != nil {
-		return Result{}, fmt.Errorf("smoke: look up mapping for %s: %w", target, err)
+	if lookupErr != nil {
+		return Result{}, fmt.Errorf("smoke: look up mapping for %s: %w", target, lookupErr)
 	}
 
 	prNumber := int(s.now().Unix())
+	// Delete the synthetic pull_requests row this run causes the server to
+	// create, on every exit path once prNumber is known. The Slack message is
+	// left in place for the operator's visual confirmation. Delete is a no-op
+	// when the row is absent, so it is safe even if delivery failed.
+	defer func() {
+		if cleanupErr := s.store.Delete(ctx, target, prNumber); cleanupErr != nil {
+			cleanupErr = fmt.Errorf("smoke: clean up synthetic PR row %s#%d: %w", target, prNumber, cleanupErr)
+			if err == nil {
+				err = cleanupErr
+			} else {
+				err = errors.Join(err, cleanupErr)
+			}
+		}
+	}()
+
 	title := fmt.Sprintf("%s delivery test — safe to delete (PR #%d)", smokeTitlePrefix, prNumber)
-	res := Result{
+	res = Result{
 		Repository:         target,
 		Channel:            mapping.SlackChannel,
 		PRNumber:           prNumber,
@@ -189,14 +206,14 @@ func (s *Smoke) Run(ctx context.Context, target string, withReactions bool) (Res
 		BotReviewMarker:    s.rxCfg.BotReview,
 	}
 
-	if err := s.deliver(ctx, target, prNumber, title, ghEvent{event: "pull_request", action: "opened"}); err != nil {
-		return Result{}, err
+	if deliverErr := s.deliver(ctx, target, prNumber, title, ghEvent{event: "pull_request", action: "opened"}); deliverErr != nil {
+		return Result{}, deliverErr
 	}
 
-	msgs, err := s.store.Messages(ctx, target, prNumber)
-	if err != nil {
+	msgs, msgErr := s.store.Messages(ctx, target, prNumber)
+	if msgErr != nil {
 		return Result{}, fmt.Errorf("smoke: server returned 200 but no Slack message was stored "+
-			"(was the repo mapped to a channel the bot can post to?): %w", err)
+			"(was the repo mapped to a channel the bot can post to?): %w", msgErr)
 	}
 	if len(msgs) == 0 {
 		return Result{}, fmt.Errorf("smoke: server returned 200 but stored no Slack message for the PR")
@@ -225,8 +242,8 @@ func (s *Smoke) Run(ctx context.Context, target string, withReactions bool) (Res
 		lifecycleStep{"merge", s.rxCfg.MergedPR, ghEvent{event: "pull_request", action: "closed", merged: true}},
 	)
 	for _, step := range steps {
-		if err := s.deliver(ctx, target, prNumber, title, step.ev); err != nil {
-			return res, err
+		if deliverErr := s.deliver(ctx, target, prNumber, title, step.ev); deliverErr != nil {
+			return res, deliverErr
 		}
 		check := ReactionCheck{Step: step.name, Emoji: step.emoji}
 		reactions, gerr := s.reactions.GetReactions(ctx, msg.Channel, msg.MessageID)
