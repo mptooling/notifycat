@@ -23,6 +23,7 @@ import (
 	"github.com/mptooling/notifycat/internal/mappings"
 	"github.com/mptooling/notifycat/internal/pullrequest"
 	"github.com/mptooling/notifycat/internal/slack"
+	"github.com/mptooling/notifycat/internal/slackhook"
 	"github.com/mptooling/notifycat/internal/store"
 	"github.com/mptooling/notifycat/internal/validate"
 )
@@ -135,6 +136,21 @@ func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, *digest.Schedule
 			githubhook.NewHandler(eventSink(dispatcher, logger)),
 		),
 	)
+
+	// The inbound Slack interactivity endpoint is optional: it activates only
+	// when a signing secret is configured. With no secret the route is absent
+	// and notifycat stays outbound-only, exactly as before.
+	if cfg.SlackSigningSecret.Reveal() != "" {
+		slackVerifier := slackhook.NewVerifier(cfg.SlackSigningSecret.Reveal())
+		mux.Handle("POST /webhook/slack/interactions",
+			slackhook.SignatureMiddleware(slackVerifier)(
+				slackhook.NewHandler(nil, logger),
+			),
+		)
+		logger.Info("slack interactivity enabled", slog.String("route", "POST /webhook/slack/interactions"))
+	} else {
+		logger.Info("slack interactivity disabled", slog.String("reason", "SLACK_SIGNING_SECRET unset"))
+	}
 
 	server := &http.Server{
 		Addr:              cfg.Addr,

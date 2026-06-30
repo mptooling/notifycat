@@ -25,6 +25,7 @@ func writeConfig(t *testing.T, body string) {
 		"NOTIFYCAT_IGNORE_AI_REVIEWS", "NOTIFYCAT_DEPENDABOT_FORMAT",
 		"SLACK_REACTIONS_ENABLED", "SLACK_REACTION_NEW_PR",
 		"GITHUB_WEBHOOK_SECRET", "SLACK_BOT_TOKEN", "GITHUB_TOKEN",
+		"SLACK_SIGNING_SECRET",
 	} {
 		t.Setenv(k, "")
 	}
@@ -57,6 +58,33 @@ func TestLoad_RequiresSlackBotToken(t *testing.T) {
 	var missing *config.MissingVarError
 	if !errors.As(err, &missing) || missing.Var != "SLACK_BOT_TOKEN" {
 		t.Fatalf("Load() error = %v; want MissingVarError(SLACK_BOT_TOKEN)", err)
+	}
+}
+
+func TestLoad_SlackSigningSecretIsOptional(t *testing.T) {
+	writeConfig(t, minimalConfig)
+	setSecrets(t)
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() with no SLACK_SIGNING_SECRET = %v; want nil (it is optional)", err)
+	}
+	if cfg.SlackSigningSecret.Reveal() != "" {
+		t.Errorf("SlackSigningSecret = %q; want empty when unset", cfg.SlackSigningSecret.Reveal())
+	}
+}
+
+func TestLoad_SlackSigningSecretRead(t *testing.T) {
+	writeConfig(t, minimalConfig)
+	setSecrets(t)
+	t.Setenv("SLACK_SIGNING_SECRET", "v0-signing")
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.SlackSigningSecret.Reveal() != "v0-signing" {
+		t.Errorf("SlackSigningSecret = %q; want v0-signing", cfg.SlackSigningSecret.Reveal())
 	}
 }
 
