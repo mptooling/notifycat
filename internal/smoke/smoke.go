@@ -225,25 +225,45 @@ func (s *Smoke) Run(ctx context.Context, target string, withReactions bool) (res
 		return res, nil
 	}
 
+	// On a mid-lifecycle delivery failure, keep the checks gathered so far so the
+	// CLI can still report the steps that ran.
+	checks, replayErr := s.replayReactions(ctx, target, prNumber, title, msg)
+	res.Reactions = checks
+	if replayErr != nil {
+		return res, replayErr
+	}
+	return res, nil
+}
+
+// lifecycleSteps is the review lifecycle the reactions pass replays — a comment,
+// an optional bot review, an approval, and a merge — each paired with the emoji
+// the server is expected to add. The bot-review step is included only when the
+// server would actually mark it (bot reviews aren't muted and a marker emoji is
+// configured); otherwise the readback would find nothing and report a spurious
+// miss, so it is skipped here and the CLI prints why (see renderReactions).
+func (s *Smoke) lifecycleSteps() []lifecycleStep {
 	steps := []lifecycleStep{
 		{"comment", s.rxCfg.Commented, ghEvent{event: "pull_request_review", action: "submitted", reviewState: "commented"}},
 	}
-	// Replay a bot review only when the server would actually mark it: bot
-	// reviews aren't muted and a marker emoji is configured. Otherwise the
-	// readback would find nothing and report a spurious miss — so we skip it
-	// here and the CLI prints why (see renderReactions).
 	if !s.ignoreAIReviews && s.rxCfg.BotReview != "" {
 		steps = append(steps, lifecycleStep{"bot", s.rxCfg.BotReview, ghEvent{
 			event: "pull_request_review", action: "submitted", reviewState: "commented", senderType: "Bot",
 		}})
 	}
-	steps = append(steps,
+	return append(steps,
 		lifecycleStep{"approve", s.rxCfg.Approved, ghEvent{event: "pull_request_review", action: "submitted", reviewState: "approved"}},
 		lifecycleStep{"merge", s.rxCfg.MergedPR, ghEvent{event: "pull_request", action: "closed", merged: true}},
 	)
-	for _, step := range steps {
+}
+
+// replayReactions replays each lifecycle step against the live endpoint and
+// reads back whether the expected emoji landed on the message. On a delivery
+// failure it returns the checks gathered so far alongside the error.
+func (s *Smoke) replayReactions(ctx context.Context, target string, prNumber int, title string, msg store.Message) ([]ReactionCheck, error) {
+	var checks []ReactionCheck
+	for _, step := range s.lifecycleSteps() {
 		if deliverErr := s.deliver(ctx, target, prNumber, title, step.ev); deliverErr != nil {
-			return res, deliverErr
+			return checks, deliverErr
 		}
 		check := ReactionCheck{Step: step.name, Emoji: step.emoji}
 		reactions, gerr := s.reactions.GetReactions(ctx, msg.Channel, msg.MessageID)
@@ -252,9 +272,9 @@ func (s *Smoke) Run(ctx context.Context, target string, withReactions bool) (res
 		} else {
 			check.Present = containsReaction(reactions, step.emoji)
 		}
-		res.Reactions = append(res.Reactions, check)
+		checks = append(checks, check)
 	}
-	return res, nil
+	return checks, nil
 }
 
 // deliver signs and POSTs one synthetic event, mapping the response to a
