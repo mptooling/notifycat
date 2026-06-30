@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.20.0](https://github.com/mptooling/notifycat/compare/v0.19.0...v0.20.0) (2026-06-30)
+
+
+### 🚀 Features
+
+* per-path mappings config schema and validation ([#128](https://github.com/mptooling/notifycat/issues/128)) ([aa64f02](https://github.com/mptooling/notifycat/commit/aa64f02832fda14f356adfedcde3dd9f1d58026c))
+* per-path mappings single-winner resolution and token-gating warnings ([#130](https://github.com/mptooling/notifycat/issues/130)) ([1b041f6](https://github.com/mptooling/notifycat/commit/1b041f670575e84fdcc1e4c00720fed89c594189))
+* per-path routing runtime — fetch changed files and route to path channel ([#131](https://github.com/mptooling/notifycat/issues/131)) ([ea919bc](https://github.com/mptooling/notifycat/commit/ea919bcd17c2d08596f08e49c86540c8323c1d08))
+* per-PR multi-message fan-out across path channels ([#133](https://github.com/mptooling/notifycat/issues/133)) ([932d92f](https://github.com/mptooling/notifycat/commit/932d92fd6d4da8ca391515bd9b6bb34b06970052))
+* pull_requests and messages store foundation ([#132](https://github.com/mptooling/notifycat/issues/132)) ([f5b9f1a](https://github.com/mptooling/notifycat/commit/f5b9f1a866eb2cf09f186e5ae2849d9c41d52e62))
+
 ## [0.19.0](https://github.com/mptooling/notifycat/compare/v0.18.0...v0.19.0) (2026-06-26)
 
 
