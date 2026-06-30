@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.0](https://github.com/mptooling/notifycat/compare/v0.20.1...v0.21.0) (2026-06-30)
+
+
+### 🚀 Features
+
+* inbound Slack interactivity endpoint (signed callback foundation) ([#138](https://github.com/mptooling/notifycat/issues/138)) ([2e6603e](https://github.com/mptooling/notifycat/commit/2e6603e415c20b0710107e833c21e3c1c40d3200))
+
 ## [0.20.1](https://github.com/mptooling/notifycat/compare/v0.20.0...v0.20.1) (2026-06-30)
 
 
