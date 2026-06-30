@@ -221,35 +221,10 @@ func (c *Client) ListOrgRepos(ctx context.Context, org string) ([]string, error)
 }
 
 func (c *Client) listOrgReposPage(ctx context.Context, target string) ([]string, string, error) {
-	reqURL := target
-	if strings.HasPrefix(target, "/") {
-		reqURL = c.baseURL + target
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	body, next, err := c.getPaginated(ctx, target, "list-org-repos", defaultMaxRespMiB<<20)
 	if err != nil {
-		return nil, "", fmt.Errorf("github: build list-org-repos request: %w", err)
+		return nil, "", err
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
-
-	resp, err := c.httpClient.Do(req) //nolint:gosec // baseURL operator-controlled
-	if err != nil {
-		return nil, "", fmt.Errorf("github: list-org-repos: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	const maxBytes int64 = defaultMaxRespMiB << 20
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes))
-	if err != nil {
-		return nil, "", fmt.Errorf("github: list-org-repos: read body: %w", err)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, "", &APIError{Method: "list-org-repos", Status: resp.StatusCode, Message: extractMessage(body)}
-	}
-
 	var page []struct {
 		Name string `json:"name"`
 	}
@@ -260,7 +235,7 @@ func (c *Client) listOrgReposPage(ctx context.Context, target string) ([]string,
 	for _, r := range page {
 		out = append(out, r.Name)
 	}
-	return out, parseNextLink(resp.Header.Get("Link")), nil
+	return out, next, nil
 }
 
 // ListPullRequestFiles returns the repo-relative paths of every file changed in
@@ -283,35 +258,10 @@ func (c *Client) ListPullRequestFiles(ctx context.Context, owner, repo string, n
 }
 
 func (c *Client) listPullRequestFilesPage(ctx context.Context, target string) ([]string, string, error) {
-	reqURL := target
-	if strings.HasPrefix(target, "/") {
-		reqURL = c.baseURL + target
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	body, next, err := c.getPaginated(ctx, target, "list-pull-request-files", filesMaxRespMiB<<20)
 	if err != nil {
-		return nil, "", fmt.Errorf("github: build list-pull-request-files request: %w", err)
+		return nil, "", err
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
-
-	resp, err := c.httpClient.Do(req) //nolint:gosec // baseURL operator-controlled
-	if err != nil {
-		return nil, "", fmt.Errorf("github: list-pull-request-files: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	const maxBytes int64 = filesMaxRespMiB << 20
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes))
-	if err != nil {
-		return nil, "", fmt.Errorf("github: list-pull-request-files: read body: %w", err)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, "", &APIError{Method: "list-pull-request-files", Status: resp.StatusCode, Message: extractMessage(body)}
-	}
-
 	var page []struct {
 		Filename string `json:"filename"`
 	}
@@ -322,7 +272,44 @@ func (c *Client) listPullRequestFilesPage(ctx context.Context, target string) ([
 	for _, file := range page {
 		out = append(out, file.Filename)
 	}
-	return out, parseNextLink(resp.Header.Get("Link")), nil
+	return out, next, nil
+}
+
+// getPaginated issues a GET against a paginated list endpoint and returns the
+// raw body plus the rel="next" link from the Link header. target is either an
+// absolute next-page URL (from a prior Link header) or a baseURL-relative path
+// beginning with "/". method names the operation for error messages, and
+// maxBytes caps the response read (the files endpoint embeds patches and needs
+// a roomier cap than the others).
+func (c *Client) getPaginated(ctx context.Context, target, method string, maxBytes int64) ([]byte, string, error) {
+	reqURL := target
+	if strings.HasPrefix(target, "/") {
+		reqURL = c.baseURL + target
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("github: build %s request: %w", method, err)
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+
+	resp, err := c.httpClient.Do(req) //nolint:gosec // baseURL operator-controlled
+	if err != nil {
+		return nil, "", fmt.Errorf("github: %s: %w", method, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes))
+	if err != nil {
+		return nil, "", fmt.Errorf("github: %s: read body: %w", method, err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, "", &APIError{Method: method, Status: resp.StatusCode, Message: extractMessage(body)}
+	}
+	return body, parseNextLink(resp.Header.Get("Link")), nil
 }
 
 // parseNextLink extracts the rel="next" URL from a GitHub Link header.

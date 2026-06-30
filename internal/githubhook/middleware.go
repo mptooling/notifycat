@@ -1,10 +1,9 @@
 package githubhook
 
 import (
-	"bytes"
-	"errors"
-	"io"
 	"net/http"
+
+	"github.com/mptooling/notifycat/internal/webhook"
 )
 
 // MaxBodyBytes caps the size of an accepted webhook body. GitHub limits its
@@ -19,33 +18,16 @@ const MaxBodyBytes int64 = 1 << 20 // 1 MiB
 //   - passes a fresh body reader to next, so downstream handlers can read
 //     the verified body without juggling the raw stream themselves.
 func SignatureMiddleware(v *Verifier) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			limited := http.MaxBytesReader(w, r.Body, MaxBodyBytes)
-			body, err := io.ReadAll(limited)
-			if err != nil {
-				var maxErr *http.MaxBytesError
-				if errors.As(err, &maxErr) {
-					http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
-					return
-				}
-				http.Error(w, "read error", http.StatusBadRequest)
-				return
-			}
-
-			signature := r.Header.Get(SignatureHeader)
-			if signature == "" {
-				http.Error(w, "missing signature", http.StatusUnauthorized)
-				return
-			}
-			if err := v.Verify(body, signature); err != nil {
-				http.Error(w, "invalid signature", http.StatusUnauthorized)
-				return
-			}
-
-			r.Body = io.NopCloser(bytes.NewReader(body))
-			r.ContentLength = int64(len(body))
-			next.ServeHTTP(w, r)
-		})
-	}
+	return webhook.Signature(MaxBodyBytes, func(w http.ResponseWriter, r *http.Request, body []byte) bool {
+		signature := r.Header.Get(SignatureHeader)
+		if signature == "" {
+			http.Error(w, "missing signature", http.StatusUnauthorized)
+			return false
+		}
+		if err := v.Verify(body, signature); err != nil {
+			http.Error(w, "invalid signature", http.StatusUnauthorized)
+			return false
+		}
+		return true
+	})
 }

@@ -34,3 +34,6 @@ mappings.lock
 mappings.yaml
 config.lock
 config.yaml
+
+# graphify knowledge-graph output
+graphify-out/
