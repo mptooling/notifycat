@@ -50,6 +50,11 @@ type Config struct {
 	GitHubWebhookSecret Secret
 	SlackBotToken       Secret
 	GitHubToken         Secret
+
+	// SlackSigningSecret gates the inbound Slack interactivity endpoint
+	// (POST /webhook/slack/interactions). Optional: when empty the endpoint is
+	// not registered and notifycat behaves exactly as an outbound-only service.
+	SlackSigningSecret Secret
 }
 
 // Reactions configures Slack reaction emoji names per PR lifecycle event.
@@ -265,12 +270,14 @@ func setString(dst *string, v string) {
 	}
 }
 
-// readSecrets pulls the three secrets from the environment into cfg. The two
-// required ones produce a MissingVarError when unset/empty.
+// readSecrets pulls the secrets from the environment into cfg. The two required
+// ones (GITHUB_WEBHOOK_SECRET, SLACK_BOT_TOKEN) produce a MissingVarError when
+// unset/empty; GITHUB_TOKEN and SLACK_SIGNING_SECRET are optional features.
 func readSecrets(cfg *Config) error {
 	cfg.GitHubWebhookSecret = Secret(os.Getenv("GITHUB_WEBHOOK_SECRET"))
 	cfg.SlackBotToken = Secret(os.Getenv("SLACK_BOT_TOKEN"))
 	cfg.GitHubToken = Secret(os.Getenv("GITHUB_TOKEN"))
+	cfg.SlackSigningSecret = Secret(os.Getenv("SLACK_SIGNING_SECRET"))
 	if cfg.GitHubWebhookSecret.Reveal() == "" {
 		return fmt.Errorf("config: %w", &MissingVarError{Var: "GITHUB_WEBHOOK_SECRET"})
 	}
