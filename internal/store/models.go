@@ -56,6 +56,23 @@ type Message struct {
 // TableName pins the table name.
 func (Message) TableName() string { return "messages" }
 
+// CodeReview is one review "session" for a PR: who started reviewing it and
+// when, with FinishedAt nil while the review is in progress and set once the
+// reviewer's GitHub review lands. It hangs off a PullRequest (cascade-deleted
+// with it) and a partial unique index enforces at most one active (FinishedAt
+// IS NULL) review per PR — finished rows accumulate as history.
+type CodeReview struct {
+	ID            uint       `gorm:"primaryKey"`
+	PullRequestID uint       `gorm:"column:pull_request_id;not null"`
+	SlackUserID   string     `gorm:"column:slack_user_id;not null"`
+	SlackUserName string     `gorm:"column:slack_user_name"`
+	StartedAt     time.Time  `gorm:"column:started_at;not null"`
+	FinishedAt    *time.Time `gorm:"column:finished_at"`
+}
+
+// TableName pins the table name.
+func (CodeReview) TableName() string { return "code_reviews" }
+
 // Target is one fan-out destination resolved for a PR: a channel and the
 // mentions to ping there. Produced by the mappings resolver, consumed by the
 // open handler.
