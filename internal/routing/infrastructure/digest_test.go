@@ -1,0 +1,88 @@
+package infrastructure_test
+
+import (
+	"testing"
+
+	domain "github.com/mptooling/notifycat/internal/routing/domain"
+	"github.com/mptooling/notifycat/internal/routing/infrastructure"
+)
+
+const digestMappingsTail = `
+mappings:
+  acme:
+    "*":
+      channel: C0123ABCDE
+`
+
+func TestProvider_Digest_AbsentDefaultsToEnabled(t *testing.T) {
+	p, err := infrastructure.Load(writeMappingsFile(t, digestMappingsTail))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	d := p.Digest()
+	if !d.Enabled {
+		t.Errorf("digest disabled with no section; want enabled by default")
+	}
+	if d.Schedule != domain.DefaultDigestSchedule {
+		t.Errorf("schedule = %q; want default %q", d.Schedule, domain.DefaultDigestSchedule)
+	}
+}
+
+func TestProvider_Digest_CustomSchedule(t *testing.T) {
+	body := "digest:\n  schedule: \"0 8 * * 1-5\"\n" + digestMappingsTail
+	p, err := infrastructure.Load(writeMappingsFile(t, body))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	d := p.Digest()
+	if !d.Enabled {
+		t.Errorf("want enabled")
+	}
+	if d.Schedule != "0 8 * * 1-5" {
+		t.Errorf("schedule = %q; want custom", d.Schedule)
+	}
+}
+
+func TestProvider_Digest_ExplicitlyDisabled(t *testing.T) {
+	body := "digest:\n  enabled: false\n" + digestMappingsTail
+	p, err := infrastructure.Load(writeMappingsFile(t, body))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	d := p.Digest()
+	if d.Enabled {
+		t.Errorf("digest enabled despite `enabled: false`")
+	}
+	// The schedule still resolves to the default even while disabled.
+	if d.Schedule != domain.DefaultDigestSchedule {
+		t.Errorf("schedule = %q; want default", d.Schedule)
+	}
+}
+
+func TestProvider_Digest_UnknownFieldRejected(t *testing.T) {
+	body := "digest:\n  frequency: daily\n" + digestMappingsTail
+	if _, err := infrastructure.Load(writeMappingsFile(t, body)); err == nil {
+		t.Fatalf("expected parse error for unknown digest field, got nil")
+	}
+}
+
+func TestProvider_Digest_Timezone(t *testing.T) {
+	body := "digest:\n  timezone: \"Europe/Kyiv\"\n" + digestMappingsTail
+	p, err := infrastructure.Load(writeMappingsFile(t, body))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got := p.Digest().Timezone; got != "Europe/Kyiv" {
+		t.Errorf("timezone = %q; want Europe/Kyiv", got)
+	}
+}
+
+func TestProvider_Digest_TimezoneAbsentIsEmpty(t *testing.T) {
+	p, err := infrastructure.Load(writeMappingsFile(t, digestMappingsTail))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got := p.Digest().Timezone; got != "" {
+		t.Errorf("timezone = %q; want empty when absent (resolved to UTC by config)", got)
+	}
+}
