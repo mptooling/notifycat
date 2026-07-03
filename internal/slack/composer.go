@@ -4,6 +4,7 @@
 package slack
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -33,15 +34,66 @@ type Message struct {
 }
 
 // Block is the narrow subset of Block Kit the notifier emits: a "section"
-// (Text set) or a "context" line (Elements set). Exactly one of the two is
-// populated per block. The struct marshals directly to the Slack blocks JSON.
+// (Text set), a "context" line (Elements set), or an "actions" row (Buttons
+// set). Exactly one shape is populated per block. Section and context marshal
+// through the struct tags below; an "actions" block marshals its Buttons as
+// button elements via MarshalJSON.
 type Block struct {
 	Type     string       `json:"type"`
 	Text     *TextObject  `json:"text,omitempty"`
 	Elements []TextObject `json:"elements,omitempty"`
+	Buttons  []Button     `json:"-"`
 }
 
-// TextObject is a Block Kit text object. The notifier only ever emits mrkdwn.
+// Button is an interactive Block Kit button. Text is rendered into a plain_text
+// object; ActionID identifies the button to the interactions endpoint; Value is
+// the opaque payload it carries back on click; Style is Slack's button style
+// ("primary"/"danger", empty for default).
+type Button struct {
+	Text     string
+	ActionID string
+	Value    string
+	Style    string
+}
+
+// MarshalJSON keeps section/context blocks byte-for-byte as their struct tags
+// would render, and emits an "actions" block as {"type":"actions","elements":
+// [{"type":"button",...}]} — Block Kit puts buttons under elements, but with a
+// different element shape than a context line, so the two can't share the field.
+func (b Block) MarshalJSON() ([]byte, error) {
+	if b.Type != "actions" {
+		type plain struct {
+			Type     string       `json:"type"`
+			Text     *TextObject  `json:"text,omitempty"`
+			Elements []TextObject `json:"elements,omitempty"`
+		}
+		return json.Marshal(plain{Type: b.Type, Text: b.Text, Elements: b.Elements})
+	}
+	type buttonElement struct {
+		Type     string     `json:"type"`
+		Text     TextObject `json:"text"`
+		ActionID string     `json:"action_id"`
+		Value    string     `json:"value"`
+		Style    string     `json:"style,omitempty"`
+	}
+	elements := make([]buttonElement, 0, len(b.Buttons))
+	for _, button := range b.Buttons {
+		elements = append(elements, buttonElement{
+			Type:     "button",
+			Text:     TextObject{Type: "plain_text", Text: button.Text},
+			ActionID: button.ActionID,
+			Value:    button.Value,
+			Style:    button.Style,
+		})
+	}
+	return json.Marshal(struct {
+		Type     string          `json:"type"`
+		Elements []buttonElement `json:"elements"`
+	}{Type: b.Type, Elements: elements})
+}
+
+// TextObject is a Block Kit text object. Sections/contexts emit mrkdwn; button
+// labels emit plain_text.
 type TextObject struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
@@ -80,9 +132,28 @@ func (c *Composer) NewMessage(pr PRDetails, mentions []string, newPREmoji string
 		mentionsPrefix(mentions), pr.Number, pr.Title, pr.Author,
 	)
 	return Message{
-		Blocks:   []Block{section(headline), contextBlock(contextLine(pr))},
+		Blocks: []Block{
+			section(headline),
+			contextBlock(contextLine(pr)),
+			startReviewActions(pr),
+		},
 		Fallback: fallback,
 	}
+}
+
+// InReviewMessage renders the PR message once a reviewer owns it: the linked
+// title with an "In review" status, the reviewer as a Slack mention (which
+// shows their display name without a profile lookup), and the localized start
+// time. The Start review button and the "please review" ping are both dropped —
+// the PR is no longer awaiting a volunteer. It is a pure function of its inputs,
+// safe to re-render for an already-in-review PR.
+func (c *Composer) InReviewMessage(pr PRDetails, reviewerUserID string, startedAt time.Time) Message {
+	headline := fmt.Sprintf(
+		":eyes: *In review* — <%s|PR #%d: %s>\nReviewer <@%s> · started %s",
+		pr.URL, pr.Number, pr.Title, reviewerUserID, dateToken(startedAt),
+	)
+	fallback := fmt.Sprintf("In review: PR #%d: %s by %s", pr.Number, pr.Title, pr.Author)
+	return Message{Blocks: []Block{section(headline)}, Fallback: fallback}
 }
 
 // BotMessage renders the compact notification for a PR opened by a dependency
@@ -237,6 +308,19 @@ func section(text string) Block {
 // contextBlock builds an mrkdwn context block with a single element.
 func contextBlock(text string) Block {
 	return Block{Type: "context", Elements: []TextObject{{Type: "mrkdwn", Text: text}}}
+}
+
+// startReviewActions builds the actions row carrying the Start review button.
+// The button's value encodes the PR's natural key as "repository#number" — a
+// GitHub repo name cannot contain '#', so the click handler can split it back
+// unambiguously.
+func startReviewActions(pr PRDetails) Block {
+	return Block{Type: "actions", Buttons: []Button{{
+		Text:     "Start review",
+		ActionID: "start_review",
+		Value:    fmt.Sprintf("%s#%d", pr.Repository, pr.Number),
+		Style:    "primary",
+	}}}
 }
 
 // mentionsPrefix joins mentions with commas (the legacy PHP wire format) and
