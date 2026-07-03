@@ -19,7 +19,30 @@ linters:
     - nolintlint
     - unconvert
     - unparam
+    - depguard
   settings:
+    depguard:
+      rules:
+        # Kernel purity: internal/kernel is the pure center of the hexagon and
+        # must import nothing from any other internal/... package.
+        kernel-purity:
+          files:
+            - "**/internal/kernel/**"
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: internal/kernel must stay pure — it imports only the standard library, never another internal/... package
+        # Per-domain layer boundaries are added here as domains migrate
+        # (Phases 1–8). Template — a domain's `domain` layer may reach only the
+        # shared kernel and its dependency domains' `domain` layers, never any
+        # `application` or `infrastructure`:
+        #
+        # <domain>-domain-purity:
+        #   files:
+        #     - "**/internal/<domain>/domain/**"
+        #   deny:
+        #     - pkg: github.com/mptooling/notifycat/internal
+        #       desc: domain layer imports only the shared kernel and dependency domains' domain layers
+        #   # then re-`allow` the kernel + permitted domain-layer packages.
     errcheck:
       exclude-functions:
         - fmt.Fprint
