@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/mptooling/notifycat/internal/slack"
 	"github.com/mptooling/notifycat/internal/store"
@@ -70,6 +71,50 @@ func contextTextOf(m slack.Message) string {
 		}
 	}
 	return ""
+}
+
+// reviewedByTextOf returns the text of the "reviewed by …" context line, or ""
+// if the message has none.
+func reviewedByTextOf(m slack.Message) string {
+	for _, b := range m.Blocks {
+		if b.Type == "context" && len(b.Elements) > 0 && strings.HasPrefix(b.Elements[0].Text, "reviewed by") {
+			return b.Elements[0].Text
+		}
+	}
+	return ""
+}
+
+// hasActionsBlock reports whether the message carries an actions row (the
+// "Start review" button).
+func hasActionsBlock(m slack.Message) bool {
+	for _, b := range m.Blocks {
+		if b.Type == "actions" {
+			return true
+		}
+	}
+	return false
+}
+
+// hasReviewingMarker reports whether any context block still shows an in-review
+// ":eye: … reviewing" marker.
+func hasReviewingMarker(m slack.Message) bool {
+	for _, b := range m.Blocks {
+		if b.Type == "context" && len(b.Elements) > 0 && strings.Contains(b.Elements[0].Text, "reviewing") {
+			return true
+		}
+	}
+	return false
+}
+
+// lastUpdate returns the Msg of the last UpdateMessage call, or a zero Message
+// if none was recorded.
+func (f *fakeMessenger) lastUpdate() slack.Message {
+	for i := len(f.calls) - 1; i >= 0; i-- {
+		if f.calls[i].Method == "UpdateMessage" {
+			return f.calls[i].Msg
+		}
+	}
+	return slack.Message{}
 }
 
 func (f *fakeMessenger) DeleteMessage(_ context.Context, channel, messageID string) error {
@@ -246,19 +291,47 @@ func (f *fakeBehavior) Get(_ context.Context, _ string) (store.RepoMapping, erro
 type fakeReviewSessions struct {
 	finished  map[string]int
 	reviewers map[string][]store.CodeReview
+	active    map[string]store.CodeReview
 	finishErr error
 	listErr   error
+	activeErr error
 }
 
 func newFakeReviewSessions() *fakeReviewSessions {
-	return &fakeReviewSessions{finished: map[string]int{}, reviewers: map[string][]store.CodeReview{}}
+	return &fakeReviewSessions{
+		finished:  map[string]int{},
+		reviewers: map[string][]store.CodeReview{},
+		active:    map[string]store.CodeReview{},
+	}
+}
+
+// startSession seeds an active review by the given Slack user and records them
+// as a reviewer, so GetActive reports the PR as in-review and Reviewers lists
+// them. Tests use it to drive the submit-clears-the-in-review-state path.
+func (f *fakeReviewSessions) startSession(repository string, prNumber int, slackUserID string) {
+	key := prStoreKey(repository, prNumber)
+	review := store.CodeReview{SlackUserID: slackUserID}
+	f.active[key] = review
+	f.reviewers[key] = append(f.reviewers[key], review)
+}
+
+func (f *fakeReviewSessions) GetActive(_ context.Context, repository string, prNumber int) (store.CodeReview, error) {
+	if f.activeErr != nil {
+		return store.CodeReview{}, f.activeErr
+	}
+	if review, ok := f.active[prStoreKey(repository, prNumber)]; ok {
+		return review, nil
+	}
+	return store.CodeReview{}, store.ErrNotFound
 }
 
 func (f *fakeReviewSessions) Finish(_ context.Context, repository string, prNumber int) error {
 	if f.finishErr != nil {
 		return f.finishErr
 	}
-	f.finished[prStoreKey(repository, prNumber)]++
+	key := prStoreKey(repository, prNumber)
+	f.finished[key]++
+	delete(f.active, key) // a finished session is no longer active; Reviewers still lists it
 	return nil
 }
 

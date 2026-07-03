@@ -46,7 +46,7 @@ func setupReviewFixture(t *testing.T) (*fakePRStore, *fakeBehavior, *fakeMesseng
 // ----- Approve -----
 
 func TestApproveHandler_Applicable(t *testing.T) {
-	h := pullrequest.NewApproveHandler(nil, nil, nil, discardLogger(), testDetector(), newFakeReviewSessions())
+	h := pullrequest.NewApproveHandler(nil, nil, nil, testComposer(), discardLogger(), testDetector(), newFakeReviewSessions())
 
 	if !h.Applicable(pullrequest.Event{Action: "submitted", Review: &pullrequest.Review{State: "approved"}}) {
 		t.Error("submitted+approved should be applicable")
@@ -61,7 +61,7 @@ func TestApproveHandler_Applicable(t *testing.T) {
 
 func TestApproveHandler_Handle_AddsReaction(t *testing.T) {
 	prStore, behavior, client := setupReviewFixture(t)
-	h := pullrequest.NewApproveHandler(prStore, behavior, client, discardLogger(), testDetector(), newFakeReviewSessions())
+	h := pullrequest.NewApproveHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), newFakeReviewSessions())
 
 	e := pullrequest.Event{
 		Action:     "submitted",
@@ -85,7 +85,7 @@ func TestApproveHandler_Handle_AddsReaction(t *testing.T) {
 
 func TestApproveHandler_Handle_TouchesActivity(t *testing.T) {
 	prStore, behavior, client := setupReviewFixture(t)
-	h := pullrequest.NewApproveHandler(prStore, behavior, client, discardLogger(), testDetector(), newFakeReviewSessions())
+	h := pullrequest.NewApproveHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), newFakeReviewSessions())
 
 	e := pullrequest.Event{
 		Action:     "submitted",
@@ -106,7 +106,7 @@ func TestApproveHandler_IgnoreAIReviews_BotSenderDoesNotTouch(t *testing.T) {
 	_ = prStore.AddMessage(context.Background(), "octo/widget", 42, "C123", "ts1")
 	behavior := reviewBehavior(true, "")
 	client := &fakeMessenger{}
-	h := pullrequest.NewApproveHandler(prStore, behavior, client, discardLogger(), testDetector(), newFakeReviewSessions())
+	h := pullrequest.NewApproveHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), newFakeReviewSessions())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -128,7 +128,7 @@ func TestApproveHandler_IgnoreAIReviews_BotSenderDoesNotTouch(t *testing.T) {
 // ----- Commented -----
 
 func TestCommentedHandler_Applicable(t *testing.T) {
-	h := pullrequest.NewCommentedHandler(nil, nil, nil, discardLogger(), testDetector(), newFakeReviewSessions())
+	h := pullrequest.NewCommentedHandler(nil, nil, nil, testComposer(), discardLogger(), testDetector(), newFakeReviewSessions())
 
 	cases := []struct {
 		name string
@@ -156,7 +156,7 @@ func TestCommentedHandler_Applicable(t *testing.T) {
 
 func TestCommentedHandler_Handle_AddsReaction(t *testing.T) {
 	prStore, behavior, client := setupReviewFixture(t)
-	h := pullrequest.NewCommentedHandler(prStore, behavior, client, discardLogger(), testDetector(), newFakeReviewSessions())
+	h := pullrequest.NewCommentedHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), newFakeReviewSessions())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -172,7 +172,7 @@ func TestCommentedHandler_Handle_AddsReaction(t *testing.T) {
 
 func TestCommentedHandler_Handle_LineCommentAddsReaction(t *testing.T) {
 	prStore, behavior, client := setupReviewFixture(t)
-	h := pullrequest.NewCommentedHandler(prStore, behavior, client, discardLogger(), testDetector(), newFakeReviewSessions())
+	h := pullrequest.NewCommentedHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), newFakeReviewSessions())
 
 	e := pullrequest.Event{
 		GitHubEvent: "pull_request_review_comment",
@@ -191,7 +191,7 @@ func TestCommentedHandler_Handle_LineCommentAddsReaction(t *testing.T) {
 // ----- RequestChange -----
 
 func TestRequestChangeHandler_Applicable(t *testing.T) {
-	h := pullrequest.NewRequestChangeHandler(nil, nil, nil, discardLogger(), testDetector(), newFakeReviewSessions())
+	h := pullrequest.NewRequestChangeHandler(nil, nil, nil, testComposer(), discardLogger(), testDetector(), newFakeReviewSessions())
 
 	if !h.Applicable(pullrequest.Event{Action: "submitted", Review: &pullrequest.Review{State: "changes_requested"}}) {
 		t.Error("submitted+changes_requested should be applicable")
@@ -203,7 +203,7 @@ func TestRequestChangeHandler_Applicable(t *testing.T) {
 
 func TestRequestChangeHandler_Handle_AddsReaction(t *testing.T) {
 	prStore, behavior, client := setupReviewFixture(t)
-	h := pullrequest.NewRequestChangeHandler(prStore, behavior, client, discardLogger(), testDetector(), newFakeReviewSessions())
+	h := pullrequest.NewRequestChangeHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), newFakeReviewSessions())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -225,7 +225,7 @@ func TestReactionHandler_ReactsOnEveryMessage(t *testing.T) {
 	_ = prStore.AddMessage(context.Background(), "octo/widget", 42, "C0B", "ts-b")
 	behavior := reviewBehavior(false, "")
 	client := &fakeMessenger{}
-	h := pullrequest.NewApproveHandler(prStore, behavior, client, discardLogger(), testDetector(), newFakeReviewSessions())
+	h := pullrequest.NewApproveHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), newFakeReviewSessions())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -249,7 +249,7 @@ func TestApproveHandler_IgnoreAIReviews_BotSenderSuppressesReaction(t *testing.T
 	_ = prStore.AddMessage(context.Background(), "octo/widget", 42, "C123", "ts1")
 	behavior := reviewBehavior(true, "")
 	client := &fakeMessenger{}
-	h := pullrequest.NewApproveHandler(prStore, behavior, client, discardLogger(), testDetector(), newFakeReviewSessions())
+	h := pullrequest.NewApproveHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), newFakeReviewSessions())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -270,7 +270,7 @@ func TestApproveHandler_IgnoreAIReviews_HumanSenderReacts(t *testing.T) {
 	_ = prStore.AddMessage(context.Background(), "octo/widget", 42, "C123", "ts1")
 	behavior := reviewBehavior(true, "")
 	client := &fakeMessenger{}
-	h := pullrequest.NewApproveHandler(prStore, behavior, client, discardLogger(), testDetector(), newFakeReviewSessions())
+	h := pullrequest.NewApproveHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), newFakeReviewSessions())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -291,7 +291,7 @@ func TestApproveHandler_IgnoreAIReviewsFalse_BotSenderStillReacts(t *testing.T) 
 	_ = prStore.AddMessage(context.Background(), "octo/widget", 42, "C123", "ts1")
 	behavior := reviewBehavior(false, "")
 	client := &fakeMessenger{}
-	h := pullrequest.NewApproveHandler(prStore, behavior, client, discardLogger(), testDetector(), newFakeReviewSessions())
+	h := pullrequest.NewApproveHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), newFakeReviewSessions())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -312,7 +312,7 @@ func TestCommentedHandler_IgnoreAIReviews_BotSenderSuppressesReaction(t *testing
 	_ = prStore.AddMessage(context.Background(), "octo/widget", 42, "C123", "ts1")
 	behavior := reviewBehavior(true, "")
 	client := &fakeMessenger{}
-	h := pullrequest.NewCommentedHandler(prStore, behavior, client, discardLogger(), testDetector(), newFakeReviewSessions())
+	h := pullrequest.NewCommentedHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), newFakeReviewSessions())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -333,7 +333,7 @@ func TestCommentedHandler_IgnoreAIReviews_BotLineCommentSuppressed(t *testing.T)
 	_ = prStore.AddMessage(context.Background(), "octo/widget", 42, "C123", "ts1")
 	behavior := reviewBehavior(true, "")
 	client := &fakeMessenger{}
-	h := pullrequest.NewCommentedHandler(prStore, behavior, client, discardLogger(), testDetector(), newFakeReviewSessions())
+	h := pullrequest.NewCommentedHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), newFakeReviewSessions())
 
 	e := pullrequest.Event{
 		GitHubEvent: "pull_request_review_comment",
@@ -355,7 +355,7 @@ func TestRequestChangeHandler_IgnoreAIReviews_BotSenderSuppressesReaction(t *tes
 	_ = prStore.AddMessage(context.Background(), "octo/widget", 42, "C123", "ts1")
 	behavior := reviewBehavior(true, "")
 	client := &fakeMessenger{}
-	h := pullrequest.NewRequestChangeHandler(prStore, behavior, client, discardLogger(), testDetector(), newFakeReviewSessions())
+	h := pullrequest.NewRequestChangeHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), newFakeReviewSessions())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -378,7 +378,7 @@ func TestReactionHandler_SuppressedReactionLogsAtDebug(t *testing.T) {
 	client := &fakeMessenger{}
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	h := pullrequest.NewApproveHandler(prStore, behavior, client, logger, testDetector(), newFakeReviewSessions())
+	h := pullrequest.NewApproveHandler(prStore, behavior, client, testComposer(), logger, testDetector(), newFakeReviewSessions())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -405,7 +405,7 @@ func TestCommentedHandler_BotMarker_AddsMarkerAlongsideStateReaction(t *testing.
 	_ = prStore.AddMessage(context.Background(), "octo/widget", 42, "C123", "ts1")
 	behavior := reviewBehavior(false, "robot_face")
 	client := &fakeMessenger{}
-	h := pullrequest.NewCommentedHandler(prStore, behavior, client, discardLogger(), testDetector(), newFakeReviewSessions())
+	h := pullrequest.NewCommentedHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), newFakeReviewSessions())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -429,7 +429,7 @@ func TestApproveHandler_BotMarker_AddsMarkerAlongsideStateReaction(t *testing.T)
 	_ = prStore.AddMessage(context.Background(), "octo/widget", 42, "C123", "ts1")
 	behavior := reviewBehavior(false, "robot_face")
 	client := &fakeMessenger{}
-	h := pullrequest.NewApproveHandler(prStore, behavior, client, discardLogger(), testDetector(), newFakeReviewSessions())
+	h := pullrequest.NewApproveHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), newFakeReviewSessions())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -450,7 +450,7 @@ func TestCommentedHandler_BotMarker_LineCommentBotGetsMarker(t *testing.T) {
 	_ = prStore.AddMessage(context.Background(), "octo/widget", 42, "C123", "ts1")
 	behavior := reviewBehavior(false, "robot_face")
 	client := &fakeMessenger{}
-	h := pullrequest.NewCommentedHandler(prStore, behavior, client, discardLogger(), testDetector(), newFakeReviewSessions())
+	h := pullrequest.NewCommentedHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), newFakeReviewSessions())
 
 	e := pullrequest.Event{
 		GitHubEvent: "pull_request_review_comment",
@@ -472,7 +472,7 @@ func TestCommentedHandler_BotMarker_HumanGetsOnlyStateReaction(t *testing.T) {
 	_ = prStore.AddMessage(context.Background(), "octo/widget", 42, "C123", "ts1")
 	behavior := reviewBehavior(false, "robot_face")
 	client := &fakeMessenger{}
-	h := pullrequest.NewCommentedHandler(prStore, behavior, client, discardLogger(), testDetector(), newFakeReviewSessions())
+	h := pullrequest.NewCommentedHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), newFakeReviewSessions())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -495,7 +495,7 @@ func TestCommentedHandler_BotMarker_SuppressedBotGetsNothing(t *testing.T) {
 	_ = prStore.AddMessage(context.Background(), "octo/widget", 42, "C123", "ts1")
 	behavior := reviewBehavior(true, "robot_face")
 	client := &fakeMessenger{}
-	h := pullrequest.NewCommentedHandler(prStore, behavior, client, discardLogger(), testDetector(), newFakeReviewSessions())
+	h := pullrequest.NewCommentedHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), newFakeReviewSessions())
 
 	e := pullrequest.Event{
 		Action: "submitted", Repository: "octo/widget",
@@ -516,7 +516,7 @@ func TestCommentedHandler_BotMarker_SuppressedBotGetsNothing(t *testing.T) {
 func TestApproveHandler_SubmittedReview_FinishesSession(t *testing.T) {
 	prStore, behavior, client := setupReviewFixture(t)
 	reviews := newFakeReviewSessions()
-	h := pullrequest.NewApproveHandler(prStore, behavior, client, discardLogger(), testDetector(), reviews)
+	h := pullrequest.NewApproveHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), reviews)
 
 	e := pullrequest.Event{
 		GitHubEvent: "pull_request_review",
@@ -542,7 +542,7 @@ func TestApproveHandler_SubmittedReview_FinishesSession(t *testing.T) {
 func TestRequestChangeHandler_SubmittedReview_FinishesSession(t *testing.T) {
 	prStore, behavior, client := setupReviewFixture(t)
 	reviews := newFakeReviewSessions()
-	h := pullrequest.NewRequestChangeHandler(prStore, behavior, client, discardLogger(), testDetector(), reviews)
+	h := pullrequest.NewRequestChangeHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), reviews)
 
 	e := pullrequest.Event{
 		GitHubEvent: "pull_request_review",
@@ -562,7 +562,7 @@ func TestRequestChangeHandler_SubmittedReview_FinishesSession(t *testing.T) {
 func TestCommentedHandler_LineComment_DoesNotFinishSession(t *testing.T) {
 	prStore, behavior, client := setupReviewFixture(t)
 	reviews := newFakeReviewSessions()
-	h := pullrequest.NewCommentedHandler(prStore, behavior, client, discardLogger(), testDetector(), reviews)
+	h := pullrequest.NewCommentedHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), reviews)
 
 	e := pullrequest.Event{
 		GitHubEvent: "pull_request_review_comment",
@@ -581,7 +581,7 @@ func TestCommentedHandler_LineComment_DoesNotFinishSession(t *testing.T) {
 func TestCommentedHandler_IssueComment_DoesNotFinishSession(t *testing.T) {
 	prStore, behavior, client := setupReviewFixture(t)
 	reviews := newFakeReviewSessions()
-	h := pullrequest.NewCommentedHandler(prStore, behavior, client, discardLogger(), testDetector(), reviews)
+	h := pullrequest.NewCommentedHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), reviews)
 
 	e := pullrequest.Event{
 		GitHubEvent: "issue_comment",
@@ -601,7 +601,7 @@ func TestCommentedHandler_IssueComment_DoesNotFinishSession(t *testing.T) {
 func TestCommentedHandler_SubmittedCommentReview_FinishesSession(t *testing.T) {
 	prStore, behavior, client := setupReviewFixture(t)
 	reviews := newFakeReviewSessions()
-	h := pullrequest.NewCommentedHandler(prStore, behavior, client, discardLogger(), testDetector(), reviews)
+	h := pullrequest.NewCommentedHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), reviews)
 
 	e := pullrequest.Event{
 		GitHubEvent: "pull_request_review",
@@ -615,6 +615,129 @@ func TestCommentedHandler_SubmittedCommentReview_FinishesSession(t *testing.T) {
 	}
 	if reviews.finishedCount("octo/widget", 42) != 1 {
 		t.Fatalf("submitted commented review should finish session; got finishedCount=%d", reviews.finishedCount("octo/widget", 42))
+	}
+}
+
+// ----- Submit takes the message out of the in-review state (AC #1) -----
+
+// submittedReviewEvent is an approved pull_request_review with the full PR
+// object the recompose depends on (title/url/author come from the webhook).
+func submittedReviewEvent() pullrequest.Event {
+	return pullrequest.Event{
+		GitHubEvent: "pull_request_review",
+		Action:      "submitted",
+		Repository:  "octo/widget",
+		PR: pullrequest.PR{
+			Number: 42,
+			Title:  "Add widget",
+			URL:    "https://github.com/octo/widget/pull/42",
+			Author: "alice",
+		},
+		Review: &pullrequest.Review{State: "approved"},
+	}
+}
+
+func TestApproveHandler_SubmittedReview_ActiveSession_ClearsInReviewState(t *testing.T) {
+	prStore, behavior, client := setupReviewFixture(t)
+	reviews := newFakeReviewSessions()
+	reviews.startSession("octo/widget", 42, "U1")
+	h := pullrequest.NewApproveHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), reviews)
+
+	if err := h.Handle(context.Background(), submittedReviewEvent()); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if client.updates() != 1 {
+		t.Fatalf("a submit with an active session should update the message once; got %d", client.updates())
+	}
+	msg := client.lastUpdate()
+	if hasReviewingMarker(msg) {
+		t.Errorf("updated message should carry no ':eye: reviewing' marker; blocks = %+v", msg.Blocks)
+	}
+	if got := reviewedByTextOf(msg); got != "reviewed by <@U1>" {
+		t.Errorf("reviewed-by line = %q; want %q", got, "reviewed by <@U1>")
+	}
+	if !hasActionsBlock(msg) {
+		t.Error("a still-open PR should keep the Start review button after submit")
+	}
+	if reviews.finishedCount("octo/widget", 42) != 1 {
+		t.Errorf("session should be finished; got finishedCount=%d", reviews.finishedCount("octo/widget", 42))
+	}
+	if client.reactions() != 1 {
+		t.Errorf("reaction should still be added; got %d", client.reactions())
+	}
+}
+
+func TestApproveHandler_SubmittedReview_NoActiveSession_LeavesMessageUntouched(t *testing.T) {
+	prStore, behavior, client := setupReviewFixture(t)
+	reviews := newFakeReviewSessions() // nobody started a review
+	h := pullrequest.NewApproveHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), reviews)
+
+	if err := h.Handle(context.Background(), submittedReviewEvent()); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if client.updates() != 0 {
+		t.Fatalf("no active session should mean no message update (reaction only); got %d", client.updates())
+	}
+	if client.reactions() != 1 {
+		t.Fatalf("reaction should still be added; got %d", client.reactions())
+	}
+	if reviews.finishedCount("octo/widget", 42) != 1 {
+		t.Fatalf("Finish is idempotent and still called; got %d", reviews.finishedCount("octo/widget", 42))
+	}
+}
+
+func TestReactionHandler_SubmittedReview_ActiveSession_UpdatesEveryStoredMessage(t *testing.T) {
+	prStore := newFakePRStore()
+	_ = prStore.AddMessage(context.Background(), "octo/widget", 42, "C0A", "ts-a")
+	_ = prStore.AddMessage(context.Background(), "octo/widget", 42, "C0B", "ts-b")
+	behavior := reviewBehavior(false, "")
+	client := &fakeMessenger{}
+	reviews := newFakeReviewSessions()
+	reviews.startSession("octo/widget", 42, "U1")
+	reviews.startSession("octo/widget", 42, "U2")
+	h := pullrequest.NewApproveHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), reviews)
+
+	if err := h.Handle(context.Background(), submittedReviewEvent()); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if client.updates() != 2 {
+		t.Fatalf("want one update per stored message (2); got %d", client.updates())
+	}
+	if got := reviewedByTextOf(client.lastUpdate()); got != "reviewed by <@U1>, <@U2>" {
+		t.Errorf("reviewed-by line = %q; want every reviewer listed", got)
+	}
+}
+
+func TestApproveHandler_SubmittedReview_ReviewersLoadError_StillClearsInReviewState(t *testing.T) {
+	prStore, behavior, client := setupReviewFixture(t)
+	reviews := newFakeReviewSessions()
+	reviews.startSession("octo/widget", 42, "U1")
+	reviews.listErr = errInjected
+	h := pullrequest.NewApproveHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), reviews)
+
+	if err := h.Handle(context.Background(), submittedReviewEvent()); err != nil {
+		t.Fatalf("a reviewers-load error should soft-degrade, not fail Handle: %v", err)
+	}
+	if client.updates() != 1 {
+		t.Fatalf("message should still leave the in-review state; got %d updates", client.updates())
+	}
+	msg := client.lastUpdate()
+	if hasReviewingMarker(msg) {
+		t.Error("markers should be cleared even when the reviewer list can't be loaded")
+	}
+	if got := reviewedByTextOf(msg); got != "" {
+		t.Errorf("reviewed-by line should be dropped on load error; got %q", got)
+	}
+}
+
+func TestApproveHandler_SubmittedReview_GetActiveError_Fails(t *testing.T) {
+	prStore, behavior, client := setupReviewFixture(t)
+	reviews := newFakeReviewSessions()
+	reviews.activeErr = errInjected
+	h := pullrequest.NewApproveHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), reviews)
+
+	if err := h.Handle(context.Background(), submittedReviewEvent()); err == nil {
+		t.Fatal("a non-NotFound GetActive error should surface, not be swallowed")
 	}
 }
 
@@ -645,11 +768,11 @@ func TestReviewHandlers_NoStoredMessageIsNoop(t *testing.T) {
 			var h pullrequest.EventHandler
 			switch c.name {
 			case "approve":
-				h = pullrequest.NewApproveHandler(prStore, behavior, client, discardLogger(), testDetector(), newFakeReviewSessions())
+				h = pullrequest.NewApproveHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), newFakeReviewSessions())
 			case "commented":
-				h = pullrequest.NewCommentedHandler(prStore, behavior, client, discardLogger(), testDetector(), newFakeReviewSessions())
+				h = pullrequest.NewCommentedHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), newFakeReviewSessions())
 			case "request_change":
-				h = pullrequest.NewRequestChangeHandler(prStore, behavior, client, discardLogger(), testDetector(), newFakeReviewSessions())
+				h = pullrequest.NewRequestChangeHandler(prStore, behavior, client, testComposer(), discardLogger(), testDetector(), newFakeReviewSessions())
 			}
 			if err := h.Handle(context.Background(), c.e); err != nil {
 				t.Fatalf("Handle: %v", err)
