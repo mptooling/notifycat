@@ -48,12 +48,15 @@ type Block struct {
 // Button is an interactive Block Kit button. Text is rendered into a plain_text
 // object; ActionID identifies the button to the interactions endpoint; Value is
 // the opaque payload it carries back on click; Style is Slack's button style
-// ("primary"/"danger", empty for default).
+// ("primary"/"danger", empty for default). URL, when set, makes Slack open the
+// link in the clicker's browser in addition to delivering the interaction — so
+// the click both records the review and sends the reviewer to the PR page.
 type Button struct {
 	Text     string
 	ActionID string
 	Value    string
 	Style    string
+	URL      string
 }
 
 // MarshalJSON keeps section/context blocks byte-for-byte as their struct tags
@@ -75,6 +78,7 @@ func (b Block) MarshalJSON() ([]byte, error) {
 		ActionID string     `json:"action_id"`
 		Value    string     `json:"value"`
 		Style    string     `json:"style,omitempty"`
+		URL      string     `json:"url,omitempty"`
 	}
 	elements := make([]buttonElement, 0, len(b.Buttons))
 	for _, button := range b.Buttons {
@@ -84,6 +88,7 @@ func (b Block) MarshalJSON() ([]byte, error) {
 			ActionID: button.ActionID,
 			Value:    button.Value,
 			Style:    button.Style,
+			URL:      button.URL,
 		})
 	}
 	return json.Marshal(struct {
@@ -323,6 +328,7 @@ func startReviewActions(pr PRDetails) Block {
 		ActionID: "start_review",
 		Value:    fmt.Sprintf("%s#%d", pr.Repository, pr.Number),
 		Style:    "primary",
+		URL:      pr.URL,
 	}}}
 }
 
