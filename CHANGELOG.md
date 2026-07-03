@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.21.0](https://github.com/mptooling/notifycat/compare/v0.20.1...v0.21.0) (2026-07-03)
+
+
+### 🚀 Features
+
+* clear the in-review state on review submit ([#153](https://github.com/mptooling/notifycat/issues/153)) ([91a4038](https://github.com/mptooling/notifycat/commit/91a40382031b53c1d37431e1dcf20f1519c9dc76))
+* code_reviews store and migration for active review ownership ([#141](https://github.com/mptooling/notifycat/issues/141)) ([d1b6905](https://github.com/mptooling/notifycat/commit/d1b6905a48f91a7f92095e187bd2847b403347f8))
+* finish review sessions on submit and show reviewers on close ([#144](https://github.com/mptooling/notifycat/issues/144)) ([6e8bec0](https://github.com/mptooling/notifycat/commit/6e8bec0913fd1f10073535262b12d92309427ebe))
+* handle the "Start review" click — record reviewer and append marker ([#143](https://github.com/mptooling/notifycat/issues/143)) ([290eeaf](https://github.com/mptooling/notifycat/commit/290eeaf1dc13a11b0366e829e7e204cfbcd18cad))
+* inbound Slack interactivity endpoint (signed callback foundation) ([#138](https://github.com/mptooling/notifycat/issues/138)) ([2e6603e](https://github.com/mptooling/notifycat/commit/2e6603e415c20b0710107e833c21e3c1c40d3200))
+* open the PR page when the Start review button is clicked ([#145](https://github.com/mptooling/notifycat/issues/145)) ([505bec9](https://github.com/mptooling/notifycat/commit/505bec92c346be3af789ee1b291998e672e6d27b))
+* render the "Start review" button and "In review" message state ([#142](https://github.com/mptooling/notifycat/issues/142)) ([a55cdf2](https://github.com/mptooling/notifycat/commit/a55cdf24e944b090c3bde34aa6d9f4b1c6b1ec5c))
+
+
+### ♻️ Refactors
+
+* reduce duplication and decompose large functions ([#140](https://github.com/mptooling/notifycat/issues/140)) ([bfa5293](https://github.com/mptooling/notifycat/commit/bfa529349372c95d339b9bcb564eba12ac8ca998))
+
 ## [0.20.1](https://github.com/mptooling/notifycat/compare/v0.20.0...v0.20.1) (2026-06-30)
 
 
