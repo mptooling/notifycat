@@ -1,6 +1,7 @@
 package slack_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -266,6 +267,154 @@ func TestComposer_StuckDigestList(t *testing.T) {
 	// The list carries no headline — mentions and count live on the parent.
 	if strings.Contains(got, "open PR") || strings.Contains(got, "hourglass") {
 		t.Errorf("list should not repeat the parent headline: %s", got)
+	}
+}
+
+// buttons returns the buttons of the first actions block, and whether one was
+// found.
+func buttons(m slack.Message) ([]slack.Button, bool) {
+	for _, b := range m.Blocks {
+		if b.Type == "actions" {
+			return b.Buttons, true
+		}
+	}
+	return nil, false
+}
+
+func TestComposer_NewMessage_HasStartReviewButton(t *testing.T) {
+	c := slack.NewComposer("eyes")
+
+	got := c.NewMessage(slack.PRDetails{
+		Repository: "octo/widget",
+		Number:     42,
+		Title:      "fix the thing",
+		URL:        "https://github.com/octo/widget/pull/42",
+		Author:     "alice",
+		CreatedAt:  created,
+	}, []string{"@bob"}, "rocket")
+
+	bs, ok := buttons(got)
+	if !ok {
+		t.Fatalf("NewMessage has no actions block: %+v", got)
+	}
+	if len(bs) != 1 {
+		t.Fatalf("want exactly one button, got %d: %+v", len(bs), bs)
+	}
+	b := bs[0]
+	if b.ActionID != "start_review" {
+		t.Errorf("action_id = %q, want start_review", b.ActionID)
+	}
+	if b.Value != "octo/widget#42" {
+		t.Errorf("value = %q, want octo/widget#42", b.Value)
+	}
+	if b.Style != "primary" {
+		t.Errorf("style = %q, want primary", b.Style)
+	}
+	if b.Text != "Start review" {
+		t.Errorf("text = %q, want Start review", b.Text)
+	}
+}
+
+func TestComposer_ActionsBlockMarshalsToButtonJSON(t *testing.T) {
+	c := slack.NewComposer("eyes")
+
+	got := c.NewMessage(slack.PRDetails{
+		Repository: "octo/widget", Number: 42, Title: "t", URL: "u", Author: "a", CreatedAt: created,
+	}, nil, "rocket")
+
+	var actions slack.Block
+	for _, b := range got.Blocks {
+		if b.Type == "actions" {
+			actions = b
+		}
+	}
+	raw, err := json.Marshal(actions)
+	if err != nil {
+		t.Fatalf("marshal actions block: %v", err)
+	}
+	const want = `{"type":"actions","elements":[{"type":"button","text":{"type":"plain_text","text":"Start review"},"action_id":"start_review","value":"octo/widget#42","style":"primary"}]}`
+	if string(raw) != want {
+		t.Errorf("actions JSON =\n  %s\nwant\n  %s", raw, want)
+	}
+}
+
+// The block-model extension must leave section/context JSON byte-for-byte as the
+// original struct-tag marshaling produced it, so existing Slack rendering and
+// any wire-format expectations hold. This compares each block against a
+// reference struct carrying the pre-change tags.
+func TestComposer_SectionAndContextJSONUnchanged(t *testing.T) {
+	// plainBlock mirrors Block's fields as they marshaled before the actions
+	// extension (no custom MarshalJSON).
+	type plainBlock struct {
+		Type     string             `json:"type"`
+		Text     *slack.TextObject  `json:"text,omitempty"`
+		Elements []slack.TextObject `json:"elements,omitempty"`
+	}
+
+	c := slack.NewComposer("eyes")
+	got := c.NewMessage(slack.PRDetails{
+		Repository: "octo/widget", Number: 1, Title: "t", URL: "u", Author: "a", CreatedAt: created,
+	}, nil, "rocket")
+
+	for _, b := range got.Blocks {
+		if b.Type == "actions" {
+			continue
+		}
+		gotJSON, err := json.Marshal(b)
+		if err != nil {
+			t.Fatalf("marshal %s block: %v", b.Type, err)
+		}
+		wantJSON, err := json.Marshal(plainBlock{Type: b.Type, Text: b.Text, Elements: b.Elements})
+		if err != nil {
+			t.Fatalf("marshal reference %s block: %v", b.Type, err)
+		}
+		if string(gotJSON) != string(wantJSON) {
+			t.Errorf("%s JSON changed:\n  got  %s\n  want %s", b.Type, gotJSON, wantJSON)
+		}
+	}
+}
+
+func TestComposer_InReviewMessage(t *testing.T) {
+	c := slack.NewComposer("eyes")
+	started := time.Date(2026, 6, 5, 14, 4, 0, 0, time.UTC)
+
+	got := c.InReviewMessage(slack.PRDetails{
+		Repository: "octo/widget",
+		Number:     42,
+		Title:      "fix the thing",
+		URL:        "https://github.com/octo/widget/pull/42",
+		Author:     "alice",
+	}, "U123", started)
+
+	section := sectionText(t, got)
+	for _, want := range []string{
+		"In review",
+		"<@U123>",
+		fmt.Sprintf("<!date^%d^{date_short_pretty} at {time}|Jun 5, 2026 at 2:04 PM>", started.Unix()),
+		"<https://github.com/octo/widget/pull/42|PR #42: fix the thing>",
+	} {
+		if !strings.Contains(section, want) {
+			t.Errorf("in-review section missing %q\ngot: %s", want, section)
+		}
+	}
+	if _, ok := buttons(got); ok {
+		t.Errorf("in-review message must not carry the Start review button: %+v", got)
+	}
+	if strings.Contains(section, "<!channel>") || strings.Contains(section, "please review") {
+		t.Errorf("in-review message must not re-ping the channel: %s", section)
+	}
+	if got.Fallback == "" || !strings.Contains(got.Fallback, "#42") {
+		t.Errorf("in-review fallback should name the PR: %q", got.Fallback)
+	}
+}
+
+func TestComposer_BotMessage_NoButton(t *testing.T) {
+	c := slack.NewComposer("eyes")
+	got := c.BotMessage(slack.PRDetails{
+		Number: 1, Title: "t", URL: "u",
+	}, nil, "dependabot", false)
+	if _, ok := buttons(got); ok {
+		t.Errorf("dependabot compact message must not carry a button: %+v", got)
 	}
 }
 
