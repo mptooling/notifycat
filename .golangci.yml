@@ -31,18 +31,31 @@ linters:
           deny:
             - pkg: github.com/mptooling/notifycat/internal
               desc: internal/kernel must stay pure — it imports only the standard library, never another internal/... package
-        # Per-domain layer boundaries are added here as domains migrate
-        # (Phases 1–8). Template — a domain's `domain` layer may reach only the
-        # shared kernel and its dependency domains' `domain` layers, never any
-        # `application` or `infrastructure`:
-        #
-        # <domain>-domain-purity:
-        #   files:
-        #     - "**/internal/<domain>/domain/**"
-        #   deny:
-        #     - pkg: github.com/mptooling/notifycat/internal
-        #       desc: domain layer imports only the shared kernel and dependency domains' domain layers
-        #   # then re-`allow` the kernel + permitted domain-layer packages.
+        # Per-domain layer boundaries. Pattern (copy per migrating domain):
+        # a `domain` layer reaches only the kernel (+ dependency domains'
+        # `domain` layers); an `application` layer reaches only its own `domain`
+        # (+ kernel + dependency domains' `domain`), never infrastructure or a
+        # platform client. list-mode `lax`: stdlib is allowed by default and
+        # `allow` carves exceptions to the `internal` deny.
+        maintenance-domain:
+          list-mode: lax
+          files:
+            - "**/internal/maintenance/domain/**"
+          allow:
+            - github.com/mptooling/notifycat/internal/kernel
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: maintenance/domain imports only the shared kernel and the standard library — never application, infrastructure, or a platform client
+        maintenance-application:
+          list-mode: lax
+          files:
+            - "**/internal/maintenance/application/**"
+          allow:
+            - github.com/mptooling/notifycat/internal/kernel
+            - github.com/mptooling/notifycat/internal/maintenance/domain
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: maintenance/application imports only its own domain layer and the shared kernel — never infrastructure, store, slack, or github
     errcheck:
       exclude-functions:
         - fmt.Fprint
