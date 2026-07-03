@@ -43,6 +43,7 @@ type TargetResolver interface {
 // ReviewSessions is the review-session view the review and close handlers use.
 // store.CodeReviews satisfies it.
 type ReviewSessions interface {
+	GetActive(ctx context.Context, repository string, prNumber int) (store.CodeReview, error)
 	Finish(ctx context.Context, repository string, prNumber int) error
 	Reviewers(ctx context.Context, repository string, prNumber int) ([]store.CodeReview, error)
 }
