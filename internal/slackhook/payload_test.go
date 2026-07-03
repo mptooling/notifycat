@@ -2,6 +2,7 @@ package slackhook_test
 
 import (
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/mptooling/notifycat/internal/slackhook"
@@ -63,6 +64,25 @@ func TestParseInteraction_MissingPayloadField(t *testing.T) {
 func TestParseInteraction_MalformedJSON(t *testing.T) {
 	if _, err := slackhook.ParseInteraction(formEncode("not-json")); err == nil {
 		t.Fatal("ParseInteraction(malformed JSON) = nil; want error")
+	}
+}
+
+func TestParseInteraction_CapturesMessageBlocksAndText(t *testing.T) {
+	payload := `{"type":"block_actions","user":{"id":"U1","username":"ada"},"channel":{"id":"C1"},"message":{"ts":"1.1","text":"please review","blocks":[{"type":"section"}]},"actions":[{"action_id":"start_review","value":"octo/web#42"}]}`
+	body := "payload=" + url.QueryEscape(payload)
+
+	got, err := slackhook.ParseInteraction([]byte(body))
+	if err != nil {
+		t.Fatalf("ParseInteraction: %v", err)
+	}
+	if got.Message.Text != "please review" {
+		t.Errorf("Text = %q", got.Message.Text)
+	}
+	if !strings.Contains(string(got.Message.RawBlocks), `"section"`) {
+		t.Errorf("RawBlocks = %s", got.Message.RawBlocks)
+	}
+	if got.Actions[0].Value != "octo/web#42" {
+		t.Errorf("Value = %q", got.Actions[0].Value)
 	}
 }
 

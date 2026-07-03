@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"gorm.io/gorm"
@@ -18,7 +19,7 @@ func seedPR(t *testing.T, db *gorm.DB, repository string, prNumber int) {
 	}
 }
 
-func TestCodeReviews_StartThenSecondStartConflicts(t *testing.T) {
+func TestCodeReviews_SameUserSecondStartConflicts(t *testing.T) {
 	db := store.NewTestDB(t)
 	seedPR(t, db, "acme/web", 7)
 	reviews := store.NewCodeReviews(db)
@@ -27,8 +28,22 @@ func TestCodeReviews_StartThenSecondStartConflicts(t *testing.T) {
 	if err := reviews.Start(ctx, "acme/web", 7, "U1", "Ada"); err != nil {
 		t.Fatalf("first Start: %v", err)
 	}
-	if err := reviews.Start(ctx, "acme/web", 7, "U2", "Bo"); err != store.ErrActiveReviewExists {
-		t.Fatalf("second Start = %v; want ErrActiveReviewExists", err)
+	if err := reviews.Start(ctx, "acme/web", 7, "U1", "Ada"); err != store.ErrActiveReviewExists {
+		t.Fatalf("same-user second Start = %v; want ErrActiveReviewExists", err)
+	}
+}
+
+func TestCodeReviews_DifferentUsersReviewConcurrently(t *testing.T) {
+	db := store.NewTestDB(t)
+	seedPR(t, db, "acme/web", 7)
+	reviews := store.NewCodeReviews(db)
+	ctx := context.Background()
+
+	if err := reviews.Start(ctx, "acme/web", 7, "U1", "Ada"); err != nil {
+		t.Fatalf("first reviewer: %v", err)
+	}
+	if err := reviews.Start(ctx, "acme/web", 7, "U2", "Bo"); err != nil {
+		t.Fatalf("second, different reviewer should be allowed: %v", err)
 	}
 }
 
@@ -83,6 +98,30 @@ func TestCodeReviews_GetActiveNotFound(t *testing.T) {
 	}
 }
 
+func TestCodeReviews_ActiveForUser(t *testing.T) {
+	db := store.NewTestDB(t)
+	seedPR(t, db, "acme/web", 7)
+	reviews := store.NewCodeReviews(db)
+	ctx := context.Background()
+
+	if err := reviews.Start(ctx, "acme/web", 7, "U1", "Ada"); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	got, err := reviews.ActiveForUser(ctx, "acme/web", 7, "U1")
+	if err != nil || got.SlackUserID != "U1" {
+		t.Fatalf("ActiveForUser(U1) = %+v, %v; want U1's active review", got, err)
+	}
+	if _, err := reviews.ActiveForUser(ctx, "acme/web", 7, "U2"); err != store.ErrNotFound {
+		t.Fatalf("ActiveForUser(U2) = %v; want ErrNotFound", err)
+	}
+	if err := reviews.Finish(ctx, "acme/web", 7); err != nil {
+		t.Fatalf("Finish: %v", err)
+	}
+	if _, err := reviews.ActiveForUser(ctx, "acme/web", 7, "U1"); err != store.ErrNotFound {
+		t.Fatalf("ActiveForUser(U1) after Finish = %v; want ErrNotFound", err)
+	}
+}
+
 func TestCodeReviews_FinishNoActiveIsNoop(t *testing.T) {
 	db := store.NewTestDB(t)
 	seedPR(t, db, "acme/web", 7)
@@ -118,15 +157,23 @@ func TestCodeReviews_CascadeDeletedWithPR(t *testing.T) {
 	}
 }
 
-func TestCodeReviews_MigrationDownReverses(t *testing.T) {
-	db := store.NewTestDB(t) // all migrations applied
+func TestCodeReviews_Migration00008DownRestoresSingleActiveIndex(t *testing.T) {
+	db := store.NewTestDB(t) // all migrations applied → per-(PR,user) index
 	ctx := context.Background()
+
+	var upSQL string
+	db.Raw("SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_code_reviews_active'").Scan(&upSQL)
+	if !strings.Contains(upSQL, "slack_user_id") {
+		t.Fatalf("expected per-(PR,user) index after up; got %q", upSQL)
+	}
+
 	if err := store.MigrateDown(ctx, db); err != nil {
 		t.Fatalf("MigrateDown: %v", err)
 	}
-	var name string
-	db.Raw("SELECT name FROM sqlite_master WHERE type='table' AND name='code_reviews'").Scan(&name)
-	if name != "" {
-		t.Fatalf("code_reviews still present after Down; got %q", name)
+
+	var downSQL string
+	db.Raw("SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_code_reviews_active'").Scan(&downSQL)
+	if strings.Contains(downSQL, "slack_user_id") {
+		t.Fatalf("00008 Down should restore the single-active index; got %q", downSQL)
 	}
 }

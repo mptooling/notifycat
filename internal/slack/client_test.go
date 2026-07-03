@@ -177,6 +177,45 @@ func TestClient_UpdateMessage(t *testing.T) {
 	}
 }
 
+func TestClient_UpdateMessageRawBlocks(t *testing.T) {
+	fake := newFakeSlack(t, func(_ string, _ []byte, _ map[string][]string) (int, string) {
+		return 200, `{"ok":true,"ts":"1700000000.0001"}`
+	})
+	c := slack.NewClient(fake.Client(), "xoxb-test", slack.WithBaseURL(fake.URL))
+
+	blocks := []json.RawMessage{
+		json.RawMessage(`{"type":"section","text":{"type":"mrkdwn","text":"hello"}}`),
+		json.RawMessage(`{"type":"context","elements":[{"type":"mrkdwn","text":"reviewing"}]}`),
+	}
+	if err := c.UpdateMessageRawBlocks(context.Background(), "C1", "ts1", blocks, "fallback text"); err != nil {
+		t.Fatalf("UpdateMessageRawBlocks: %v", err)
+	}
+	call := fake.lastCall(t)
+	if call.Path != "/api/chat.update" {
+		t.Errorf("path = %q; want /api/chat.update", call.Path)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(call.Body), &payload); err != nil {
+		t.Fatalf("body json: %v (body=%q)", err, call.Body)
+	}
+	if payload["channel"] != "C1" {
+		t.Errorf("channel = %v; want C1", payload["channel"])
+	}
+	if payload["ts"] != "ts1" {
+		t.Errorf("ts = %v; want ts1", payload["ts"])
+	}
+	if payload["text"] != "fallback text" {
+		t.Errorf("text = %v; want fallback text", payload["text"])
+	}
+	rawBlocks, ok := payload["blocks"].([]any)
+	if !ok || len(rawBlocks) != 2 {
+		t.Errorf("blocks = %v; want 2-element array", payload["blocks"])
+	}
+	if !strings.Contains(call.Body, "reviewing") {
+		t.Errorf("body should contain marker block content 'reviewing'; body=%s", call.Body)
+	}
+}
+
 func TestClient_DeleteMessage(t *testing.T) {
 	fake := newFakeSlack(t, func(_ string, _ []byte, _ map[string][]string) (int, string) {
 		return 200, `{"ok":true}`
