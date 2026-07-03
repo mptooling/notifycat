@@ -61,6 +61,27 @@ linters:
           deny:
             - pkg: github.com/mptooling/notifycat/internal
               desc: maintenance/application imports only its own domain layer and the shared kernel — never infrastructure, store, slack, or github
+        routing-domain:
+          list-mode: lax
+          files:
+            - "**/internal/routing/domain/**"
+          allow:
+            - github.com/mptooling/notifycat/internal/kernel
+            - github.com/mptooling/notifycat/internal/routing/domain
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: routing/domain imports only the shared kernel and the standard library (plus the YAML codec) — never application, infrastructure, store, slack, or github
+        routing-application:
+          list-mode: lax
+          files:
+            - "**/internal/routing/application/**"
+          allow:
+            - github.com/mptooling/notifycat/internal/kernel
+            - github.com/mptooling/notifycat/internal/routing/domain
+            - github.com/mptooling/notifycat/internal/routing/application
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: routing/application imports only its own domain layer and the shared kernel — never infrastructure, store, slack, or github
     errcheck:
       exclude-functions:
         - fmt.Fprint
