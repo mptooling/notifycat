@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/mptooling/notifycat/internal/aireview"
+	"github.com/mptooling/notifycat/internal/slack"
 	"github.com/mptooling/notifycat/internal/store"
 )
 
@@ -20,6 +21,7 @@ type reactionHandler struct {
 	store     Store
 	behavior  RepoBehavior
 	messenger Messenger
+	composer  *slack.Composer
 	logger    *slog.Logger
 	detector  *aireview.Detector
 	reviews   ReviewSessions
@@ -98,13 +100,53 @@ func (h *reactionHandler) Handle(ctx context.Context, e Event) error {
 	if err := h.store.Touch(ctx, e.Repository, e.PR.Number); err != nil {
 		return err
 	}
-	// A submitted GitHub review closes any active review session for the PR.
-	// v1 has no GitHub-login↔Slack-user map, so a submission finishes every
-	// active session on the PR (Finish is idempotent — no active session is a
-	// no-op). Comment-only events (pull_request_review_comment, issue_comment)
-	// and edited reviews are intentionally excluded by this gate.
+	// A submitted GitHub review closes any active review session for the PR and
+	// takes the message out of the in-review state. Comment-only events
+	// (pull_request_review_comment, issue_comment) and edited reviews are
+	// intentionally excluded by this gate.
 	if e.GitHubEvent == "pull_request_review" && e.Action == "submitted" {
-		if err := h.reviews.Finish(ctx, e.Repository, e.PR.Number); err != nil {
+		if err := h.finishReview(ctx, e, behavior, messages); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// finishReview closes the PR's review sessions on a submitted review and, when
+// at least one was active, updates every stored message out of the in-review
+// state: the ":eye: reviewing" markers drop away and a muted "reviewed by" line
+// takes their place, while the "Start review" button stays so the still-open PR
+// can be picked up again. v1 has no GitHub-login↔Slack-user map, so a submission
+// finishes every active session on the PR at once (Finish is idempotent — no
+// active session is a no-op), and the "reviewed by" line lists everyone who
+// clicked Start review. When no session was active the message is left
+// untouched — the event is a plain reaction, exactly as before.
+func (h *reactionHandler) finishReview(ctx context.Context, e Event, behavior store.RepoMapping, messages []store.Message) error {
+	_, activeErr := h.reviews.GetActive(ctx, e.Repository, e.PR.Number)
+	if activeErr != nil && !errors.Is(activeErr, store.ErrNotFound) {
+		return activeErr
+	}
+	hadActiveSession := activeErr == nil
+
+	if err := h.reviews.Finish(ctx, e.Repository, e.PR.Number); err != nil {
+		return err
+	}
+	if !hadActiveSession {
+		return nil
+	}
+
+	updated := h.composer.NewMessage(slackPRFrom(e), nil, behavior.Reactions.NewPR)
+	reviewers, err := h.reviews.Reviewers(ctx, e.Repository, e.PR.Number)
+	if err != nil {
+		// Supplementary to clearing the in-review state — log and proceed
+		// without the "reviewed by" line rather than leaving the stale markers.
+		h.logger.Warn("could not load reviewers after review submit",
+			slog.String("repository", e.Repository), slog.Int("pr", e.PR.Number), slog.Any("err", err))
+	} else if userIDs := distinctReviewerIDs(reviewers); len(userIDs) > 0 {
+		updated.Blocks = append(updated.Blocks, h.composer.ReviewedByMarker(userIDs))
+	}
+	for _, m := range messages {
+		if err := h.messenger.UpdateMessage(ctx, m.Channel, m.MessageID, updated); err != nil {
 			return err
 		}
 	}
@@ -120,6 +162,7 @@ func NewApproveHandler(
 	store Store,
 	behavior RepoBehavior,
 	messenger Messenger,
+	composer *slack.Composer,
 	logger *slog.Logger,
 	detector *aireview.Detector,
 	reviews ReviewSessions,
@@ -127,7 +170,7 @@ func NewApproveHandler(
 	return &ApproveHandler{reactionHandler{
 		name:    "approve",
 		emojiOf: approvedEmoji,
-		store:   store, behavior: behavior, messenger: messenger, logger: logger, detector: detector, reviews: reviews,
+		store:   store, behavior: behavior, messenger: messenger, composer: composer, logger: logger, detector: detector, reviews: reviews,
 		applicable: func(e Event) bool {
 			return e.Action == "submitted" && e.Review != nil && e.Review.State == "approved"
 		},
@@ -143,6 +186,7 @@ func NewCommentedHandler(
 	store Store,
 	behavior RepoBehavior,
 	messenger Messenger,
+	composer *slack.Composer,
 	logger *slog.Logger,
 	detector *aireview.Detector,
 	reviews ReviewSessions,
@@ -150,7 +194,7 @@ func NewCommentedHandler(
 	return &CommentedHandler{reactionHandler{
 		name:    "commented",
 		emojiOf: commentedEmoji,
-		store:   store, behavior: behavior, messenger: messenger, logger: logger, detector: detector, reviews: reviews,
+		store:   store, behavior: behavior, messenger: messenger, composer: composer, logger: logger, detector: detector, reviews: reviews,
 		applicable: func(e Event) bool {
 			if e.GitHubEvent == "pull_request_review_comment" {
 				return e.Action == "created"
@@ -175,6 +219,7 @@ func NewRequestChangeHandler(
 	store Store,
 	behavior RepoBehavior,
 	messenger Messenger,
+	composer *slack.Composer,
 	logger *slog.Logger,
 	detector *aireview.Detector,
 	reviews ReviewSessions,
@@ -182,7 +227,7 @@ func NewRequestChangeHandler(
 	return &RequestChangeHandler{reactionHandler{
 		name:    "request_change",
 		emojiOf: requestChangeEmoji,
-		store:   store, behavior: behavior, messenger: messenger, logger: logger, detector: detector, reviews: reviews,
+		store:   store, behavior: behavior, messenger: messenger, composer: composer, logger: logger, detector: detector, reviews: reviews,
 		applicable: func(e Event) bool {
 			return e.Action == "submitted" && e.Review != nil && e.Review.State == "changes_requested"
 		},

@@ -175,9 +175,9 @@ func buildDispatcher(pullRequests *store.PullRequests, codeReviews *store.CodeRe
 		pullrequest.NewOpenHandler(pullRequests, router, slackClient, composer, logger),
 		pullrequest.NewCloseHandler(pullRequests, provider, slackClient, composer, logger, codeReviews),
 		pullrequest.NewDraftHandler(pullRequests, slackClient, logger),
-		pullrequest.NewApproveHandler(pullRequests, provider, slackClient, logger, aiDetector, codeReviews),
-		pullrequest.NewCommentedHandler(pullRequests, provider, slackClient, logger, aiDetector, codeReviews),
-		pullrequest.NewRequestChangeHandler(pullRequests, provider, slackClient, logger, aiDetector, codeReviews),
+		pullrequest.NewApproveHandler(pullRequests, provider, slackClient, composer, logger, aiDetector, codeReviews),
+		pullrequest.NewCommentedHandler(pullRequests, provider, slackClient, composer, logger, aiDetector, codeReviews),
+		pullrequest.NewRequestChangeHandler(pullRequests, provider, slackClient, composer, logger, aiDetector, codeReviews),
 	)
 }
 
