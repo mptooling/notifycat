@@ -1,4 +1,4 @@
-package reconcile_test
+package infrastructure_test
 
 import (
 	"context"
@@ -7,7 +7,8 @@ import (
 	"testing"
 
 	"github.com/mptooling/notifycat/internal/github"
-	"github.com/mptooling/notifycat/internal/reconcile"
+	"github.com/mptooling/notifycat/internal/maintenance/domain"
+	"github.com/mptooling/notifycat/internal/maintenance/infrastructure"
 )
 
 type fakePRGetter struct {
@@ -28,7 +29,7 @@ func (f *fakePRGetter) GetPullRequest(_ context.Context, owner, repo string, num
 
 func TestGitHubChecker_SplitsRepoAndMapsState(t *testing.T) {
 	g := &fakePRGetter{state: "closed"}
-	c := reconcile.NewGitHubChecker(g)
+	c := infrastructure.NewGitHubChecker(g)
 
 	open, err := c.IsOpen(context.Background(), "acme/web", 42)
 	if err != nil {
@@ -43,7 +44,7 @@ func TestGitHubChecker_SplitsRepoAndMapsState(t *testing.T) {
 }
 
 func TestGitHubChecker_OpenState(t *testing.T) {
-	c := reconcile.NewGitHubChecker(&fakePRGetter{state: "open"})
+	c := infrastructure.NewGitHubChecker(&fakePRGetter{state: "open"})
 	open, err := c.IsOpen(context.Background(), "acme/web", 1)
 	if err != nil || !open {
 		t.Fatalf("open=%v err=%v; want open,nil", open, err)
@@ -51,22 +52,22 @@ func TestGitHubChecker_OpenState(t *testing.T) {
 }
 
 func TestGitHubChecker_PropagatesError(t *testing.T) {
-	c := reconcile.NewGitHubChecker(&fakePRGetter{err: errors.New("boom")})
+	c := infrastructure.NewGitHubChecker(&fakePRGetter{err: errors.New("boom")})
 	_, err := c.IsOpen(context.Background(), "acme/web", 1)
 	if err == nil {
 		t.Fatal("expected error to propagate (so the row is left untouched)")
 	}
-	if errors.Is(err, reconcile.ErrPRNotFound) {
+	if errors.Is(err, domain.ErrPRNotFound) {
 		t.Fatal("a plain (non-404) error must not be treated as not-found")
 	}
 }
 
 func TestGitHubChecker_NotFoundMapsToErrPRNotFound(t *testing.T) {
 	apiErr := &github.APIError{Method: "get-pull-request", Status: 404, Message: "Not Found"}
-	c := reconcile.NewGitHubChecker(&fakePRGetter{err: apiErr})
+	c := infrastructure.NewGitHubChecker(&fakePRGetter{err: apiErr})
 
 	_, err := c.IsOpen(context.Background(), "acme/web", 1)
-	if !errors.Is(err, reconcile.ErrPRNotFound) {
+	if !errors.Is(err, domain.ErrPRNotFound) {
 		t.Fatalf("err = %v; want it to match ErrPRNotFound", err)
 	}
 	if !strings.Contains(err.Error(), "404") {
@@ -76,25 +77,25 @@ func TestGitHubChecker_NotFoundMapsToErrPRNotFound(t *testing.T) {
 
 func TestGitHubChecker_Non404APIErrorPropagates(t *testing.T) {
 	apiErr := &github.APIError{Method: "get-pull-request", Status: 500, Message: "boom"}
-	c := reconcile.NewGitHubChecker(&fakePRGetter{err: apiErr})
+	c := infrastructure.NewGitHubChecker(&fakePRGetter{err: apiErr})
 
 	_, err := c.IsOpen(context.Background(), "acme/web", 1)
 	if err == nil {
 		t.Fatal("expected error to propagate")
 	}
-	if errors.Is(err, reconcile.ErrPRNotFound) {
+	if errors.Is(err, domain.ErrPRNotFound) {
 		t.Fatal("a non-404 API error must not be treated as not-found")
 	}
 }
 
 func TestGitHubChecker_OpenDraftMapsToErrPRDraft(t *testing.T) {
-	c := reconcile.NewGitHubChecker(&fakePRGetter{state: "open", draft: true})
+	c := infrastructure.NewGitHubChecker(&fakePRGetter{state: "open", draft: true})
 
 	open, err := c.IsOpen(context.Background(), "acme/web", 1)
 	if open {
 		t.Error("a draft PR must not be reported open")
 	}
-	if !errors.Is(err, reconcile.ErrPRDraft) {
+	if !errors.Is(err, domain.ErrPRDraft) {
 		t.Fatalf("err = %v; want it to match ErrPRDraft", err)
 	}
 }
@@ -102,15 +103,15 @@ func TestGitHubChecker_OpenDraftMapsToErrPRDraft(t *testing.T) {
 func TestGitHubChecker_ClosedDraftStillMapsToErrPRDraft(t *testing.T) {
 	// A draft must never stay in the database even when GitHub also reports it
 	// closed — the draft flag wins over the closed disposition.
-	c := reconcile.NewGitHubChecker(&fakePRGetter{state: "closed", draft: true})
+	c := infrastructure.NewGitHubChecker(&fakePRGetter{state: "closed", draft: true})
 
-	if _, err := c.IsOpen(context.Background(), "acme/web", 1); !errors.Is(err, reconcile.ErrPRDraft) {
+	if _, err := c.IsOpen(context.Background(), "acme/web", 1); !errors.Is(err, domain.ErrPRDraft) {
 		t.Fatalf("err = %v; want it to match ErrPRDraft", err)
 	}
 }
 
 func TestGitHubChecker_RejectsBadRepository(t *testing.T) {
-	c := reconcile.NewGitHubChecker(&fakePRGetter{state: "open"})
+	c := infrastructure.NewGitHubChecker(&fakePRGetter{state: "open"})
 	if _, err := c.IsOpen(context.Background(), "no-slash", 1); err == nil {
 		t.Fatal("expected error for malformed repository")
 	}

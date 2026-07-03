@@ -1,21 +1,18 @@
-package reconcile_test
+package application_test
 
 import (
 	"context"
 	"errors"
-	"io"
 	"log/slog"
 	"testing"
 
-	"github.com/mptooling/notifycat/internal/reconcile"
-	"github.com/mptooling/notifycat/internal/store"
+	"github.com/mptooling/notifycat/internal/maintenance/application"
+	"github.com/mptooling/notifycat/internal/maintenance/domain"
 )
 
-func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
+type fakeLister struct{ rows []domain.PRRow }
 
-type fakeLister struct{ rows []store.PullRequest }
-
-func (f fakeLister) ListOpen(context.Context) ([]store.PullRequest, error) { return f.rows, nil }
+func (f fakeLister) ListOpen(context.Context) ([]domain.PRRow, error) { return f.rows, nil }
 
 // fakeChecker reports openness by (repo,pr) key; missing key returns an error.
 type fakeChecker struct {
@@ -45,7 +42,7 @@ func (f fakeChecker) IsOpen(_ context.Context, repo string, pr int) (bool, error
 }
 
 // fakeStore records MarkClosed and Delete calls so tests can assert which path
-// each row took. It satisfies both reconcile.Closer and reconcile.Deleter.
+// each row took. It satisfies both domain.Closer and domain.Deleter.
 type fakeStore struct {
 	closed  []string
 	deleted []string
@@ -61,8 +58,19 @@ func (f *fakeStore) Delete(_ context.Context, repo string, pr int) error {
 	return nil
 }
 
-func rows() []store.PullRequest {
-	return []store.PullRequest{
+func newReconciler(lister domain.OpenLister, checker domain.PRChecker, closer domain.Closer, deleter domain.Deleter, logger *slog.Logger, dryRun bool) *application.Reconciler {
+	return application.NewReconciler(domain.ReconcilerParams{
+		Lister:  lister,
+		Checker: checker,
+		Closer:  closer,
+		Deleter: deleter,
+		Logger:  logger,
+		DryRun:  dryRun,
+	})
+}
+
+func rows() []domain.PRRow {
+	return []domain.PRRow{
 		{PRNumber: 1, Repository: "o/r"}, // open
 		{PRNumber: 2, Repository: "o/r"}, // closed → mark
 		{PRNumber: 3, Repository: "o/r"}, // errors → skip
@@ -75,7 +83,7 @@ func TestReconciler_MarksClosedOnly(t *testing.T) {
 		err:  map[string]error{key("o/r", 3): errors.New("boom")},
 	}
 	closer := &fakeStore{}
-	r := reconcile.NewReconciler(fakeLister{rows()}, checker, closer, closer, discardLogger(), false)
+	r := newReconciler(fakeLister{rows()}, checker, closer, closer, discardLogger(), false)
 
 	s, err := r.Run(context.Background())
 	if err != nil {
@@ -90,10 +98,10 @@ func TestReconciler_MarksClosedOnly(t *testing.T) {
 }
 
 func TestReconciler_NotFoundIsRemovedNotErrored(t *testing.T) {
-	checker := fakeChecker{err: map[string]error{key("o/r", 9): reconcile.ErrPRNotFound}}
+	checker := fakeChecker{err: map[string]error{key("o/r", 9): domain.ErrPRNotFound}}
 	closer := &fakeStore{}
-	rows := []store.PullRequest{{PRNumber: 9, Repository: "o/r"}}
-	r := reconcile.NewReconciler(fakeLister{rows}, checker, closer, closer, discardLogger(), false)
+	prs := []domain.PRRow{{PRNumber: 9, Repository: "o/r"}}
+	r := newReconciler(fakeLister{prs}, checker, closer, closer, discardLogger(), false)
 
 	s, err := r.Run(context.Background())
 	if err != nil {
@@ -108,10 +116,10 @@ func TestReconciler_NotFoundIsRemovedNotErrored(t *testing.T) {
 }
 
 func TestReconciler_DraftIsRemovedNotErrored(t *testing.T) {
-	checker := fakeChecker{err: map[string]error{key("o/r", 7): reconcile.ErrPRDraft}}
+	checker := fakeChecker{err: map[string]error{key("o/r", 7): domain.ErrPRDraft}}
 	closer := &fakeStore{}
-	rows := []store.PullRequest{{PRNumber: 7, Repository: "o/r"}}
-	r := reconcile.NewReconciler(fakeLister{rows}, checker, closer, closer, discardLogger(), false)
+	prs := []domain.PRRow{{PRNumber: 7, Repository: "o/r"}}
+	r := newReconciler(fakeLister{prs}, checker, closer, closer, discardLogger(), false)
 
 	s, err := r.Run(context.Background())
 	if err != nil {
@@ -129,10 +137,10 @@ func TestReconciler_DraftIsRemovedNotErrored(t *testing.T) {
 }
 
 func TestReconciler_DryRunDoesNotDeleteDraft(t *testing.T) {
-	checker := fakeChecker{err: map[string]error{key("o/r", 7): reconcile.ErrPRDraft}}
+	checker := fakeChecker{err: map[string]error{key("o/r", 7): domain.ErrPRDraft}}
 	closer := &fakeStore{}
-	rows := []store.PullRequest{{PRNumber: 7, Repository: "o/r"}}
-	r := reconcile.NewReconciler(fakeLister{rows}, checker, closer, closer, discardLogger(), true)
+	prs := []domain.PRRow{{PRNumber: 7, Repository: "o/r"}}
+	r := newReconciler(fakeLister{prs}, checker, closer, closer, discardLogger(), true)
 
 	s, err := r.Run(context.Background())
 	if err != nil {
@@ -147,10 +155,10 @@ func TestReconciler_DryRunDoesNotDeleteDraft(t *testing.T) {
 }
 
 func TestReconciler_DryRunDoesNotRemoveNotFound(t *testing.T) {
-	checker := fakeChecker{err: map[string]error{key("o/r", 9): reconcile.ErrPRNotFound}}
+	checker := fakeChecker{err: map[string]error{key("o/r", 9): domain.ErrPRNotFound}}
 	closer := &fakeStore{}
-	rows := []store.PullRequest{{PRNumber: 9, Repository: "o/r"}}
-	r := reconcile.NewReconciler(fakeLister{rows}, checker, closer, closer, discardLogger(), true)
+	prs := []domain.PRRow{{PRNumber: 9, Repository: "o/r"}}
+	r := newReconciler(fakeLister{prs}, checker, closer, closer, discardLogger(), true)
 
 	s, err := r.Run(context.Background())
 	if err != nil {
@@ -167,7 +175,7 @@ func TestReconciler_DryRunDoesNotRemoveNotFound(t *testing.T) {
 func TestReconciler_DryRunWritesNothing(t *testing.T) {
 	checker := fakeChecker{open: map[string]bool{key("o/r", 1): true, key("o/r", 2): false, key("o/r", 3): false}}
 	closer := &fakeStore{}
-	r := reconcile.NewReconciler(fakeLister{rows()}, checker, closer, closer, discardLogger(), true)
+	r := newReconciler(fakeLister{rows()}, checker, closer, closer, discardLogger(), true)
 
 	s, err := r.Run(context.Background())
 	if err != nil {

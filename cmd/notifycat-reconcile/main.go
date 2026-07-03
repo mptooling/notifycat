@@ -29,7 +29,9 @@ import (
 
 	"github.com/mptooling/notifycat/internal/config"
 	"github.com/mptooling/notifycat/internal/github"
-	"github.com/mptooling/notifycat/internal/reconcile"
+	maintenanceapp "github.com/mptooling/notifycat/internal/maintenance/application"
+	maintenancedomain "github.com/mptooling/notifycat/internal/maintenance/domain"
+	maintenanceinfra "github.com/mptooling/notifycat/internal/maintenance/infrastructure"
 	"github.com/mptooling/notifycat/internal/store"
 )
 
@@ -68,9 +70,17 @@ func run(args []string) error {
 	}()
 
 	messages := store.NewPullRequests(db)
+	repo := maintenanceinfra.NewPRRepository(messages)
 	httpClient := &http.Client{Timeout: 10 * time.Second}
 	gh := github.NewClient(httpClient, cfg.GitHubToken.Reveal(), github.WithBaseURL(cfg.GitHubBaseURL))
-	rec := reconcile.NewReconciler(messages, reconcile.NewGitHubChecker(gh), messages, messages, logger, *dryRun)
+	rec := maintenanceapp.NewReconciler(maintenancedomain.ReconcilerParams{
+		Lister:  repo,
+		Checker: maintenanceinfra.NewGitHubChecker(gh),
+		Closer:  repo,
+		Deleter: repo,
+		Logger:  logger,
+		DryRun:  *dryRun,
+	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

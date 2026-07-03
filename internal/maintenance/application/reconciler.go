@@ -1,10 +1,4 @@
-// Package reconcile backfills the closed_at column on slack_messages rows whose
-// PR is no longer open on GitHub. It exists for the one-time migration to
-// stuck-PR digest tracking: rows created before the close handler recorded
-// closed_at all have closed_at = NULL and look open to the digest, including
-// PRs that were already merged. Running it once (it is idempotent) drops that
-// backlog out of the digest.
-package reconcile
+package application
 
 import (
 	"context"
@@ -12,79 +6,48 @@ import (
 	"log/slog"
 	"strconv"
 
-	"github.com/mptooling/notifycat/internal/store"
+	"github.com/mptooling/notifycat/internal/maintenance/domain"
 )
 
-// OpenLister returns the rows not yet marked closed.
-type OpenLister interface {
-	ListOpen(ctx context.Context) ([]store.PullRequest, error)
-}
-
-// Closer marks a PR's row closed.
-type Closer interface {
-	MarkClosed(ctx context.Context, repository string, prNumber int) error
-}
-
-// Deleter removes a PR's row entirely. Used for drafts, which must not stay in
-// the database at all (a draft is not review-ready; the row is recreated by the
-// open webhook if it is later marked ready_for_review).
-type Deleter interface {
-	Delete(ctx context.Context, repository string, prNumber int) error
-}
-
-// PRChecker reports whether a PR is still open on GitHub.
-type PRChecker interface {
-	IsOpen(ctx context.Context, repository string, prNumber int) (bool, error)
-}
-
-// Summary tallies one reconcile run.
-type Summary struct {
-	Checked   int
-	Closed    int // marked closed (in dry-run: would be marked)
-	Removed   int // PR 404s or is a draft; dropped from the digest (would be, in dry-run)
-	StillOpen int
-	Errors    int
-}
-
-// Reconciler marks rows closed whose PR GitHub reports as no longer open.
+// Reconciler is the PR reconcile use case; see domain.Reconciler.
 type Reconciler struct {
-	lister  OpenLister
-	checker PRChecker
-	closer  Closer
-	deleter Deleter
+	lister  domain.OpenLister
+	checker domain.PRChecker
+	closer  domain.Closer
+	deleter domain.Deleter
 	logger  *slog.Logger
 	dryRun  bool
 }
 
-// NewReconciler constructs a Reconciler. When dryRun is true it reports what it
-// would change without writing.
-func NewReconciler(lister OpenLister, checker PRChecker, closer Closer, deleter Deleter, logger *slog.Logger, dryRun bool) *Reconciler {
-	return &Reconciler{lister: lister, checker: checker, closer: closer, deleter: deleter, logger: logger, dryRun: dryRun}
+// NewReconciler constructs the PR reconcile use case from its domain params.
+func NewReconciler(params domain.ReconcilerParams) *Reconciler {
+	return &Reconciler{
+		lister:  params.Lister,
+		checker: params.Checker,
+		closer:  params.Closer,
+		deleter: params.Deleter,
+		logger:  params.Logger,
+		dryRun:  params.DryRun,
+	}
 }
 
-// Run checks every not-yet-closed row against GitHub and resolves it. Per-PR
-// errors are logged and counted, never fatal — a row we cannot confirm is left
-// untouched (so a token-scope miss never wrongly hides an open PR), and
-// re-running is safe. Two states are dropped rather than left to nag: a 404
-// (the PR is gone for good, marked closed) and a draft (deleted outright — a
-// draft must never stay in the database, mirroring the converted_to_draft
-// webhook).
-func (r *Reconciler) Run(ctx context.Context) (Summary, error) {
+// Run implements domain.Reconciler.
+func (r *Reconciler) Run(ctx context.Context) (domain.Summary, error) {
 	rows, err := r.lister.ListOpen(ctx)
 	if err != nil {
-		return Summary{}, err
+		return domain.Summary{}, err
 	}
 
-	var s Summary
+	var s domain.Summary
 	for _, row := range rows {
 		s.Checked++
 		url := prURL(row.Repository, row.PRNumber)
 
 		open, err := r.checker.IsOpen(ctx, row.Repository, row.PRNumber)
 		switch {
-		case errors.Is(err, ErrPRNotFound):
+		case errors.Is(err, domain.ErrPRNotFound):
 			r.removeNotFound(ctx, row, url, err, &s)
-		case errors.Is(err, ErrPRDraft):
+		case errors.Is(err, domain.ErrPRDraft):
 			r.removeDraft(ctx, row, url, &s)
 		case err != nil:
 			s.Errors++
@@ -104,7 +67,7 @@ func (r *Reconciler) Run(ctx context.Context) (Summary, error) {
 
 // markClosed records a PR that GitHub reports as merged/closed, so the digest
 // skips it. Honours dry-run and counts the outcome on s.
-func (r *Reconciler) markClosed(ctx context.Context, row store.PullRequest, url string, s *Summary) {
+func (r *Reconciler) markClosed(ctx context.Context, row domain.PRRow, url string, s *domain.Summary) {
 	if r.dryRun {
 		s.Closed++
 		r.logger.Info("reconcile: would mark closed (dry-run)",
@@ -134,7 +97,7 @@ func (r *Reconciler) markClosed(ctx context.Context, row store.PullRequest, url 
 // logs at WARN with the underlying cause and the PR link so an operator can
 // tell a genuinely-gone PR from a wrongly-removed one (e.g. a token-scope 404)
 // and navigate to check.
-func (r *Reconciler) removeNotFound(ctx context.Context, row store.PullRequest, url string, cause error, s *Summary) {
+func (r *Reconciler) removeNotFound(ctx context.Context, row domain.PRRow, url string, cause error, s *domain.Summary) {
 	if r.dryRun {
 		s.Removed++
 		r.logger.Warn("reconcile: pull request not found; would remove from digest (dry-run)",
@@ -166,7 +129,7 @@ func (r *Reconciler) removeNotFound(ctx context.Context, row store.PullRequest, 
 // converted_to_draft webhook (DraftHandler), and means a later ready_for_review
 // re-announces the PR from a clean slate. Logs at INFO since a draft is a
 // normal state, not a fault.
-func (r *Reconciler) removeDraft(ctx context.Context, row store.PullRequest, url string, s *Summary) {
+func (r *Reconciler) removeDraft(ctx context.Context, row domain.PRRow, url string, s *domain.Summary) {
 	if r.dryRun {
 		s.Removed++
 		r.logger.Info("reconcile: pull request is a draft; would delete row (dry-run)",
