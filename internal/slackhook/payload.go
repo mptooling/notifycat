@@ -33,10 +33,14 @@ type Channel struct {
 	ID string
 }
 
-// Message identifies the message that carried the interactive component, by its
-// Slack timestamp ("ts").
+// Message identifies the message that carried the interactive component. TS is
+// the Slack timestamp used to address the message; Text is the top-level
+// plain-text fallback; RawBlocks is the original blocks array echoed back by
+// Slack so handlers can pass it through to chat.update without re-composing it.
 type Message struct {
-	TS string
+	TS        string
+	Text      string
+	RawBlocks json.RawMessage
 }
 
 // Action is a single interactive element the user activated. ActionID is the
@@ -61,7 +65,9 @@ type rawInteraction struct {
 		ID string `json:"id"`
 	} `json:"channel"`
 	Message struct {
-		TS string `json:"ts"`
+		TS     string          `json:"ts"`
+		Text   string          `json:"text"`
+		Blocks json.RawMessage `json:"blocks"`
 	} `json:"message"`
 	Actions []struct {
 		ActionID string `json:"action_id"`
@@ -93,7 +99,7 @@ func ParseInteraction(body []byte) (Interaction, error) {
 		Type:        raw.Type,
 		User:        User{ID: raw.User.ID, Username: raw.User.Username},
 		Channel:     Channel{ID: raw.Channel.ID},
-		Message:     Message{TS: raw.Message.TS},
+		Message:     Message{TS: raw.Message.TS, Text: raw.Message.Text, RawBlocks: raw.Message.Blocks},
 		ResponseURL: raw.ResponseURL,
 		TriggerID:   raw.TriggerID,
 	}

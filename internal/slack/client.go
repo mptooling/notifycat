@@ -103,6 +103,19 @@ func (c *Client) UpdateMessage(ctx context.Context, channel, ts string, msg Mess
 	}, nil, nil)
 }
 
+// UpdateMessageRawBlocks edits a message in place, sending blocks verbatim.
+// Callers pass the message's existing blocks (as echoed back by Slack in the
+// interaction payload) plus any additions, so the original rendering is
+// preserved without re-composing it. fallback is the top-level text.
+func (c *Client) UpdateMessageRawBlocks(ctx context.Context, channel, ts string, blocks []json.RawMessage, fallback string) error {
+	return c.postJSON(ctx, "chat.update", map[string]any{
+		"channel": channel,
+		"ts":      ts,
+		"text":    fallback,
+		"blocks":  blocks,
+	}, nil, nil)
+}
+
 // DeleteMessage removes an existing message by ts.
 func (c *Client) DeleteMessage(ctx context.Context, channel, ts string) error {
 	return c.postJSON(ctx, "chat.delete", map[string]any{

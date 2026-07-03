@@ -374,37 +374,19 @@ func TestComposer_SectionAndContextJSONUnchanged(t *testing.T) {
 	}
 }
 
-func TestComposer_InReviewMessage(t *testing.T) {
+func TestComposer_ReviewingMarker(t *testing.T) {
 	c := slack.NewComposer("eyes")
-	started := time.Date(2026, 6, 5, 14, 4, 0, 0, time.UTC)
+	since := time.Date(2026, 6, 5, 14, 4, 0, 0, time.UTC)
 
-	got := c.InReviewMessage(slack.PRDetails{
-		Repository: "octo/widget",
-		Number:     42,
-		Title:      "fix the thing",
-		URL:        "https://github.com/octo/widget/pull/42",
-		Author:     "alice",
-	}, "U123", started)
-
-	section := sectionText(t, got)
-	for _, want := range []string{
-		"In review",
-		"<@U123>",
-		fmt.Sprintf("<!date^%d^{date_short_pretty} at {time}|Jun 5, 2026 at 2:04 PM>", started.Unix()),
-		"<https://github.com/octo/widget/pull/42|PR #42: fix the thing>",
-	} {
-		if !strings.Contains(section, want) {
-			t.Errorf("in-review section missing %q\ngot: %s", want, section)
+	b := c.ReviewingMarker("U123", since)
+	if b.Type != "context" || len(b.Elements) != 1 {
+		t.Fatalf("want a context block with one element, got %+v", b)
+	}
+	text := b.Elements[0].Text
+	for _, want := range []string{":eye:", "<@U123>", "reviewing", "since", "Jun 5, 2026 at 2:04 PM"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("marker %q missing %q", text, want)
 		}
-	}
-	if _, ok := buttons(got); ok {
-		t.Errorf("in-review message must not carry the Start review button: %+v", got)
-	}
-	if strings.Contains(section, "<!channel>") || strings.Contains(section, "please review") {
-		t.Errorf("in-review message must not re-ping the channel: %s", section)
-	}
-	if got.Fallback == "" || !strings.Contains(got.Fallback, "#42") {
-		t.Errorf("in-review fallback should name the PR: %q", got.Fallback)
 	}
 }
 

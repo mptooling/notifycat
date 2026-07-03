@@ -141,19 +141,11 @@ func (c *Composer) NewMessage(pr PRDetails, mentions []string, newPREmoji string
 	}
 }
 
-// InReviewMessage renders the PR message once a reviewer owns it: the linked
-// title with an "In review" status, the reviewer as a Slack mention (which
-// shows their display name without a profile lookup), and the localized start
-// time. The Start review button and the "please review" ping are both dropped —
-// the PR is no longer awaiting a volunteer. It is a pure function of its inputs,
-// safe to re-render for an already-in-review PR.
-func (c *Composer) InReviewMessage(pr PRDetails, reviewerUserID string, startedAt time.Time) Message {
-	headline := fmt.Sprintf(
-		":eyes: *In review* — <%s|PR #%d: %s>\nReviewer <@%s> · started %s",
-		pr.URL, pr.Number, pr.Title, reviewerUserID, dateToken(startedAt),
-	)
-	fallback := fmt.Sprintf("In review: PR #%d: %s by %s", pr.Number, pr.Title, pr.Author)
-	return Message{Blocks: []Block{section(headline)}, Fallback: fallback}
+// ReviewingMarker renders the small context line appended to a PR message when
+// a reviewer starts: ":eye: <@U…> reviewing · since <localized time>". Multiple
+// markers accumulate on a message as more people review the same PR.
+func (c *Composer) ReviewingMarker(userID string, since time.Time) Block {
+	return contextBlock(fmt.Sprintf(":eye: <@%s> reviewing · since %s", userID, dateToken(since)))
 }
 
 // BotMessage renders the compact notification for a PR opened by a dependency

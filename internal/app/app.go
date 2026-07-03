@@ -24,6 +24,7 @@ import (
 	"github.com/mptooling/notifycat/internal/pullrequest"
 	"github.com/mptooling/notifycat/internal/slack"
 	"github.com/mptooling/notifycat/internal/slackhook"
+	"github.com/mptooling/notifycat/internal/startreview"
 	"github.com/mptooling/notifycat/internal/store"
 	"github.com/mptooling/notifycat/internal/validate"
 )
@@ -68,7 +69,10 @@ func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, *digest.Schedule
 	router := buildRouter(httpClient, cfg, provider, logger)
 	dispatcher := buildDispatcher(pullRequests, provider, router, slackClient, composer, logger)
 
-	server := buildServer(cfg, buildMux(cfg, dispatcher, logger))
+	codeReviews := store.NewCodeReviews(db)
+	startReviewHandler := startreview.NewHandler(codeReviews, pullRequests, slackClient, composer, logger, time.Now)
+
+	server := buildServer(cfg, buildMux(cfg, dispatcher, startReviewHandler.Handle, logger))
 	return server, scheduler, digestScheduler, func() { closeDB(db) }, nil
 }
 
@@ -180,7 +184,7 @@ func buildDispatcher(pullRequests *store.PullRequests, provider *mappings.Provid
 // optional inbound Slack interactivity endpoint. The Slack route is registered
 // only when a signing secret is configured; otherwise notifycat stays
 // outbound-only and the route is absent.
-func buildMux(cfg config.Config, dispatcher *pullrequest.Dispatcher, logger *slog.Logger) *http.ServeMux {
+func buildMux(cfg config.Config, dispatcher *pullrequest.Dispatcher, startReviewSink slackhook.InteractionSink, logger *slog.Logger) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -198,7 +202,7 @@ func buildMux(cfg config.Config, dispatcher *pullrequest.Dispatcher, logger *slo
 		slackVerifier := slackhook.NewVerifier(cfg.SlackSigningSecret.Reveal())
 		mux.Handle("POST /webhook/slack/interactions",
 			slackhook.SignatureMiddleware(slackVerifier)(
-				slackhook.NewHandler(nil, logger),
+				slackhook.NewHandler(startReviewSink, logger),
 			),
 		)
 		logger.Info("slack interactivity enabled", slog.String("route", "POST /webhook/slack/interactions"))

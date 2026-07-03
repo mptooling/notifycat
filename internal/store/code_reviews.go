@@ -10,15 +10,15 @@ import (
 	"gorm.io/gorm"
 )
 
-// ErrActiveReviewExists is returned by Start when the PR already has an active
-// (unfinished) code review — the partial unique index rejected the insert.
-// Callers surface the conflict UX ("already being reviewed by …") instead of a
-// 500.
+// ErrActiveReviewExists is returned by Start when the same user already has an
+// active review on the PR — the partial unique index rejected the insert.
+// Callers surface the conflict UX ("already reviewing") instead of a 500.
 var ErrActiveReviewExists = errors.New("store: active code review exists")
 
-// CodeReviews persists per-PR review sessions and enforces a single active
-// reviewer per PR. A review is identified to callers by its PR's natural key
-// (repository, prNumber); the surrogate pull_request_id is resolved internally.
+// CodeReviews persists per-PR review sessions and enforces at most one active
+// review per (PR, user); multiple distinct users may review a PR concurrently.
+// A review is identified to callers by its PR's natural key (repository,
+// prNumber); the surrogate pull_request_id is resolved internally.
 type CodeReviews struct {
 	db *gorm.DB
 }
@@ -66,6 +66,26 @@ func (r *CodeReviews) GetActive(ctx context.Context, repository string, prNumber
 	}
 	if err != nil {
 		return CodeReview{}, fmt.Errorf("store: get active code review: %w", err)
+	}
+	return review, nil
+}
+
+// ActiveForUser returns the user's active (unfinished) review on the PR, or
+// ErrNotFound when that user has no review in progress here. It is the
+// app-level guard the click handler checks before Start; the DB's partial
+// unique index on (pull_request_id, slack_user_id) is the race-safe backstop.
+func (r *CodeReviews) ActiveForUser(ctx context.Context, repository string, prNumber int, slackUserID string) (CodeReview, error) {
+	var review CodeReview
+	err := r.db.WithContext(ctx).
+		Joins("JOIN pull_requests ON pull_requests.id = code_reviews.pull_request_id").
+		Where("pull_requests.gh_repository = ? AND pull_requests.pr_number = ? AND code_reviews.slack_user_id = ? AND code_reviews.finished_at IS NULL",
+			repository, prNumber, slackUserID).
+		First(&review).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return CodeReview{}, ErrNotFound
+	}
+	if err != nil {
+		return CodeReview{}, fmt.Errorf("store: active code review for user: %w", err)
 	}
 	return review, nil
 }
