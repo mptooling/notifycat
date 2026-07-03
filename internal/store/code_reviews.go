@@ -103,6 +103,22 @@ func (r *CodeReviews) Finish(ctx context.Context, repository string, prNumber in
 	return nil
 }
 
+// Reviewers returns all code-review sessions for the PR ordered by started_at
+// ascending (earliest first). An untracked PR or a PR with no reviews returns
+// an empty slice and nil error.
+func (r *CodeReviews) Reviewers(ctx context.Context, repository string, prNumber int) ([]CodeReview, error) {
+	var reviews []CodeReview
+	err := r.db.WithContext(ctx).
+		Joins("JOIN pull_requests ON pull_requests.id = code_reviews.pull_request_id").
+		Where("pull_requests.gh_repository = ? AND pull_requests.pr_number = ?", repository, prNumber).
+		Order("code_reviews.started_at ASC").
+		Find(&reviews).Error
+	if err != nil {
+		return nil, fmt.Errorf("store: list reviewers: %w", err)
+	}
+	return reviews, nil
+}
+
 // pullRequestID resolves the surrogate id for (repository, prNumber), returning
 // ErrNotFound when the PR is not tracked.
 func (r *CodeReviews) pullRequestID(ctx context.Context, repository string, prNumber int) (uint, error) {

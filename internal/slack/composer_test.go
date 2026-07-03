@@ -390,6 +390,19 @@ func TestComposer_ReviewingMarker(t *testing.T) {
 	}
 }
 
+func TestComposer_ReviewedByMarker(t *testing.T) {
+	c := slack.NewComposer("eyes")
+
+	b := c.ReviewedByMarker([]string{"U1", "U2"})
+	if b.Type != "context" || len(b.Elements) != 1 {
+		t.Fatalf("want a context block with one element, got %+v", b)
+	}
+	text := b.Elements[0].Text
+	if want := "reviewed by <@U1>, <@U2>"; text != want {
+		t.Errorf("ReviewedByMarker text = %q; want %q", text, want)
+	}
+}
+
 func TestComposer_BotMessage_NoButton(t *testing.T) {
 	c := slack.NewComposer("eyes")
 	got := c.BotMessage(slack.PRDetails{

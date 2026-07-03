@@ -66,10 +66,11 @@ func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, *digest.Schedule
 		return nil, nil, nil, nil, err
 	}
 
-	router := buildRouter(httpClient, cfg, provider, logger)
-	dispatcher := buildDispatcher(pullRequests, provider, router, slackClient, composer, logger)
-
 	codeReviews := store.NewCodeReviews(db)
+
+	router := buildRouter(httpClient, cfg, provider, logger)
+	dispatcher := buildDispatcher(pullRequests, codeReviews, provider, router, slackClient, composer, logger)
+
 	startReviewHandler := startreview.NewHandler(codeReviews, pullRequests, slackClient, composer, logger, time.Now)
 
 	server := buildServer(cfg, buildMux(cfg, dispatcher, startReviewHandler.Handle, logger))
@@ -167,16 +168,16 @@ func buildRouter(httpClient *http.Client, cfg config.Config, provider *mappings.
 }
 
 // buildDispatcher wires the PR-event handlers behind the dispatcher.
-func buildDispatcher(pullRequests *store.PullRequests, provider *mappings.Provider, router *pullrequest.Router, slackClient *slack.Client, composer *slack.Composer, logger *slog.Logger) *pullrequest.Dispatcher {
+func buildDispatcher(pullRequests *store.PullRequests, codeReviews *store.CodeReviews, provider *mappings.Provider, router *pullrequest.Router, slackClient *slack.Client, composer *slack.Composer, logger *slog.Logger) *pullrequest.Dispatcher {
 	aiDetector := aireview.NewDetector()
 	return pullrequest.NewDispatcher(
 		logger,
 		pullrequest.NewOpenHandler(pullRequests, router, slackClient, composer, logger),
-		pullrequest.NewCloseHandler(pullRequests, provider, slackClient, composer, logger),
+		pullrequest.NewCloseHandler(pullRequests, provider, slackClient, composer, logger, codeReviews),
 		pullrequest.NewDraftHandler(pullRequests, slackClient, logger),
-		pullrequest.NewApproveHandler(pullRequests, provider, slackClient, logger, aiDetector),
-		pullrequest.NewCommentedHandler(pullRequests, provider, slackClient, logger, aiDetector),
-		pullrequest.NewRequestChangeHandler(pullRequests, provider, slackClient, logger, aiDetector),
+		pullrequest.NewApproveHandler(pullRequests, provider, slackClient, logger, aiDetector, codeReviews),
+		pullrequest.NewCommentedHandler(pullRequests, provider, slackClient, logger, aiDetector, codeReviews),
+		pullrequest.NewRequestChangeHandler(pullRequests, provider, slackClient, logger, aiDetector, codeReviews),
 	)
 }
 

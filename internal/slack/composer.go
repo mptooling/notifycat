@@ -148,6 +148,17 @@ func (c *Composer) ReviewingMarker(userID string, since time.Time) Block {
 	return contextBlock(fmt.Sprintf(":eye: <@%s> reviewing · since %s", userID, dateToken(since)))
 }
 
+// ReviewedByMarker renders the muted "reviewed by <@U…>, <@U…>" context line
+// appended to a closed/merged PR message, listing everyone who reviewed it.
+// The caller passes a non-empty, deduped list of Slack user IDs.
+func (c *Composer) ReviewedByMarker(userIDs []string) Block {
+	tags := make([]string, len(userIDs))
+	for i, id := range userIDs {
+		tags[i] = fmt.Sprintf("<@%s>", id)
+	}
+	return contextBlock("reviewed by " + strings.Join(tags, ", "))
+}
+
 // BotMessage renders the compact notification for a PR opened by a dependency
 // bot. bot is the lowercase bot name ("dependabot" / "renovate"). When security
 // is true it uses the rotating-light advisory template; otherwise the package

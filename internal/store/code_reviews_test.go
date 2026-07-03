@@ -157,6 +157,51 @@ func TestCodeReviews_CascadeDeletedWithPR(t *testing.T) {
 	}
 }
 
+func TestCodeReviews_Reviewers(t *testing.T) {
+	db := store.NewTestDB(t)
+	seedPR(t, db, "acme/web", 7)
+	seedPR(t, db, "acme/web", 8)
+	reviews := store.NewCodeReviews(db)
+	ctx := context.Background()
+
+	if err := reviews.Start(ctx, "acme/web", 7, "U1", "Ada"); err != nil {
+		t.Fatalf("Start U1: %v", err)
+	}
+	if err := reviews.Finish(ctx, "acme/web", 7); err != nil {
+		t.Fatalf("Finish U1: %v", err)
+	}
+	if err := reviews.Start(ctx, "acme/web", 7, "U2", "Bo"); err != nil {
+		t.Fatalf("Start U2: %v", err)
+	}
+	// PR 8 has a separate reviewer that should not appear for PR 7.
+	if err := reviews.Start(ctx, "acme/web", 8, "U3", "Cy"); err != nil {
+		t.Fatalf("Start U3 on PR8: %v", err)
+	}
+
+	got, err := reviews.Reviewers(ctx, "acme/web", 7)
+	if err != nil {
+		t.Fatalf("Reviewers: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("want 2 reviews for PR 7; got %d: %+v", len(got), got)
+	}
+	if got[0].SlackUserID != "U1" || got[1].SlackUserID != "U2" {
+		t.Errorf("reviews not in started_at ASC order: %+v", got)
+	}
+}
+
+func TestCodeReviews_Reviewers_UntrackedPR(t *testing.T) {
+	db := store.NewTestDB(t)
+	reviews := store.NewCodeReviews(db)
+	got, err := reviews.Reviewers(context.Background(), "acme/web", 999)
+	if err != nil {
+		t.Fatalf("Reviewers on untracked PR = %v; want nil error", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("Reviewers on untracked PR should be empty; got %+v", got)
+	}
+}
+
 func TestCodeReviews_Migration00008DownRestoresSingleActiveIndex(t *testing.T) {
 	db := store.NewTestDB(t) // all migrations applied → per-(PR,user) index
 	ctx := context.Background()

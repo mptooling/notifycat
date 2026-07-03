@@ -18,6 +18,7 @@ type CloseHandler struct {
 	messenger Messenger
 	composer  *slack.Composer
 	logger    *slog.Logger
+	reviews   ReviewSessions
 }
 
 // NewCloseHandler builds a CloseHandler.
@@ -27,6 +28,7 @@ func NewCloseHandler(
 	messenger Messenger,
 	composer *slack.Composer,
 	logger *slog.Logger,
+	reviews ReviewSessions,
 ) *CloseHandler {
 	return &CloseHandler{
 		store:     store,
@@ -34,6 +36,7 @@ func NewCloseHandler(
 		messenger: messenger,
 		composer:  composer,
 		logger:    logger,
+		reviews:   reviews,
 	}
 }
 
@@ -65,6 +68,19 @@ func (h *CloseHandler) Handle(ctx context.Context, e Event) error {
 		emoji = behavior.Reactions.MergedPR
 	}
 	updated := h.composer.UpdatedMessage(slackPRFrom(e), e.PR.Merged, emoji)
+
+	reviewers, err := h.reviews.Reviewers(ctx, e.Repository, e.PR.Number)
+	if err != nil {
+		// Supplementary to the close decoration — log and proceed without it
+		// rather than dropping the Merged/Closed update.
+		h.logger.Warn("could not load reviewers for closed PR",
+			slog.String("repository", e.Repository), slog.Int("pr", e.PR.Number), slog.Any("err", err))
+		reviewers = nil
+	}
+	if userIDs := distinctReviewerIDs(reviewers); len(userIDs) > 0 {
+		updated.Blocks = append(updated.Blocks, h.composer.ReviewedByMarker(userIDs))
+	}
+
 	for _, m := range messages {
 		if err := h.messenger.UpdateMessage(ctx, m.Channel, m.MessageID, updated); err != nil {
 			return err
@@ -75,7 +91,25 @@ func (h *CloseHandler) Handle(ctx context.Context, e Event) error {
 			}
 		}
 	}
+	if err := h.reviews.Finish(ctx, e.Repository, e.PR.Number); err != nil {
+		return err
+	}
 	return h.store.MarkClosed(ctx, e.Repository, e.PR.Number)
+}
+
+// distinctReviewerIDs returns the reviewers' Slack user IDs in first-seen order,
+// deduped — a user with several sessions on the PR is listed once.
+func distinctReviewerIDs(reviews []store.CodeReview) []string {
+	seen := map[string]bool{}
+	var ids []string
+	for _, review := range reviews {
+		if review.SlackUserID == "" || seen[review.SlackUserID] {
+			continue
+		}
+		seen[review.SlackUserID] = true
+		ids = append(ids, review.SlackUserID)
+	}
+	return ids
 }
 
 func (h *CloseHandler) logIgnored(e Event, reason string) {

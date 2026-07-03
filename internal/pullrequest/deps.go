@@ -39,3 +39,10 @@ type RepoBehavior interface {
 type TargetResolver interface {
 	ResolveTargets(ctx context.Context, repository string, prNumber int) (store.RepoMapping, []store.Target, error)
 }
+
+// ReviewSessions is the review-session view the review and close handlers use.
+// store.CodeReviews satisfies it.
+type ReviewSessions interface {
+	Finish(ctx context.Context, repository string, prNumber int) error
+	Reviewers(ctx context.Context, repository string, prNumber int) ([]store.CodeReview, error)
+}

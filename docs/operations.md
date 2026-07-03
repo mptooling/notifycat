@@ -238,9 +238,11 @@ and a muted context line:
 A plain-text fallback is sent alongside the blocks; Slack uses it for the mobile
 push preview and screen readers (it does not read interior block text).
 
-On **merge or close** the message updates in place: the title is struck through,
-the leading emoji swaps to the merged/closed reaction emoji, and a `[Merged]` /
-`[Closed]` label is prepended. The context line is preserved.
+On **merge or close** the message updates in place: the title is struck through, the leading emoji swaps to the merged/closed reaction emoji, and a `[Merged]` / `[Closed]` label is prepended. The context line is preserved. If any reviewer started a review session via the "Start review" button before the PR closed, a muted "reviewed by <@user>" context line is appended listing everyone who reviewed it (deduped, in the order they started).
+
+### Review-session lifecycle
+
+When a reviewer clicks "Start review", an active session is opened in the database. A submitted GitHub review (`pull_request_review` with `action: submitted`) automatically finishes all active sessions for that PR — in v1 there is no GitHub-login-to-Slack-user mapping, so any submission closes every open session (Finish is idempotent, so no active session is a silent no-op). Line comments (`pull_request_review_comment`) and conversation comments (`issue_comment`) do not finish a session — only a true GitHub review submit does. Suppressed bot reviews (when `NOTIFYCAT_IGNORE_AI_REVIEWS=true`) return before the finish gate and therefore do not close a session. On merge or close any remaining active sessions are finished so the database matches the "reviewed/done" state of the message.
 
 ## Dependabot / Renovate format
 

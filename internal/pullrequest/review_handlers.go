@@ -22,6 +22,7 @@ type reactionHandler struct {
 	messenger Messenger
 	logger    *slog.Logger
 	detector  *aireview.Detector
+	reviews   ReviewSessions
 }
 
 func approvedEmoji(r store.Reactions) string      { return r.Approved }
@@ -94,7 +95,20 @@ func (h *reactionHandler) Handle(ctx context.Context, e Event) error {
 	// Record this review as activity so the stuck-PR digest stops nagging about
 	// the PR until it next goes quiet. Suppressed bot reviews return above and
 	// intentionally do not count — an ignored AI review is not human attention.
-	return h.store.Touch(ctx, e.Repository, e.PR.Number)
+	if err := h.store.Touch(ctx, e.Repository, e.PR.Number); err != nil {
+		return err
+	}
+	// A submitted GitHub review closes any active review session for the PR.
+	// v1 has no GitHub-login↔Slack-user map, so a submission finishes every
+	// active session on the PR (Finish is idempotent — no active session is a
+	// no-op). Comment-only events (pull_request_review_comment, issue_comment)
+	// and edited reviews are intentionally excluded by this gate.
+	if e.GitHubEvent == "pull_request_review" && e.Action == "submitted" {
+		if err := h.reviews.Finish(ctx, e.Repository, e.PR.Number); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ApproveHandler adds a reaction when a review is submitted with state
@@ -108,11 +122,12 @@ func NewApproveHandler(
 	messenger Messenger,
 	logger *slog.Logger,
 	detector *aireview.Detector,
+	reviews ReviewSessions,
 ) *ApproveHandler {
 	return &ApproveHandler{reactionHandler{
 		name:    "approve",
 		emojiOf: approvedEmoji,
-		store:   store, behavior: behavior, messenger: messenger, logger: logger, detector: detector,
+		store:   store, behavior: behavior, messenger: messenger, logger: logger, detector: detector, reviews: reviews,
 		applicable: func(e Event) bool {
 			return e.Action == "submitted" && e.Review != nil && e.Review.State == "approved"
 		},
@@ -130,11 +145,12 @@ func NewCommentedHandler(
 	messenger Messenger,
 	logger *slog.Logger,
 	detector *aireview.Detector,
+	reviews ReviewSessions,
 ) *CommentedHandler {
 	return &CommentedHandler{reactionHandler{
 		name:    "commented",
 		emojiOf: commentedEmoji,
-		store:   store, behavior: behavior, messenger: messenger, logger: logger, detector: detector,
+		store:   store, behavior: behavior, messenger: messenger, logger: logger, detector: detector, reviews: reviews,
 		applicable: func(e Event) bool {
 			if e.GitHubEvent == "pull_request_review_comment" {
 				return e.Action == "created"
@@ -161,11 +177,12 @@ func NewRequestChangeHandler(
 	messenger Messenger,
 	logger *slog.Logger,
 	detector *aireview.Detector,
+	reviews ReviewSessions,
 ) *RequestChangeHandler {
 	return &RequestChangeHandler{reactionHandler{
 		name:    "request_change",
 		emojiOf: requestChangeEmoji,
-		store:   store, behavior: behavior, messenger: messenger, logger: logger, detector: detector,
+		store:   store, behavior: behavior, messenger: messenger, logger: logger, detector: detector, reviews: reviews,
 		applicable: func(e Event) bool {
 			return e.Action == "submitted" && e.Review != nil && e.Review.State == "changes_requested"
 		},
