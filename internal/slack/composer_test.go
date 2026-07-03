@@ -313,6 +313,9 @@ func TestComposer_NewMessage_HasStartReviewButton(t *testing.T) {
 	if b.Text != "Start review" {
 		t.Errorf("text = %q, want Start review", b.Text)
 	}
+	if b.URL != "https://github.com/octo/widget/pull/42" {
+		t.Errorf("url = %q, want the PR page URL", b.URL)
+	}
 }
 
 func TestComposer_ActionsBlockMarshalsToButtonJSON(t *testing.T) {
@@ -332,7 +335,7 @@ func TestComposer_ActionsBlockMarshalsToButtonJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal actions block: %v", err)
 	}
-	const want = `{"type":"actions","elements":[{"type":"button","text":{"type":"plain_text","text":"Start review"},"action_id":"start_review","value":"octo/widget#42","style":"primary"}]}`
+	const want = `{"type":"actions","elements":[{"type":"button","text":{"type":"plain_text","text":"Start review"},"action_id":"start_review","value":"octo/widget#42","style":"primary","url":"u"}]}`
 	if string(raw) != want {
 		t.Errorf("actions JSON =\n  %s\nwant\n  %s", raw, want)
 	}
