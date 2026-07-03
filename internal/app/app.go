@@ -24,6 +24,8 @@ import (
 	maintenanceinfra "github.com/mptooling/notifycat/internal/maintenance/infrastructure"
 	"github.com/mptooling/notifycat/internal/mappings"
 	"github.com/mptooling/notifycat/internal/pullrequest"
+	routingapp "github.com/mptooling/notifycat/internal/routing/application"
+	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 	"github.com/mptooling/notifycat/internal/slack"
 	"github.com/mptooling/notifycat/internal/slackhook"
 	"github.com/mptooling/notifycat/internal/startreview"
@@ -162,16 +164,16 @@ func buildDigestScheduler(cfg config.Config, provider *mappings.Provider, pullRe
 // token to read a PR's changed files; without one the router has no fetcher and
 // resolves to the repo/org tier. The validation client is scoped to startup, so
 // this builds a dedicated long-lived files fetcher.
-func buildRouter(httpClient *http.Client, cfg config.Config, provider *mappings.Provider, logger *slog.Logger) *pullrequest.Router {
-	var filesFetcher pullrequest.ChangedFiles
+func buildRouter(httpClient *http.Client, cfg config.Config, provider *mappings.Provider, logger *slog.Logger) *routingapp.Router {
+	var filesFetcher routingdomain.ChangedFilesReader
 	if cfg.GitHubToken.Reveal() != "" {
 		filesFetcher = github.NewClient(httpClient, cfg.GitHubToken.Reveal(), github.WithBaseURL(cfg.GitHubBaseURL))
 	}
-	return pullrequest.NewRouter(provider, filesFetcher, logger)
+	return routingapp.NewRouter(provider, filesFetcher, logger)
 }
 
 // buildDispatcher wires the PR-event handlers behind the dispatcher.
-func buildDispatcher(pullRequests *store.PullRequests, codeReviews *store.CodeReviews, provider *mappings.Provider, router *pullrequest.Router, slackClient *slack.Client, composer *slack.Composer, logger *slog.Logger) *pullrequest.Dispatcher {
+func buildDispatcher(pullRequests *store.PullRequests, codeReviews *store.CodeReviews, provider *mappings.Provider, router *routingapp.Router, slackClient *slack.Client, composer *slack.Composer, logger *slog.Logger) *pullrequest.Dispatcher {
 	aiDetector := aireview.NewDetector()
 	return pullrequest.NewDispatcher(
 		logger,

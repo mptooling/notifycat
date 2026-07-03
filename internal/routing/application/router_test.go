@@ -1,25 +1,27 @@
-package pullrequest_test
+package application_test
 
 import (
 	"context"
 	"errors"
+	"io"
+	"log/slog"
 	"testing"
 
-	"github.com/mptooling/notifycat/internal/pullrequest"
-	"github.com/mptooling/notifycat/internal/store"
+	application "github.com/mptooling/notifycat/internal/routing/application"
+	domain "github.com/mptooling/notifycat/internal/routing/domain"
 )
 
-// stubMappings implements pullrequest.PathMappings for testing.
+// stubMappings implements domain.RoutingProvider for testing.
 type stubMappings struct {
-	base         store.RepoMapping
+	base         domain.RepoMapping
 	baseErr      error
-	targets      []store.Target
+	targets      []domain.Target
 	hasPathRules bool
 }
 
-func (s *stubMappings) Get(_ context.Context, repository string) (store.RepoMapping, error) {
+func (s *stubMappings) Get(_ context.Context, repository string) (domain.RepoMapping, error) {
 	if s.baseErr != nil {
-		return store.RepoMapping{}, s.baseErr
+		return domain.RepoMapping{}, s.baseErr
 	}
 	m := s.base
 	m.Repository = repository
@@ -28,7 +30,7 @@ func (s *stubMappings) Get(_ context.Context, repository string) (store.RepoMapp
 
 func (s *stubMappings) RepoHasPathRules(string) bool { return s.hasPathRules }
 
-func (s *stubMappings) TargetsForFiles(string, []string) []store.Target { return s.targets }
+func (s *stubMappings) TargetsForFiles(string, []string) []domain.Target { return s.targets }
 
 type stubFiles struct {
 	files []string
@@ -44,9 +46,13 @@ func (s *stubFiles) ListPullRequestFiles(_ context.Context, _, _ string, _ int) 
 	return s.files, nil
 }
 
+func discardLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
 func TestRouter_NoFetcherReturnsBaseTarget(t *testing.T) {
-	m := &stubMappings{base: store.RepoMapping{SlackChannel: "C0BASE", Mentions: []string{"<!here>"}}, hasPathRules: true}
-	r := pullrequest.NewRouter(m, nil, discardLogger())
+	m := &stubMappings{base: domain.RepoMapping{SlackChannel: "C0BASE", Mentions: []string{"<!here>"}}, hasPathRules: true}
+	r := application.NewRouter(m, nil, discardLogger())
 	_, targets, err := r.ResolveTargets(context.Background(), "acme/mono", 7)
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
@@ -58,12 +64,12 @@ func TestRouter_NoFetcherReturnsBaseTarget(t *testing.T) {
 
 func TestRouter_FanOutTargets(t *testing.T) {
 	m := &stubMappings{
-		base:         store.RepoMapping{SlackChannel: "C0BASE"},
+		base:         domain.RepoMapping{SlackChannel: "C0BASE"},
 		hasPathRules: true,
-		targets:      []store.Target{{Channel: "C0A"}, {Channel: "C0B"}},
+		targets:      []domain.Target{{Channel: "C0A"}, {Channel: "C0B"}},
 	}
 	files := &stubFiles{files: []string{"a", "b"}}
-	r := pullrequest.NewRouter(m, files, discardLogger())
+	r := application.NewRouter(m, files, discardLogger())
 	_, targets, err := r.ResolveTargets(context.Background(), "acme/mono", 7)
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
@@ -74,9 +80,9 @@ func TestRouter_FanOutTargets(t *testing.T) {
 }
 
 func TestRouter_FetchErrorFallsBackToBase(t *testing.T) {
-	m := &stubMappings{base: store.RepoMapping{SlackChannel: "C0BASE"}, hasPathRules: true, targets: []store.Target{{Channel: "C0A"}}}
+	m := &stubMappings{base: domain.RepoMapping{SlackChannel: "C0BASE"}, hasPathRules: true, targets: []domain.Target{{Channel: "C0A"}}}
 	files := &stubFiles{err: errors.New("github down")}
-	r := pullrequest.NewRouter(m, files, discardLogger())
+	r := application.NewRouter(m, files, discardLogger())
 	_, targets, err := r.ResolveTargets(context.Background(), "acme/mono", 7)
 	if err != nil {
 		t.Fatalf("should soft-fail: %v", err)

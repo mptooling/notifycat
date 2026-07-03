@@ -1,24 +1,12 @@
-package pullrequest
+package application
 
 import (
 	"context"
 	"log/slog"
 	"strings"
 
-	"github.com/mptooling/notifycat/internal/store"
+	domain "github.com/mptooling/notifycat/internal/routing/domain"
 )
-
-// PathMappings is the slice of the mappings provider the Router consumes.
-type PathMappings interface {
-	Get(ctx context.Context, repository string) (store.RepoMapping, error)
-	RepoHasPathRules(repository string) bool
-	TargetsForFiles(repository string, files []string) []store.Target
-}
-
-// ChangedFiles fetches the repo-relative paths a PR touches.
-type ChangedFiles interface {
-	ListPullRequestFiles(ctx context.Context, owner, repo string, number int) ([]string, error)
-}
 
 // Router resolves routing, layering per-path rules over the base repo/org tier
 // when the repository configures `paths:` and a changed-files fetcher is
@@ -26,26 +14,26 @@ type ChangedFiles interface {
 // is exactly the provider's Get. A fetch error is treated softly: it logs and
 // falls back to the repo tier, so a GitHub hiccup never drops a notification.
 type Router struct {
-	mappings PathMappings
-	files    ChangedFiles // nil when no GitHub token is configured
+	mappings domain.RoutingProvider
+	files    domain.ChangedFilesReader // nil when no GitHub token is configured
 	logger   *slog.Logger
 }
 
 // NewRouter builds a Router. files may be nil (no token) — path routing is then
 // inert and every PR resolves to its repo/org tier.
-func NewRouter(mappings PathMappings, files ChangedFiles, logger *slog.Logger) *Router {
+func NewRouter(mappings domain.RoutingProvider, files domain.ChangedFilesReader, logger *slog.Logger) *Router {
 	return &Router{mappings: mappings, files: files, logger: logger}
 }
 
 // ResolveTargets returns the per-repo behavior plus the fan-out targets for a
 // PR. With no fetcher (no token) or no path rules it returns a single base
 // target. A files-API error is soft: it logs and returns the base target.
-func (r *Router) ResolveTargets(ctx context.Context, repository string, prNumber int) (store.RepoMapping, []store.Target, error) {
+func (r *Router) ResolveTargets(ctx context.Context, repository string, prNumber int) (domain.RepoMapping, []domain.Target, error) {
 	behavior, err := r.mappings.Get(ctx, repository)
 	if err != nil {
-		return store.RepoMapping{}, nil, err
+		return domain.RepoMapping{}, nil, err
 	}
-	baseTarget := []store.Target{{Channel: behavior.SlackChannel, Mentions: behavior.Mentions}}
+	baseTarget := []domain.Target{{Channel: behavior.SlackChannel, Mentions: behavior.Mentions}}
 
 	if r.files == nil || !r.mappings.RepoHasPathRules(repository) {
 		return behavior, baseTarget, nil
