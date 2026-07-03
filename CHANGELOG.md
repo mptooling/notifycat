@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.1](https://github.com/mptooling/notifycat/compare/v0.21.0...v0.21.1) (2026-07-03)
+
+
+### 📝 Documentation
+
+* Bitbucket Cloud provider design spec ([#146](https://github.com/mptooling/notifycat/issues/146)) ([a9b968c](https://github.com/mptooling/notifycat/commit/a9b968c0cc4670c24158a4049d1219c86f034dd2))
+
 ## [0.21.0](https://github.com/mptooling/notifycat/compare/v0.20.1...v0.21.0) (2026-07-03)
 
 
