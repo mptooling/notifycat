@@ -11,7 +11,7 @@ import (
 
 func newCloseHandler(t *testing.T, st *fakePRStore, behavior *fakeBehavior, client *fakeMessenger) *pullrequest.CloseHandler {
 	t.Helper()
-	return pullrequest.NewCloseHandler(st, behavior, client, testComposer(), discardLogger())
+	return pullrequest.NewCloseHandler(st, behavior, client, testComposer(), discardLogger(), newFakeReviewSessions())
 }
 
 // closedMergedEvent returns a "closed" event with PR.Merged = true.
@@ -221,12 +221,165 @@ func TestCloseHandler_ActsOnEveryMessage(t *testing.T) {
 	_ = st.AddMessage(context.Background(), "acme/web", 7, "C0B", "200.1")
 	behavior := &fakeBehavior{m: storepkg.RepoMapping{Reactions: storepkg.Reactions{Enabled: true, MergedPR: "tada"}}}
 	client := &fakeMessenger{}
-	h := pullrequest.NewCloseHandler(st, behavior, client, testComposer(), discardLogger())
+	h := pullrequest.NewCloseHandler(st, behavior, client, testComposer(), discardLogger(), newFakeReviewSessions())
 
 	if err := h.Handle(context.Background(), closedMergedEvent("acme/web", 7)); err != nil {
 		t.Fatalf("handle: %v", err)
 	}
 	if client.updates() != 2 || client.reactions() != 2 {
 		t.Fatalf("want 2 updates + 2 reactions; got %d / %d", client.updates(), client.reactions())
+	}
+}
+
+// ----- reviewed-by decoration -----
+
+func TestCloseHandler_ReviewedByOnClose(t *testing.T) {
+	st := newFakePRStore()
+	_ = st.AddMessage(context.Background(), "octo/widget", 42, "C123", "ts1")
+	behavior := &fakeBehavior{m: storepkg.RepoMapping{Reactions: storepkg.Reactions{Enabled: false, MergedPR: "tada"}}}
+	client := &fakeMessenger{}
+	reviews := newFakeReviewSessions()
+	key := prStoreKey("octo/widget", 42)
+	reviews.reviewers[key] = []storepkg.CodeReview{
+		{SlackUserID: "U1", SlackUserName: "Alice"},
+		{SlackUserID: "U2", SlackUserName: "Bob"},
+	}
+	h := pullrequest.NewCloseHandler(st, behavior, client, testComposer(), discardLogger(), reviews)
+
+	e := closedMergedEvent("octo/widget", 42)
+	if err := h.Handle(context.Background(), e); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	var foundReviewedBy bool
+	for _, c := range client.calls {
+		if c.Method != "UpdateMessage" {
+			continue
+		}
+		for _, b := range c.Msg.Blocks {
+			if b.Type == "context" && len(b.Elements) > 0 {
+				if strings.Contains(b.Elements[0].Text, "reviewed by") &&
+					strings.Contains(b.Elements[0].Text, "<@U1>") &&
+					strings.Contains(b.Elements[0].Text, "<@U2>") {
+					foundReviewedBy = true
+				}
+			}
+		}
+	}
+	if !foundReviewedBy {
+		t.Errorf("expected a 'reviewed by <@U1>, <@U2>' context block in UpdateMessage; calls=%+v", client.calls)
+	}
+}
+
+func TestCloseHandler_NoReviewersNoReviewedByBlock(t *testing.T) {
+	st := newFakePRStore()
+	_ = st.AddMessage(context.Background(), "octo/widget", 42, "C123", "ts1")
+	behavior := &fakeBehavior{m: storepkg.RepoMapping{Reactions: storepkg.Reactions{Enabled: false}}}
+	client := &fakeMessenger{}
+	h := pullrequest.NewCloseHandler(st, behavior, client, testComposer(), discardLogger(), newFakeReviewSessions())
+
+	e := closedMergedEvent("octo/widget", 42)
+	if err := h.Handle(context.Background(), e); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	for _, c := range client.calls {
+		if c.Method != "UpdateMessage" {
+			continue
+		}
+		for _, b := range c.Msg.Blocks {
+			if b.Type == "context" && len(b.Elements) > 0 && strings.Contains(b.Elements[0].Text, "reviewed by") {
+				t.Errorf("unexpected 'reviewed by' block when no reviewers: %+v", b)
+			}
+		}
+	}
+	if client.updates() != 1 {
+		t.Fatalf("close decoration should still happen; got %d updates", client.updates())
+	}
+}
+
+func TestCloseHandler_ReviewedByDedup(t *testing.T) {
+	st := newFakePRStore()
+	_ = st.AddMessage(context.Background(), "octo/widget", 42, "C123", "ts1")
+	behavior := &fakeBehavior{m: storepkg.RepoMapping{Reactions: storepkg.Reactions{Enabled: false}}}
+	client := &fakeMessenger{}
+	reviews := newFakeReviewSessions()
+	key := prStoreKey("octo/widget", 42)
+	reviews.reviewers[key] = []storepkg.CodeReview{
+		{SlackUserID: "U1", SlackUserName: "Alice"},
+		{SlackUserID: "U1", SlackUserName: "Alice"},
+		{SlackUserID: "U2", SlackUserName: "Bob"},
+	}
+	h := pullrequest.NewCloseHandler(st, behavior, client, testComposer(), discardLogger(), reviews)
+
+	e := closedMergedEvent("octo/widget", 42)
+	if err := h.Handle(context.Background(), e); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	for _, c := range client.calls {
+		if c.Method != "UpdateMessage" {
+			continue
+		}
+		for _, b := range c.Msg.Blocks {
+			if b.Type == "context" && len(b.Elements) > 0 && strings.Contains(b.Elements[0].Text, "reviewed by") {
+				text := b.Elements[0].Text
+				// U1 should appear exactly once after dedup
+				if strings.Count(text, "<@U1>") != 1 {
+					t.Errorf("U1 should appear once after dedup; got %q", text)
+				}
+				if strings.Count(text, "<@U2>") != 1 {
+					t.Errorf("U2 should appear once; got %q", text)
+				}
+			}
+		}
+	}
+}
+
+func TestCloseHandler_FinishesSessionOnClose(t *testing.T) {
+	st := newFakePRStore()
+	_ = st.AddMessage(context.Background(), "octo/widget", 42, "C123", "ts1")
+	behavior := &fakeBehavior{m: storepkg.RepoMapping{Reactions: storepkg.Reactions{Enabled: false}}}
+	client := &fakeMessenger{}
+	reviews := newFakeReviewSessions()
+	h := pullrequest.NewCloseHandler(st, behavior, client, testComposer(), discardLogger(), reviews)
+
+	e := closedMergedEvent("octo/widget", 42)
+	if err := h.Handle(context.Background(), e); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if reviews.finishedCount("octo/widget", 42) != 1 {
+		t.Fatalf("close should finish any active session; got finishedCount=%d", reviews.finishedCount("octo/widget", 42))
+	}
+	if st.closed[prStoreKey("octo/widget", 42)] != 1 {
+		t.Fatalf("MarkClosed should still be called; got %d", st.closed[prStoreKey("octo/widget", 42)])
+	}
+}
+
+func TestCloseHandler_ReviewersLoadFailureSoftDegrades(t *testing.T) {
+	st := newFakePRStore()
+	_ = st.AddMessage(context.Background(), "octo/widget", 42, "C123", "ts1")
+	behavior := &fakeBehavior{m: storepkg.RepoMapping{Reactions: storepkg.Reactions{Enabled: false}}}
+	client := &fakeMessenger{}
+	reviews := newFakeReviewSessions()
+	reviews.listErr = errInjected
+	h := pullrequest.NewCloseHandler(st, behavior, client, testComposer(), discardLogger(), reviews)
+
+	e := closedMergedEvent("octo/widget", 42)
+	if err := h.Handle(context.Background(), e); err != nil {
+		t.Fatalf("Handle must not return error when reviewers load fails: %v", err)
+	}
+	if client.updates() != 1 {
+		t.Fatalf("close decoration should still happen despite reviewer load error; got %d updates", client.updates())
+	}
+	for _, c := range client.calls {
+		if c.Method != "UpdateMessage" {
+			continue
+		}
+		for _, b := range c.Msg.Blocks {
+			if b.Type == "context" && len(b.Elements) > 0 && strings.Contains(b.Elements[0].Text, "reviewed by") {
+				t.Errorf("'reviewed by' block should be absent on load error; got %+v", b)
+			}
+		}
+	}
+	if st.closed[prStoreKey("octo/widget", 42)] != 1 {
+		t.Fatalf("MarkClosed should still be called; got %d", st.closed[prStoreKey("octo/widget", 42)])
 	}
 }

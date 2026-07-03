@@ -242,3 +242,33 @@ func (f *fakeBehavior) Get(_ context.Context, _ string) (store.RepoMapping, erro
 	}
 	return f.m, nil
 }
+
+type fakeReviewSessions struct {
+	finished  map[string]int
+	reviewers map[string][]store.CodeReview
+	finishErr error
+	listErr   error
+}
+
+func newFakeReviewSessions() *fakeReviewSessions {
+	return &fakeReviewSessions{finished: map[string]int{}, reviewers: map[string][]store.CodeReview{}}
+}
+
+func (f *fakeReviewSessions) Finish(_ context.Context, repository string, prNumber int) error {
+	if f.finishErr != nil {
+		return f.finishErr
+	}
+	f.finished[prStoreKey(repository, prNumber)]++
+	return nil
+}
+
+func (f *fakeReviewSessions) Reviewers(_ context.Context, repository string, prNumber int) ([]store.CodeReview, error) {
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	return f.reviewers[prStoreKey(repository, prNumber)], nil
+}
+
+func (f *fakeReviewSessions) finishedCount(repository string, prNumber int) int {
+	return f.finished[prStoreKey(repository, prNumber)]
+}
