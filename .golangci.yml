@@ -36,13 +36,17 @@ linters:
         # `domain` layers); an `application` layer reaches only its own `domain`
         # (+ kernel + dependency domains' `domain`), never infrastructure or a
         # platform client. list-mode `lax`: stdlib is allowed by default and
-        # `allow` carves exceptions to the `internal` deny.
+        # `allow` carves exceptions to the `internal` deny. Each rule allows its
+        # OWN import path so external `_test` packages (e.g. `application_test`)
+        # can import the package under test; production files can't import their
+        # own package, so this only ever affects tests.
         maintenance-domain:
           list-mode: lax
           files:
             - "**/internal/maintenance/domain/**"
           allow:
             - github.com/mptooling/notifycat/internal/kernel
+            - github.com/mptooling/notifycat/internal/maintenance/domain
           deny:
             - pkg: github.com/mptooling/notifycat/internal
               desc: maintenance/domain imports only the shared kernel and the standard library — never application, infrastructure, or a platform client
@@ -53,6 +57,7 @@ linters:
           allow:
             - github.com/mptooling/notifycat/internal/kernel
             - github.com/mptooling/notifycat/internal/maintenance/domain
+            - github.com/mptooling/notifycat/internal/maintenance/application
           deny:
             - pkg: github.com/mptooling/notifycat/internal
               desc: maintenance/application imports only its own domain layer and the shared kernel — never infrastructure, store, slack, or github

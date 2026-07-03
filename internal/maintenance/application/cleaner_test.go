@@ -1,4 +1,4 @@
-package cleanup_test
+package application_test
 
 import (
 	"bytes"
@@ -10,7 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mptooling/notifycat/internal/cleanup"
+	"github.com/mptooling/notifycat/internal/maintenance/application"
+	"github.com/mptooling/notifycat/internal/maintenance/domain"
 )
 
 type fakeDeleter struct {
@@ -49,11 +50,22 @@ func bufferLogger() (*slog.Logger, *bytes.Buffer) {
 	return slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})), &buf
 }
 
-func TestScheduler_RunsOnceImmediately_ThenOnInterval(t *testing.T) {
+// newCleaner builds a Cleaner with the default clock (time.Now).
+func newCleaner(deleter domain.StaleMessageDeleter, ttl, interval time.Duration, logger *slog.Logger) *application.Cleaner {
+	return application.NewCleaner(domain.CleanerParams{
+		Deleter:  deleter,
+		TTL:      ttl,
+		Interval: interval,
+		Logger:   logger,
+		Now:      time.Now,
+	})
+}
+
+func TestCleaner_RunsOnceImmediately_ThenOnInterval(t *testing.T) {
 	d := &fakeDeleter{}
 	ttl := 30 * 24 * time.Hour
 	interval := 20 * time.Millisecond
-	s := cleanup.NewScheduler(d, ttl, interval, discardLogger())
+	s := newCleaner(d, ttl, interval, discardLogger())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -89,11 +101,11 @@ func TestScheduler_RunsOnceImmediately_ThenOnInterval(t *testing.T) {
 	}
 }
 
-func TestScheduler_LogsAndContinuesOnError(t *testing.T) {
+func TestCleaner_LogsAndContinuesOnError(t *testing.T) {
 	d := &fakeDeleter{err: errors.New("boom"), errOnce: true}
 	logger, buf := bufferLogger()
 	interval := 20 * time.Millisecond
-	s := cleanup.NewScheduler(d, 24*time.Hour, interval, logger)
+	s := newCleaner(d, 24*time.Hour, interval, logger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -121,9 +133,9 @@ func TestScheduler_LogsAndContinuesOnError(t *testing.T) {
 	}
 }
 
-func TestScheduler_StopsOnContextCancel(t *testing.T) {
+func TestCleaner_StopsOnContextCancel(t *testing.T) {
 	d := &fakeDeleter{}
-	s := cleanup.NewScheduler(d, 24*time.Hour, 1*time.Hour, discardLogger())
+	s := newCleaner(d, 24*time.Hour, 1*time.Hour, discardLogger())
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -141,12 +153,17 @@ func TestScheduler_StopsOnContextCancel(t *testing.T) {
 	}
 }
 
-func TestScheduler_CutoffEqualsNowMinusTTL(t *testing.T) {
+func TestCleaner_CutoffEqualsNowMinusTTL(t *testing.T) {
 	d := &fakeDeleter{}
 	ttl := 48 * time.Hour
 	fixedNow := time.Date(2026, 5, 18, 12, 0, 0, 0, time.UTC)
-	s := cleanup.NewScheduler(d, ttl, 1*time.Hour, discardLogger())
-	s.SetNowFunc(func() time.Time { return fixedNow })
+	s := application.NewCleaner(domain.CleanerParams{
+		Deleter:  d,
+		TTL:      ttl,
+		Interval: 1 * time.Hour,
+		Logger:   discardLogger(),
+		Now:      func() time.Time { return fixedNow },
+	})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})

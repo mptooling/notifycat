@@ -15,11 +15,13 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mptooling/notifycat/internal/aireview"
-	"github.com/mptooling/notifycat/internal/cleanup"
 	"github.com/mptooling/notifycat/internal/config"
 	"github.com/mptooling/notifycat/internal/digest"
 	"github.com/mptooling/notifycat/internal/github"
 	"github.com/mptooling/notifycat/internal/githubhook"
+	maintenanceapp "github.com/mptooling/notifycat/internal/maintenance/application"
+	maintenancedomain "github.com/mptooling/notifycat/internal/maintenance/domain"
+	maintenanceinfra "github.com/mptooling/notifycat/internal/maintenance/infrastructure"
 	"github.com/mptooling/notifycat/internal/mappings"
 	"github.com/mptooling/notifycat/internal/pullrequest"
 	"github.com/mptooling/notifycat/internal/slack"
@@ -39,7 +41,7 @@ type Cleanup func()
 //
 // Mappings come from the `mappings:` section of config.yaml; the server
 // refuses to start if any entry fails validation (against the per-entry lock).
-func Wire(cfg config.Config) (*http.Server, *cleanup.Scheduler, *digest.Scheduler, Cleanup, error) {
+func Wire(cfg config.Config) (*http.Server, *maintenanceapp.Cleaner, *digest.Scheduler, Cleanup, error) {
 	logger := newLogger(cfg)
 	provider := buildProvider(cfg, logger)
 
@@ -129,13 +131,14 @@ func buildSlackClient(httpClient *http.Client, cfg config.Config) *slack.Client 
 
 // buildCleanupScheduler builds the scheduler that deletes stored-message rows
 // older than the configured TTL.
-func buildCleanupScheduler(cfg config.Config, pullRequests *store.PullRequests, logger *slog.Logger) *cleanup.Scheduler {
-	return cleanup.NewScheduler(
-		pullRequests,
-		time.Duration(cfg.MessageTTLDays)*24*time.Hour,
-		cleanup.Interval,
-		logger,
-	)
+func buildCleanupScheduler(cfg config.Config, pullRequests *store.PullRequests, logger *slog.Logger) *maintenanceapp.Cleaner {
+	return maintenanceapp.NewCleaner(maintenancedomain.CleanerParams{
+		Deleter:  maintenanceinfra.NewPRRepository(pullRequests),
+		TTL:      time.Duration(cfg.MessageTTLDays) * 24 * time.Hour,
+		Interval: maintenancedomain.Interval,
+		Logger:   logger,
+		Now:      time.Now,
+	})
 }
 
 // buildDigestScheduler builds the stuck-PR digest scheduler, which fires on
