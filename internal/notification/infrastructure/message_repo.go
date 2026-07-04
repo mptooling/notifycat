@@ -4,20 +4,20 @@ import (
 	"context"
 
 	"github.com/mptooling/notifycat/internal/notification/domain"
-	"github.com/mptooling/notifycat/internal/store"
+	"github.com/mptooling/notifycat/internal/platform/persistence"
 )
 
 // MessageRepo adapts the store's PullRequests repository to the notification
 // MessageStore port, mapping store persistence models to domain DTOs at the
 // boundary so no gorm-tagged type crosses a port. The "not found" sentinel
-// passes through unchanged (store.ErrNotFound aliases the routing domain
+// passes through unchanged (persistence.ErrNotFound aliases the routing domain
 // sentinel handlers compare against).
 type MessageRepo struct {
-	pullRequests *store.PullRequests
+	pullRequests *persistence.PullRequests
 }
 
 // NewMessageRepo wraps the store's PullRequests repository.
-func NewMessageRepo(pullRequests *store.PullRequests) *MessageRepo {
+func NewMessageRepo(pullRequests *persistence.PullRequests) *MessageRepo {
 	return &MessageRepo{pullRequests: pullRequests}
 }
 

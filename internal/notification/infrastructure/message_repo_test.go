@@ -7,13 +7,13 @@ import (
 	"testing"
 
 	"github.com/mptooling/notifycat/internal/notification/domain"
+	"github.com/mptooling/notifycat/internal/platform/persistence"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
-	"github.com/mptooling/notifycat/internal/store"
 )
 
 func TestMessageRepo_Messages_MapsRows(t *testing.T) {
-	db := store.NewTestDB(t)
-	pullRequests := store.NewPullRequests(db)
+	db := persistence.NewTestDB(t)
+	pullRequests := persistence.NewPullRequests(db)
 	repo := NewMessageRepo(pullRequests)
 
 	if err := pullRequests.AddMessage(context.Background(), "acme/api", 42, "C_ACME", "ts1"); err != nil {
@@ -30,8 +30,8 @@ func TestMessageRepo_Messages_MapsRows(t *testing.T) {
 }
 
 func TestMessageRepo_Messages_UnknownPRReturnsNotFound(t *testing.T) {
-	db := store.NewTestDB(t)
-	repo := NewMessageRepo(store.NewPullRequests(db))
+	db := persistence.NewTestDB(t)
+	repo := NewMessageRepo(persistence.NewPullRequests(db))
 	if _, err := repo.Messages(context.Background(), "ghost/x", 1); !errors.Is(err, routingdomain.ErrNotFound) {
 		t.Errorf("err = %v; want routingdomain.ErrNotFound", err)
 	}

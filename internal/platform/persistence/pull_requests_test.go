@@ -1,15 +1,15 @@
-package store_test
+package persistence_test
 
 import (
 	"context"
 	"testing"
 	"time"
 
-	"github.com/mptooling/notifycat/internal/store"
+	"github.com/mptooling/notifycat/internal/platform/persistence"
 )
 
 func TestPullRequests_AddMessageIsIdempotentPerChannel(t *testing.T) {
-	repo := store.NewPullRequests(store.NewTestDB(t))
+	repo := persistence.NewPullRequests(persistence.NewTestDB(t))
 	ctx := context.Background()
 	for i := 0; i < 2; i++ {
 		if err := repo.AddMessage(ctx, "acme/web", 7, "C0A", "100.1"); err != nil {
@@ -29,15 +29,15 @@ func TestPullRequests_AddMessageIsIdempotentPerChannel(t *testing.T) {
 }
 
 func TestPullRequests_MessagesNotFound(t *testing.T) {
-	repo := store.NewPullRequests(store.NewTestDB(t))
-	if _, err := repo.Messages(context.Background(), "acme/web", 999); err != store.ErrNotFound {
+	repo := persistence.NewPullRequests(persistence.NewTestDB(t))
+	if _, err := repo.Messages(context.Background(), "acme/web", 999); err != persistence.ErrNotFound {
 		t.Fatalf("want ErrNotFound; got %v", err)
 	}
 }
 
 func TestPullRequests_DeleteCascadesMessages(t *testing.T) {
-	db := store.NewTestDB(t)
-	repo := store.NewPullRequests(db)
+	db := persistence.NewTestDB(t)
+	repo := persistence.NewPullRequests(db)
 	ctx := context.Background()
 	_ = repo.AddMessage(ctx, "acme/web", 7, "C0A", "100.1")
 	if err := repo.Delete(ctx, "acme/web", 7); err != nil {
@@ -51,7 +51,7 @@ func TestPullRequests_DeleteCascadesMessages(t *testing.T) {
 }
 
 func TestPullRequests_FindStuckPreloadsMessages(t *testing.T) {
-	repo := store.NewPullRequests(store.NewTestDB(t))
+	repo := persistence.NewPullRequests(persistence.NewTestDB(t))
 	ctx := context.Background()
 	_ = repo.AddMessage(ctx, "acme/web", 7, "C0A", "100.1")
 	_ = repo.Touch(ctx, "acme/web", 7)

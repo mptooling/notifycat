@@ -5,8 +5,8 @@ import (
 	"errors"
 
 	notificationdomain "github.com/mptooling/notifycat/internal/notification/domain"
+	"github.com/mptooling/notifycat/internal/platform/persistence"
 	reviewdomain "github.com/mptooling/notifycat/internal/review/domain"
-	"github.com/mptooling/notifycat/internal/store"
 )
 
 // CodeReviewsRepo adapts the store's CodeReviews repository to the review
@@ -14,18 +14,18 @@ import (
 // notification ReviewSessions port the notification handlers consume. No
 // gorm-tagged type crosses a port.
 type CodeReviewsRepo struct {
-	codeReviews *store.CodeReviews
+	codeReviews *persistence.CodeReviews
 }
 
 // NewCodeReviewsRepo wraps the store's CodeReviews repository.
-func NewCodeReviewsRepo(codeReviews *store.CodeReviews) *CodeReviewsRepo {
+func NewCodeReviewsRepo(codeReviews *persistence.CodeReviews) *CodeReviewsRepo {
 	return &CodeReviewsRepo{codeReviews: codeReviews}
 }
 
 // HasActiveReview implements reviewdomain.Recorder.
 func (r *CodeReviewsRepo) HasActiveReview(ctx context.Context, repository string, prNumber int, userID string) (bool, error) {
 	_, err := r.codeReviews.ActiveForUser(ctx, repository, prNumber, userID)
-	if errors.Is(err, store.ErrNotFound) {
+	if errors.Is(err, persistence.ErrNotFound) {
 		return false, nil
 	}
 	if err != nil {
@@ -38,7 +38,7 @@ func (r *CodeReviewsRepo) HasActiveReview(ctx context.Context, repository string
 // sentinel to the review domain's.
 func (r *CodeReviewsRepo) Start(ctx context.Context, repository string, prNumber int, userID, userName string) error {
 	err := r.codeReviews.Start(ctx, repository, prNumber, userID, userName)
-	if errors.Is(err, store.ErrActiveReviewExists) {
+	if errors.Is(err, persistence.ErrActiveReviewExists) {
 		return reviewdomain.ErrActiveReviewExists
 	}
 	return err
@@ -47,7 +47,7 @@ func (r *CodeReviewsRepo) Start(ctx context.Context, repository string, prNumber
 // GetActive implements notificationdomain.ReviewSessions.
 func (r *CodeReviewsRepo) GetActive(ctx context.Context, repository string, prNumber int) (notificationdomain.ReviewSession, error) {
 	review, err := r.codeReviews.GetActive(ctx, repository, prNumber)
-	if errors.Is(err, store.ErrNotFound) {
+	if errors.Is(err, persistence.ErrNotFound) {
 		return notificationdomain.ReviewSession{}, notificationdomain.ErrNoActiveReview
 	}
 	if err != nil {

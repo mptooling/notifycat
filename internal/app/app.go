@@ -25,6 +25,7 @@ import (
 	notificationinfra "github.com/mptooling/notifycat/internal/notification/infrastructure"
 	"github.com/mptooling/notifycat/internal/platform/config"
 	"github.com/mptooling/notifycat/internal/platform/github"
+	"github.com/mptooling/notifycat/internal/platform/persistence"
 	"github.com/mptooling/notifycat/internal/platform/security"
 	"github.com/mptooling/notifycat/internal/platform/slack"
 	reviewapp "github.com/mptooling/notifycat/internal/review/application"
@@ -33,7 +34,6 @@ import (
 	routingapp "github.com/mptooling/notifycat/internal/routing/application"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 	routinginfra "github.com/mptooling/notifycat/internal/routing/infrastructure"
-	"github.com/mptooling/notifycat/internal/store"
 	validationapp "github.com/mptooling/notifycat/internal/validation/application"
 	validationdomain "github.com/mptooling/notifycat/internal/validation/domain"
 	validationinfra "github.com/mptooling/notifycat/internal/validation/infrastructure"
@@ -67,7 +67,7 @@ func Wire(cfg config.Config) (*http.Server, *maintenanceapp.Cleaner, *digestapp.
 		return nil, nil, nil, nil, err
 	}
 
-	pullRequests := store.NewPullRequests(db)
+	pullRequests := persistence.NewPullRequests(db)
 	scheduler := buildCleanupScheduler(cfg, pullRequests, logger)
 
 	digestScheduler, err := buildDigestScheduler(cfg, provider, pullRequests, slackClient, composer, logger)
@@ -76,7 +76,7 @@ func Wire(cfg config.Config) (*http.Server, *maintenanceapp.Cleaner, *digestapp.
 		return nil, nil, nil, nil, err
 	}
 
-	codeReviews := store.NewCodeReviews(db)
+	codeReviews := persistence.NewCodeReviews(db)
 
 	router := buildRouter(httpClient, cfg, provider, logger)
 	dispatcher := buildDispatcher(pullRequests, codeReviews, provider, router, slackClient, composer, logger)
@@ -99,7 +99,7 @@ func Wire(cfg config.Config) (*http.Server, *maintenanceapp.Cleaner, *digestapp.
 // changed files — path rules are then inert and PRs route to the repo tier.
 func buildProvider(cfg config.Config, logger *slog.Logger) *routingapp.Provider {
 	defaults := routingdomain.Defaults{
-		Reactions: store.Reactions{
+		Reactions: persistence.Reactions{
 			Enabled:       cfg.Reactions.Enabled,
 			NewPR:         cfg.Reactions.NewPR,
 			MergedPR:      cfg.Reactions.MergedPR,
@@ -123,11 +123,11 @@ func buildProvider(cfg config.Config, logger *slog.Logger) *routingapp.Provider 
 // openAndMigrate opens the database and applies pending migrations. On any
 // failure it releases the handle, so the caller never holds an unclosed db.
 func openAndMigrate(cfg config.Config) (*gorm.DB, error) {
-	db, err := store.Open(cfg.DatabaseURL)
+	db, err := persistence.Open(cfg.DatabaseURL)
 	if err != nil {
 		return nil, err
 	}
-	if err := store.MigrateUp(context.Background(), db); err != nil {
+	if err := persistence.MigrateUp(context.Background(), db); err != nil {
 		closeDB(db)
 		return nil, fmt.Errorf("app: migrate: %w", err)
 	}
@@ -146,7 +146,7 @@ func buildSlackClient(httpClient *http.Client, cfg config.Config) *slack.Client 
 
 // buildCleanupScheduler builds the scheduler that deletes stored-message rows
 // older than the configured TTL.
-func buildCleanupScheduler(cfg config.Config, pullRequests *store.PullRequests, logger *slog.Logger) *maintenanceapp.Cleaner {
+func buildCleanupScheduler(cfg config.Config, pullRequests *persistence.PullRequests, logger *slog.Logger) *maintenanceapp.Cleaner {
 	return maintenanceapp.NewCleaner(maintenancedomain.CleanerParams{
 		Deleter:  maintenanceinfra.NewPRRepository(pullRequests),
 		TTL:      time.Duration(cfg.MessageTTLDays) * 24 * time.Hour,
@@ -160,7 +160,7 @@ func buildCleanupScheduler(cfg config.Config, pullRequests *store.PullRequests, 
 // every distinct cron spec across the enabled mappings. It returns a nil
 // scheduler (and nil error) when no mapping enables a digest; a bad cron spec
 // fails startup here rather than silently never firing.
-func buildDigestScheduler(cfg config.Config, provider *routingapp.Provider, pullRequests *store.PullRequests, slackClient *slack.Client, composer *slack.Composer, logger *slog.Logger) (*digestapp.Scheduler, error) {
+func buildDigestScheduler(cfg config.Config, provider *routingapp.Provider, pullRequests *persistence.PullRequests, slackClient *slack.Client, composer *slack.Composer, logger *slog.Logger) (*digestapp.Scheduler, error) {
 	specs := provider.Schedules()
 	if len(specs) == 0 {
 		return nil, nil
@@ -200,7 +200,7 @@ func buildRouter(httpClient *http.Client, cfg config.Config, provider *routingap
 }
 
 // buildDispatcher wires the PR-event handlers behind the dispatcher.
-func buildDispatcher(pullRequests *store.PullRequests, codeReviews *store.CodeReviews, provider *routingapp.Provider, router *routingapp.Router, slackClient *slack.Client, composer *slack.Composer, logger *slog.Logger) *notificationapp.Dispatcher {
+func buildDispatcher(pullRequests *persistence.PullRequests, codeReviews *persistence.CodeReviews, provider *routingapp.Provider, router *routingapp.Router, slackClient *slack.Client, composer *slack.Composer, logger *slog.Logger) *notificationapp.Dispatcher {
 	messageStore := notificationinfra.NewMessageRepo(pullRequests)
 	messenger := notificationinfra.NewSlackMessenger(slackClient, composer)
 	reviews := reviewinfra.NewCodeReviewsRepo(codeReviews)
@@ -349,7 +349,7 @@ func logFailures(results []validationdomain.EntryResult, logger *slog.Logger) {
 }
 
 func closeDB(db *gorm.DB) {
-	if sqlDB, err := store.SQLDB(db); err == nil {
+	if sqlDB, err := persistence.SQLDB(db); err == nil {
 		_ = sqlDB.Close()
 	}
 }

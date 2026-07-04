@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/mptooling/notifycat/internal/maintenance/domain"
-	"github.com/mptooling/notifycat/internal/store"
+	"github.com/mptooling/notifycat/internal/platform/persistence"
 )
 
 // PRRepository adapts the store's PullRequests repository to the maintenance
@@ -13,11 +13,11 @@ import (
 // store persistence models to maintenance domain DTOs at the boundary, so no
 // gorm-tagged type ever crosses a port.
 type PRRepository struct {
-	pullRequests *store.PullRequests
+	pullRequests *persistence.PullRequests
 }
 
 // NewPRRepository wraps the store's PullRequests repository.
-func NewPRRepository(pullRequests *store.PullRequests) *PRRepository {
+func NewPRRepository(pullRequests *persistence.PullRequests) *PRRepository {
 	return &PRRepository{pullRequests: pullRequests}
 }
 

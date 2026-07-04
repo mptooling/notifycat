@@ -5,18 +5,18 @@ import (
 	"time"
 
 	"github.com/mptooling/notifycat/internal/digest/domain"
-	"github.com/mptooling/notifycat/internal/store"
+	"github.com/mptooling/notifycat/internal/platform/persistence"
 )
 
 // StuckRepo adapts the store's PullRequests repository to the digest's
 // StuckFinder port, mapping store persistence models to digest domain DTOs at
 // the boundary so no gorm-tagged type crosses a port.
 type StuckRepo struct {
-	pullRequests *store.PullRequests
+	pullRequests *persistence.PullRequests
 }
 
 // NewStuckRepo wraps the store's PullRequests repository.
-func NewStuckRepo(pullRequests *store.PullRequests) *StuckRepo {
+func NewStuckRepo(pullRequests *persistence.PullRequests) *StuckRepo {
 	return &StuckRepo{pullRequests: pullRequests}
 }
 

@@ -13,9 +13,9 @@ import (
 
 	"github.com/mptooling/notifycat/internal/digest"
 	"github.com/mptooling/notifycat/internal/digest/domain"
+	"github.com/mptooling/notifycat/internal/platform/persistence"
 	"github.com/mptooling/notifycat/internal/platform/slack"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
-	"github.com/mptooling/notifycat/internal/store"
 )
 
 // stubMappingLookup and stubDigestResolver stand in for the routing provider so
@@ -37,12 +37,12 @@ func (stubDigestResolver) DigestFor(string) routingdomain.DigestConfig {
 // cases with every port bound. It proves the module honest without any
 // production binary depending on it yet.
 func TestModule_GraphResolves(t *testing.T) {
-	db := store.NewTestDB(t)
+	db := persistence.NewTestDB(t)
 
 	app := fxtest.New(t,
 		digest.Module,
 		fx.Provide(
-			func() *store.PullRequests { return store.NewPullRequests(db) },
+			func() *persistence.PullRequests { return persistence.NewPullRequests(db) },
 			func() *slack.Composer { return slack.NewComposer("eyes") },
 			func() *slack.Client { return slack.NewClient(http.DefaultClient, "xoxb-test") },
 			func() domain.MappingLookup { return stubMappingLookup{} },

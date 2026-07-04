@@ -32,7 +32,7 @@ import (
 	maintenanceinfra "github.com/mptooling/notifycat/internal/maintenance/infrastructure"
 	"github.com/mptooling/notifycat/internal/platform/config"
 	"github.com/mptooling/notifycat/internal/platform/github"
-	"github.com/mptooling/notifycat/internal/store"
+	"github.com/mptooling/notifycat/internal/platform/persistence"
 )
 
 func main() {
@@ -59,17 +59,17 @@ func run(args []string) error {
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	db, err := store.Open(cfg.DatabaseURL)
+	db, err := persistence.Open(cfg.DatabaseURL)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		if sqlDB, err := store.SQLDB(db); err == nil {
+		if sqlDB, err := persistence.SQLDB(db); err == nil {
 			_ = sqlDB.Close()
 		}
 	}()
 
-	messages := store.NewPullRequests(db)
+	messages := persistence.NewPullRequests(db)
 	repo := maintenanceinfra.NewPRRepository(messages)
 	httpClient := &http.Client{Timeout: 10 * time.Second}
 	gh := github.NewClient(httpClient, cfg.GitHubToken.Reveal(), github.WithBaseURL(cfg.GitHubBaseURL))

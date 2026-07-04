@@ -4,14 +4,14 @@ import (
 	"context"
 	"testing"
 
-	"github.com/mptooling/notifycat/internal/store"
+	"github.com/mptooling/notifycat/internal/platform/persistence"
 )
 
 func TestMessageChecker_HasMessages_TrueForSeededPR(t *testing.T) {
-	db := store.NewTestDB(t)
+	db := persistence.NewTestDB(t)
 	ctx := context.Background()
 
-	pullRequests := store.NewPullRequests(db)
+	pullRequests := persistence.NewPullRequests(db)
 	checker := NewMessageChecker(pullRequests)
 
 	const (
@@ -33,10 +33,10 @@ func TestMessageChecker_HasMessages_TrueForSeededPR(t *testing.T) {
 }
 
 func TestMessageChecker_HasMessages_FalseForUntrackedPR(t *testing.T) {
-	db := store.NewTestDB(t)
+	db := persistence.NewTestDB(t)
 	ctx := context.Background()
 
-	pullRequests := store.NewPullRequests(db)
+	pullRequests := persistence.NewPullRequests(db)
 	checker := NewMessageChecker(pullRequests)
 
 	hasMessages, err := checker.HasMessages(ctx, "octo/widget", 99)

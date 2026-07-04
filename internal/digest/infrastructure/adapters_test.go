@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/mptooling/notifycat/internal/digest/domain"
+	"github.com/mptooling/notifycat/internal/platform/persistence"
 	"github.com/mptooling/notifycat/internal/platform/slack"
-	"github.com/mptooling/notifycat/internal/store"
 )
 
 func domainSectionText(m domain.Message) string {
@@ -79,12 +79,12 @@ func TestMessageMapping_RoundTrip(t *testing.T) {
 // StuckRepo.FindStuck must map store rows (with preloaded messages) to digest
 // domain PullRequests.
 func TestStuckRepo_FindStuck_MapsRows(t *testing.T) {
-	db := store.NewTestDB(t)
-	pullRequests := store.NewPullRequests(db)
+	db := persistence.NewTestDB(t)
+	pullRequests := persistence.NewPullRequests(db)
 	repo := NewStuckRepo(pullRequests)
 
 	old := time.Now().Add(-72 * time.Hour)
-	if err := store.RawCreateForTest(db, store.PullRequest{Repository: "acme/api", PRNumber: 42, UpdatedAt: old}); err != nil {
+	if err := persistence.RawCreateForTest(db, persistence.PullRequest{Repository: "acme/api", PRNumber: 42, UpdatedAt: old}); err != nil {
 		t.Fatalf("seed pr: %v", err)
 	}
 	if err := pullRequests.AddMessage(context.Background(), "acme/api", 42, "C_ACME", "ts1"); err != nil {

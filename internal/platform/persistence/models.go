@@ -2,7 +2,7 @@
 // goose-driven migration runner. Callers depend on small interfaces declared
 // where they consume the store (handler packages); only this package needs to
 // know about GORM.
-package store
+package persistence
 
 import (
 	"time"

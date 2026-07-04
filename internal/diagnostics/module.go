@@ -12,9 +12,9 @@ import (
 	"github.com/mptooling/notifycat/internal/diagnostics/application"
 	diagnosticsdomain "github.com/mptooling/notifycat/internal/diagnostics/domain"
 	diagnosticsinfra "github.com/mptooling/notifycat/internal/diagnostics/infrastructure"
+	"github.com/mptooling/notifycat/internal/platform/persistence"
 	"github.com/mptooling/notifycat/internal/platform/slack"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
-	"github.com/mptooling/notifycat/internal/store"
 	validationdomain "github.com/mptooling/notifycat/internal/validation/domain"
 )
 
@@ -29,7 +29,7 @@ type Config struct {
 
 // Module binds the diagnostics ports to their implementations. The composition
 // root must supply the following external inputs:
-//   - *store.PullRequests
+//   - *persistence.PullRequests
 //   - *slack.Client
 //   - *http.Client
 //   - routingdomain.RoutingProvider (satisfies SmokeMappings Get)
@@ -97,10 +97,10 @@ func provideMappingsValidator(
 	return application.NewMappingsValidator(entries, checker, lister, gateway)
 }
 
-// The module resolves *slack.Client and *store.PullRequests transitively via the
+// The module resolves *slack.Client and *persistence.PullRequests transitively via the
 // infrastructure adapters; these blank assignments keep the imports live for
 // callers that grep for which concrete types the module requires.
 var (
-	_ *slack.Client       = nil
-	_ *store.PullRequests = nil
+	_ *slack.Client             = nil
+	_ *persistence.PullRequests = nil
 )

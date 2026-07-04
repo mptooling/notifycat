@@ -12,9 +12,9 @@ import (
 
 	"github.com/mptooling/notifycat/internal/notification"
 	"github.com/mptooling/notifycat/internal/notification/domain"
+	"github.com/mptooling/notifycat/internal/platform/persistence"
 	"github.com/mptooling/notifycat/internal/platform/slack"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
-	"github.com/mptooling/notifycat/internal/store"
 )
 
 type stubReviewSessions struct{}
@@ -43,13 +43,13 @@ func (stubResolver) ResolveTargets(context.Context, string, int) (routingdomain.
 // external inputs the composition root supplies, builds the dispatcher with every
 // handler assembled into the value group and every port bound.
 func TestModule_GraphResolves(t *testing.T) {
-	db := store.NewTestDB(t)
+	db := persistence.NewTestDB(t)
 
 	app := fxtest.New(t,
 		notification.Module,
 		fx.Provide(
-			func() *store.PullRequests { return store.NewPullRequests(db) },
-			func() *store.CodeReviews { return store.NewCodeReviews(db) },
+			func() *persistence.PullRequests { return persistence.NewPullRequests(db) },
+			func() *persistence.CodeReviews { return persistence.NewCodeReviews(db) },
 			func() *slack.Client { return slack.NewClient(http.DefaultClient, "xoxb-test") },
 			func() *slack.Composer { return slack.NewComposer("eyes") },
 			func() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) },

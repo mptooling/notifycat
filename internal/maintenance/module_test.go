@@ -14,7 +14,7 @@ import (
 	"github.com/mptooling/notifycat/internal/maintenance/domain"
 	"github.com/mptooling/notifycat/internal/maintenance/infrastructure"
 	"github.com/mptooling/notifycat/internal/platform/github"
-	"github.com/mptooling/notifycat/internal/store"
+	"github.com/mptooling/notifycat/internal/platform/persistence"
 )
 
 // stubPRStateGetter stands in for the GitHub client so the module graph can be
@@ -30,12 +30,12 @@ func (stubPRStateGetter) GetPullRequest(context.Context, string, string, int) (g
 // every port bound. It proves the module honest without any production binary
 // depending on it yet.
 func TestModule_GraphResolves(t *testing.T) {
-	db := store.NewTestDB(t)
+	db := persistence.NewTestDB(t)
 
 	app := fxtest.New(t,
 		maintenance.Module,
 		fx.Provide(
-			func() *store.PullRequests { return store.NewPullRequests(db) },
+			func() *persistence.PullRequests { return persistence.NewPullRequests(db) },
 			func() infrastructure.PRStateGetter { return stubPRStateGetter{} },
 			func() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) },
 		),

@@ -17,10 +17,10 @@ import (
 
 	"github.com/mptooling/notifycat/internal/app"
 	"github.com/mptooling/notifycat/internal/platform/config"
+	"github.com/mptooling/notifycat/internal/platform/persistence"
 	routingapp "github.com/mptooling/notifycat/internal/routing/application"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 	routinginfra "github.com/mptooling/notifycat/internal/routing/infrastructure"
-	"github.com/mptooling/notifycat/internal/store"
 )
 
 // mappingSeed describes one explicit org/repo entry the integration fixture
@@ -215,19 +215,19 @@ func primeLock(t *testing.T, configPath string, p *routingapp.Provider) {
 // seedMessage seeds one stored message for a PR.
 func (f *integrationFixture) seedMessage(t *testing.T, repository string, prNumber int, ts string) {
 	t.Helper()
-	db, err := store.Open(f.cfg.DatabaseURL)
+	db, err := persistence.Open(f.cfg.DatabaseURL)
 	if err != nil {
 		t.Fatalf("seed open: %v", err)
 	}
 	defer func() {
-		if sqlDB, err := store.SQLDB(db); err == nil {
+		if sqlDB, err := persistence.SQLDB(db); err == nil {
 			_ = sqlDB.Close()
 		}
 	}()
 	// Seed one stored message in the repo's mapped channel so the
 	// close/draft/review handlers (which read stored messages) have something
 	// to act on. All integration seeds target octo/widget → C123ABCDE.
-	if err := store.NewPullRequests(db).AddMessage(context.Background(), repository, prNumber, "C123ABCDE", ts); err != nil {
+	if err := persistence.NewPullRequests(db).AddMessage(context.Background(), repository, prNumber, "C123ABCDE", ts); err != nil {
 		t.Fatalf("seed AddMessage: %v", err)
 	}
 }
@@ -267,23 +267,23 @@ func (f *integrationFixture) postEvent(t *testing.T, event, payload string) int 
 
 // loadMessage returns the first stored message for a PR, or ErrNotFound when
 // the PR has no stored messages — used to verify the stored message post-flow.
-func (f *integrationFixture) loadMessage(t *testing.T, repository string, prNumber int) (store.Message, error) {
+func (f *integrationFixture) loadMessage(t *testing.T, repository string, prNumber int) (persistence.Message, error) {
 	t.Helper()
-	db, err := store.Open(f.cfg.DatabaseURL)
+	db, err := persistence.Open(f.cfg.DatabaseURL)
 	if err != nil {
-		return store.Message{}, err
+		return persistence.Message{}, err
 	}
 	defer func() {
-		if sqlDB, err := store.SQLDB(db); err == nil {
+		if sqlDB, err := persistence.SQLDB(db); err == nil {
 			_ = sqlDB.Close()
 		}
 	}()
-	msgs, err := store.NewPullRequests(db).Messages(context.Background(), repository, prNumber)
+	msgs, err := persistence.NewPullRequests(db).Messages(context.Background(), repository, prNumber)
 	if err != nil {
-		return store.Message{}, err
+		return persistence.Message{}, err
 	}
 	if len(msgs) == 0 {
-		return store.Message{}, store.ErrNotFound
+		return persistence.Message{}, persistence.ErrNotFound
 	}
 	return msgs[0], nil
 }

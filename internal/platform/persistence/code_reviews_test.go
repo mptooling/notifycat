@@ -1,4 +1,4 @@
-package store_test
+package persistence_test
 
 import (
 	"context"
@@ -7,36 +7,36 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/mptooling/notifycat/internal/store"
+	"github.com/mptooling/notifycat/internal/platform/persistence"
 )
 
 // seedPR inserts a tracked PR (via the normal open path) so a code review has a
 // parent row to reference, returning the store bound to the same db.
 func seedPR(t *testing.T, db *gorm.DB, repository string, prNumber int) {
 	t.Helper()
-	if err := store.NewPullRequests(db).AddMessage(context.Background(), repository, prNumber, "C0", "1.1"); err != nil {
+	if err := persistence.NewPullRequests(db).AddMessage(context.Background(), repository, prNumber, "C0", "1.1"); err != nil {
 		t.Fatalf("seed pull request: %v", err)
 	}
 }
 
 func TestCodeReviews_SameUserSecondStartConflicts(t *testing.T) {
-	db := store.NewTestDB(t)
+	db := persistence.NewTestDB(t)
 	seedPR(t, db, "acme/web", 7)
-	reviews := store.NewCodeReviews(db)
+	reviews := persistence.NewCodeReviews(db)
 	ctx := context.Background()
 
 	if err := reviews.Start(ctx, "acme/web", 7, "U1", "Ada"); err != nil {
 		t.Fatalf("first Start: %v", err)
 	}
-	if err := reviews.Start(ctx, "acme/web", 7, "U1", "Ada"); err != store.ErrActiveReviewExists {
+	if err := reviews.Start(ctx, "acme/web", 7, "U1", "Ada"); err != persistence.ErrActiveReviewExists {
 		t.Fatalf("same-user second Start = %v; want ErrActiveReviewExists", err)
 	}
 }
 
 func TestCodeReviews_DifferentUsersReviewConcurrently(t *testing.T) {
-	db := store.NewTestDB(t)
+	db := persistence.NewTestDB(t)
 	seedPR(t, db, "acme/web", 7)
-	reviews := store.NewCodeReviews(db)
+	reviews := persistence.NewCodeReviews(db)
 	ctx := context.Background()
 
 	if err := reviews.Start(ctx, "acme/web", 7, "U1", "Ada"); err != nil {
@@ -48,9 +48,9 @@ func TestCodeReviews_DifferentUsersReviewConcurrently(t *testing.T) {
 }
 
 func TestCodeReviews_FinishAllowsRestart(t *testing.T) {
-	db := store.NewTestDB(t)
+	db := persistence.NewTestDB(t)
 	seedPR(t, db, "acme/web", 7)
-	reviews := store.NewCodeReviews(db)
+	reviews := persistence.NewCodeReviews(db)
 	ctx := context.Background()
 
 	if err := reviews.Start(ctx, "acme/web", 7, "U1", "Ada"); err != nil {
@@ -65,9 +65,9 @@ func TestCodeReviews_FinishAllowsRestart(t *testing.T) {
 }
 
 func TestCodeReviews_GetActive(t *testing.T) {
-	db := store.NewTestDB(t)
+	db := persistence.NewTestDB(t)
 	seedPR(t, db, "acme/web", 7)
-	reviews := store.NewCodeReviews(db)
+	reviews := persistence.NewCodeReviews(db)
 	ctx := context.Background()
 
 	if err := reviews.Start(ctx, "acme/web", 7, "U1", "Ada"); err != nil {
@@ -84,24 +84,24 @@ func TestCodeReviews_GetActive(t *testing.T) {
 	if err := reviews.Finish(ctx, "acme/web", 7); err != nil {
 		t.Fatalf("Finish: %v", err)
 	}
-	if _, err := reviews.GetActive(ctx, "acme/web", 7); err != store.ErrNotFound {
+	if _, err := reviews.GetActive(ctx, "acme/web", 7); err != persistence.ErrNotFound {
 		t.Fatalf("GetActive after Finish = %v; want ErrNotFound", err)
 	}
 }
 
 func TestCodeReviews_GetActiveNotFound(t *testing.T) {
-	db := store.NewTestDB(t)
+	db := persistence.NewTestDB(t)
 	seedPR(t, db, "acme/web", 7)
-	reviews := store.NewCodeReviews(db)
-	if _, err := reviews.GetActive(context.Background(), "acme/web", 7); err != store.ErrNotFound {
+	reviews := persistence.NewCodeReviews(db)
+	if _, err := reviews.GetActive(context.Background(), "acme/web", 7); err != persistence.ErrNotFound {
 		t.Fatalf("GetActive with no review = %v; want ErrNotFound", err)
 	}
 }
 
 func TestCodeReviews_ActiveForUser(t *testing.T) {
-	db := store.NewTestDB(t)
+	db := persistence.NewTestDB(t)
 	seedPR(t, db, "acme/web", 7)
-	reviews := store.NewCodeReviews(db)
+	reviews := persistence.NewCodeReviews(db)
 	ctx := context.Background()
 
 	if err := reviews.Start(ctx, "acme/web", 7, "U1", "Ada"); err != nil {
@@ -111,43 +111,43 @@ func TestCodeReviews_ActiveForUser(t *testing.T) {
 	if err != nil || got.SlackUserID != "U1" {
 		t.Fatalf("ActiveForUser(U1) = %+v, %v; want U1's active review", got, err)
 	}
-	if _, err := reviews.ActiveForUser(ctx, "acme/web", 7, "U2"); err != store.ErrNotFound {
+	if _, err := reviews.ActiveForUser(ctx, "acme/web", 7, "U2"); err != persistence.ErrNotFound {
 		t.Fatalf("ActiveForUser(U2) = %v; want ErrNotFound", err)
 	}
 	if err := reviews.Finish(ctx, "acme/web", 7); err != nil {
 		t.Fatalf("Finish: %v", err)
 	}
-	if _, err := reviews.ActiveForUser(ctx, "acme/web", 7, "U1"); err != store.ErrNotFound {
+	if _, err := reviews.ActiveForUser(ctx, "acme/web", 7, "U1"); err != persistence.ErrNotFound {
 		t.Fatalf("ActiveForUser(U1) after Finish = %v; want ErrNotFound", err)
 	}
 }
 
 func TestCodeReviews_FinishNoActiveIsNoop(t *testing.T) {
-	db := store.NewTestDB(t)
+	db := persistence.NewTestDB(t)
 	seedPR(t, db, "acme/web", 7)
-	reviews := store.NewCodeReviews(db)
+	reviews := persistence.NewCodeReviews(db)
 	if err := reviews.Finish(context.Background(), "acme/web", 7); err != nil {
 		t.Fatalf("Finish with no active review = %v; want no-op nil", err)
 	}
 }
 
 func TestCodeReviews_StartUnknownPRNotFound(t *testing.T) {
-	db := store.NewTestDB(t)
-	reviews := store.NewCodeReviews(db)
-	if err := reviews.Start(context.Background(), "acme/web", 999, "U1", "Ada"); err != store.ErrNotFound {
+	db := persistence.NewTestDB(t)
+	reviews := persistence.NewCodeReviews(db)
+	if err := reviews.Start(context.Background(), "acme/web", 999, "U1", "Ada"); err != persistence.ErrNotFound {
 		t.Fatalf("Start on untracked PR = %v; want ErrNotFound", err)
 	}
 }
 
 func TestCodeReviews_CascadeDeletedWithPR(t *testing.T) {
-	db := store.NewTestDB(t)
+	db := persistence.NewTestDB(t)
 	seedPR(t, db, "acme/web", 7)
-	reviews := store.NewCodeReviews(db)
+	reviews := persistence.NewCodeReviews(db)
 	ctx := context.Background()
 	if err := reviews.Start(ctx, "acme/web", 7, "U1", "Ada"); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	if err := store.NewPullRequests(db).Delete(ctx, "acme/web", 7); err != nil {
+	if err := persistence.NewPullRequests(db).Delete(ctx, "acme/web", 7); err != nil {
 		t.Fatalf("Delete PR: %v", err)
 	}
 	var count int64
@@ -158,10 +158,10 @@ func TestCodeReviews_CascadeDeletedWithPR(t *testing.T) {
 }
 
 func TestCodeReviews_Reviewers(t *testing.T) {
-	db := store.NewTestDB(t)
+	db := persistence.NewTestDB(t)
 	seedPR(t, db, "acme/web", 7)
 	seedPR(t, db, "acme/web", 8)
-	reviews := store.NewCodeReviews(db)
+	reviews := persistence.NewCodeReviews(db)
 	ctx := context.Background()
 
 	if err := reviews.Start(ctx, "acme/web", 7, "U1", "Ada"); err != nil {
@@ -191,8 +191,8 @@ func TestCodeReviews_Reviewers(t *testing.T) {
 }
 
 func TestCodeReviews_Reviewers_UntrackedPR(t *testing.T) {
-	db := store.NewTestDB(t)
-	reviews := store.NewCodeReviews(db)
+	db := persistence.NewTestDB(t)
+	reviews := persistence.NewCodeReviews(db)
 	got, err := reviews.Reviewers(context.Background(), "acme/web", 999)
 	if err != nil {
 		t.Fatalf("Reviewers on untracked PR = %v; want nil error", err)
@@ -203,7 +203,7 @@ func TestCodeReviews_Reviewers_UntrackedPR(t *testing.T) {
 }
 
 func TestCodeReviews_Migration00008DownRestoresSingleActiveIndex(t *testing.T) {
-	db := store.NewTestDB(t) // all migrations applied → per-(PR,user) index
+	db := persistence.NewTestDB(t) // all migrations applied → per-(PR,user) index
 	ctx := context.Background()
 
 	var upSQL string
@@ -212,7 +212,7 @@ func TestCodeReviews_Migration00008DownRestoresSingleActiveIndex(t *testing.T) {
 		t.Fatalf("expected per-(PR,user) index after up; got %q", upSQL)
 	}
 
-	if err := store.MigrateDown(ctx, db); err != nil {
+	if err := persistence.MigrateDown(ctx, db); err != nil {
 		t.Fatalf("MigrateDown: %v", err)
 	}
 

@@ -5,23 +5,23 @@ import (
 	"fmt"
 
 	diagnosticsdomain "github.com/mptooling/notifycat/internal/diagnostics/domain"
+	"github.com/mptooling/notifycat/internal/platform/persistence"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
-	"github.com/mptooling/notifycat/internal/store"
 )
 
 // StoreSmokeMessages implements diagnosticsdomain.SmokeMessages over
-// *store.PullRequests, converting store.Message to domain.SmokeMessage.
+// *persistence.PullRequests, converting persistence.Message to domain.SmokeMessage.
 type StoreSmokeMessages struct {
-	pullRequests *store.PullRequests
+	pullRequests *persistence.PullRequests
 }
 
-// NewStoreSmokeMessages returns a StoreSmokeMessages backed by the given store.
-func NewStoreSmokeMessages(pullRequests *store.PullRequests) *StoreSmokeMessages {
+// NewStoreSmokeMessages returns a StoreSmokeMessages backed by the given persistence.
+func NewStoreSmokeMessages(pullRequests *persistence.PullRequests) *StoreSmokeMessages {
 	return &StoreSmokeMessages{pullRequests: pullRequests}
 }
 
 // Messages returns the PR's stored messages as domain SmokeMessages. A
-// store.ErrNotFound is propagated as-is so the application layer can detect
+// persistence.ErrNotFound is propagated as-is so the application layer can detect
 // the "no row" case.
 func (s *StoreSmokeMessages) Messages(ctx context.Context, repository string, prNumber int) ([]diagnosticsdomain.SmokeMessage, error) {
 	storeMessages, err := s.pullRequests.Messages(ctx, repository, prNumber)
@@ -39,13 +39,13 @@ func (s *StoreSmokeMessages) Messages(ctx context.Context, repository string, pr
 }
 
 // StoreSmokeCleanup implements diagnosticsdomain.SmokeCleanup over
-// *store.PullRequests.
+// *persistence.PullRequests.
 type StoreSmokeCleanup struct {
-	pullRequests *store.PullRequests
+	pullRequests *persistence.PullRequests
 }
 
-// NewStoreSmokeCleanup returns a StoreSmokeCleanup backed by the given store.
-func NewStoreSmokeCleanup(pullRequests *store.PullRequests) *StoreSmokeCleanup {
+// NewStoreSmokeCleanup returns a StoreSmokeCleanup backed by the given persistence.
+func NewStoreSmokeCleanup(pullRequests *persistence.PullRequests) *StoreSmokeCleanup {
 	return &StoreSmokeCleanup{pullRequests: pullRequests}
 }
 
@@ -74,7 +74,7 @@ func NewMappingsSmokeMappings(provider smokeRoutingProvider) *MappingsSmokeMappi
 }
 
 // Get resolves target to its RepoMapping. Returns routingdomain.ErrNotFound
-// (which is identical to store.ErrNotFound) when the repository is absent.
+// (which is identical to persistence.ErrNotFound) when the repository is absent.
 func (m *MappingsSmokeMappings) Get(ctx context.Context, repository string) (routingdomain.RepoMapping, error) {
 	mapping, err := m.provider.Get(ctx, repository)
 	if err != nil {

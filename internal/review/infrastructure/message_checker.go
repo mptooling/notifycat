@@ -4,25 +4,25 @@ import (
 	"context"
 	"errors"
 
+	"github.com/mptooling/notifycat/internal/platform/persistence"
 	reviewdomain "github.com/mptooling/notifycat/internal/review/domain"
-	"github.com/mptooling/notifycat/internal/store"
 )
 
 // MessageChecker adapts the store's PullRequests repository to the review
 // MessageChecker port: an untracked PR reports false rather than erroring.
 type MessageChecker struct {
-	pullRequests *store.PullRequests
+	pullRequests *persistence.PullRequests
 }
 
 // NewMessageChecker wraps the store's PullRequests repository.
-func NewMessageChecker(pullRequests *store.PullRequests) *MessageChecker {
+func NewMessageChecker(pullRequests *persistence.PullRequests) *MessageChecker {
 	return &MessageChecker{pullRequests: pullRequests}
 }
 
 // HasMessages implements reviewdomain.MessageChecker.
 func (c *MessageChecker) HasMessages(ctx context.Context, repository string, prNumber int) (bool, error) {
 	messages, err := c.pullRequests.Messages(ctx, repository, prNumber)
-	if errors.Is(err, store.ErrNotFound) {
+	if errors.Is(err, persistence.ErrNotFound) {
 		return false, nil
 	}
 	if err != nil {

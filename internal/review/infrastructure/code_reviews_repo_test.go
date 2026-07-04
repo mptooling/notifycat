@@ -6,16 +6,16 @@ import (
 	"testing"
 
 	notificationdomain "github.com/mptooling/notifycat/internal/notification/domain"
+	"github.com/mptooling/notifycat/internal/platform/persistence"
 	reviewdomain "github.com/mptooling/notifycat/internal/review/domain"
-	"github.com/mptooling/notifycat/internal/store"
 )
 
 func TestCodeReviewsRepo_HasActiveReview_FalseWhenNone(t *testing.T) {
-	db := store.NewTestDB(t)
+	db := persistence.NewTestDB(t)
 	ctx := context.Background()
 
-	pullRequests := store.NewPullRequests(db)
-	codeReviews := store.NewCodeReviews(db)
+	pullRequests := persistence.NewPullRequests(db)
+	codeReviews := persistence.NewCodeReviews(db)
 	repo := NewCodeReviewsRepo(codeReviews)
 
 	const (
@@ -50,11 +50,11 @@ func TestCodeReviewsRepo_HasActiveReview_FalseWhenNone(t *testing.T) {
 }
 
 func TestCodeReviewsRepo_Start_DuplicateReturnsErrActiveReviewExists(t *testing.T) {
-	db := store.NewTestDB(t)
+	db := persistence.NewTestDB(t)
 	ctx := context.Background()
 
-	pullRequests := store.NewPullRequests(db)
-	codeReviews := store.NewCodeReviews(db)
+	pullRequests := persistence.NewPullRequests(db)
+	codeReviews := persistence.NewCodeReviews(db)
 	repo := NewCodeReviewsRepo(codeReviews)
 
 	const (
@@ -79,11 +79,11 @@ func TestCodeReviewsRepo_Start_DuplicateReturnsErrActiveReviewExists(t *testing.
 }
 
 func TestCodeReviewsRepo_GetActive_ReturnsSessionAndErrNoActiveReview(t *testing.T) {
-	db := store.NewTestDB(t)
+	db := persistence.NewTestDB(t)
 	ctx := context.Background()
 
-	pullRequests := store.NewPullRequests(db)
-	codeReviews := store.NewCodeReviews(db)
+	pullRequests := persistence.NewPullRequests(db)
+	codeReviews := persistence.NewCodeReviews(db)
 	repo := NewCodeReviewsRepo(codeReviews)
 
 	const (
@@ -118,11 +118,11 @@ func TestCodeReviewsRepo_GetActive_ReturnsSessionAndErrNoActiveReview(t *testing
 }
 
 func TestCodeReviewsRepo_Reviewers_MapsAllSessions(t *testing.T) {
-	db := store.NewTestDB(t)
+	db := persistence.NewTestDB(t)
 	ctx := context.Background()
 
-	pullRequests := store.NewPullRequests(db)
-	codeReviews := store.NewCodeReviews(db)
+	pullRequests := persistence.NewPullRequests(db)
+	codeReviews := persistence.NewCodeReviews(db)
 	repo := NewCodeReviewsRepo(codeReviews)
 
 	const (

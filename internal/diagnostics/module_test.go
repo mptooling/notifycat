@@ -14,10 +14,10 @@ import (
 	"github.com/mptooling/notifycat/internal/diagnostics"
 	diagnosticsapp "github.com/mptooling/notifycat/internal/diagnostics/application"
 	diagnosticsdomain "github.com/mptooling/notifycat/internal/diagnostics/domain"
+	"github.com/mptooling/notifycat/internal/platform/persistence"
 	"github.com/mptooling/notifycat/internal/platform/slack"
 	routingapp "github.com/mptooling/notifycat/internal/routing/application"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
-	"github.com/mptooling/notifycat/internal/store"
 	validationdomain "github.com/mptooling/notifycat/internal/validation/domain"
 )
 
@@ -32,8 +32,8 @@ func (stubRepoValidator) Validate(_ context.Context, repository string) validati
 // external inputs the composition root supplies, can build all three use cases
 // with every port bound.
 func TestModule_GraphResolves(t *testing.T) {
-	db := store.NewTestDB(t)
-	pullRequests := store.NewPullRequests(db)
+	db := persistence.NewTestDB(t)
+	pullRequests := persistence.NewPullRequests(db)
 
 	// A zero-entry Provider satisfies both EntrySource and RoutingProvider.
 	provider := routingapp.NewProvider(routingdomain.Defaults{}, nil, nil)
@@ -54,7 +54,7 @@ func TestModule_GraphResolves(t *testing.T) {
 
 		// External inputs supplied by the composition root.
 		fx.Provide(
-			func() *store.PullRequests { return pullRequests },
+			func() *persistence.PullRequests { return pullRequests },
 			func() *slack.Client { return slack.NewClient(http.DefaultClient, "xoxb-test") },
 			func() *http.Client { return http.DefaultClient },
 			func() routingdomain.RoutingProvider { return provider },

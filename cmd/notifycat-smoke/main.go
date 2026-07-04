@@ -23,10 +23,10 @@ import (
 	diagnosticsdomain "github.com/mptooling/notifycat/internal/diagnostics/domain"
 	diagnosticsinfra "github.com/mptooling/notifycat/internal/diagnostics/infrastructure"
 	"github.com/mptooling/notifycat/internal/platform/config"
+	"github.com/mptooling/notifycat/internal/platform/persistence"
 	"github.com/mptooling/notifycat/internal/platform/slack"
 	routingapp "github.com/mptooling/notifycat/internal/routing/application"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
-	"github.com/mptooling/notifycat/internal/store"
 )
 
 // defaultURL targets the server over the compose network — the same name the
@@ -51,12 +51,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	provider := routingapp.NewProvider(routingdomain.Defaults{}, cfg.Mappings, cfg.Digest)
-	db, err := store.Open(cfg.DatabaseURL)
+	db, err := persistence.Open(cfg.DatabaseURL)
 	if err != nil {
 		fmt.Fprintln(stderr, "notifycat-smoke: cannot open database:", err)
 		return 1
 	}
-	pullRequests := store.NewPullRequests(db)
+	pullRequests := persistence.NewPullRequests(db)
 
 	hc := &http.Client{Timeout: 15 * time.Second}
 	slackClient := slack.NewClient(hc, cfg.SlackBotToken.Reveal(), slack.WithBaseURL(cfg.SlackBaseURL))
