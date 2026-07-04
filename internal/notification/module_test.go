@@ -17,6 +17,16 @@ import (
 	"github.com/mptooling/notifycat/internal/store"
 )
 
+type stubReviewSessions struct{}
+
+func (stubReviewSessions) GetActive(context.Context, string, int) (domain.ReviewSession, error) {
+	return domain.ReviewSession{}, domain.ErrNoActiveReview
+}
+func (stubReviewSessions) Finish(context.Context, string, int) error { return nil }
+func (stubReviewSessions) Reviewers(context.Context, string, int) ([]domain.ReviewSession, error) {
+	return nil, nil
+}
+
 type stubBehavior struct{}
 
 func (stubBehavior) Get(context.Context, string) (routingdomain.RepoMapping, error) {
@@ -45,6 +55,7 @@ func TestModule_GraphResolves(t *testing.T) {
 			func() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) },
 			func() domain.RepoBehavior { return stubBehavior{} },
 			func() domain.TargetResolver { return stubResolver{} },
+			func() domain.ReviewSessions { return stubReviewSessions{} },
 		),
 		fx.Invoke(func(domain.EventDispatcher) {}),
 	)

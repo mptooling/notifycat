@@ -24,7 +24,6 @@ var Module = fx.Module("notification",
 	fx.Provide(
 		fx.Annotate(infrastructure.NewMessageRepo, fx.As(new(domain.MessageStore))),
 		fx.Annotate(infrastructure.NewSlackMessenger, fx.As(new(domain.Messenger))),
-		fx.Annotate(infrastructure.NewReviewSessionsRepo, fx.As(new(domain.ReviewSessions))),
 		fx.Annotate(application.NewOpenHandler, fx.As(new(domain.Handler)), fx.ResultTags(`group:"handlers"`)),
 		fx.Annotate(application.NewCloseHandler, fx.As(new(domain.Handler)), fx.ResultTags(`group:"handlers"`)),
 		fx.Annotate(application.NewDraftHandler, fx.As(new(domain.Handler)), fx.ResultTags(`group:"handlers"`)),

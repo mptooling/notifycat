@@ -26,12 +26,13 @@ import (
 	notificationdomain "github.com/mptooling/notifycat/internal/notification/domain"
 	notificationinfra "github.com/mptooling/notifycat/internal/notification/infrastructure"
 	"github.com/mptooling/notifycat/internal/platform/security"
+	reviewapp "github.com/mptooling/notifycat/internal/review/application"
+	reviewdomain "github.com/mptooling/notifycat/internal/review/domain"
+	reviewinfra "github.com/mptooling/notifycat/internal/review/infrastructure"
 	routingapp "github.com/mptooling/notifycat/internal/routing/application"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 	routinginfra "github.com/mptooling/notifycat/internal/routing/infrastructure"
 	"github.com/mptooling/notifycat/internal/slack"
-	"github.com/mptooling/notifycat/internal/slackhook"
-	"github.com/mptooling/notifycat/internal/startreview"
 	"github.com/mptooling/notifycat/internal/store"
 	validationapp "github.com/mptooling/notifycat/internal/validation/application"
 	validationdomain "github.com/mptooling/notifycat/internal/validation/domain"
@@ -80,9 +81,16 @@ func Wire(cfg config.Config) (*http.Server, *maintenanceapp.Cleaner, *digestapp.
 	router := buildRouter(httpClient, cfg, provider, logger)
 	dispatcher := buildDispatcher(pullRequests, codeReviews, provider, router, slackClient, composer, logger)
 
-	startReviewHandler := startreview.NewHandler(codeReviews, pullRequests, slackClient, composer, logger, time.Now)
+	startReview := reviewapp.NewHandler(reviewdomain.HandlerParams{
+		Recorder:  reviewinfra.NewCodeReviewsRepo(codeReviews),
+		Messages:  reviewinfra.NewMessageChecker(pullRequests),
+		Decorator: reviewinfra.NewSlackDecorator(composer, slackClient),
+		Logger:    logger,
+		Now:       time.Now,
+	})
+	startReviewSink := reviewinfra.NewStartReviewSink(startReview, logger)
 
-	server := buildServer(cfg, buildMux(cfg, dispatcher, startReviewHandler.Handle, logger))
+	server := buildServer(cfg, buildMux(cfg, dispatcher, startReviewSink, logger))
 	return server, scheduler, digestScheduler, func() { closeDB(db) }, nil
 }
 
@@ -195,7 +203,7 @@ func buildRouter(httpClient *http.Client, cfg config.Config, provider *routingap
 func buildDispatcher(pullRequests *store.PullRequests, codeReviews *store.CodeReviews, provider *routingapp.Provider, router *routingapp.Router, slackClient *slack.Client, composer *slack.Composer, logger *slog.Logger) *notificationapp.Dispatcher {
 	messageStore := notificationinfra.NewMessageRepo(pullRequests)
 	messenger := notificationinfra.NewSlackMessenger(slackClient, composer)
-	reviews := notificationinfra.NewReviewSessionsRepo(codeReviews)
+	reviews := reviewinfra.NewCodeReviewsRepo(codeReviews)
 	handlers := []notificationdomain.Handler{
 		notificationapp.NewOpenHandler(messageStore, router, messenger, logger),
 		notificationapp.NewCloseHandler(messageStore, provider, messenger, logger, reviews),
@@ -211,7 +219,7 @@ func buildDispatcher(pullRequests *store.PullRequests, codeReviews *store.CodeRe
 // optional inbound Slack interactivity endpoint. The Slack route is registered
 // only when a signing secret is configured; otherwise notifycat stays
 // outbound-only and the route is absent.
-func buildMux(cfg config.Config, dispatcher *notificationapp.Dispatcher, startReviewSink slackhook.InteractionSink, logger *slog.Logger) *http.ServeMux {
+func buildMux(cfg config.Config, dispatcher *notificationapp.Dispatcher, startReviewSink reviewinfra.InteractionSink, logger *slog.Logger) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -228,8 +236,8 @@ func buildMux(cfg config.Config, dispatcher *notificationapp.Dispatcher, startRe
 	} else {
 		slackVerifier := security.NewSlackVerifier(cfg.SlackSigningSecret.Reveal())
 		mux.Handle("POST /webhook/slack/interactions",
-			slackhook.SignatureMiddleware(slackVerifier)(
-				slackhook.NewHandler(startReviewSink, logger),
+			reviewinfra.SignatureMiddleware(slackVerifier)(
+				reviewinfra.NewInteractionsHandler(startReviewSink, logger),
 			),
 		)
 		logger.Info("slack interactivity enabled", slog.String("route", "POST /webhook/slack/interactions"))
