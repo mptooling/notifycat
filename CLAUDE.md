@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture rules (authoritative — always follow)
 
-Notifycat is being refactored onto **Domain-Driven Design + hexagonal layering + uber/fx**. [`ARCHITECTURE.md`](ARCHITECTURE.md) is the source of truth; [`REFACTORING_PLAN.md`](REFACTORING_PLAN.md) tracks the migration. Follow these rules for everything new or refactored — they override the legacy shapes still present in unmigrated packages:
+Notifycat follows **Domain-Driven Design + hexagonal layering + uber/fx**. [`ARCHITECTURE.md`](ARCHITECTURE.md) is the source of truth. These rules govern all code in the repository:
 
 - Every domain is a folder under `internal/<domain>/` split into three layers: `domain/`, `application/`, `infrastructure/`. Dependencies point inward only (`infrastructure → application → domain`); the domain layer imports nothing but the shared kernel.
 - The domain layer owns the contracts: `interfaces.go` (ports + use-case interfaces), `models.go` (DTOs), `enums.go`, `constants.go`.
@@ -26,8 +26,8 @@ underlying `go ...` invocations work without `just` if needed.
 | Full local verification (vet + lint + vuln + race tests + build) | `just check` |
 | Race-enabled tests | `just test` |
 | Faster tests, no race detector | `just test-fast` |
-| Single test | `go test -race ./internal/pullrequest -run TestApproveHandler` |
-| Single package | `go test -race ./internal/store` |
+| Single test | `go test -race ./internal/notification/... -run TestApproveHandler` |
+| Single package | `go test -race ./internal/notification/...` |
 | Lint only | `just lint` (requires `golangci-lint` locally) |
 | Vuln scan | `just vuln` (runs in Docker against the pinned `golang:1.25.10-alpine` — slower; CI also runs this) |
 | Build all binaries | `just build` |
@@ -40,86 +40,74 @@ Go toolchain is pinned at **1.25.10**. CI runs all of the
 `go test -race`, `go build`). `just` is dev-only — it is not in the
 runtime image or Go modules.
 
-## Architecture (current — migrating)
+## Architecture
 
-> This section describes the codebase **as it stands today**, which the DDD/fx refactor is replacing package by package. See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the target and [`REFACTORING_PLAN.md`](REFACTORING_PLAN.md) for what has moved; trust the code over this section for already-migrated domains.
+Notifycat is a single-process HTTP server with a SQLite sidecar. It receives GitHub PR webhooks, looks up which Slack channel owns the repo via a declarative YAML file, and either posts a new message or updates/reacts on an existing one. The full architecture is documented in [`ARCHITECTURE.md`](ARCHITECTURE.md); this section is a navigational summary.
 
-Notifycat is a single-process HTTP server with a SQLite sidecar. It receives GitHub PR webhooks, looks up which Slack channel owns the repo via a declarative YAML file, and either posts a new message or updates/reacts on an existing one. Today everything is wired in one composition root (`internal/app`); the refactor replaces that with per-domain fx modules.
+### Domain structure
 
-### Composition root: `internal/app/app.go`
+Seven domains live under `internal/<domain>/`, each with three layers (`domain/`, `application/`, `infrastructure/`) and a `module.go` exporting an `fx.Module`:
 
-`app.Wire(cfg) (*http.Server, *cleanup.Scheduler, Cleanup, error)`
-constructs the entire dependency graph. All four binaries under `cmd/`
-reuse pieces of this — the doctor and config CLIs build subsets of
-the graph for their own purposes. **There is no façade/test-seam
-split**: a type has exactly one constructor, with every dep injected.
+| Domain | Responsibility |
+| --- | --- |
+| `notification` | Core: receive a GitHub PR event, keep one Slack message per (PR, channel) in sync |
+| `review` | Interactive "Start review" Slack flow; records reviewers; decorates the message |
+| `routing` | Resolve a repo (and changed files) to the Slack channel(s) and behavioral config |
+| `validation` | Validate mapping entries against Slack + GitHub; cache results in `config.lock` |
+| `digest` | Periodic stuck-PR digest per cron schedule |
+| `maintenance` | Background housekeeping: delete stale message rows; reconcile closed PRs |
+| `diagnostics` | Operator tooling: `notifycat-doctor`, `notifycat-config`, smoke test |
+
+The shared kernel (`internal/kernel`) holds pure value objects (`PR`, `Event`, `Sender`, `Review`) and GitHub event/action/review-state enums — stdlib only. The shared platform (`internal/platform/`) holds domain-agnostic clients: `config`, `persistence` (GORM/SQLite), `slack`, `github`, `httpx`, and `security` (HMAC `SignatureVerifier` with `GitHubVerifier`/`SlackVerifier` adapters).
+
+### Composition root
+
+`internal/runtime` is an `fx.Module` that builds the full dependency graph, runs the startup-validation gate as an `fx.Invoke`, and drives the HTTP server plus cleanup/digest schedulers via `fx.Lifecycle` hooks. `cmd/notifycat-server/main.go` is `fx.New(fx.Supply(cfg), runtime.Module, fx.NopLogger)` plus manual `Start`/`Wait`/`Stop` (fatal server error → exit 1 via `fx.Shutdowner`; SIGTERM → graceful shutdown → exit 0). The five CLI binaries (`notifycat-{migrate,reconcile,config,doctor,smoke}`) construct their domain use cases directly in `main`.
 
 ### Request flow
 
 ```
 POST /webhook/github
-  → githubhook.SignatureMiddleware       (HMAC-SHA256 of X-Hub-Signature-256)
-  → githubhook.Handler                   (parses JSON into githubhook.Payload)
-  → app.eventSink                        (maps Payload → pullrequest.Event)
-  → pullrequest.Dispatcher.Dispatch      (routes by github_event + action)
+  → platform/httpx body middleware + platform/security.GitHubVerifier (HMAC)
+  → notification/infrastructure inbound receiver (parses payload → kernel.Event)
+  → notification/application dispatcher (first applicable Handler)
   → one of:
       OpenHandler / CloseHandler / DraftHandler          (pull_request)
       ApproveHandler / CommentedHandler / RequestChangeHandler
                                                           (pull_request_review,
                                                            pull_request_review_comment)
-  → store.SlackMessages   (lookup/upsert PR → Slack ts row)
-    slack.Client          (chat.postMessage / chat.update / reactions.add)
+  → Messenger port (Slack adapter — postMessage / update / reactions.add)
+    MessageStore port (persistence adapter — lookup/upsert PR row)
+
+POST /webhook/slack/interactions
+  → platform/security.SlackVerifier
+  → review/infrastructure interactions receiver
+  → review/application start-review use case
 ```
 
-Every silent no-op logs `ignored webhook event` with a `reason` field
-(`no_handler`, `no_mapping`, `no_stored_message`, `already_sent`). The
-operations doc has the full reason table — that contract matters for
-debugging deliveries that return 200 but don't update Slack.
+Every silent no-op logs `ignored webhook event` with a `reason` field (`no_handler`, `no_mapping`, `no_stored_message`, `already_sent`). The operations doc has the full reason table — that contract matters for debugging deliveries that return 200 but don't update Slack.
 
 ### Mappings & startup validation
 
-Routing comes from the **`mappings:` section of the declarative
-`config.yaml`**, not the DB. `internal/mappings.Provider` is built from
-it (via `mappings.NewProvider`); `internal/validate` runs per-entry
-checks against Slack and (optionally) GitHub. On boot,
-`app.startupValidate` diffs entries against `config.lock` and only
-revalidates changed ones — successful entries are merged back into the
-lock. Empty mappings boot fine. Any failing entry aborts startup with
-the failing details logged. The same code path powers
-`notifycat-config validate` and `notifycat-doctor owner/repo`.
+Routing comes from the **`mappings:` section of the declarative `config.yaml`**, not the DB. The `routing` domain builds a `Provider` from it; the `validation` domain runs per-entry checks against Slack and (optionally) GitHub. On boot, `internal/runtime` diffs entries against `config.lock` and only revalidates changed ones — successful entries are merged back into the lock. Empty mappings boot fine. Any failing entry aborts startup with the failing details logged. The same code path powers `notifycat-config validate` and `notifycat-doctor owner/repo`.
 
 ### Persistence
 
-`internal/store` is GORM over SQLite. The only table is
-`slack_messages` (PR ↔ Slack message timestamp). Migrations are
-embedded goose SQL under `internal/store/migrations/` and applied at
-server startup (or via `notifycat-migrate`).
+`internal/platform/persistence` is GORM over SQLite. Tables: `pull_requests` (one row per PR) and `slack_messages` (PR ↔ Slack message timestamp), plus `code_reviews` (review sessions). Migrations are embedded goose SQL applied at server startup (or via `notifycat-migrate`).
 
-`internal/cleanup.Scheduler` deletes stale `slack_messages` rows older
-than `cleanup.message_ttl_days` (config.yaml) once at startup and every 24h
-thereafter. It only deletes the DB row — never the Slack message.
+The `maintenance` domain deletes stale `slack_messages` rows older than `cleanup.message_ttl_days` (config.yaml) once at startup and every 24h. It only deletes the DB row — never the Slack message.
 
 ### Bot-reviewer suppression
 
-`internal/aireview.Detector`, gated by `reviews.ignore_ai_reviews`
-(config.yaml),
-sits in the three review handlers and skips `reactions.add` when
-`sender.type == "Bot"`. The initial PR-open post is unaffected; the
-detector intentionally does **not** distinguish AI reviewers from
-scripted bots (Copilot vs dependabot vs github-actions all look the
-same to GitHub's payload).
+The `notification` domain's `IsBot` policy, gated by `reviews.ignore_ai_reviews` (config.yaml), sits in the reaction handlers and skips `reactions.add` when `sender.type == "Bot"`. The initial PR-open post is unaffected; the policy intentionally does **not** distinguish AI reviewers from scripted bots (Copilot vs dependabot vs github-actions all look the same to GitHub's payload).
 
 ### Doctor
 
-`internal/doctor` builds a list of `Section{Checks}` and writes a
-preflight report. It owns the config/database/mappings checks
-and **delegates per-repo Slack/GitHub probing to
-`internal/validate`** — so the doctor and `notifycat-config validate`
-agree by construction.
+`internal/diagnostics` builds a list of `Section{Checks}` and writes a preflight report. It owns the config/database/mappings checks and **delegates per-repo Slack/GitHub probing to `internal/validation`** — so the doctor and `notifycat-config validate` agree by construction.
 
 ## Code conventions
 
-- **Domain-layer ports (replaces: consumer-package interfaces).** Under the DDD refactor, interfaces live in the domain layer that *owns* the contract — not in the consumer package. Each use case and each infrastructure service has an interface in its domain's `interfaces.go`. Unmigrated packages still use the old consumer-side style (`pullrequest` consuming a `SlackMessages` interface satisfied by `store`); don't add new interfaces that way, and move them into the domain layer when you migrate the package.
+- **Domain-layer ports.** Interfaces live in the domain layer that *owns* the contract — not in the consumer package. Each use case and each infrastructure service has an interface in its domain's `interfaces.go`.
 - **One constructor per type, all deps injected.** Never split a type
   into a "production wiring" façade plus a "test seam" constructor.
   If a test needs different deps, pass them through the same
