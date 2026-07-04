@@ -15,7 +15,8 @@ import (
 	"time"
 
 	"github.com/mptooling/notifycat/internal/config"
-	"github.com/mptooling/notifycat/internal/doctor"
+	diagnosticsapp "github.com/mptooling/notifycat/internal/diagnostics/application"
+	diagnosticsinfra "github.com/mptooling/notifycat/internal/diagnostics/infrastructure"
 	"github.com/mptooling/notifycat/internal/github"
 	routingapp "github.com/mptooling/notifycat/internal/routing/application"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
@@ -42,19 +43,23 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	validator := buildValidator(cfg)
+	provider := routingapp.NewProvider(routingdomain.Defaults{}, cfg.Mappings, cfg.Digest)
+	entries := provider.Entries()
+	hasPathRules := provider.HasPathRules()
 
-	d := doctor.NewDoctor(cfg, validator)
-	sections := d.Run(context.Background(), target)
-	if !doctor.WriteReport(stdout, sections) {
+	snapshot := diagnosticsinfra.NewConfigSnapshot(cfg, entries, hasPathRules)
+	validator := buildValidator(cfg, provider)
+
+	doctor := diagnosticsapp.NewDoctor(snapshot, validator)
+	sections := doctor.Run(context.Background(), target)
+	if !diagnosticsinfra.WriteReport(stdout, sections) {
 		return 1
 	}
 	return 0
 }
 
 // buildValidator constructs a RepoValidator from in-memory config.
-func buildValidator(cfg config.Config) doctor.RepoValidator {
-	provider := routingapp.NewProvider(routingdomain.Defaults{}, cfg.Mappings, cfg.Digest)
+func buildValidator(cfg config.Config, provider *routingapp.Provider) validationdomain.RepoValidator {
 	hc := &http.Client{Timeout: 10 * time.Second}
 	slackClient := slack.NewClient(hc, cfg.SlackBotToken.Reveal(), slack.WithBaseURL(cfg.SlackBaseURL))
 	var ghChecker validationdomain.GitHubChecker

@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mptooling/notifycat/internal/mappingcli"
 	routingapp "github.com/mptooling/notifycat/internal/routing/application"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 	routinginfra "github.com/mptooling/notifycat/internal/routing/infrastructure"
@@ -51,8 +50,8 @@ func (p panickingValidator) Validate(_ context.Context, _ string, _ bool, _, _ i
 }
 
 var (
-	_ mappingcli.MappingsValidator = (*fakeMappingsValidator)(nil)
-	_ mappingcli.MappingsValidator = panickingValidator{}
+	_ mappingsValidator = (*fakeMappingsValidator)(nil)
+	_ mappingsValidator = panickingValidator{}
 )
 
 func TestDispatch_NoArgs(t *testing.T) {
