@@ -14,6 +14,7 @@ type Message struct {
 // non-nil, selects the compact dependency-bot template; otherwise the standard
 // template is rendered with NewPREmoji.
 type OpenRequest struct {
+	Repository string
 	PR         kernel.PR
 	Mentions   []string
 	NewPREmoji string
@@ -31,6 +32,7 @@ type BotFormat struct {
 // is the merged/closed reaction; ReviewerIDs, when non-empty, appends a
 // "reviewed by" marker.
 type ClosedRequest struct {
+	Repository  string
 	PR          kernel.PR
 	Merged      bool
 	Emoji       string
@@ -41,6 +43,7 @@ type ClosedRequest struct {
 // review session finishes: the standard message is rebuilt and, when reviewers
 // exist, a "reviewed by" marker is appended.
 type ReviewFinishedRequest struct {
+	Repository  string
 	PR          kernel.PR
 	ReviewerIDs []string
 	NewPREmoji  string
