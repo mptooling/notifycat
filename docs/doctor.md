@@ -27,7 +27,7 @@ Exit code is `0` when every check passes (`SKIP` does not count as a failure) an
 | `mappings` | `file` | Loads the YAML via the same parser the server uses. Surfaces schema errors and missing files. |
 | `mappings` | `entries` | Number of parsed entries (`0` is allowed — the server boots and routes nothing). |
 | `mappings` | `path routing` | Only when some tier uses [per-path routing](mappings.md#per-path-routing-monorepos). `OK` when `GITHUB_TOKEN` is set (path rules active); `SKIP` when it is unset (rules inert — PRs route to the repo tier). |
-| `owner/repo` | `mapping` / `channel-format` / `slack-auth` / `slack-channel` / `github-webhook` | Only when a positional argument is given. Delegates to `internal/validate` — same checks `notifycat-config validate owner/repo` runs. A per-path channel adds its own `slack-channel <id>` membership check. |
+| `owner/repo` | `mapping` / `channel-format` / `slack-auth` / `slack-channel` / `github-webhook` | Only when a positional argument is given. Delegates to `internal/validation` — same checks `notifycat-config validate owner/repo` runs. A per-path channel adds its own `slack-channel <id>` membership check. |
 
 ## Output format
 
@@ -75,7 +75,7 @@ notifycat-doctor "$REPO" || exit 1
 
 ## When the doctor disagrees with `notifycat-config validate`
 
-They share the same Slack + GitHub checking code (the `internal/validate` package). Differences in output indicate one of:
+They share the same Slack + GitHub checking code (the `internal/validation` domain). Differences in output indicate one of:
 
 - Different environment (the doctor and the validator read the same `config.yaml`, but a stale lock file can mask issues only the doctor surfaces — the doctor does not consult the lock).
 - The config file is unreadable. The doctor surfaces this in the `mappings` section and then skips the per-repo checks; `notifycat-config validate` refuses to start.

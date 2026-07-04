@@ -7,19 +7,20 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mptooling/notifycat/internal/mappingcli"
-	"github.com/mptooling/notifycat/internal/mappings"
+	routingapp "github.com/mptooling/notifycat/internal/routing/application"
+	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
+	routinginfra "github.com/mptooling/notifycat/internal/routing/infrastructure"
 )
 
-func testProvider(t *testing.T) *mappings.Provider {
+func testProvider(t *testing.T) *routingapp.Provider {
 	t.Helper()
-	m := map[string]mappings.Org{
+	m := map[string]routingdomain.Org{
 		"acme": {
 			"api": {Channel: "C0123ABCDE", Mentions: []string{"@a"}, MentionsPresent: true},
 			"web": {Channel: "C0123ABCDE", Mentions: []string{"@a"}, MentionsPresent: true},
 		},
 	}
-	return mappings.NewProvider(mappings.Defaults{}, m, nil)
+	return routingapp.NewProvider(routingdomain.Defaults{}, m, nil)
 }
 
 // fakeMappingsValidator records inputs so dispatch tests can assert the
@@ -49,8 +50,8 @@ func (p panickingValidator) Validate(_ context.Context, _ string, _ bool, _, _ i
 }
 
 var (
-	_ mappingcli.MappingsValidator = (*fakeMappingsValidator)(nil)
-	_ mappingcli.MappingsValidator = panickingValidator{}
+	_ mappingsValidator = (*fakeMappingsValidator)(nil)
+	_ mappingsValidator = panickingValidator{}
 )
 
 func TestDispatch_NoArgs(t *testing.T) {
@@ -162,12 +163,12 @@ func TestDispatch_Validate_UnknownFlag(t *testing.T) {
 }
 
 func TestPathTokenWarning(t *testing.T) {
-	f, err := mappings.Parse(strings.NewReader(
+	f, err := routinginfra.Parse(strings.NewReader(
 		"mappings:\n  acme:\n    mono:\n      channel: C0BASE00000\n      paths:\n        \"/src\": {mentions: []}\n"))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	withPaths := mappings.NewProvider(mappings.Defaults{}, f.Mappings, nil)
+	withPaths := routingapp.NewProvider(routingdomain.Defaults{}, f.Mappings, nil)
 
 	if w := pathTokenWarning(withPaths, false); !strings.Contains(w, "GITHUB_TOKEN") {
 		t.Errorf("paths + no token: got %q; want a GITHUB_TOKEN warning", w)

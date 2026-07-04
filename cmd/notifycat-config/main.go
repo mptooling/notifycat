@@ -1,7 +1,6 @@
 // Command notifycat-config is the CLI for the declarative config.yaml
 // workflow: `list` prints the file, `validate` runs the cache-aware
-// validation pipeline. This file owns argument parsing and dispatches to
-// use cases in internal/mappingcli.
+// validation pipeline.
 package main
 
 import (
@@ -14,12 +13,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mptooling/notifycat/internal/config"
-	"github.com/mptooling/notifycat/internal/github"
-	"github.com/mptooling/notifycat/internal/mappingcli"
-	"github.com/mptooling/notifycat/internal/mappings"
-	"github.com/mptooling/notifycat/internal/slack"
-	"github.com/mptooling/notifycat/internal/validate"
+	diagnosticsapp "github.com/mptooling/notifycat/internal/diagnostics/application"
+	diagnosticsinfra "github.com/mptooling/notifycat/internal/diagnostics/infrastructure"
+	"github.com/mptooling/notifycat/internal/platform/config"
+	"github.com/mptooling/notifycat/internal/platform/github"
+	"github.com/mptooling/notifycat/internal/platform/slack"
+	routingapp "github.com/mptooling/notifycat/internal/routing/application"
+	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
+	routinginfra "github.com/mptooling/notifycat/internal/routing/infrastructure"
+	validationapp "github.com/mptooling/notifycat/internal/validation/application"
+	validationdomain "github.com/mptooling/notifycat/internal/validation/domain"
+	validationinfra "github.com/mptooling/notifycat/internal/validation/infrastructure"
 )
 
 func main() {
@@ -28,45 +32,41 @@ func main() {
 		fmt.Fprintln(os.Stderr, "notifycat-config:", err)
 		os.Exit(1)
 	}
-	provider := mappings.NewProvider(mappings.Defaults{}, cfg.Mappings, cfg.Digest)
+	provider := routingapp.NewProvider(routingdomain.Defaults{}, cfg.Mappings, cfg.Digest)
 	if w := pathTokenWarning(provider, cfg.GitHubToken.Reveal() != ""); w != "" {
 		fmt.Fprintln(os.Stderr, w)
 	}
 	checker, lister := buildValidationDeps(cfg, provider)
-	validator := mappingcli.NewMappingsValidator(
-		provider,
-		checker,
-		lister,
-		mappings.LockPath(cfg.ConfigFile),
-		time.Now,
-	)
+	lockPath := routinginfra.LockPath(cfg.ConfigFile)
+	gateway := diagnosticsinfra.NewLockGateway(lockPath, time.Now)
+	validator := diagnosticsapp.NewMappingsValidator(provider, checker, lister, gateway)
 	os.Exit(dispatch(os.Args[1:], provider, validator, os.Stdout, os.Stderr))
 }
 
 // buildValidationDeps wires the production checker (Slack always, GitHub
 // when a token is configured) and the org-repo lister (the same GitHub
 // client, or nil when there is no token).
-func buildValidationDeps(cfg config.Config, provider *mappings.Provider) (validate.RepoValidator, validate.OrgRepoLister) {
+func buildValidationDeps(cfg config.Config, provider *routingapp.Provider) (validationdomain.RepoValidator, validationdomain.OrgRepoLister) {
 	hc := &http.Client{Timeout: 10 * time.Second}
 	slackClient := slack.NewClient(hc, cfg.SlackBotToken.Reveal(), slack.WithBaseURL(cfg.SlackBaseURL))
 	var gh *github.Client
 	if cfg.GitHubToken.Reveal() != "" {
 		gh = github.NewClient(hc, cfg.GitHubToken.Reveal(), github.WithBaseURL(cfg.GitHubBaseURL))
 	}
-	var ghChecker validate.GitHubChecker
-	var lister validate.OrgRepoLister
+	var ghChecker validationdomain.GitHubChecker
+	var lister validationdomain.OrgRepoLister
 	if gh != nil {
 		ghChecker = gh
 		lister = gh
 	}
-	return validate.NewValidator(provider, slackClient, ghChecker), lister
+	return validationapp.NewValidator(provider, validationinfra.NewSlackProbe(slackClient), ghChecker), lister
 }
 
 // pathTokenWarning returns a warning when per-path routing is configured but no
 // GitHub token is available — path rules are inert without one (a token is
 // needed to read a PR's changed files). It returns "" when there is nothing to
-// warn about. Kept separate from main so it can be unit-tested.
-func pathTokenWarning(provider *mappings.Provider, hasGitHubToken bool) string {
+// warn about.
+func pathTokenWarning(provider *routingapp.Provider, hasGitHubToken bool) string {
 	if provider.HasPathRules() && !hasGitHubToken {
 		return "warning: path routing is configured but GITHUB_TOKEN is unset; " +
 			"path rules are inert and PRs route to the repo tier until a token is set"
@@ -74,7 +74,14 @@ func pathTokenWarning(provider *mappings.Provider, hasGitHubToken bool) string {
 	return ""
 }
 
-func dispatch(args []string, provider *mappings.Provider, validator mappingcli.MappingsValidator, stdout, stderr io.Writer) int {
+// mappingsValidator is the interface the dispatch + runValidate functions use.
+// *diagnosticsapp.MappingsValidator satisfies it in production; the test file
+// provides a fake.
+type mappingsValidator interface {
+	Validate(ctx context.Context, target string, force bool, stdout, stderr io.Writer) int
+}
+
+func dispatch(args []string, provider *routingapp.Provider, validator mappingsValidator, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, usage())
 		return 2
@@ -82,7 +89,7 @@ func dispatch(args []string, provider *mappings.Provider, validator mappingcli.M
 	ctx := context.Background()
 	switch args[0] {
 	case "list":
-		return mappingcli.List(provider, stdout)
+		return diagnosticsapp.List(provider, stdout)
 	case "validate":
 		return runValidate(ctx, args[1:], validator, stdout, stderr)
 	default:
@@ -91,7 +98,7 @@ func dispatch(args []string, provider *mappings.Provider, validator mappingcli.M
 	}
 }
 
-func runValidate(ctx context.Context, args []string, validator mappingcli.MappingsValidator, stdout, stderr io.Writer) int {
+func runValidate(ctx context.Context, args []string, validator mappingsValidator, stdout, stderr io.Writer) int {
 	target, force, code, ok := parseValidateArgs(args, stderr)
 	if !ok {
 		return code

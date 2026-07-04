@@ -19,7 +19,185 @@ linters:
     - nolintlint
     - unconvert
     - unparam
+    - depguard
   settings:
+    depguard:
+      rules:
+        # Kernel purity: internal/kernel is the pure center of the hexagon and
+        # must import nothing from any other internal/... package.
+        kernel-purity:
+          files:
+            - "**/internal/kernel/**"
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: internal/kernel must stay pure — it imports only the standard library, never another internal/... package
+        # Per-domain layer boundaries. Pattern (copy per migrating domain):
+        # a `domain` layer reaches only the kernel (+ dependency domains'
+        # `domain` layers); an `application` layer reaches only its own `domain`
+        # (+ kernel + dependency domains' `domain`), never infrastructure or a
+        # platform client. list-mode `lax`: stdlib is allowed by default and
+        # `allow` carves exceptions to the `internal` deny. Each rule allows its
+        # OWN import path so external `_test` packages (e.g. `application_test`)
+        # can import the package under test; production files can't import their
+        # own package, so this only ever affects tests.
+        maintenance-domain:
+          list-mode: lax
+          files:
+            - "**/internal/maintenance/domain/**"
+          allow:
+            - github.com/mptooling/notifycat/internal/kernel
+            - github.com/mptooling/notifycat/internal/maintenance/domain
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: maintenance/domain imports only the shared kernel and the standard library — never application, infrastructure, or a platform client
+        maintenance-application:
+          list-mode: lax
+          files:
+            - "**/internal/maintenance/application/**"
+          allow:
+            - github.com/mptooling/notifycat/internal/kernel
+            - github.com/mptooling/notifycat/internal/maintenance/domain
+            - github.com/mptooling/notifycat/internal/maintenance/application
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: maintenance/application imports only its own domain layer and the shared kernel — never infrastructure, store, slack, or github
+        routing-domain:
+          list-mode: lax
+          files:
+            - "**/internal/routing/domain/**"
+          allow:
+            - github.com/mptooling/notifycat/internal/kernel
+            - github.com/mptooling/notifycat/internal/routing/domain
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: routing/domain imports only the shared kernel and the standard library (plus the YAML codec) — never application, infrastructure, store, slack, or github
+        routing-application:
+          list-mode: lax
+          files:
+            - "**/internal/routing/application/**"
+          allow:
+            - github.com/mptooling/notifycat/internal/kernel
+            - github.com/mptooling/notifycat/internal/routing/domain
+            - github.com/mptooling/notifycat/internal/routing/application
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: routing/application imports only its own domain layer and the shared kernel — never infrastructure, store, slack, or github
+        validation-domain:
+          list-mode: lax
+          files:
+            - "**/internal/validation/domain/**"
+          allow:
+            - github.com/mptooling/notifycat/internal/kernel
+            - github.com/mptooling/notifycat/internal/validation/domain
+            - github.com/mptooling/notifycat/internal/routing/domain
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: validation/domain imports only the shared kernel, the routing domain, and the standard library — never application, infrastructure, store, slack, or github
+        validation-application:
+          list-mode: lax
+          files:
+            - "**/internal/validation/application/**"
+          allow:
+            - github.com/mptooling/notifycat/internal/kernel
+            - github.com/mptooling/notifycat/internal/validation/domain
+            - github.com/mptooling/notifycat/internal/validation/application
+            - github.com/mptooling/notifycat/internal/routing/domain
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: validation/application imports only its own domain layer, the routing domain, and the shared kernel — never infrastructure, store, slack, or github
+        digest-domain:
+          list-mode: lax
+          files:
+            - "**/internal/digest/domain/**"
+          allow:
+            - github.com/mptooling/notifycat/internal/kernel
+            - github.com/mptooling/notifycat/internal/digest/domain
+            - github.com/mptooling/notifycat/internal/routing/domain
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: digest/domain imports only the shared kernel, the routing domain, and the standard library — never application, infrastructure, store, slack, or github
+        digest-application:
+          list-mode: lax
+          files:
+            - "**/internal/digest/application/**"
+          allow:
+            - github.com/mptooling/notifycat/internal/kernel
+            - github.com/mptooling/notifycat/internal/digest/domain
+            - github.com/mptooling/notifycat/internal/digest/application
+            - github.com/mptooling/notifycat/internal/routing/domain
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: digest/application imports only its own domain layer, the routing domain, and the shared kernel — never infrastructure, store, slack, or github
+        notification-domain:
+          list-mode: lax
+          files:
+            - "**/internal/notification/domain/**"
+          allow:
+            - github.com/mptooling/notifycat/internal/kernel
+            - github.com/mptooling/notifycat/internal/notification/domain
+            - github.com/mptooling/notifycat/internal/routing/domain
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: notification/domain imports only the shared kernel, the routing domain, and the standard library — never application, infrastructure, store, slack, or github
+        notification-application:
+          list-mode: lax
+          files:
+            - "**/internal/notification/application/**"
+          allow:
+            - github.com/mptooling/notifycat/internal/kernel
+            - github.com/mptooling/notifycat/internal/notification/domain
+            - github.com/mptooling/notifycat/internal/notification/application
+            - github.com/mptooling/notifycat/internal/routing/domain
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: notification/application imports only its own domain layer, the routing domain, and the shared kernel — never infrastructure, store, slack, or github
+        review-domain:
+          list-mode: lax
+          files:
+            - "**/internal/review/domain/**"
+          allow:
+            - github.com/mptooling/notifycat/internal/kernel
+            - github.com/mptooling/notifycat/internal/review/domain
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: review/domain imports only the shared kernel and the standard library — never application, infrastructure, store, slack, or github
+        review-application:
+          list-mode: lax
+          files:
+            - "**/internal/review/application/**"
+          allow:
+            - github.com/mptooling/notifycat/internal/kernel
+            - github.com/mptooling/notifycat/internal/review/domain
+            - github.com/mptooling/notifycat/internal/review/application
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: review/application imports only its own domain layer and the shared kernel — never infrastructure, store, slack, or github
+        diagnostics-domain:
+          list-mode: lax
+          files:
+            - "**/internal/diagnostics/domain/**"
+          allow:
+            - github.com/mptooling/notifycat/internal/kernel
+            - github.com/mptooling/notifycat/internal/diagnostics/domain
+            - github.com/mptooling/notifycat/internal/validation/domain
+            - github.com/mptooling/notifycat/internal/routing/domain
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: diagnostics/domain imports only the shared kernel, the validation and routing domains, and the standard library — never application, infrastructure, config, store, slack, http, or security
+        diagnostics-application:
+          list-mode: lax
+          files:
+            - "**/internal/diagnostics/application/**"
+          allow:
+            - github.com/mptooling/notifycat/internal/kernel
+            - github.com/mptooling/notifycat/internal/diagnostics/domain
+            - github.com/mptooling/notifycat/internal/diagnostics/application
+            - github.com/mptooling/notifycat/internal/validation/domain
+            - github.com/mptooling/notifycat/internal/validation/application
+            - github.com/mptooling/notifycat/internal/routing/domain
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: diagnostics/application imports its own domain, the validation domain/application, and the routing domain — never infrastructure, config, store, slack, http, or security
     errcheck:
       exclude-functions:
         - fmt.Fprint

@@ -16,8 +16,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/mptooling/notifycat/internal/config"
-	"github.com/mptooling/notifycat/internal/store"
+	"github.com/mptooling/notifycat/internal/platform/config"
+	"github.com/mptooling/notifycat/internal/platform/persistence"
 )
 
 func main() {
@@ -37,12 +37,12 @@ func run(args []string) error {
 		return err
 	}
 
-	db, err := store.Open(cfg.DatabaseURL)
+	db, err := persistence.Open(cfg.DatabaseURL)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		if sqlDB, err := store.SQLDB(db); err == nil {
+		if sqlDB, err := persistence.SQLDB(db); err == nil {
 			_ = sqlDB.Close()
 		}
 	}()
@@ -52,11 +52,11 @@ func run(args []string) error {
 
 	switch args[0] {
 	case "up":
-		return store.MigrateUp(ctx, db)
+		return persistence.MigrateUp(ctx, db)
 	case "down":
-		return store.MigrateDown(ctx, db)
+		return persistence.MigrateDown(ctx, db)
 	case "status":
-		out, err := store.MigrateStatus(ctx, db)
+		out, err := persistence.MigrateStatus(ctx, db)
 		if err != nil {
 			return err
 		}
