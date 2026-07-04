@@ -20,35 +20,26 @@ type PR struct {
 }
 
 // Sender identifies the actor that fired a webhook — the reviewer for review
-// events, the PR author for opened events, etc. Type is "User" for humans and
-// "Bot" for GitHub Apps (Copilot, dependabot, …).
+// events, the PR author for opened events, etc. IsBot is resolved by the inbound
+// adapter from the provider's own signal (GitHub's sender.type == "Bot"); the
+// per-repo ignore-AI-reviews policy consults it without knowing any provider
+// vocabulary.
 type Sender struct {
 	Login string
-	Type  string
+	IsBot bool
 }
 
-// Review carries the review state of a pull_request_review event.
-type Review struct {
-	State ReviewState
-}
-
-// Event is the immutable record of an incoming pull-request-related webhook,
-// detached from any HTTP payload type. Handlers inspect it to decide whether to
-// run.
+// Event is the immutable, provider-neutral record of an incoming
+// pull-request-related webhook, detached from any HTTP payload type. The inbound
+// adapter builds it — mapping provider vocabulary to a Kind and resolving
+// Sender.IsBot — and handlers inspect only the neutral fields to decide whether
+// to run.
 type Event struct {
-	GitHubEvent GitHubEventType
-	Action      Action
-	Repository  string
+	Provider   string
+	Kind       EventKind
+	Repository string
 
 	PR PR
-
-	// Review is non-nil only for pull_request_review events.
-	Review *Review
-
-	// PRComment is true for issue_comment events fired on a pull request (the
-	// payload carried an issue.pull_request reference). False for comments on
-	// plain issues.
-	PRComment bool
 
 	Sender Sender
 }

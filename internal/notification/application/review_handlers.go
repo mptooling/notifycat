@@ -31,6 +31,14 @@ func requestChangeEmoji(r routingdomain.Reactions) string { return r.RequestChan
 
 func (h *reactionHandler) Applicable(event kernel.Event) bool { return h.applicable(event) }
 
+// isReviewSubmission reports whether the kind is a submitted review — the only
+// events that finish a PR's review sessions. A submitted review carrying only
+// comments (KindReviewCommented) counts; a line/conversation comment or an edited
+// review (KindCommented) does not.
+func isReviewSubmission(kind kernel.EventKind) bool {
+	return kind == kernel.KindApproved || kind == kernel.KindChangesRequested || kind == kernel.KindReviewCommented
+}
+
 func (h *reactionHandler) Handle(ctx context.Context, event kernel.Event) error {
 	messages, err := h.store.Messages(ctx, event.Repository, event.PR.Number)
 	if errors.Is(err, routingdomain.ErrNotFound) {
@@ -50,7 +58,7 @@ func (h *reactionHandler) Handle(ctx context.Context, event kernel.Event) error 
 		return err
 	}
 
-	if behavior.IgnoreAIReviews && domain.IsBot(event.Sender.Type) {
+	if behavior.IgnoreAIReviews && event.Sender.IsBot {
 		h.logSkippedBotReviewer(event)
 		return nil
 	}
@@ -72,8 +80,8 @@ func (h *reactionHandler) logIgnored(event kernel.Event, reason string) {
 	attrs := []any{
 		slog.String("reason", reason),
 		slog.String("handler", h.name),
-		slog.String("github_event", string(event.GitHubEvent)),
-		slog.String("action", string(event.Action)),
+		slog.String("provider", event.Provider),
+		slog.String("kind", event.Kind.String()),
 		slog.String("repository", event.Repository),
 		slog.Int("pr", event.PR.Number),
 	}
@@ -89,7 +97,8 @@ func (h *reactionHandler) logIgnored(event kernel.Event, reason string) {
 func (h *reactionHandler) logSkippedBotReviewer(event kernel.Event) {
 	h.logger.Debug("skipped bot reviewer reaction",
 		slog.String("login", event.Sender.Login),
-		slog.String("event", string(event.GitHubEvent)),
+		slog.String("provider", event.Provider),
+		slog.String("kind", event.Kind.String()),
 		slog.String("handler", h.name),
 		slog.String("repository", event.Repository),
 		slog.Int("pr", event.PR.Number),
@@ -102,7 +111,7 @@ func (h *reactionHandler) logSkippedBotReviewer(event kernel.Event) {
 // it on every message is safe.
 func (h *reactionHandler) addReactions(ctx context.Context, event kernel.Event, behavior routingdomain.RepoMapping, messages []domain.Message) error {
 	emoji := h.emojiOf(behavior.Reactions)
-	isBot := domain.IsBot(event.Sender.Type)
+	isBot := event.Sender.IsBot
 	for _, message := range messages {
 		if err := h.messenger.AddReaction(ctx, message.Channel, message.MessageID, emoji); err != nil {
 			return err
@@ -122,7 +131,7 @@ func (h *reactionHandler) addReactions(ctx context.Context, event kernel.Event, 
 // once (Finish is idempotent). Only when a session was active is the message
 // rebuilt out of the in-review state.
 func (h *reactionHandler) finishSubmittedReview(ctx context.Context, event kernel.Event, behavior routingdomain.RepoMapping, messages []domain.Message) error {
-	if event.GitHubEvent != kernel.EventPullRequestReview || event.Action != kernel.ActionSubmitted {
+	if !isReviewSubmission(event.Kind) {
 		return nil
 	}
 
@@ -178,7 +187,7 @@ func NewApproveHandler(store domain.MessageStore, behavior domain.RepoBehavior, 
 		emojiOf: approvedEmoji,
 		store:   store, behavior: behavior, messenger: messenger, logger: logger, reviews: reviews,
 		applicable: func(event kernel.Event) bool {
-			return event.Action == kernel.ActionSubmitted && event.Review != nil && event.Review.State == kernel.ReviewApproved
+			return event.Kind == kernel.KindApproved
 		},
 	}}
 }
@@ -194,16 +203,7 @@ func NewCommentedHandler(store domain.MessageStore, behavior domain.RepoBehavior
 		emojiOf: commentedEmoji,
 		store:   store, behavior: behavior, messenger: messenger, logger: logger, reviews: reviews,
 		applicable: func(event kernel.Event) bool {
-			if event.GitHubEvent == kernel.EventPullRequestReviewComment {
-				return event.Action == kernel.ActionCreated
-			}
-			if event.GitHubEvent == kernel.EventIssueComment {
-				return event.Action == kernel.ActionCreated && event.PRComment
-			}
-			if event.Review == nil || event.Review.State != kernel.ReviewCommented {
-				return false
-			}
-			return event.Action == kernel.ActionSubmitted || event.Action == kernel.ActionEdited
+			return event.Kind == kernel.KindCommented || event.Kind == kernel.KindReviewCommented
 		},
 	}}
 }
@@ -219,7 +219,7 @@ func NewRequestChangeHandler(store domain.MessageStore, behavior domain.RepoBeha
 		emojiOf: requestChangeEmoji,
 		store:   store, behavior: behavior, messenger: messenger, logger: logger, reviews: reviews,
 		applicable: func(event kernel.Event) bool {
-			return event.Action == kernel.ActionSubmitted && event.Review != nil && event.Review.State == kernel.ReviewChangesRequested
+			return event.Kind == kernel.KindChangesRequested
 		},
 	}}
 }

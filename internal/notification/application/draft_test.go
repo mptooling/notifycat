@@ -35,20 +35,20 @@ func wantFields(t *testing.T, rec map[string]any, fields map[string]any) {
 
 func draftEvent(repo string, prNumber int) kernel.Event {
 	return kernel.Event{
-		GitHubEvent: kernel.EventPullRequest,
-		Action:      kernel.ActionConvertedToDraft,
-		Repository:  repo,
-		PR:          kernel.PR{Number: prNumber},
+		Provider:   kernel.ProviderGitHub,
+		Kind:       kernel.KindConvertedToDraft,
+		Repository: repo,
+		PR:         kernel.PR{Number: prNumber},
 	}
 }
 
 func TestDraftHandler_Applicable(t *testing.T) {
 	h := application.NewDraftHandler(newFakeMessageStore(), &fakeMessenger{}, discardLogger())
 
-	if !h.Applicable(kernel.Event{Action: kernel.ActionConvertedToDraft}) {
+	if !h.Applicable(kernel.Event{Kind: kernel.KindConvertedToDraft}) {
 		t.Error("converted_to_draft should be applicable")
 	}
-	if h.Applicable(kernel.Event{Action: kernel.ActionOpened}) {
+	if h.Applicable(kernel.Event{Kind: kernel.KindOpened}) {
 		t.Error("opened should not be applicable")
 	}
 }
@@ -79,10 +79,10 @@ func TestDraftHandler_Handle_NoStoredMessageIsNoop(t *testing.T) {
 	h := application.NewDraftHandler(store, messenger, logger)
 
 	e := kernel.Event{
-		GitHubEvent: kernel.EventPullRequest,
-		Action:      kernel.ActionConvertedToDraft,
-		Repository:  "octo/widget",
-		PR:          kernel.PR{Number: 42},
+		Provider:   kernel.ProviderGitHub,
+		Kind:       kernel.KindConvertedToDraft,
+		Repository: "octo/widget",
+		PR:         kernel.PR{Number: 42},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -93,14 +93,14 @@ func TestDraftHandler_Handle_NoStoredMessageIsNoop(t *testing.T) {
 
 	rec := decodeLog(t, buf.Bytes())
 	wantFields(t, rec, map[string]any{
-		"level":        "INFO",
-		"msg":          "ignored webhook event",
-		"reason":       "no_stored_message",
-		"handler":      "draft",
-		"github_event": "pull_request",
-		"action":       "converted_to_draft",
-		"repository":   "octo/widget",
-		"pr":           float64(42),
+		"level":      "INFO",
+		"msg":        "ignored webhook event",
+		"reason":     "no_stored_message",
+		"handler":    "draft",
+		"provider":   "github",
+		"kind":       "converted_to_draft",
+		"repository": "octo/widget",
+		"pr":         float64(42),
 	})
 }
 

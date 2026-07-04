@@ -81,16 +81,18 @@ Standard field set (all six fields appear on every `ignored webhook event` line)
 | --- | --- |
 | `reason` | `no_handler`, `no_mapping`, `no_stored_message`, `already_sent` |
 | `handler` | `open`, `close`, `draft`, `approve`, `commented`, `request_change` (empty for the dispatcher) |
-| `github_event` | `pull_request`, `pull_request_review`, `pull_request_review_comment`, `issue_comment` |
-| `action` | `opened`, `closed`, `synchronize`, `labeled`, `submitted`, … |
+| `provider` | `github` (the git provider the event came from) |
+| `kind` | `opened`, `ready_for_review`, `closed`, `merged`, `converted_to_draft`, `approved`, `changes_requested`, `commented`, `review_commented`, `unknown` |
 | `repository` | `owner/repo` |
 | `pr` | PR number (int) |
+
+The `kind` field is the provider-neutral event classification; the inbound adapter maps each provider's own vocabulary (GitHub's `X-GitHub-Event` header + `action` + review state) onto it. An unmapped delivery — a `synchronize`, a `labeled`, an edited approval — carries `kind=unknown`.
 
 Reasons and their levels:
 
 | `reason` | Level | What it means | Typical fix |
 | --- | --- | --- | --- |
-| `no_handler` | **Debug** | No registered handler matched this `(github_event, action)` pair. Volumetric — fires for `synchronize`, `labeled`, `edited`, etc. | Expected; set `LOG_LEVEL=debug` to see it. |
+| `no_handler` | **Debug** | No registered handler matched this `(provider, kind)` pair. Volumetric — fires for `kind=unknown` deliveries such as `synchronize` and `labeled`. | Expected; set `LOG_LEVEL=debug` to see it. |
 | `no_mapping` | **Warn** | Webhook arrived for a repo no `config.yaml` entry covers. | Add the repo to the `mappings:` section of `config.yaml` (or remove the webhook from that repo). |
 | `no_stored_message` | **Info** | Handler ran but found no Slack message row for this PR. Common when the PR predates Notifycat. | Re-open the PR (or wait for the next applicable event) so `OpenHandler` can re-announce. |
 | `already_sent` | **Info** | `OpenHandler` saw an existing message row — idempotency kicks in. | Expected on `ready_for_review` after a prior `opened`. |

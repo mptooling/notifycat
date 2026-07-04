@@ -14,10 +14,11 @@ func newCloseHandler(store *fakeMessageStore, behavior *fakeBehavior, messenger 
 	return application.NewCloseHandler(store, behavior, messenger, discardLogger(), &fakeReviewSessions{})
 }
 
-// closedMergedEvent returns a "closed" event with PR.Merged = true.
+// closedMergedEvent returns a merged event with PR.Merged = true.
 func closedMergedEvent(repo string, prNumber int) kernel.Event {
 	return kernel.Event{
-		Action:     kernel.ActionClosed,
+		Provider:   kernel.ProviderGitHub,
+		Kind:       kernel.KindMerged,
 		Repository: repo,
 		PR:         kernel.PR{Number: prNumber, Title: "fix", URL: "u", Author: "a", Merged: true},
 	}
@@ -26,10 +27,10 @@ func closedMergedEvent(repo string, prNumber int) kernel.Event {
 func TestCloseHandler_Applicable(t *testing.T) {
 	h := newCloseHandler(newFakeMessageStore(), &fakeBehavior{}, &fakeMessenger{})
 
-	if !h.Applicable(kernel.Event{Action: kernel.ActionClosed}) {
+	if !h.Applicable(kernel.Event{Kind: kernel.KindClosed}) {
 		t.Error("closed should be applicable")
 	}
-	if h.Applicable(kernel.Event{Action: kernel.ActionOpened}) {
+	if h.Applicable(kernel.Event{Kind: kernel.KindOpened}) {
 		t.Error("opened should not be applicable")
 	}
 }
@@ -49,7 +50,8 @@ func TestCloseHandler_Handle_UpdatesMessage(t *testing.T) {
 	h := newCloseHandler(store, behavior, messenger)
 
 	e := kernel.Event{
-		Action:     kernel.ActionClosed,
+		Provider:   kernel.ProviderGitHub,
+		Kind:       kernel.KindMerged,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42, Title: "fix", URL: "u", Author: "a", Merged: true},
 	}
@@ -93,7 +95,8 @@ func TestCloseHandler_Handle_ClosedNotMergedUsesClosedEmoji(t *testing.T) {
 	h := newCloseHandler(store, behavior, messenger)
 
 	e := kernel.Event{
-		Action:     kernel.ActionClosed,
+		Provider:   kernel.ProviderGitHub,
+		Kind:       kernel.KindClosed,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42, Merged: false},
 	}
@@ -127,7 +130,8 @@ func TestCloseHandler_Handle_NoReactionWhenDisabled(t *testing.T) {
 	h := newCloseHandler(store, behavior, messenger)
 
 	e := kernel.Event{
-		Action:     kernel.ActionClosed,
+		Provider:   kernel.ProviderGitHub,
+		Kind:       kernel.KindMerged,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42, Merged: true},
 	}
@@ -155,7 +159,8 @@ func TestCloseHandler_Handle_MarksClosed(t *testing.T) {
 	h := newCloseHandler(store, behavior, messenger)
 
 	e := kernel.Event{
-		Action:     kernel.ActionClosed,
+		Provider:   kernel.ProviderGitHub,
+		Kind:       kernel.KindMerged,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42, Merged: true},
 	}
@@ -179,7 +184,7 @@ func TestCloseHandler_Handle_NoStoredMessageDoesNotMarkClosed(t *testing.T) {
 	}}
 	h := newCloseHandler(store, behavior, &fakeMessenger{})
 
-	e := kernel.Event{Action: kernel.ActionClosed, Repository: "octo/widget", PR: kernel.PR{Number: 42}}
+	e := kernel.Event{Provider: kernel.ProviderGitHub, Kind: kernel.KindClosed, Repository: "octo/widget", PR: kernel.PR{Number: 42}}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
 	}
@@ -202,7 +207,8 @@ func TestCloseHandler_Handle_NoStoredMessageIsNoop(t *testing.T) {
 	h := newCloseHandler(store, behavior, messenger)
 
 	e := kernel.Event{
-		Action:     kernel.ActionClosed,
+		Provider:   kernel.ProviderGitHub,
+		Kind:       kernel.KindClosed,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42},
 	}

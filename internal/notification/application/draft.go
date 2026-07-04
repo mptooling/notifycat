@@ -24,9 +24,9 @@ func NewDraftHandler(store domain.MessageStore, messenger domain.Messenger, logg
 	return &DraftHandler{store: store, messenger: messenger, logger: logger}
 }
 
-// Applicable returns true when the action is "converted_to_draft".
+// Applicable returns true when a PR is converted back to draft.
 func (h *DraftHandler) Applicable(event kernel.Event) bool {
-	return event.Action == kernel.ActionConvertedToDraft
+	return event.Kind == kernel.KindConvertedToDraft
 }
 
 // Handle deletes every stored message and the PR row.
@@ -36,8 +36,8 @@ func (h *DraftHandler) Handle(ctx context.Context, event kernel.Event) error {
 		h.logger.Info("ignored webhook event",
 			slog.String("reason", domain.ReasonNoStoredMessage),
 			slog.String("handler", "draft"),
-			slog.String("github_event", string(event.GitHubEvent)),
-			slog.String("action", string(event.Action)),
+			slog.String("provider", event.Provider),
+			slog.String("kind", event.Kind.String()),
 			slog.String("repository", event.Repository),
 			slog.Int("pr", event.PR.Number),
 		)
