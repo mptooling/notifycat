@@ -16,7 +16,7 @@ import (
 
 	"github.com/mptooling/notifycat/internal/app"
 	"github.com/mptooling/notifycat/internal/config"
-	"github.com/mptooling/notifycat/internal/slackhook"
+	"github.com/mptooling/notifycat/internal/platform/security"
 )
 
 func newTestConfig(t *testing.T) config.Config {
@@ -188,8 +188,8 @@ func TestWire_SlackInteractionsAcceptsSignedRequest(t *testing.T) {
 
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost,
 		ts.URL+"/webhook/slack/interactions", strings.NewReader(string(body)))
-	req.Header.Set(slackhook.SignatureHeader, signature)
-	req.Header.Set(slackhook.TimestampHeader, timestamp)
+	req.Header.Set(security.SlackSignatureHeader, signature)
+	req.Header.Set(security.SlackTimestampHeader, timestamp)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := ts.Client().Do(req)
 	if err != nil {
@@ -216,8 +216,8 @@ func TestWire_SlackInteractionsRejectsForgedRequest(t *testing.T) {
 
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost,
 		ts.URL+"/webhook/slack/interactions", strings.NewReader("payload=x"))
-	req.Header.Set(slackhook.SignatureHeader, "v0=deadbeef")
-	req.Header.Set(slackhook.TimestampHeader, strconv.FormatInt(time.Now().Unix(), 10))
+	req.Header.Set(security.SlackSignatureHeader, "v0=deadbeef")
+	req.Header.Set(security.SlackTimestampHeader, strconv.FormatInt(time.Now().Unix(), 10))
 	resp, err := ts.Client().Do(req)
 	if err != nil {
 		t.Fatalf("POST: %v", err)

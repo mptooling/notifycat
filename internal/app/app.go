@@ -226,7 +226,7 @@ func buildMux(cfg config.Config, dispatcher *notificationapp.Dispatcher, startRe
 	if cfg.SlackSigningSecret.Reveal() == "" {
 		logger.Info("slack interactivity disabled", slog.String("reason", "SLACK_SIGNING_SECRET unset"))
 	} else {
-		slackVerifier := slackhook.NewVerifier(cfg.SlackSigningSecret.Reveal())
+		slackVerifier := security.NewSlackVerifier(cfg.SlackSigningSecret.Reveal())
 		mux.Handle("POST /webhook/slack/interactions",
 			slackhook.SignatureMiddleware(slackVerifier)(
 				slackhook.NewHandler(startReviewSink, logger),

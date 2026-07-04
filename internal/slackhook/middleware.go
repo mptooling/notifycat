@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/mptooling/notifycat/internal/platform/httpx"
+	"github.com/mptooling/notifycat/internal/platform/security"
 )
 
 // MaxBodyBytes caps the size of an accepted interaction body. Slack's
@@ -21,15 +22,19 @@ const MaxBodyBytes int64 = 1 << 20 // 1 MiB
 //
 // The signature is verified over the raw bytes before any form parsing, exactly
 // like the GitHub webhook receiver in notification/infrastructure.
-func SignatureMiddleware(verifier *Verifier) func(http.Handler) http.Handler {
+func SignatureMiddleware(verifier security.SignatureVerifier) func(http.Handler) http.Handler {
 	return httpx.Signature(MaxBodyBytes, func(w http.ResponseWriter, r *http.Request, body []byte) bool {
-		signature := r.Header.Get(SignatureHeader)
-		timestamp := r.Header.Get(TimestampHeader)
+		signature := r.Header.Get(security.SlackSignatureHeader)
+		timestamp := r.Header.Get(security.SlackTimestampHeader)
 		if signature == "" || timestamp == "" {
 			http.Error(w, "missing signature", http.StatusUnauthorized)
 			return false
 		}
-		if err := verifier.Verify(timestamp, body, signature); err != nil {
+		// Build the compound "<timestamp>\n<v0=hex>" string expected by
+		// security.SlackVerifier.Verify, which must satisfy the two-argument
+		// SignatureVerifier interface while still covering the timestamp.
+		compound := timestamp + "\n" + signature
+		if err := verifier.Verify(body, compound); err != nil {
 			http.Error(w, "invalid signature", http.StatusUnauthorized)
 			return false
 		}
