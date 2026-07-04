@@ -1,4 +1,4 @@
-package app_test
+package runtime_test
 
 import (
 	"context"
@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mptooling/notifycat/internal/app"
 	"github.com/mptooling/notifycat/internal/platform/config"
 	"github.com/mptooling/notifycat/internal/platform/persistence"
 	routingapp "github.com/mptooling/notifycat/internal/routing/application"
@@ -114,7 +113,7 @@ func newIntegrationFixture(t *testing.T, seeds ...mappingSeed) *integrationFixtu
 }
 
 // newIntegrationFixtureCfg is the same as newIntegrationFixture but invokes
-// mutate(cfg) just before app.Wire — used by tests that need to flip a flag
+// mutate(cfg) just before buildTestServer — used by tests that need to flip a flag
 // (e.g. IgnoreAIReviews) without duplicating fixture setup.
 func newIntegrationFixtureCfg(t *testing.T, mutate func(*config.Config), seeds ...mappingSeed) *integrationFixture {
 	t.Helper()
@@ -150,11 +149,7 @@ func newIntegrationFixtureCfg(t *testing.T, mutate func(*config.Config), seeds .
 		mutate(&cfg)
 	}
 
-	server, _, _, cleanup, err := app.Wire(cfg)
-	if err != nil {
-		t.Fatalf("Wire: %v", err)
-	}
-	t.Cleanup(cleanup)
+	server := buildTestServer(t, cfg)
 
 	ts := httptest.NewServer(server.Handler)
 	t.Cleanup(ts.Close)

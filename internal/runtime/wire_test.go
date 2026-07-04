@@ -1,4 +1,4 @@
-package app_test
+package runtime_test
 
 import (
 	"context"
@@ -14,10 +14,35 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mptooling/notifycat/internal/app"
+	"go.uber.org/fx"
+	"gorm.io/gorm"
+
 	"github.com/mptooling/notifycat/internal/platform/config"
+	"github.com/mptooling/notifycat/internal/platform/persistence"
 	"github.com/mptooling/notifycat/internal/platform/security"
+	"github.com/mptooling/notifycat/internal/runtime"
 )
+
+func buildTestServer(t *testing.T, cfg config.Config) *http.Server {
+	t.Helper()
+	var server *http.Server
+	var db *gorm.DB
+	app := fx.New(
+		fx.Supply(cfg),
+		runtime.Module,
+		fx.NopLogger,
+		fx.Populate(&server, &db),
+	)
+	if err := app.Err(); err != nil {
+		t.Fatalf("build runtime graph: %v", err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, dbErr := persistence.SQLDB(db); dbErr == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	return server
+}
 
 func newTestConfig(t *testing.T) config.Config {
 	t.Helper()
@@ -48,14 +73,10 @@ func newTestConfig(t *testing.T) config.Config {
 func TestWire_ReturnsServerAndCleanup(t *testing.T) {
 	cfg := newTestConfig(t)
 
-	server, _, _, cleanup, err := app.Wire(cfg)
-	if err != nil {
-		t.Fatalf("Wire: %v", err)
-	}
-	defer cleanup()
+	server := buildTestServer(t, cfg)
 
 	if server == nil {
-		t.Fatal("Wire returned nil server")
+		t.Fatal("buildTestServer returned nil server")
 	}
 	if server.Handler == nil {
 		t.Fatal("server.Handler is nil")
@@ -64,11 +85,7 @@ func TestWire_ReturnsServerAndCleanup(t *testing.T) {
 
 func TestWire_HealthzReturns200(t *testing.T) {
 	cfg := newTestConfig(t)
-	server, _, _, cleanup, err := app.Wire(cfg)
-	if err != nil {
-		t.Fatalf("Wire: %v", err)
-	}
-	defer cleanup()
+	server := buildTestServer(t, cfg)
 
 	ts := httptest.NewServer(server.Handler)
 	defer ts.Close()
@@ -86,11 +103,7 @@ func TestWire_HealthzReturns200(t *testing.T) {
 
 func TestWire_RejectsUnsignedWebhook(t *testing.T) {
 	cfg := newTestConfig(t)
-	server, _, _, cleanup, err := app.Wire(cfg)
-	if err != nil {
-		t.Fatalf("Wire: %v", err)
-	}
-	defer cleanup()
+	server := buildTestServer(t, cfg)
 
 	ts := httptest.NewServer(server.Handler)
 	defer ts.Close()
@@ -110,11 +123,7 @@ func TestWire_RejectsUnsignedWebhook(t *testing.T) {
 
 func TestWire_AcceptsSignedWebhookButHasNoMapping(t *testing.T) {
 	cfg := newTestConfig(t)
-	server, _, _, cleanup, err := app.Wire(cfg)
-	if err != nil {
-		t.Fatalf("Wire: %v", err)
-	}
-	defer cleanup()
+	server := buildTestServer(t, cfg)
 
 	ts := httptest.NewServer(server.Handler)
 	defer ts.Close()
@@ -146,11 +155,7 @@ func TestWire_AcceptsSignedWebhookButHasNoMapping(t *testing.T) {
 
 func TestWire_SlackInteractionsAbsentWithoutSigningSecret(t *testing.T) {
 	cfg := newTestConfig(t) // no SlackSigningSecret
-	server, _, _, cleanup, err := app.Wire(cfg)
-	if err != nil {
-		t.Fatalf("Wire: %v", err)
-	}
-	defer cleanup()
+	server := buildTestServer(t, cfg)
 
 	ts := httptest.NewServer(server.Handler)
 	defer ts.Close()
@@ -170,11 +175,7 @@ func TestWire_SlackInteractionsAbsentWithoutSigningSecret(t *testing.T) {
 func TestWire_SlackInteractionsAcceptsSignedRequest(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.SlackSigningSecret = config.Secret("slack-signing-secret")
-	server, _, _, cleanup, err := app.Wire(cfg)
-	if err != nil {
-		t.Fatalf("Wire: %v", err)
-	}
-	defer cleanup()
+	server := buildTestServer(t, cfg)
 
 	ts := httptest.NewServer(server.Handler)
 	defer ts.Close()
@@ -205,11 +206,7 @@ func TestWire_SlackInteractionsAcceptsSignedRequest(t *testing.T) {
 func TestWire_SlackInteractionsRejectsForgedRequest(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.SlackSigningSecret = config.Secret("slack-signing-secret")
-	server, _, _, cleanup, err := app.Wire(cfg)
-	if err != nil {
-		t.Fatalf("Wire: %v", err)
-	}
-	defer cleanup()
+	server := buildTestServer(t, cfg)
 
 	ts := httptest.NewServer(server.Handler)
 	defer ts.Close()
