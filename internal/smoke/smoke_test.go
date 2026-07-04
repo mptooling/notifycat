@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/mptooling/notifycat/internal/config"
-	"github.com/mptooling/notifycat/internal/githubhook"
+	"github.com/mptooling/notifycat/internal/platform/security"
 	"github.com/mptooling/notifycat/internal/slack"
 	"github.com/mptooling/notifycat/internal/smoke"
 	"github.com/mptooling/notifycat/internal/store"
@@ -112,7 +112,7 @@ func recordingServer(t *testing.T) (*httptest.Server, func() []capturedReq) {
 		mu.Lock()
 		reqs = append(reqs, capturedReq{
 			event: r.Header.Get("X-GitHub-Event"),
-			sig:   r.Header.Get(githubhook.SignatureHeader),
+			sig:   r.Header.Get(security.SignatureHeader),
 			body:  body,
 		})
 		mu.Unlock()
@@ -204,7 +204,7 @@ func TestRun_OpenedDelivery_DrivesRealEndpointAndReportsChannelAndTS(t *testing.
 	if reqs[0].event != "pull_request" {
 		t.Errorf("X-GitHub-Event = %q; want pull_request", reqs[0].event)
 	}
-	if err := githubhook.NewVerifier(testSecret).Verify(reqs[0].body, reqs[0].sig); err != nil {
+	if err := security.NewGitHubVerifier(testSecret).Verify(reqs[0].body, reqs[0].sig); err != nil {
 		t.Errorf("server could not verify signature: %v", err)
 	}
 	action, _, _, number, title := decodeEvent(t, reqs[0].body)
@@ -269,7 +269,7 @@ func TestRun_WithReactions_RunsLifecycleAndVerifiesEachEmoji(t *testing.T) {
 		if _, _, _, n, _ := decodeEvent(t, r.body); n != n0 {
 			t.Errorf("req%d PR number = %d; want %d (shared across the lifecycle)", i, n, n0)
 		}
-		if err := githubhook.NewVerifier(testSecret).Verify(r.body, r.sig); err != nil {
+		if err := security.NewGitHubVerifier(testSecret).Verify(r.body, r.sig); err != nil {
 			t.Errorf("req%d signature did not verify: %v", i, err)
 		}
 	}

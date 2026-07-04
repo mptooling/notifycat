@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/mptooling/notifycat/internal/config"
-	"github.com/mptooling/notifycat/internal/githubhook"
+	"github.com/mptooling/notifycat/internal/platform/security"
 	"github.com/mptooling/notifycat/internal/slack"
 	"github.com/mptooling/notifycat/internal/store"
 )
@@ -292,7 +292,7 @@ func (s *Smoke) deliver(ctx context.Context, repository string, number int, titl
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-GitHub-Event", ev.event)
-	req.Header.Set(githubhook.SignatureHeader, githubhook.Sign(s.secret, body))
+	req.Header.Set(security.SignatureHeader, security.Sign(s.secret, body))
 
 	resp, err := s.http.Do(req)
 	if err != nil {

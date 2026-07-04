@@ -24,6 +24,7 @@ import (
 	maintenanceapp "github.com/mptooling/notifycat/internal/maintenance/application"
 	maintenancedomain "github.com/mptooling/notifycat/internal/maintenance/domain"
 	maintenanceinfra "github.com/mptooling/notifycat/internal/maintenance/infrastructure"
+	"github.com/mptooling/notifycat/internal/platform/security"
 	"github.com/mptooling/notifycat/internal/pullrequest"
 	routingapp "github.com/mptooling/notifycat/internal/routing/application"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
@@ -213,7 +214,7 @@ func buildMux(cfg config.Config, dispatcher *pullrequest.Dispatcher, startReview
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	verifier := githubhook.NewVerifier(cfg.GitHubWebhookSecret.Reveal())
+	verifier := security.NewGitHubVerifier(cfg.GitHubWebhookSecret.Reveal())
 	mux.Handle("POST /webhook/github",
 		githubhook.SignatureMiddleware(verifier)(
 			githubhook.NewHandler(eventSink(dispatcher, logger)),

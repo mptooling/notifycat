@@ -1,4 +1,4 @@
-package githubhook_test
+package security_test
 
 import (
 	"crypto/hmac"
@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"testing"
 
-	"github.com/mptooling/notifycat/internal/githubhook"
+	"github.com/mptooling/notifycat/internal/platform/security"
 )
 
 const testSecret = "topsecret"
@@ -18,7 +18,7 @@ func sign(body []byte) string {
 }
 
 func TestVerifier_ValidSignature(t *testing.T) {
-	v := githubhook.NewVerifier(testSecret)
+	v := security.NewGitHubVerifier(testSecret)
 	body := []byte(`{"ok":true}`)
 
 	if err := v.Verify(body, sign(body)); err != nil {
@@ -27,7 +27,7 @@ func TestVerifier_ValidSignature(t *testing.T) {
 }
 
 func TestVerifier_InvalidSignature(t *testing.T) {
-	v := githubhook.NewVerifier(testSecret)
+	v := security.NewGitHubVerifier(testSecret)
 	body := []byte(`{"ok":true}`)
 
 	cases := map[string]string{
@@ -49,18 +49,18 @@ func TestVerifier_InvalidSignature(t *testing.T) {
 func TestSign_RoundTripsWithVerify(t *testing.T) {
 	body := []byte(`{"ok":true}`)
 
-	sig := githubhook.Sign(testSecret, body)
+	sig := security.Sign(testSecret, body)
 
 	if want := sign(body); sig != want {
 		t.Fatalf("Sign = %q; want %q", sig, want)
 	}
-	if err := githubhook.NewVerifier(testSecret).Verify(body, sig); err != nil {
+	if err := security.NewGitHubVerifier(testSecret).Verify(body, sig); err != nil {
 		t.Fatalf("Verify of Sign output returned %v; want nil", err)
 	}
 }
 
 func TestVerifier_BodyTamperedReturnsError(t *testing.T) {
-	v := githubhook.NewVerifier(testSecret)
+	v := security.NewGitHubVerifier(testSecret)
 	body := []byte(`{"ok":true}`)
 	tampered := []byte(`{"ok":false}`)
 

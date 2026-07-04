@@ -1,11 +1,11 @@
-// Package webhook holds the HTTP plumbing shared by notifycat's signed-webhook
-// receivers (internal/githubhook, internal/slackhook). It owns only the parts
-// that are identical across providers — capping and reading the body once, and
-// replaying a fresh body reader downstream — and delegates authentication to a
-// provider-supplied callback. The signing scheme itself (which headers, what
-// HMAC, which error message) stays with each provider, because those genuinely
-// differ (GitHub signs the raw body; Slack signs a timestamped base string).
-package webhook
+// Package httpx holds the HTTP plumbing shared by notifycat's signed-webhook
+// receivers. It owns only the parts that are identical across providers —
+// capping and reading the body once, and replaying a fresh body reader
+// downstream — and delegates authentication to a provider-supplied callback. The
+// signing scheme itself (which headers, what HMAC, which error message) stays
+// with each provider, because those genuinely differ (GitHub signs the raw body;
+// Slack signs a timestamped base string).
+package httpx
 
 import (
 	"bytes"
@@ -15,8 +15,8 @@ import (
 )
 
 // Authenticate verifies a request from its (already-read) raw body. On failure
-// it writes the appropriate error response to w and returns false; on success
-// it writes nothing and returns true. Keeping the failure response here — rather
+// it writes the appropriate error response to w and returns false; on success it
+// writes nothing and returns true. Keeping the failure response here — rather
 // than returning an error the skeleton renders — lets each provider preserve its
 // own status codes and messages (e.g. "missing signature" vs "invalid signature").
 type Authenticate func(w http.ResponseWriter, r *http.Request, body []byte) bool

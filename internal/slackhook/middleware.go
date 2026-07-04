@@ -3,7 +3,7 @@ package slackhook
 import (
 	"net/http"
 
-	"github.com/mptooling/notifycat/internal/webhook"
+	"github.com/mptooling/notifycat/internal/platform/httpx"
 )
 
 // MaxBodyBytes caps the size of an accepted interaction body. Slack's
@@ -22,7 +22,7 @@ const MaxBodyBytes int64 = 1 << 20 // 1 MiB
 // The signature is verified over the raw bytes before any form parsing, exactly
 // like internal/githubhook.
 func SignatureMiddleware(verifier *Verifier) func(http.Handler) http.Handler {
-	return webhook.Signature(MaxBodyBytes, func(w http.ResponseWriter, r *http.Request, body []byte) bool {
+	return httpx.Signature(MaxBodyBytes, func(w http.ResponseWriter, r *http.Request, body []byte) bool {
 		signature := r.Header.Get(SignatureHeader)
 		timestamp := r.Header.Get(TimestampHeader)
 		if signature == "" || timestamp == "" {

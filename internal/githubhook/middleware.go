@@ -3,7 +3,8 @@ package githubhook
 import (
 	"net/http"
 
-	"github.com/mptooling/notifycat/internal/webhook"
+	"github.com/mptooling/notifycat/internal/platform/httpx"
+	"github.com/mptooling/notifycat/internal/platform/security"
 )
 
 // MaxBodyBytes caps the size of an accepted webhook body. GitHub limits its
@@ -17,9 +18,9 @@ const MaxBodyBytes int64 = 1 << 20 // 1 MiB
 //     the HMAC of the body (401),
 //   - passes a fresh body reader to next, so downstream handlers can read
 //     the verified body without juggling the raw stream themselves.
-func SignatureMiddleware(v *Verifier) func(http.Handler) http.Handler {
-	return webhook.Signature(MaxBodyBytes, func(w http.ResponseWriter, r *http.Request, body []byte) bool {
-		signature := r.Header.Get(SignatureHeader)
+func SignatureMiddleware(v security.SignatureVerifier) func(http.Handler) http.Handler {
+	return httpx.Signature(MaxBodyBytes, func(w http.ResponseWriter, r *http.Request, body []byte) bool {
+		signature := r.Header.Get(security.SignatureHeader)
 		if signature == "" {
 			http.Error(w, "missing signature", http.StatusUnauthorized)
 			return false
