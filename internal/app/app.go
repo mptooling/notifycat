@@ -16,7 +16,9 @@ import (
 
 	"github.com/mptooling/notifycat/internal/aireview"
 	"github.com/mptooling/notifycat/internal/config"
-	"github.com/mptooling/notifycat/internal/digest"
+	digestapp "github.com/mptooling/notifycat/internal/digest/application"
+	digestdomain "github.com/mptooling/notifycat/internal/digest/domain"
+	digestinfra "github.com/mptooling/notifycat/internal/digest/infrastructure"
 	"github.com/mptooling/notifycat/internal/github"
 	"github.com/mptooling/notifycat/internal/githubhook"
 	maintenanceapp "github.com/mptooling/notifycat/internal/maintenance/application"
@@ -45,7 +47,7 @@ type Cleanup func()
 //
 // Mappings come from the `mappings:` section of config.yaml; the server
 // refuses to start if any entry fails validation (against the per-entry lock).
-func Wire(cfg config.Config) (*http.Server, *maintenanceapp.Cleaner, *digest.Scheduler, Cleanup, error) {
+func Wire(cfg config.Config) (*http.Server, *maintenanceapp.Cleaner, *digestapp.Scheduler, Cleanup, error) {
 	logger := newLogger(cfg)
 	provider := buildProvider(cfg, logger)
 
@@ -149,13 +151,27 @@ func buildCleanupScheduler(cfg config.Config, pullRequests *store.PullRequests, 
 // every distinct cron spec across the enabled mappings. It returns a nil
 // scheduler (and nil error) when no mapping enables a digest; a bad cron spec
 // fails startup here rather than silently never firing.
-func buildDigestScheduler(cfg config.Config, provider *routingapp.Provider, pullRequests *store.PullRequests, slackClient *slack.Client, composer *slack.Composer, logger *slog.Logger) (*digest.Scheduler, error) {
+func buildDigestScheduler(cfg config.Config, provider *routingapp.Provider, pullRequests *store.PullRequests, slackClient *slack.Client, composer *slack.Composer, logger *slog.Logger) (*digestapp.Scheduler, error) {
 	specs := provider.Schedules()
 	if len(specs) == 0 {
 		return nil, nil
 	}
-	reporter := digest.NewReporter(pullRequests, provider, slackClient, composer, provider, logger, cfg.DigestTimezone)
-	scheduler, err := digest.NewScheduler(specs, reporter, logger, cfg.DigestTimezone)
+	reporter := digestapp.NewReporter(digestdomain.ReporterParams{
+		Finder:   digestinfra.NewStuckRepo(pullRequests),
+		Mappings: provider,
+		Poster:   digestinfra.NewSlackPoster(slackClient),
+		Composer: digestinfra.NewSlackComposer(composer),
+		Digests:  provider,
+		Logger:   logger,
+		TZ:       cfg.DigestTimezone,
+		Now:      time.Now,
+	})
+	scheduler, err := digestapp.NewScheduler(digestdomain.SchedulerParams{
+		Specs:  specs,
+		Job:    reporter,
+		Logger: logger,
+		TZ:     cfg.DigestTimezone,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("app: digest scheduler: %w", err)
 	}
