@@ -105,6 +105,29 @@ linters:
           deny:
             - pkg: github.com/mptooling/notifycat/internal
               desc: validation/application imports only its own domain layer, the routing domain, and the shared kernel — never infrastructure, store, slack, or github
+        digest-domain:
+          list-mode: lax
+          files:
+            - "**/internal/digest/domain/**"
+          allow:
+            - github.com/mptooling/notifycat/internal/kernel
+            - github.com/mptooling/notifycat/internal/digest/domain
+            - github.com/mptooling/notifycat/internal/routing/domain
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: digest/domain imports only the shared kernel, the routing domain, and the standard library — never application, infrastructure, store, slack, or github
+        digest-application:
+          list-mode: lax
+          files:
+            - "**/internal/digest/application/**"
+          allow:
+            - github.com/mptooling/notifycat/internal/kernel
+            - github.com/mptooling/notifycat/internal/digest/domain
+            - github.com/mptooling/notifycat/internal/digest/application
+            - github.com/mptooling/notifycat/internal/routing/domain
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: digest/application imports only its own domain layer, the routing domain, and the shared kernel — never infrastructure, store, slack, or github
     errcheck:
       exclude-functions:
         - fmt.Fprint
