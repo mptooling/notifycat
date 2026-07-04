@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.2](https://github.com/mptooling/notifycat/compare/v0.21.1...v0.21.2) (2026-07-04)
+
+
+### ♻️ Refactors
+
+* migrate to DDD + hexagonal layering with uber/fx ([#155](https://github.com/mptooling/notifycat/issues/155)) ([2f1ae92](https://github.com/mptooling/notifycat/commit/2f1ae9214faae5c1babb4feec6e77985804e3dc4))
+
 ## [0.21.1](https://github.com/mptooling/notifycat/compare/v0.21.0...v0.21.1) (2026-07-03)
 
 
