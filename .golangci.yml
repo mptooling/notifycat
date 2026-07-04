@@ -172,6 +172,32 @@ linters:
           deny:
             - pkg: github.com/mptooling/notifycat/internal
               desc: review/application imports only its own domain layer and the shared kernel — never infrastructure, store, slack, or github
+        diagnostics-domain:
+          list-mode: lax
+          files:
+            - "**/internal/diagnostics/domain/**"
+          allow:
+            - github.com/mptooling/notifycat/internal/kernel
+            - github.com/mptooling/notifycat/internal/diagnostics/domain
+            - github.com/mptooling/notifycat/internal/validation/domain
+            - github.com/mptooling/notifycat/internal/routing/domain
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: diagnostics/domain imports only the shared kernel, the validation and routing domains, and the standard library — never application, infrastructure, config, store, slack, http, or security
+        diagnostics-application:
+          list-mode: lax
+          files:
+            - "**/internal/diagnostics/application/**"
+          allow:
+            - github.com/mptooling/notifycat/internal/kernel
+            - github.com/mptooling/notifycat/internal/diagnostics/domain
+            - github.com/mptooling/notifycat/internal/diagnostics/application
+            - github.com/mptooling/notifycat/internal/validation/domain
+            - github.com/mptooling/notifycat/internal/validation/application
+            - github.com/mptooling/notifycat/internal/routing/domain
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: diagnostics/application imports its own domain, the validation domain/application, and the routing domain — never infrastructure, config, store, slack, http, or security
     errcheck:
       exclude-functions:
         - fmt.Fprint
