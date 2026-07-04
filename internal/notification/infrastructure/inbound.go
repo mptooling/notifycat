@@ -220,73 +220,90 @@ const (
 )
 
 // mapKind classifies a parsed GitHub payload into a neutral kernel.EventKind,
-// owning every GitHub-vocabulary decision and all draft gating. It returns
-// KindUnknown for any payload no handler acts on — a draft open, a synchronize
-// or label edit, a plain-issue comment, an edited approve/request-change — so the
-// dispatcher debug-logs no_handler exactly as before.
-//
-// The classification mirrors the original per-handler rules: a submitted review
-// is keyed by its state, and the PR lifecycle by its action — both independent of
-// the X-GitHub-Event header, since those action/state strings are unambiguous.
-// The header is consulted only to disambiguate a created comment (a line comment
-// vs a PR-conversation comment vs a plain-issue comment, which carry the same
-// "created" action). A draft PR never yields Opened/ReadyForReview. A submitted
-// review carrying only comments maps to KindReviewCommented (it finishes the
-// review session), while a line/conversation comment or an edited commented
-// review maps to KindCommented (it does not).
+// owning every GitHub-vocabulary decision and all draft gating. It tries each
+// classifier in turn — a review submission, then the PR lifecycle, then a created
+// comment — and the first to claim the payload wins. Anything unclaimed (a draft
+// open, a synchronize or label edit, a plain-issue comment, an edited
+// approve/request-change) is KindUnknown, so the dispatcher debug-logs no_handler
+// exactly as before.
 func mapKind(p Payload) kernel.EventKind {
-	// A review submission carries a review object; classify by its state.
-	if p.Review != nil {
-		switch p.Action {
-		case ghActionSubmitted:
-			switch p.Review.State {
-			case ghReviewApproved:
-				return kernel.KindApproved
-			case ghReviewChangesRequested:
-				return kernel.KindChangesRequested
-			case ghReviewCommented:
-				return kernel.KindReviewCommented
-			}
-		case ghActionEdited:
-			if p.Review.State == ghReviewCommented {
-				return kernel.KindCommented
-			}
-		}
-		return kernel.KindUnknown
+	if kind, ok := reviewKind(p); ok {
+		return kind
 	}
+	if kind, ok := lifecycleKind(p); ok {
+		return kind
+	}
+	if kind, ok := commentKind(p); ok {
+		return kind
+	}
+	return kernel.KindUnknown
+}
 
-	// PR lifecycle — matched by action alone (these actions are unique to
-	// pull_request events).
+// submittedReviewKinds maps a submitted review's state to its kind. A submitted
+// review carrying only comments is KindReviewCommented — distinct from a plain
+// comment because it finishes the PR's review session.
+var submittedReviewKinds = map[string]kernel.EventKind{
+	ghReviewApproved:         kernel.KindApproved,
+	ghReviewChangesRequested: kernel.KindChangesRequested,
+	ghReviewCommented:        kernel.KindReviewCommented,
+}
+
+// reviewKind claims any payload that carries a review object and keys it by
+// state. The review object is the unambiguous signal, so this is
+// header-independent; an unrecognized action or state resolves to KindUnknown
+// rather than falling through to the lifecycle classifier.
+func reviewKind(p Payload) (kernel.EventKind, bool) {
+	if p.Review == nil {
+		return kernel.KindUnknown, false
+	}
+	if p.Action == ghActionSubmitted {
+		return submittedReviewKinds[p.Review.State], true
+	}
+	if p.Action == ghActionEdited && p.Review.State == ghReviewCommented {
+		return kernel.KindCommented, true
+	}
+	return kernel.KindUnknown, true
+}
+
+// lifecycleKind claims a PR lifecycle event, keyed by action alone (these actions
+// are unique to pull_request webhooks, so no header is needed). A draft open is
+// gated to KindUnknown, and a close splits into KindMerged/KindClosed.
+func lifecycleKind(p Payload) (kernel.EventKind, bool) {
 	switch p.Action {
 	case ghActionOpened:
 		if p.PullRequest.Draft {
-			return kernel.KindUnknown
+			return kernel.KindUnknown, true
 		}
-		return kernel.KindOpened
+		return kernel.KindOpened, true
 	case ghActionReadyForReview:
-		return kernel.KindReadyForReview
+		return kernel.KindReadyForReview, true
 	case ghActionConvertedToDraft:
-		return kernel.KindConvertedToDraft
+		return kernel.KindConvertedToDraft, true
 	case ghActionClosed:
 		if p.PullRequest.Merged {
-			return kernel.KindMerged
+			return kernel.KindMerged, true
 		}
-		return kernel.KindClosed
+		return kernel.KindClosed, true
 	}
+	return kernel.KindUnknown, false
+}
 
-	// Created comments — the header tells a line comment from a PR-conversation
-	// comment and excludes plain-issue comments (no PR reference).
+// commentKind claims a created comment. The X-GitHub-Event header tells a line
+// comment from a PR-conversation comment and excludes plain-issue comments (which
+// carry no PR reference).
+func commentKind(p Payload) (kernel.EventKind, bool) {
+	if p.Action != ghActionCreated {
+		return kernel.KindUnknown, false
+	}
 	switch p.Event {
 	case ghEventReviewComment:
-		if p.Action == ghActionCreated {
-			return kernel.KindCommented
-		}
+		return kernel.KindCommented, true
 	case ghEventIssueComment:
-		if p.Action == ghActionCreated && p.PRComment {
-			return kernel.KindCommented
+		if p.PRComment {
+			return kernel.KindCommented, true
 		}
 	}
-	return kernel.KindUnknown
+	return kernel.KindUnknown, false
 }
 
 // toEvent maps a parsed Payload to the neutral kernel event the dispatcher
