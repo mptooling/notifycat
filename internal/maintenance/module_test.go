@@ -10,10 +10,10 @@ import (
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 
-	"github.com/mptooling/notifycat/internal/github"
 	"github.com/mptooling/notifycat/internal/maintenance"
 	"github.com/mptooling/notifycat/internal/maintenance/domain"
 	"github.com/mptooling/notifycat/internal/maintenance/infrastructure"
+	"github.com/mptooling/notifycat/internal/platform/github"
 	"github.com/mptooling/notifycat/internal/store"
 )
 

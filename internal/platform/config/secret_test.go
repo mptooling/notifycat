@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mptooling/notifycat/internal/config"
+	"github.com/mptooling/notifycat/internal/platform/config"
 )
 
 func TestSecret_StringRedacts(t *testing.T) {

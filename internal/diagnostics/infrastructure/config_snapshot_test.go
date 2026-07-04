@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/mptooling/notifycat/internal/config"
 	"github.com/mptooling/notifycat/internal/diagnostics/infrastructure"
+	"github.com/mptooling/notifycat/internal/platform/config"
 )
 
 func TestNewConfigSnapshot_DatabaseOpenable(t *testing.T) {

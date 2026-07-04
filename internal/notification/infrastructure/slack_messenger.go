@@ -5,7 +5,7 @@ import (
 
 	"github.com/mptooling/notifycat/internal/kernel"
 	"github.com/mptooling/notifycat/internal/notification/domain"
-	"github.com/mptooling/notifycat/internal/slack"
+	"github.com/mptooling/notifycat/internal/platform/slack"
 )
 
 // SlackMessenger implements the notification Messenger port over the Slack

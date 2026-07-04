@@ -3,7 +3,7 @@ package infrastructure
 import (
 	"context"
 
-	"github.com/mptooling/notifycat/internal/slack"
+	"github.com/mptooling/notifycat/internal/platform/slack"
 )
 
 // SlackSmokeReactions implements diagnosticsdomain.SmokeReactions over

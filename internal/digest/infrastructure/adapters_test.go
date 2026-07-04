@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/mptooling/notifycat/internal/digest/domain"
-	"github.com/mptooling/notifycat/internal/slack"
+	"github.com/mptooling/notifycat/internal/platform/slack"
 	"github.com/mptooling/notifycat/internal/store"
 )
 

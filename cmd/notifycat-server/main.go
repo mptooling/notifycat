@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/mptooling/notifycat/internal/app"
-	"github.com/mptooling/notifycat/internal/config"
+	"github.com/mptooling/notifycat/internal/platform/config"
 )
 
 const shutdownTimeout = 15 * time.Second

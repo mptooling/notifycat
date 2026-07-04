@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/mptooling/notifycat/internal/config"
+	"github.com/mptooling/notifycat/internal/platform/config"
 )
 
 // startupError translates known operator configuration mistakes into

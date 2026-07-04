@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/mptooling/notifycat/internal/github"
+	"github.com/mptooling/notifycat/internal/platform/github"
 )
 
 func TestListHookEvents_FiltersBySuffixAndUnionsEvents(t *testing.T) {

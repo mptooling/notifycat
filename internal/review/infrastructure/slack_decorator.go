@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/mptooling/notifycat/internal/platform/slack"
 	reviewdomain "github.com/mptooling/notifycat/internal/review/domain"
-	"github.com/mptooling/notifycat/internal/slack"
 )
 
 // SlackDecorator implements the review MessageDecorator port over the Slack

@@ -10,9 +10,9 @@ import (
 	"go.uber.org/fx/fxtest"
 
 	notificationdomain "github.com/mptooling/notifycat/internal/notification/domain"
+	"github.com/mptooling/notifycat/internal/platform/slack"
 	"github.com/mptooling/notifycat/internal/review"
 	"github.com/mptooling/notifycat/internal/review/domain"
-	"github.com/mptooling/notifycat/internal/slack"
 	"github.com/mptooling/notifycat/internal/store"
 )
 

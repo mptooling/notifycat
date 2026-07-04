@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/mptooling/notifycat/internal/github"
 	"github.com/mptooling/notifycat/internal/maintenance/domain"
+	"github.com/mptooling/notifycat/internal/platform/github"
 )
 
 // PRStateGetter is the slice of the GitHub client the checker needs.

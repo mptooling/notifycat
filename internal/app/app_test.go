@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/mptooling/notifycat/internal/app"
-	"github.com/mptooling/notifycat/internal/config"
+	"github.com/mptooling/notifycat/internal/platform/config"
 	"github.com/mptooling/notifycat/internal/platform/security"
 )
 

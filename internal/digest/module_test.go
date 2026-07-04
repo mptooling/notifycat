@@ -13,8 +13,8 @@ import (
 
 	"github.com/mptooling/notifycat/internal/digest"
 	"github.com/mptooling/notifycat/internal/digest/domain"
+	"github.com/mptooling/notifycat/internal/platform/slack"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
-	"github.com/mptooling/notifycat/internal/slack"
 	"github.com/mptooling/notifycat/internal/store"
 )
 

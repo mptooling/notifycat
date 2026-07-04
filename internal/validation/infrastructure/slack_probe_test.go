@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/mptooling/notifycat/internal/slack"
+	"github.com/mptooling/notifycat/internal/platform/slack"
 	"github.com/mptooling/notifycat/internal/validation/domain"
 )
 

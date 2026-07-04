@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/mptooling/notifycat/internal/config"
+	"github.com/mptooling/notifycat/internal/platform/config"
 )
 
 // writeConfig writes a config.yaml into a temp dir, points NOTIFYCAT_CONFIG_FILE

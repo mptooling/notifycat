@@ -7,7 +7,7 @@ import (
 
 	"github.com/mptooling/notifycat/internal/kernel"
 	"github.com/mptooling/notifycat/internal/notification/domain"
-	"github.com/mptooling/notifycat/internal/slack"
+	"github.com/mptooling/notifycat/internal/platform/slack"
 )
 
 func testMessenger(t *testing.T) (*SlackMessenger, *slack.Composer) {

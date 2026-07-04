@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/mptooling/notifycat/internal/slack"
+	"github.com/mptooling/notifycat/internal/platform/slack"
 )
 
 // fakeSlack is an httptest.Server that records requests against the Slack

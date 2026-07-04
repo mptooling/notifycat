@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mptooling/notifycat/internal/slack"
+	"github.com/mptooling/notifycat/internal/platform/slack"
 )
 
 // created is a fixed PR creation time used across composer tests. Its localized

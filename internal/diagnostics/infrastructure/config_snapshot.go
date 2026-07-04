@@ -3,8 +3,8 @@ package infrastructure
 import (
 	"fmt"
 
-	"github.com/mptooling/notifycat/internal/config"
 	diagnosticsdomain "github.com/mptooling/notifycat/internal/diagnostics/domain"
+	"github.com/mptooling/notifycat/internal/platform/config"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 	"github.com/mptooling/notifycat/internal/store"
 )

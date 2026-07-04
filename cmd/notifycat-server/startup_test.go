@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mptooling/notifycat/internal/config"
+	"github.com/mptooling/notifycat/internal/platform/config"
 )
 
 func TestStartupError_MissingSecret(t *testing.T) {

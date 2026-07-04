@@ -2,6 +2,20 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Architecture rules (authoritative — always follow)
+
+Notifycat is being refactored onto **Domain-Driven Design + hexagonal layering + uber/fx**. [`ARCHITECTURE.md`](ARCHITECTURE.md) is the source of truth; [`REFACTORING_PLAN.md`](REFACTORING_PLAN.md) tracks the migration. Follow these rules for everything new or refactored — they override the legacy shapes still present in unmigrated packages:
+
+- Every domain is a folder under `internal/<domain>/` split into three layers: `domain/`, `application/`, `infrastructure/`. Dependencies point inward only (`infrastructure → application → domain`); the domain layer imports nothing but the shared kernel.
+- The domain layer owns the contracts: `interfaces.go` (ports + use-case interfaces), `models.go` (DTOs), `enums.go`, `constants.go`.
+- The application layer holds use cases; **every use case has an interface** in `domain/interfaces.go` and depends only on domain interfaces.
+- The infrastructure layer holds adapters/clients/repositories; **every infrastructure service implements — and has — a domain-layer interface**. It is the only layer that touches SDKs, the DB, HTTP, or the network.
+- Depend on abstractions, never concrete implementations; bind concretes to ports only in the fx wiring.
+- No hardcoded values in services — anything enum-like or constant-like lives in `enums.go` / `constants.go`.
+- More than three arguments to an exported function or constructor → a single DTO from the domain layer.
+- Doc comments live on the interfaces; implementations stay terse.
+- Dependency injection is **uber/fx**: one `fx.Module` per domain, runtime lifecycle via `fx.Lifecycle`.
+
 ## Commands
 
 All day-to-day commands run through `just` (`brew install just`). The
@@ -26,13 +40,11 @@ Go toolchain is pinned at **1.25.10**. CI runs all of the
 `go test -race`, `go build`). `just` is dev-only — it is not in the
 runtime image or Go modules.
 
-## Architecture
+## Architecture (current — migrating)
 
-Notifycat is a single-process HTTP server with a SQLite sidecar. It
-receives GitHub PR webhooks, looks up which Slack channel owns the
-repo via a declarative YAML file, and either posts a new message or
-updates/reacts on an existing one. Everything is wired in one
-composition root — there is no DI framework.
+> This section describes the codebase **as it stands today**, which the DDD/fx refactor is replacing package by package. See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the target and [`REFACTORING_PLAN.md`](REFACTORING_PLAN.md) for what has moved; trust the code over this section for already-migrated domains.
+
+Notifycat is a single-process HTTP server with a SQLite sidecar. It receives GitHub PR webhooks, looks up which Slack channel owns the repo via a declarative YAML file, and either posts a new message or updates/reacts on an existing one. Today everything is wired in one composition root (`internal/app`); the refactor replaces that with per-domain fx modules.
 
 ### Composition root: `internal/app/app.go`
 
@@ -107,11 +119,7 @@ agree by construction.
 
 ## Code conventions
 
-- **Consumer-package interfaces.** Interfaces are declared where
-  they're *used*, not where they're implemented. `pullrequest`
-  consumes a small `SlackMessages` interface; `store.SlackMessages` is
-  the concrete satisfier. Don't move interfaces into the producing
-  package.
+- **Domain-layer ports (replaces: consumer-package interfaces).** Under the DDD refactor, interfaces live in the domain layer that *owns* the contract — not in the consumer package. Each use case and each infrastructure service has an interface in its domain's `interfaces.go`. Unmigrated packages still use the old consumer-side style (`pullrequest` consuming a `SlackMessages` interface satisfied by `store`); don't add new interfaces that way, and move them into the domain layer when you migrate the package.
 - **One constructor per type, all deps injected.** Never split a type
   into a "production wiring" façade plus a "test seam" constructor.
   If a test needs different deps, pass them through the same

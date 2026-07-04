@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/mptooling/notifycat/internal/digest/domain"
-	"github.com/mptooling/notifycat/internal/slack"
+	"github.com/mptooling/notifycat/internal/platform/slack"
 )
 
 // SlackPoster adapts the platform Slack client to the digest's DigestPoster

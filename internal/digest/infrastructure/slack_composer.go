@@ -2,7 +2,7 @@ package infrastructure
 
 import (
 	"github.com/mptooling/notifycat/internal/digest/domain"
-	"github.com/mptooling/notifycat/internal/slack"
+	"github.com/mptooling/notifycat/internal/platform/slack"
 )
 
 // SlackComposer adapts the platform Slack composer to the digest's

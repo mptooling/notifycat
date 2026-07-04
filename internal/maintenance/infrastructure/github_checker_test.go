@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mptooling/notifycat/internal/github"
 	"github.com/mptooling/notifycat/internal/maintenance/domain"
 	"github.com/mptooling/notifycat/internal/maintenance/infrastructure"
+	"github.com/mptooling/notifycat/internal/platform/github"
 )
 
 type fakePRGetter struct {

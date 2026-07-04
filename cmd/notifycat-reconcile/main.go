@@ -27,11 +27,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mptooling/notifycat/internal/config"
-	"github.com/mptooling/notifycat/internal/github"
 	maintenanceapp "github.com/mptooling/notifycat/internal/maintenance/application"
 	maintenancedomain "github.com/mptooling/notifycat/internal/maintenance/domain"
 	maintenanceinfra "github.com/mptooling/notifycat/internal/maintenance/infrastructure"
+	"github.com/mptooling/notifycat/internal/platform/config"
+	"github.com/mptooling/notifycat/internal/platform/github"
 	"github.com/mptooling/notifycat/internal/store"
 )
 
