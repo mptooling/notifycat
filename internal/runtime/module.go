@@ -297,14 +297,17 @@ func startupGate(provider *routingapp.Provider, cfg config.Config, slackClient *
 
 // registerServer wires the HTTP server into the lifecycle: OnStart launches
 // ListenAndServe in a goroutine (ignoring http.ErrServerClosed), OnStop calls
-// Shutdown.
-func registerServer(lc fx.Lifecycle, server *http.Server, logger *slog.Logger) {
+// Shutdown. A fatal ListenAndServe error (e.g. the address is already in use)
+// triggers a shutdown with exit code 1 via the Shutdowner, preserving the legacy
+// entrypoint's fatal-server-error → non-zero-exit behaviour.
+func registerServer(lc fx.Lifecycle, server *http.Server, logger *slog.Logger, shutdowner fx.Shutdowner) {
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
 			go func() {
 				logger.Info("listening", slog.String("addr", server.Addr))
 				if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 					logger.Error("http server stopped", slog.Any("err", err))
+					_ = shutdowner.Shutdown(fx.ExitCode(1))
 				}
 			}()
 			return nil

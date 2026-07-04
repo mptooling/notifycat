@@ -1,71 +1,59 @@
 // Command notifycat-server starts the HTTP server that receives GitHub
-// webhooks and posts to Slack.
+// webhooks and posts to Slack. The dependency graph, the startup-validation
+// gate, and the server/scheduler lifecycle live in internal/runtime as an fx
+// module; this entrypoint loads config, runs the fx app, and translates a
+// fatal startup or shutdown error into a non-zero exit.
 package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"log/slog"
-	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
-	"github.com/mptooling/notifycat/internal/app"
+	"go.uber.org/fx"
+
 	"github.com/mptooling/notifycat/internal/platform/config"
+	"github.com/mptooling/notifycat/internal/runtime"
 )
 
 const shutdownTimeout = 15 * time.Second
 
 func main() {
-	if err := run(); err != nil {
+	cfg, err := config.Load()
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "notifycat-server:", startupError(err))
 		os.Exit(1)
 	}
-}
 
-func run() error {
-	cfg, err := config.Load()
-	if err != nil {
-		return err
+	// fx.New builds the graph, opens+migrates the database, and runs the
+	// startup-validation gate synchronously (no timeout, matching the legacy
+	// entrypoint). A failing gate, a bad cron spec, or a database error leaves
+	// the app in an error state that Start surfaces.
+	app := fx.New(
+		fx.Supply(cfg),
+		runtime.Module,
+		fx.NopLogger,
+	)
+
+	// Start runs only the OnStart lifecycle hooks (launching the server and
+	// scheduler goroutines); the heavy startup work already ran during New.
+	startCtx, startCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer startCancel()
+	if err := app.Start(startCtx); err != nil {
+		fmt.Fprintln(os.Stderr, "notifycat-server:", startupError(err))
+		os.Exit(1)
 	}
 
-	server, scheduler, digestScheduler, cleanup, err := app.Wire(cfg)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
+	// Block until a SIGINT/SIGTERM (exit code 0) or a Shutdowner-triggered exit
+	// (e.g. a fatal ListenAndServe error → exit code 1).
+	sig := <-app.Wait()
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
-	errCh := make(chan error, 1)
-	go func() {
-		slog.Info("listening", slog.String("addr", server.Addr))
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errCh <- err
-			return
-		}
-		errCh <- nil
-	}()
-	go func() { _ = scheduler.Run(ctx) }()
-	if digestScheduler != nil {
-		go func() { _ = digestScheduler.Run(ctx) }()
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer stopCancel()
+	if err := app.Stop(stopCtx); err != nil {
+		fmt.Fprintln(os.Stderr, "notifycat-server:", fmt.Sprintf("shutdown: %v", err))
+		os.Exit(1)
 	}
-
-	select {
-	case <-ctx.Done():
-		slog.Info("shutdown signal received")
-	case err := <-errCh:
-		return err
-	}
-
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-	defer cancel()
-	if err := server.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("shutdown: %w", err)
-	}
-	return nil
+	os.Exit(sig.ExitCode)
 }
