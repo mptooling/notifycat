@@ -9,7 +9,9 @@ import (
 
 	"github.com/mptooling/notifycat/internal/config"
 	"github.com/mptooling/notifycat/internal/doctor"
-	"github.com/mptooling/notifycat/internal/mappings"
+	routingapp "github.com/mptooling/notifycat/internal/routing/application"
+	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
+	routinginfra "github.com/mptooling/notifycat/internal/routing/infrastructure"
 	"github.com/mptooling/notifycat/internal/validate"
 )
 
@@ -243,10 +245,10 @@ func TestCheckDatabase_EmptyDSNFails(t *testing.T) {
 }
 
 func TestCheckMappings_WithEntriesIsOK(t *testing.T) {
-	m := map[string]mappings.Org{
+	m := map[string]routingdomain.Org{
 		"octo": {"widget": {Channel: "C0123ABCDE"}},
 	}
-	sec := doctor.CheckMappings(mappings.NewProvider(mappings.Defaults{}, m, nil), false)
+	sec := doctor.CheckMappings(routingapp.NewProvider(routingdomain.Defaults{}, m, nil), false)
 	if sec.Name != "mappings" {
 		t.Errorf("section name = %q; want %q", sec.Name, "mappings")
 	}
@@ -259,20 +261,20 @@ func TestCheckMappings_WithEntriesIsOK(t *testing.T) {
 }
 
 func TestCheckMappings_EmptyMappingsIsOK(t *testing.T) {
-	sec := doctor.CheckMappings(mappings.NewProvider(mappings.Defaults{}, nil, nil), false)
+	sec := doctor.CheckMappings(routingapp.NewProvider(routingdomain.Defaults{}, nil, nil), false)
 	if !sec.OK() {
 		t.Fatalf("CheckMappings FAILed on empty mappings (which the server treats as a no-op): %+v", sec.Checks)
 	}
 }
 
-func pathRoutingProvider(t *testing.T) *mappings.Provider {
+func pathRoutingProvider(t *testing.T) *routingapp.Provider {
 	t.Helper()
 	doc := "mappings:\n  acme:\n    mono:\n      channel: C0BASE00000\n      paths:\n        \"/src\": {mentions: []}\n"
-	f, err := mappings.Parse(strings.NewReader(doc))
+	f, err := routinginfra.Parse(strings.NewReader(doc))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	return mappings.NewProvider(mappings.Defaults{}, f.Mappings, nil)
+	return routingapp.NewProvider(routingdomain.Defaults{}, f.Mappings, nil)
 }
 
 func pathRoutingCheck(t *testing.T, sec doctor.Section) validate.CheckResult {

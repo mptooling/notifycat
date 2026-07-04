@@ -17,7 +17,8 @@ import (
 	"github.com/mptooling/notifycat/internal/config"
 	"github.com/mptooling/notifycat/internal/doctor"
 	"github.com/mptooling/notifycat/internal/github"
-	"github.com/mptooling/notifycat/internal/mappings"
+	routingapp "github.com/mptooling/notifycat/internal/routing/application"
+	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 	"github.com/mptooling/notifycat/internal/slack"
 	"github.com/mptooling/notifycat/internal/validate"
 )
@@ -51,7 +52,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 // buildValidator constructs a RepoValidator from in-memory config.
 func buildValidator(cfg config.Config) doctor.RepoValidator {
-	provider := mappings.NewProvider(mappings.Defaults{}, cfg.Mappings, cfg.Digest)
+	provider := routingapp.NewProvider(routingdomain.Defaults{}, cfg.Mappings, cfg.Digest)
 	hc := &http.Client{Timeout: 10 * time.Second}
 	slackClient := slack.NewClient(hc, cfg.SlackBotToken.Reveal(), slack.WithBaseURL(cfg.SlackBaseURL))
 	var ghChecker validate.GitHubChecker

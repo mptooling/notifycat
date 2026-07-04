@@ -6,7 +6,9 @@ import (
 	"io"
 	"time"
 
-	"github.com/mptooling/notifycat/internal/mappings"
+	routingapp "github.com/mptooling/notifycat/internal/routing/application"
+	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
+	routinginfra "github.com/mptooling/notifycat/internal/routing/infrastructure"
 	"github.com/mptooling/notifycat/internal/validate"
 )
 
@@ -18,7 +20,7 @@ type MappingsValidator interface {
 
 // mappingsValidator is the production implementation.
 type mappingsValidator struct {
-	provider *mappings.Provider
+	provider *routingapp.Provider
 	checker  validate.RepoValidator
 	lister   validate.OrgRepoLister
 	lockPath string
@@ -30,7 +32,7 @@ type mappingsValidator struct {
 // clock themselves and pass them in — there is no production-wiring façade
 // in this package. `lister` may be nil when no GitHub credentials exist.
 func NewMappingsValidator(
-	provider *mappings.Provider,
+	provider *routingapp.Provider,
 	checker validate.RepoValidator,
 	lister validate.OrgRepoLister,
 	lockPath string,
@@ -63,25 +65,25 @@ func (v *mappingsValidator) lockExplicitEntry(target string, stderr io.Writer) i
 	if !ok {
 		return 0
 	}
-	lock, _ := mappings.ReadLock(v.lockPath)
-	merged := mappings.MergeLock(lock,
-		map[string]mappings.LockEntry{
+	lock, _ := routinginfra.ReadLock(v.lockPath)
+	merged := routinginfra.MergeLock(lock,
+		map[string]routinginfra.LockEntry{
 			entry.Key(): {SHA256: entry.Hash(), ValidatedAt: v.clock()},
 		}, nil)
-	if err := mappings.WriteLock(v.lockPath, merged); err != nil {
+	if err := routinginfra.WriteLock(v.lockPath, merged); err != nil {
 		fmt.Fprintln(stderr, "validate: write lock:", err)
 		return 1
 	}
 	return 0
 }
 
-func (v *mappingsValidator) findExplicitEntry(target string) (mappings.Entry, bool) {
+func (v *mappingsValidator) findExplicitEntry(target string) (routingdomain.Entry, bool) {
 	for _, e := range v.provider.Entries() {
 		if !e.Wildcard && e.Key() == target {
 			return e, true
 		}
 	}
-	return mappings.Entry{}, false
+	return routingdomain.Entry{}, false
 }
 
 func (v *mappingsValidator) runFull(ctx context.Context, force bool, stdout, stderr io.Writer) int {
@@ -106,34 +108,34 @@ func (v *mappingsValidator) runFull(ctx context.Context, force bool, stdout, std
 	return code
 }
 
-func (v *mappingsValidator) planFull(entries []mappings.Entry, force bool, stderr io.Writer) (mappings.Lock, []mappings.Entry, []string) {
+func (v *mappingsValidator) planFull(entries []routingdomain.Entry, force bool, stderr io.Writer) (routinginfra.Lock, []routingdomain.Entry, []string) {
 	if force {
-		empty := mappings.Lock{Version: mappings.LockVersion, Entries: map[string]mappings.LockEntry{}}
+		empty := routinginfra.Lock{Version: routinginfra.LockVersion, Entries: map[string]routinginfra.LockEntry{}}
 		return empty, entries, nil
 	}
-	lock, err := mappings.ReadLock(v.lockPath)
+	lock, err := routinginfra.ReadLock(v.lockPath)
 	if err != nil {
 		fmt.Fprintln(stderr, "validate: warning:", err, "(rebuilding lock)")
-		lock = mappings.Lock{Version: mappings.LockVersion, Entries: map[string]mappings.LockEntry{}}
+		lock = routinginfra.Lock{Version: routinginfra.LockVersion, Entries: map[string]routinginfra.LockEntry{}}
 	}
-	diff := mappings.DiffEntries(entries, lock)
+	diff := routinginfra.DiffEntries(entries, lock)
 	return lock, diff.Needs, diff.Stale
 }
 
-func (v *mappingsValidator) writeMerged(lock mappings.Lock, ok map[string]mappings.LockEntry, stale []string, stderr io.Writer) int {
-	merged := mappings.MergeLock(lock, ok, stale)
-	if err := mappings.WriteLock(v.lockPath, merged); err != nil {
+func (v *mappingsValidator) writeMerged(lock routinginfra.Lock, ok map[string]routinginfra.LockEntry, stale []string, stderr io.Writer) int {
+	merged := routinginfra.MergeLock(lock, ok, stale)
+	if err := routinginfra.WriteLock(v.lockPath, merged); err != nil {
 		fmt.Fprintln(stderr, "validate: write lock:", err)
 		return 1
 	}
 	return 0
 }
 
-func successMap(results []validate.EntryResult, clock func() time.Time) map[string]mappings.LockEntry {
-	out := map[string]mappings.LockEntry{}
+func successMap(results []validate.EntryResult, clock func() time.Time) map[string]routinginfra.LockEntry {
+	out := map[string]routinginfra.LockEntry{}
 	for _, r := range results {
 		if r.OK() {
-			out[r.Entry.Key()] = mappings.LockEntry{SHA256: r.Entry.Hash(), ValidatedAt: clock()}
+			out[r.Entry.Key()] = routinginfra.LockEntry{SHA256: r.Entry.Hash(), ValidatedAt: clock()}
 		}
 	}
 	return out

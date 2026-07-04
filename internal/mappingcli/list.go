@@ -6,13 +6,13 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/mptooling/notifycat/internal/mappings"
+	routingapp "github.com/mptooling/notifycat/internal/routing/application"
 )
 
 // List prints provider entries in a tab-aligned table, in the deterministic
 // order Entries() returns (org A→Z, then repo A→Z; wildcards render as "*").
 // No network calls.
-func List(provider *mappings.Provider, stdout io.Writer) int {
+func List(provider *routingapp.Provider, stdout io.Writer) int {
 	tw := tabwriter.NewWriter(stdout, 0, 2, 2, ' ', 0)
 	fmt.Fprintln(tw, "ORG\tREPO\tCHANNEL\tMENTIONS")
 	for _, e := range provider.Entries() {

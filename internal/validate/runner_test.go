@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/mptooling/notifycat/internal/mappings"
+	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 )
 
 type stubLister struct {
@@ -31,7 +31,7 @@ func (s *stubValidator) Validate(_ context.Context, repository string) Report {
 }
 
 func TestRunForEntries_ExplicitOnly(t *testing.T) {
-	entries := []mappings.Entry{
+	entries := []routingdomain.Entry{
 		{Org: "acme", Repo: "api", Channel: "C1", Mentions: []string{}},
 		{Org: "acme", Repo: "web", Channel: "C1", Mentions: []string{}},
 	}
@@ -49,7 +49,7 @@ func TestRunForEntries_ExplicitOnly(t *testing.T) {
 }
 
 func TestRunForEntries_WildcardExpansion(t *testing.T) {
-	entries := []mappings.Entry{{Org: "beta", Wildcard: true, Channel: "C2", Mentions: []string{}}}
+	entries := []routingdomain.Entry{{Org: "beta", Wildcard: true, Channel: "C2", Mentions: []string{}}}
 	lister := &stubLister{repos: []string{"r1", "r2", "r3"}}
 	sv := &stubValidator{}
 	results := RunForEntries(context.Background(), entries, lister, sv)
@@ -68,7 +68,7 @@ func TestRunForEntries_WildcardExpansion(t *testing.T) {
 }
 
 func TestRunForEntries_WildcardWithoutLister_SkipsButReports(t *testing.T) {
-	entries := []mappings.Entry{{Org: "beta", Wildcard: true, Channel: "C2", Mentions: []string{}}}
+	entries := []routingdomain.Entry{{Org: "beta", Wildcard: true, Channel: "C2", Mentions: []string{}}}
 	results := RunForEntries(context.Background(), entries, nil, &stubValidator{})
 	if len(results) != 1 || len(results[0].Reports) != 1 {
 		t.Fatalf("results=%d reports=%d; want 1/1", len(results), len(results[0].Reports))
@@ -83,7 +83,7 @@ func TestRunForEntries_WildcardWithoutLister_SkipsButReports(t *testing.T) {
 }
 
 func TestRunForEntries_ListerError_BecomesFailingEntryAndContinues(t *testing.T) {
-	entries := []mappings.Entry{
+	entries := []routingdomain.Entry{
 		{Org: "beta", Wildcard: true, Channel: "C2", Mentions: []string{}},
 		{Org: "acme", Repo: "api", Channel: "C1", Mentions: []string{}},
 	}
@@ -102,7 +102,7 @@ func TestRunForEntries_ListerError_BecomesFailingEntryAndContinues(t *testing.T)
 }
 
 func TestRunForEntries_PerRepoFailureDoesNotAbort(t *testing.T) {
-	entries := []mappings.Entry{
+	entries := []routingdomain.Entry{
 		{Org: "acme", Repo: "api", Channel: "C1", Mentions: []string{}},
 		{Org: "acme", Repo: "web", Channel: "C1", Mentions: []string{}},
 	}

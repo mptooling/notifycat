@@ -3,7 +3,7 @@ package doctor
 import (
 	"fmt"
 
-	"github.com/mptooling/notifycat/internal/mappings"
+	routingapp "github.com/mptooling/notifycat/internal/routing/application"
 )
 
 // CheckMappings reports whether the `mappings:` section of config.yaml parsed
@@ -14,7 +14,7 @@ import (
 // When any tier configures per-path routing, it adds a "path routing" check:
 // OK when a GitHub token is present (paths are active), SKIP when it is absent
 // (path rules are inert — PRs route to the repo tier — until a token is set).
-func CheckMappings(provider *mappings.Provider, hasGitHubToken bool) Section {
+func CheckMappings(provider *routingapp.Provider, hasGitHubToken bool) Section {
 	sec := Section{Name: "mappings"}
 	entries := provider.Entries()
 	if len(entries) == 0 {

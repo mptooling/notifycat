@@ -17,7 +17,9 @@ import (
 
 	"github.com/mptooling/notifycat/internal/app"
 	"github.com/mptooling/notifycat/internal/config"
-	"github.com/mptooling/notifycat/internal/mappings"
+	routingapp "github.com/mptooling/notifycat/internal/routing/application"
+	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
+	routinginfra "github.com/mptooling/notifycat/internal/routing/infrastructure"
 	"github.com/mptooling/notifycat/internal/store"
 )
 
@@ -142,7 +144,7 @@ func newIntegrationFixtureCfg(t *testing.T, mutate func(*config.Config), seeds .
 			RequestChange: "exclamation",
 		},
 	}
-	primeLock(t, configPath, mappings.NewProvider(mappings.Defaults{}, cfg.Mappings, cfg.Digest))
+	primeLock(t, configPath, routingapp.NewProvider(routingdomain.Defaults{}, cfg.Mappings, cfg.Digest))
 
 	if mutate != nil {
 		mutate(&cfg)
@@ -164,9 +166,9 @@ func newIntegrationFixtureCfg(t *testing.T, mutate func(*config.Config), seeds .
 // suitable for cfg.Mappings. Seeds sharing an org are merged; if two seeds in
 // the same org have different channels the second wins (write your tests
 // accordingly).
-func seedsToMappings(t *testing.T, seeds []mappingSeed) map[string]mappings.Org {
+func seedsToMappings(t *testing.T, seeds []mappingSeed) map[string]routingdomain.Org {
 	t.Helper()
-	m := map[string]mappings.Org{}
+	m := map[string]routingdomain.Org{}
 	for _, s := range seeds {
 		org, repo, ok := splitRepository(s.repository)
 		if !ok {
@@ -174,9 +176,9 @@ func seedsToMappings(t *testing.T, seeds []mappingSeed) map[string]mappings.Org 
 		}
 		orgTiers := m[org]
 		if orgTiers == nil {
-			orgTiers = make(mappings.Org)
+			orgTiers = make(routingdomain.Org)
 		}
-		repoConfig := mappings.RepoConfig{Channel: s.channel}
+		repoConfig := routingdomain.RepoConfig{Channel: s.channel}
 		if s.mentions != nil {
 			repoConfig.Mentions = s.mentions
 			repoConfig.MentionsPresent = true
@@ -198,14 +200,14 @@ func splitRepository(s string) (org, repo string, ok bool) {
 // primeLock writes a lock file whose hashes match the provider's entries, so
 // startup validation finds nothing to revalidate. The integration suite is
 // testing post-startup behavior, not validation.
-func primeLock(t *testing.T, configPath string, p *mappings.Provider) {
+func primeLock(t *testing.T, configPath string, p *routingapp.Provider) {
 	t.Helper()
 	now := time.Now()
-	lock := mappings.Lock{Version: mappings.LockVersion, Entries: map[string]mappings.LockEntry{}}
+	lock := routinginfra.Lock{Version: routinginfra.LockVersion, Entries: map[string]routinginfra.LockEntry{}}
 	for _, e := range p.Entries() {
-		lock.Entries[e.Key()] = mappings.LockEntry{SHA256: e.Hash(), ValidatedAt: now}
+		lock.Entries[e.Key()] = routinginfra.LockEntry{SHA256: e.Hash(), ValidatedAt: now}
 	}
-	if err := mappings.WriteLock(mappings.LockPath(configPath), lock); err != nil {
+	if err := routinginfra.WriteLock(routinginfra.LockPath(configPath), lock); err != nil {
 		t.Fatalf("prime: write lock: %v", err)
 	}
 }

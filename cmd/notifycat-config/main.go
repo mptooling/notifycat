@@ -17,7 +17,9 @@ import (
 	"github.com/mptooling/notifycat/internal/config"
 	"github.com/mptooling/notifycat/internal/github"
 	"github.com/mptooling/notifycat/internal/mappingcli"
-	"github.com/mptooling/notifycat/internal/mappings"
+	routingapp "github.com/mptooling/notifycat/internal/routing/application"
+	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
+	routinginfra "github.com/mptooling/notifycat/internal/routing/infrastructure"
 	"github.com/mptooling/notifycat/internal/slack"
 	"github.com/mptooling/notifycat/internal/validate"
 )
@@ -28,7 +30,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "notifycat-config:", err)
 		os.Exit(1)
 	}
-	provider := mappings.NewProvider(mappings.Defaults{}, cfg.Mappings, cfg.Digest)
+	provider := routingapp.NewProvider(routingdomain.Defaults{}, cfg.Mappings, cfg.Digest)
 	if w := pathTokenWarning(provider, cfg.GitHubToken.Reveal() != ""); w != "" {
 		fmt.Fprintln(os.Stderr, w)
 	}
@@ -37,7 +39,7 @@ func main() {
 		provider,
 		checker,
 		lister,
-		mappings.LockPath(cfg.ConfigFile),
+		routinginfra.LockPath(cfg.ConfigFile),
 		time.Now,
 	)
 	os.Exit(dispatch(os.Args[1:], provider, validator, os.Stdout, os.Stderr))
@@ -46,7 +48,7 @@ func main() {
 // buildValidationDeps wires the production checker (Slack always, GitHub
 // when a token is configured) and the org-repo lister (the same GitHub
 // client, or nil when there is no token).
-func buildValidationDeps(cfg config.Config, provider *mappings.Provider) (validate.RepoValidator, validate.OrgRepoLister) {
+func buildValidationDeps(cfg config.Config, provider *routingapp.Provider) (validate.RepoValidator, validate.OrgRepoLister) {
 	hc := &http.Client{Timeout: 10 * time.Second}
 	slackClient := slack.NewClient(hc, cfg.SlackBotToken.Reveal(), slack.WithBaseURL(cfg.SlackBaseURL))
 	var gh *github.Client
@@ -66,7 +68,7 @@ func buildValidationDeps(cfg config.Config, provider *mappings.Provider) (valida
 // GitHub token is available — path rules are inert without one (a token is
 // needed to read a PR's changed files). It returns "" when there is nothing to
 // warn about. Kept separate from main so it can be unit-tested.
-func pathTokenWarning(provider *mappings.Provider, hasGitHubToken bool) string {
+func pathTokenWarning(provider *routingapp.Provider, hasGitHubToken bool) string {
 	if provider.HasPathRules() && !hasGitHubToken {
 		return "warning: path routing is configured but GITHUB_TOKEN is unset; " +
 			"path rules are inert and PRs route to the repo tier until a token is set"
@@ -74,7 +76,7 @@ func pathTokenWarning(provider *mappings.Provider, hasGitHubToken bool) string {
 	return ""
 }
 
-func dispatch(args []string, provider *mappings.Provider, validator mappingcli.MappingsValidator, stdout, stderr io.Writer) int {
+func dispatch(args []string, provider *routingapp.Provider, validator mappingcli.MappingsValidator, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, usage())
 		return 2

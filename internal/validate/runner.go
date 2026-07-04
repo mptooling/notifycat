@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/mptooling/notifycat/internal/mappings"
+	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 )
 
 // RepoValidator validates one repository at a time. *Validator satisfies
@@ -20,7 +20,7 @@ var _ RepoValidator = (*Validator)(nil)
 // so callers can update the lock per-entry: an entry is "validated" only
 // when every report it produced is OK.
 type EntryResult struct {
-	Entry   mappings.Entry
+	Entry   routingdomain.Entry
 	Reports []Report
 }
 
@@ -42,7 +42,7 @@ func (r EntryResult) OK() bool {
 // lister may be nil; wildcard entries then produce a single Skip report.
 func RunForEntries(
 	ctx context.Context,
-	entries []mappings.Entry,
+	entries []routingdomain.Entry,
 	lister OrgRepoLister,
 	v RepoValidator,
 ) []EntryResult {
@@ -53,7 +53,7 @@ func RunForEntries(
 	return out
 }
 
-func reportsFor(ctx context.Context, e mappings.Entry, lister OrgRepoLister, v RepoValidator) []Report {
+func reportsFor(ctx context.Context, e routingdomain.Entry, lister OrgRepoLister, v RepoValidator) []Report {
 	if !e.Wildcard {
 		return []Report{v.Validate(ctx, e.Org+"/"+e.Repo)}
 	}
@@ -62,7 +62,7 @@ func reportsFor(ctx context.Context, e mappings.Entry, lister OrgRepoLister, v R
 
 // expandWildcard turns one wildcard entry into per-repo reports, or a
 // single status report when expansion cannot proceed.
-func expandWildcard(ctx context.Context, e mappings.Entry, lister OrgRepoLister, v RepoValidator) []Report {
+func expandWildcard(ctx context.Context, e routingdomain.Entry, lister OrgRepoLister, v RepoValidator) []Report {
 	key := e.Key()
 	if lister == nil {
 		return []Report{singleCheckReport(key, StatusSkip,

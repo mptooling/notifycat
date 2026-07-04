@@ -9,7 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mptooling/notifycat/internal/mappings"
+	routingapp "github.com/mptooling/notifycat/internal/routing/application"
+	routinginfra "github.com/mptooling/notifycat/internal/routing/infrastructure"
 	"github.com/mptooling/notifycat/internal/validate"
 )
 
@@ -50,14 +51,14 @@ func writeMappingsFile(t *testing.T, body string) string {
 	return path
 }
 
-func loadProvider(t *testing.T, body string) (*mappings.Provider, string) {
+func loadProvider(t *testing.T, body string) (*routingapp.Provider, string) {
 	t.Helper()
 	path := writeMappingsFile(t, body)
-	p, err := mappings.Load(path)
+	p, err := routinginfra.Load(path)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	return p, mappings.LockPath(path)
+	return p, routinginfra.LockPath(path)
 }
 
 func fixedClock() func() time.Time {
@@ -94,7 +95,7 @@ func TestMappingsValidator_Targeted_AllPass_WritesLock(t *testing.T) {
 	if len(sc.calls) != 1 || sc.calls[0] != "acme/api" {
 		t.Errorf("checker calls = %v", sc.calls)
 	}
-	lock, err := mappings.ReadLock(lockPath)
+	lock, err := routinginfra.ReadLock(lockPath)
 	if err != nil {
 		t.Fatalf("read lock: %v", err)
 	}
@@ -160,7 +161,7 @@ func TestMappingsValidator_Full_NoLock_ValidatesAll_WritesLock(t *testing.T) {
 	if len(sc.calls) != 2 {
 		t.Errorf("expected 2 calls (api, web); got %v", sc.calls)
 	}
-	lock, err := mappings.ReadLock(lockPath)
+	lock, err := routinginfra.ReadLock(lockPath)
 	if err != nil {
 		t.Fatalf("read lock: %v", err)
 	}
@@ -178,11 +179,11 @@ func TestMappingsValidator_Full_UpToDateLock_SkipsValidation(t *testing.T) {
 	// Prime the lock with the current entry hashes.
 	clock := fixedClock()
 	entries := p.Entries()
-	prior := mappings.Lock{Version: mappings.LockVersion, Entries: map[string]mappings.LockEntry{}}
+	prior := routinginfra.Lock{Version: routinginfra.LockVersion, Entries: map[string]routinginfra.LockEntry{}}
 	for _, e := range entries {
-		prior.Entries[e.Key()] = mappings.LockEntry{SHA256: e.Hash(), ValidatedAt: clock()}
+		prior.Entries[e.Key()] = routinginfra.LockEntry{SHA256: e.Hash(), ValidatedAt: clock()}
 	}
-	if err := mappings.WriteLock(lockPath, prior); err != nil {
+	if err := routinginfra.WriteLock(lockPath, prior); err != nil {
 		t.Fatalf("seed lock: %v", err)
 	}
 
@@ -205,11 +206,11 @@ func TestMappingsValidator_Full_Force_IgnoresLock(t *testing.T) {
 	clock := fixedClock()
 	// Prime lock with up-to-date entries.
 	entries := p.Entries()
-	prior := mappings.Lock{Version: mappings.LockVersion, Entries: map[string]mappings.LockEntry{}}
+	prior := routinginfra.Lock{Version: routinginfra.LockVersion, Entries: map[string]routinginfra.LockEntry{}}
 	for _, e := range entries {
-		prior.Entries[e.Key()] = mappings.LockEntry{SHA256: e.Hash(), ValidatedAt: clock()}
+		prior.Entries[e.Key()] = routinginfra.LockEntry{SHA256: e.Hash(), ValidatedAt: clock()}
 	}
-	if err := mappings.WriteLock(lockPath, prior); err != nil {
+	if err := routinginfra.WriteLock(lockPath, prior); err != nil {
 		t.Fatalf("seed lock: %v", err)
 	}
 
@@ -239,7 +240,7 @@ func TestMappingsValidator_Full_PartialFailure_OnlySuccessesEnterLock(t *testing
 	if code := v.Validate(context.Background(), "", false, &out, &errOut); code != 1 {
 		t.Fatalf("exit = %d; want 1 (one entry failed)", code)
 	}
-	lock, err := mappings.ReadLock(lockPath)
+	lock, err := routinginfra.ReadLock(lockPath)
 	if err != nil {
 		t.Fatalf("read lock: %v", err)
 	}

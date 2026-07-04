@@ -1,12 +1,14 @@
-package mappings
+package infrastructure_test
 
 import (
 	"strings"
 	"testing"
+
+	infrastructure "github.com/mptooling/notifycat/internal/routing/infrastructure"
 )
 
 func TestParse_PerRepoTiers_OK(t *testing.T) {
-	f, err := Parse(strings.NewReader(`
+	f, err := infrastructure.Parse(strings.NewReader(`
 mappings:
   acme:
     api:
@@ -26,7 +28,7 @@ mappings:
 
 func TestParse_InheritsChannelFromStar(t *testing.T) {
 	// api sets no channel but org/* does — valid (api inherits at resolve).
-	if _, err := Parse(strings.NewReader(`
+	if _, err := infrastructure.Parse(strings.NewReader(`
 mappings:
   acme:
     api:
@@ -39,7 +41,7 @@ mappings:
 }
 
 func TestParse_RepoWithoutChannelAndNoStarRejected(t *testing.T) {
-	if _, err := Parse(strings.NewReader(`
+	if _, err := infrastructure.Parse(strings.NewReader(`
 mappings:
   acme:
     api:
@@ -50,19 +52,19 @@ mappings:
 }
 
 func TestParse_BadChannelRejected(t *testing.T) {
-	if _, err := Parse(strings.NewReader("mappings:\n  acme:\n    api:\n      channel: not-a-channel\n")); err == nil {
+	if _, err := infrastructure.Parse(strings.NewReader("mappings:\n  acme:\n    api:\n      channel: not-a-channel\n")); err == nil {
 		t.Fatal("expected error for malformed channel")
 	}
 }
 
 func TestParse_BadRepoKeyRejected(t *testing.T) {
-	if _, err := Parse(strings.NewReader("mappings:\n  acme:\n    \"a/b\":\n      channel: C0API\n")); err == nil {
+	if _, err := infrastructure.Parse(strings.NewReader("mappings:\n  acme:\n    \"a/b\":\n      channel: C0API\n")); err == nil {
 		t.Fatal("expected error for repo key containing /")
 	}
 }
 
 func TestParse_EmptyOrgRejected(t *testing.T) {
-	if _, err := Parse(strings.NewReader("mappings:\n  acme: {}\n")); err == nil {
+	if _, err := infrastructure.Parse(strings.NewReader("mappings:\n  acme: {}\n")); err == nil {
 		t.Fatal("expected error for org with no tiers")
 	}
 }

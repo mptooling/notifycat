@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/mptooling/notifycat/internal/mappings"
+	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 	"github.com/mptooling/notifycat/internal/slack"
 	"github.com/mptooling/notifycat/internal/store"
 )
@@ -29,7 +29,7 @@ type MappingLookup interface {
 
 // Resolver looks up the effective digest configuration for a repository.
 type Resolver interface {
-	DigestFor(repository string) mappings.DigestConfig
+	DigestFor(repository string) routingdomain.DigestConfig
 }
 
 // Poster posts a composed message to a Slack channel, either as a top-level

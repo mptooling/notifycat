@@ -14,7 +14,8 @@ import (
 	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
 
-	"github.com/mptooling/notifycat/internal/mappings"
+	routingapp "github.com/mptooling/notifycat/internal/routing/application"
+	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 )
 
 // Config is the parsed runtime configuration. Field names are flat so consumers
@@ -40,8 +41,8 @@ type Config struct {
 
 	Reactions Reactions
 
-	Digest   *mappings.DigestConfig
-	Mappings map[string]mappings.Org
+	Digest   *routingdomain.DigestConfig
+	Mappings map[string]routingdomain.Org
 
 	// DigestTimezone is the resolved timezone the digest scheduler and reporter
 	// run in. Derived from Digest.Timezone at Load (default UTC); never nil.
@@ -115,8 +116,8 @@ type fileSchema struct {
 		IgnoreAIReviews  *bool `yaml:"ignore_ai_reviews"`
 		DependabotFormat *bool `yaml:"dependabot_format"`
 	} `yaml:"reviews"`
-	Digest   *mappings.DigestConfig  `yaml:"digest"`
-	Mappings map[string]mappings.Org `yaml:"mappings"`
+	Digest   *routingdomain.DigestConfig  `yaml:"digest"`
+	Mappings map[string]routingdomain.Org `yaml:"mappings"`
 }
 
 // defaults returns a Config pre-filled with every default value. Decode then
@@ -196,7 +197,7 @@ func Load() (Config, error) {
 	}
 	cfg.DigestTimezone = tz
 
-	if err := mappings.ValidateMappings(cfg.Mappings); err != nil {
+	if err := routingapp.ValidateMappings(cfg.Mappings); err != nil {
 		return Config{}, fmt.Errorf("config: %w", err)
 	}
 	if err := readSecrets(&cfg); err != nil {
@@ -250,7 +251,7 @@ func applyFileSchema(cfg *Config, fs fileSchema) {
 // An absent/empty zone defaults to UTC; an unrecognized zone is a startup error,
 // matching the fail-fast contract for an invalid cron spec. Named zones rely on
 // the embedded tzdata (see tzdata.go) to resolve on the scratch image.
-func resolveDigestTimezone(d *mappings.DigestConfig) (*time.Location, error) {
+func resolveDigestTimezone(d *routingdomain.DigestConfig) (*time.Location, error) {
 	name := "UTC"
 	if d != nil {
 		if z := strings.TrimSpace(d.Timezone); z != "" {

@@ -22,10 +22,10 @@ import (
 	maintenanceapp "github.com/mptooling/notifycat/internal/maintenance/application"
 	maintenancedomain "github.com/mptooling/notifycat/internal/maintenance/domain"
 	maintenanceinfra "github.com/mptooling/notifycat/internal/maintenance/infrastructure"
-	"github.com/mptooling/notifycat/internal/mappings"
 	"github.com/mptooling/notifycat/internal/pullrequest"
 	routingapp "github.com/mptooling/notifycat/internal/routing/application"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
+	routinginfra "github.com/mptooling/notifycat/internal/routing/infrastructure"
 	"github.com/mptooling/notifycat/internal/slack"
 	"github.com/mptooling/notifycat/internal/slackhook"
 	"github.com/mptooling/notifycat/internal/startreview"
@@ -84,8 +84,8 @@ func Wire(cfg config.Config) (*http.Server, *maintenanceapp.Cleaner, *digest.Sch
 // buildProvider constructs the mappings provider from config and warns when
 // path routing is configured but no GitHub token is available to read a PR's
 // changed files — path rules are then inert and PRs route to the repo tier.
-func buildProvider(cfg config.Config, logger *slog.Logger) *mappings.Provider {
-	defaults := mappings.Defaults{
+func buildProvider(cfg config.Config, logger *slog.Logger) *routingapp.Provider {
+	defaults := routingdomain.Defaults{
 		Reactions: store.Reactions{
 			Enabled:       cfg.Reactions.Enabled,
 			NewPR:         cfg.Reactions.NewPR,
@@ -99,7 +99,7 @@ func buildProvider(cfg config.Config, logger *slog.Logger) *mappings.Provider {
 		IgnoreAIReviews:  cfg.IgnoreAIReviews,
 		DependabotFormat: cfg.DependabotFormat,
 	}
-	provider := mappings.NewProvider(defaults, cfg.Mappings, cfg.Digest)
+	provider := routingapp.NewProvider(defaults, cfg.Mappings, cfg.Digest)
 	if provider.HasPathRules() && cfg.GitHubToken.Reveal() == "" {
 		logger.Warn("path routing is configured but GITHUB_TOKEN is unset; " +
 			"path rules are inert and PRs route to the repo tier (a token is needed to read a PR's changed files)")
@@ -147,7 +147,7 @@ func buildCleanupScheduler(cfg config.Config, pullRequests *store.PullRequests, 
 // every distinct cron spec across the enabled mappings. It returns a nil
 // scheduler (and nil error) when no mapping enables a digest; a bad cron spec
 // fails startup here rather than silently never firing.
-func buildDigestScheduler(cfg config.Config, provider *mappings.Provider, pullRequests *store.PullRequests, slackClient *slack.Client, composer *slack.Composer, logger *slog.Logger) (*digest.Scheduler, error) {
+func buildDigestScheduler(cfg config.Config, provider *routingapp.Provider, pullRequests *store.PullRequests, slackClient *slack.Client, composer *slack.Composer, logger *slog.Logger) (*digest.Scheduler, error) {
 	specs := provider.Schedules()
 	if len(specs) == 0 {
 		return nil, nil
@@ -164,7 +164,7 @@ func buildDigestScheduler(cfg config.Config, provider *mappings.Provider, pullRe
 // token to read a PR's changed files; without one the router has no fetcher and
 // resolves to the repo/org tier. The validation client is scoped to startup, so
 // this builds a dedicated long-lived files fetcher.
-func buildRouter(httpClient *http.Client, cfg config.Config, provider *mappings.Provider, logger *slog.Logger) *routingapp.Router {
+func buildRouter(httpClient *http.Client, cfg config.Config, provider *routingapp.Provider, logger *slog.Logger) *routingapp.Router {
 	var filesFetcher routingdomain.ChangedFilesReader
 	if cfg.GitHubToken.Reveal() != "" {
 		filesFetcher = github.NewClient(httpClient, cfg.GitHubToken.Reveal(), github.WithBaseURL(cfg.GitHubBaseURL))
@@ -173,7 +173,7 @@ func buildRouter(httpClient *http.Client, cfg config.Config, provider *mappings.
 }
 
 // buildDispatcher wires the PR-event handlers behind the dispatcher.
-func buildDispatcher(pullRequests *store.PullRequests, codeReviews *store.CodeReviews, provider *mappings.Provider, router *routingapp.Router, slackClient *slack.Client, composer *slack.Composer, logger *slog.Logger) *pullrequest.Dispatcher {
+func buildDispatcher(pullRequests *store.PullRequests, codeReviews *store.CodeReviews, provider *routingapp.Provider, router *routingapp.Router, slackClient *slack.Client, composer *slack.Composer, logger *slog.Logger) *pullrequest.Dispatcher {
 	aiDetector := aireview.NewDetector()
 	return pullrequest.NewDispatcher(
 		logger,
@@ -234,7 +234,7 @@ func buildServer(cfg config.Config, mux *http.ServeMux) *http.Server {
 // from the lock, writes the lock on success (failures keep their old
 // hashes), and refuses to start if any entry fails.
 func startupValidate(
-	provider *mappings.Provider,
+	provider *routingapp.Provider,
 	cfg config.Config,
 	slackClient *slack.Client,
 	httpClient *http.Client,
@@ -244,13 +244,13 @@ func startupValidate(
 	if len(entries) == 0 {
 		return nil
 	}
-	lockPath := mappings.LockPath(cfg.ConfigFile)
-	lock, err := mappings.ReadLock(lockPath)
+	lockPath := routinginfra.LockPath(cfg.ConfigFile)
+	lock, err := routinginfra.ReadLock(lockPath)
 	if err != nil {
 		logger.Warn("startup validate: lock unreadable; rebuilding", slog.Any("err", err))
-		lock = mappings.Lock{Version: mappings.LockVersion, Entries: map[string]mappings.LockEntry{}}
+		lock = routinginfra.Lock{Version: routinginfra.LockVersion, Entries: map[string]routinginfra.LockEntry{}}
 	}
-	diff := mappings.DiffEntries(entries, lock)
+	diff := routinginfra.DiffEntries(entries, lock)
 	if len(diff.Needs) == 0 {
 		return persistLock(lockPath, lock, nil, diff.Stale, logger)
 	}
@@ -266,7 +266,7 @@ func startupValidate(
 	return fmt.Errorf("app: startup validation failed for %d entries: %s", len(failed), strings.Join(failed, ", "))
 }
 
-func newValidationDeps(provider *mappings.Provider, cfg config.Config, slackClient *slack.Client, httpClient *http.Client) (validate.RepoValidator, validate.OrgRepoLister) {
+func newValidationDeps(provider *routingapp.Provider, cfg config.Config, slackClient *slack.Client, httpClient *http.Client) (validate.RepoValidator, validate.OrgRepoLister) {
 	var ghChecker validate.GitHubChecker
 	var lister validate.OrgRepoLister
 	if cfg.GitHubToken.Reveal() != "" {
@@ -277,12 +277,12 @@ func newValidationDeps(provider *mappings.Provider, cfg config.Config, slackClie
 	return validate.NewValidator(provider, slackClient, ghChecker), lister
 }
 
-func splitResults(results []validate.EntryResult, clock func() time.Time) (map[string]mappings.LockEntry, []string) {
-	successes := map[string]mappings.LockEntry{}
+func splitResults(results []validate.EntryResult, clock func() time.Time) (map[string]routinginfra.LockEntry, []string) {
+	successes := map[string]routinginfra.LockEntry{}
 	var failed []string
 	for _, r := range results {
 		if r.OK() {
-			successes[r.Entry.Key()] = mappings.LockEntry{SHA256: r.Entry.Hash(), ValidatedAt: clock()}
+			successes[r.Entry.Key()] = routinginfra.LockEntry{SHA256: r.Entry.Hash(), ValidatedAt: clock()}
 			continue
 		}
 		failed = append(failed, r.Entry.Key())
@@ -290,9 +290,9 @@ func splitResults(results []validate.EntryResult, clock func() time.Time) (map[s
 	return successes, failed
 }
 
-func persistLock(lockPath string, lock mappings.Lock, ok map[string]mappings.LockEntry, stale []string, logger *slog.Logger) error {
-	merged := mappings.MergeLock(lock, ok, stale)
-	if err := mappings.WriteLock(lockPath, merged); err != nil {
+func persistLock(lockPath string, lock routinginfra.Lock, ok map[string]routinginfra.LockEntry, stale []string, logger *slog.Logger) error {
+	merged := routinginfra.MergeLock(lock, ok, stale)
+	if err := routinginfra.WriteLock(lockPath, merged); err != nil {
 		logger.Warn("startup validate: write lock failed", slog.Any("err", err))
 		return nil
 	}

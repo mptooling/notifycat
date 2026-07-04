@@ -20,7 +20,8 @@ import (
 	"time"
 
 	"github.com/mptooling/notifycat/internal/config"
-	"github.com/mptooling/notifycat/internal/mappings"
+	routingapp "github.com/mptooling/notifycat/internal/routing/application"
+	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 	"github.com/mptooling/notifycat/internal/slack"
 	"github.com/mptooling/notifycat/internal/smoke"
 	"github.com/mptooling/notifycat/internal/store"
@@ -47,7 +48,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	provider := mappings.NewProvider(mappings.Defaults{}, cfg.Mappings, cfg.Digest)
+	provider := routingapp.NewProvider(routingdomain.Defaults{}, cfg.Mappings, cfg.Digest)
 	db, err := store.Open(cfg.DatabaseURL)
 	if err != nil {
 		fmt.Fprintln(stderr, "notifycat-smoke: cannot open database:", err)

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mptooling/notifycat/internal/mappings"
+	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 	"github.com/mptooling/notifycat/internal/slack"
 	"github.com/mptooling/notifycat/internal/store"
 )
@@ -59,15 +59,15 @@ func (f fakeMappings) Get(_ context.Context, repo string) (store.RepoMapping, er
 }
 
 type fakeDigestResolver struct {
-	digests map[string]mappings.DigestConfig
+	digests map[string]routingdomain.DigestConfig
 }
 
-func (f fakeDigestResolver) DigestFor(repo string) mappings.DigestConfig {
+func (f fakeDigestResolver) DigestFor(repo string) routingdomain.DigestConfig {
 	if d, ok := f.digests[repo]; ok {
 		return d
 	}
 	// Default: enabled with 9am schedule
-	return mappings.DigestConfig{Enabled: true, Schedule: "0 9 * * *"}
+	return routingdomain.DigestConfig{Enabled: true, Schedule: "0 9 * * *"}
 }
 
 type postCall struct {
@@ -143,7 +143,7 @@ func TestReporter_Report_PostsParentThenThreadedListPerChannel(t *testing.T) {
 		"acme/web": {Repository: "acme/web", SlackChannel: "C_ACME", Mentions: []string{"<!channel>"}},
 		"beta/x":   {Repository: "beta/x", SlackChannel: "C_BETA", Mentions: []string{"<@U1>"}},
 	}}
-	digests := fakeDigestResolver{digests: map[string]mappings.DigestConfig{
+	digests := fakeDigestResolver{digests: map[string]routingdomain.DigestConfig{
 		"acme/api": {Enabled: true, Schedule: "0 9 * * *"},
 		"acme/web": {Enabled: true, Schedule: "0 9 * * *"},
 		"beta/x":   {Enabled: true, Schedule: "0 9 * * *"},
@@ -219,7 +219,7 @@ func TestReporter_Report_NoPRDuplicatedAcrossChannels(t *testing.T) {
 		"acme/api": {Repository: "acme/api", SlackChannel: "C_ACME"},
 		"beta/web": {Repository: "beta/web", SlackChannel: "C_BETA"},
 	}}
-	digests := fakeDigestResolver{digests: map[string]mappings.DigestConfig{
+	digests := fakeDigestResolver{digests: map[string]routingdomain.DigestConfig{
 		"acme/api": {Enabled: true, Schedule: "0 9 * * *"},
 		"beta/web": {Enabled: true, Schedule: "0 9 * * *"},
 	}}
@@ -282,7 +282,7 @@ func TestReporter_ReportSchedule_FiltersReposBySchedule(t *testing.T) {
 		"acme/web":      {Repository: "acme/web", SlackChannel: "C_ACME", Mentions: []string{"<!channel>"}},
 		"beta/disabled": {Repository: "beta/disabled", SlackChannel: "C_BETA", Mentions: []string{"<@U1>"}},
 	}}
-	digests := fakeDigestResolver{digests: map[string]mappings.DigestConfig{
+	digests := fakeDigestResolver{digests: map[string]routingdomain.DigestConfig{
 		"acme/api":      {Enabled: true, Schedule: "0 9 * * *"},
 		"acme/web":      {Enabled: true, Schedule: "0 18 * * *"},
 		"beta/disabled": {Enabled: false, Schedule: "0 9 * * *"},

@@ -16,7 +16,8 @@ import (
 	"io"
 
 	"github.com/mptooling/notifycat/internal/config"
-	"github.com/mptooling/notifycat/internal/mappings"
+	routingapp "github.com/mptooling/notifycat/internal/routing/application"
+	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 	"github.com/mptooling/notifycat/internal/validate"
 )
 
@@ -46,7 +47,7 @@ func NewDoctor(cfg config.Config, validator RepoValidator) *Doctor {
 // validator is configured, a fourth section named after target is appended
 // with the per-mapping check results.
 func (d *Doctor) Run(ctx context.Context, target string) []Section {
-	provider := mappings.NewProvider(mappings.Defaults{}, d.cfg.Mappings, d.cfg.Digest)
+	provider := routingapp.NewProvider(routingdomain.Defaults{}, d.cfg.Mappings, d.cfg.Digest)
 	sections := []Section{
 		CheckConfig(d.cfg),
 		CheckDatabase(d.cfg.DatabaseURL),
