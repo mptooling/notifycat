@@ -14,18 +14,18 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/mptooling/notifycat/internal/aireview"
 	"github.com/mptooling/notifycat/internal/config"
 	digestapp "github.com/mptooling/notifycat/internal/digest/application"
 	digestdomain "github.com/mptooling/notifycat/internal/digest/domain"
 	digestinfra "github.com/mptooling/notifycat/internal/digest/infrastructure"
 	"github.com/mptooling/notifycat/internal/github"
-	"github.com/mptooling/notifycat/internal/githubhook"
 	maintenanceapp "github.com/mptooling/notifycat/internal/maintenance/application"
 	maintenancedomain "github.com/mptooling/notifycat/internal/maintenance/domain"
 	maintenanceinfra "github.com/mptooling/notifycat/internal/maintenance/infrastructure"
+	notificationapp "github.com/mptooling/notifycat/internal/notification/application"
+	notificationdomain "github.com/mptooling/notifycat/internal/notification/domain"
+	notificationinfra "github.com/mptooling/notifycat/internal/notification/infrastructure"
 	"github.com/mptooling/notifycat/internal/platform/security"
-	"github.com/mptooling/notifycat/internal/pullrequest"
 	routingapp "github.com/mptooling/notifycat/internal/routing/application"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 	routinginfra "github.com/mptooling/notifycat/internal/routing/infrastructure"
@@ -192,32 +192,34 @@ func buildRouter(httpClient *http.Client, cfg config.Config, provider *routingap
 }
 
 // buildDispatcher wires the PR-event handlers behind the dispatcher.
-func buildDispatcher(pullRequests *store.PullRequests, codeReviews *store.CodeReviews, provider *routingapp.Provider, router *routingapp.Router, slackClient *slack.Client, composer *slack.Composer, logger *slog.Logger) *pullrequest.Dispatcher {
-	aiDetector := aireview.NewDetector()
-	return pullrequest.NewDispatcher(
-		logger,
-		pullrequest.NewOpenHandler(pullRequests, router, slackClient, composer, logger),
-		pullrequest.NewCloseHandler(pullRequests, provider, slackClient, composer, logger, codeReviews),
-		pullrequest.NewDraftHandler(pullRequests, slackClient, logger),
-		pullrequest.NewApproveHandler(pullRequests, provider, slackClient, composer, logger, aiDetector, codeReviews),
-		pullrequest.NewCommentedHandler(pullRequests, provider, slackClient, composer, logger, aiDetector, codeReviews),
-		pullrequest.NewRequestChangeHandler(pullRequests, provider, slackClient, composer, logger, aiDetector, codeReviews),
-	)
+func buildDispatcher(pullRequests *store.PullRequests, codeReviews *store.CodeReviews, provider *routingapp.Provider, router *routingapp.Router, slackClient *slack.Client, composer *slack.Composer, logger *slog.Logger) *notificationapp.Dispatcher {
+	messageStore := notificationinfra.NewMessageRepo(pullRequests)
+	messenger := notificationinfra.NewSlackMessenger(slackClient, composer)
+	reviews := notificationinfra.NewReviewSessionsRepo(codeReviews)
+	handlers := []notificationdomain.Handler{
+		notificationapp.NewOpenHandler(messageStore, router, messenger, logger),
+		notificationapp.NewCloseHandler(messageStore, provider, messenger, logger, reviews),
+		notificationapp.NewDraftHandler(messageStore, messenger, logger),
+		notificationapp.NewApproveHandler(messageStore, provider, messenger, logger, reviews),
+		notificationapp.NewCommentedHandler(messageStore, provider, messenger, logger, reviews),
+		notificationapp.NewRequestChangeHandler(messageStore, provider, messenger, logger, reviews),
+	}
+	return notificationapp.NewDispatcher(logger, handlers)
 }
 
 // buildMux builds the HTTP routes: health check, the GitHub webhook, and the
 // optional inbound Slack interactivity endpoint. The Slack route is registered
 // only when a signing secret is configured; otherwise notifycat stays
 // outbound-only and the route is absent.
-func buildMux(cfg config.Config, dispatcher *pullrequest.Dispatcher, startReviewSink slackhook.InteractionSink, logger *slog.Logger) *http.ServeMux {
+func buildMux(cfg config.Config, dispatcher *notificationapp.Dispatcher, startReviewSink slackhook.InteractionSink, logger *slog.Logger) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 	verifier := security.NewGitHubVerifier(cfg.GitHubWebhookSecret.Reveal())
 	mux.Handle("POST /webhook/github",
-		githubhook.SignatureMiddleware(verifier)(
-			githubhook.NewHandler(eventSink(dispatcher, logger)),
+		notificationinfra.SignatureMiddleware(verifier)(
+			notificationinfra.NewGitHubHandler(dispatcher),
 		),
 	)
 
@@ -341,42 +343,6 @@ func logFailures(results []validationdomain.EntryResult, logger *slog.Logger) {
 func closeDB(db *gorm.DB) {
 	if sqlDB, err := store.SQLDB(db); err == nil {
 		_ = sqlDB.Close()
-	}
-}
-
-func eventSink(d *pullrequest.Dispatcher, logger *slog.Logger) githubhook.EventSink {
-	return func(ctx context.Context, p githubhook.Payload) error {
-		event := pullrequest.Event{
-			GitHubEvent: p.Event,
-			Action:      p.Action,
-			Repository:  p.Repository,
-			PR: pullrequest.PR{
-				Number:    p.PullRequest.Number,
-				Title:     p.PullRequest.Title,
-				URL:       p.PullRequest.URL,
-				Author:    p.PullRequest.Author,
-				Merged:    p.PullRequest.Merged,
-				Draft:     p.PullRequest.Draft,
-				Body:      p.PullRequest.Body,
-				CreatedAt: p.PullRequest.CreatedAt,
-			},
-			PRComment: p.PRComment,
-			Sender:    pullrequest.Sender{Login: p.Sender.Login, Type: p.Sender.Type},
-		}
-		if p.Review != nil {
-			event.Review = &pullrequest.Review{State: p.Review.State}
-		}
-		if err := d.Dispatch(ctx, event); err != nil {
-			logger.Error("dispatch failed",
-				slog.String("github_event", event.GitHubEvent),
-				slog.String("repository", event.Repository),
-				slog.Int("pr", event.PR.Number),
-				slog.String("action", event.Action),
-				slog.Any("err", err),
-			)
-			return err
-		}
-		return nil
 	}
 }
 

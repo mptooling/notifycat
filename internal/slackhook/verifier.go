@@ -1,8 +1,9 @@
 // Package slackhook authenticates and parses inbound Slack interactivity
 // requests. It exposes a constant-time HMAC verifier (with Slack's replay
 // window), an HTTP middleware that gates a downstream handler, and a parser for
-// the interaction envelope. It mirrors internal/githubhook; the differences are
-// Slack's signing scheme (a timestamped base string) and the form-encoded body.
+// the interaction envelope. It mirrors the GitHub webhook verifier in
+// platform/security; the differences are Slack's signing scheme (a timestamped
+// base string) and the form-encoded body.
 package slackhook
 
 import (

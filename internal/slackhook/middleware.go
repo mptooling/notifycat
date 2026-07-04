@@ -20,7 +20,7 @@ const MaxBodyBytes int64 = 1 << 20 // 1 MiB
 //     verified body without juggling the raw stream themselves.
 //
 // The signature is verified over the raw bytes before any form parsing, exactly
-// like internal/githubhook.
+// like the GitHub webhook receiver in notification/infrastructure.
 func SignatureMiddleware(verifier *Verifier) func(http.Handler) http.Handler {
 	return httpx.Signature(MaxBodyBytes, func(w http.ResponseWriter, r *http.Request, body []byte) bool {
 		signature := r.Header.Get(SignatureHeader)
