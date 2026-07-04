@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/mptooling/notifycat/internal/config"
-	"github.com/mptooling/notifycat/internal/validate"
+	validationdomain "github.com/mptooling/notifycat/internal/validation/domain"
 )
 
 // CheckConfig inspects cfg and reports per-field results. Secret values are
@@ -38,7 +38,7 @@ func CheckConfig(cfg config.Config) Section {
 	return sec
 }
 
-func secretCheck(name string, s config.Secret) validate.CheckResult {
+func secretCheck(name string, s config.Secret) validationdomain.CheckResult {
 	if s.Reveal() == "" {
 		return failResult(name, "missing; set the environment variable")
 	}
@@ -53,7 +53,7 @@ func secretCheck(name string, s config.Secret) validate.CheckResult {
 // host that doesn't parse — both FAIL here with a remediation hint. When
 // server.domain is unset the check is a SKIP, not a FAIL: local-dev and tunnel
 // (ngrok) users legitimately have no fixed public host.
-func publicWebhookURLCheck(domain string) validate.CheckResult {
+func publicWebhookURLCheck(domain string) validationdomain.CheckResult {
 	const name = "server.domain"
 	d := strings.TrimSpace(domain)
 	if d == "" {

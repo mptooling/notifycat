@@ -21,7 +21,9 @@ import (
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 	routinginfra "github.com/mptooling/notifycat/internal/routing/infrastructure"
 	"github.com/mptooling/notifycat/internal/slack"
-	"github.com/mptooling/notifycat/internal/validate"
+	validationapp "github.com/mptooling/notifycat/internal/validation/application"
+	validationdomain "github.com/mptooling/notifycat/internal/validation/domain"
+	validationinfra "github.com/mptooling/notifycat/internal/validation/infrastructure"
 )
 
 func main() {
@@ -48,20 +50,20 @@ func main() {
 // buildValidationDeps wires the production checker (Slack always, GitHub
 // when a token is configured) and the org-repo lister (the same GitHub
 // client, or nil when there is no token).
-func buildValidationDeps(cfg config.Config, provider *routingapp.Provider) (validate.RepoValidator, validate.OrgRepoLister) {
+func buildValidationDeps(cfg config.Config, provider *routingapp.Provider) (validationdomain.RepoValidator, validationdomain.OrgRepoLister) {
 	hc := &http.Client{Timeout: 10 * time.Second}
 	slackClient := slack.NewClient(hc, cfg.SlackBotToken.Reveal(), slack.WithBaseURL(cfg.SlackBaseURL))
 	var gh *github.Client
 	if cfg.GitHubToken.Reveal() != "" {
 		gh = github.NewClient(hc, cfg.GitHubToken.Reveal(), github.WithBaseURL(cfg.GitHubBaseURL))
 	}
-	var ghChecker validate.GitHubChecker
-	var lister validate.OrgRepoLister
+	var ghChecker validationdomain.GitHubChecker
+	var lister validationdomain.OrgRepoLister
 	if gh != nil {
 		ghChecker = gh
 		lister = gh
 	}
-	return validate.NewValidator(provider, slackClient, ghChecker), lister
+	return validationapp.NewValidator(provider, validationinfra.NewSlackProbe(slackClient), ghChecker), lister
 }
 
 // pathTokenWarning returns a warning when per-path routing is configured but no

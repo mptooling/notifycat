@@ -2,12 +2,12 @@
 // installation. It bundles config, database, and mappings-file checks the
 // server would otherwise only surface at startup, and (for a target
 // repository) delegates the per-mapping Slack + GitHub checks to
-// internal/validate. The CLI entry point lives in cmd/notifycat-doctor.
+// internal/validation. The CLI entry point lives in cmd/notifycat-doctor.
 //
 // Orchestration lives here; each section's checks live in their own
 // *_check.go file (config_check.go, database_check.go, mappings_check.go),
 // and the okResult/failResult/skip constructors live in helpers.go — the
-// same layout the sibling internal/validate package uses.
+// same layout the sibling internal/validation package uses.
 package doctor
 
 import (
@@ -18,14 +18,14 @@ import (
 	"github.com/mptooling/notifycat/internal/config"
 	routingapp "github.com/mptooling/notifycat/internal/routing/application"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
-	"github.com/mptooling/notifycat/internal/validate"
+	validationdomain "github.com/mptooling/notifycat/internal/validation/domain"
 )
 
-// RepoValidator is the slice of validate.Validator the doctor needs. It
+// RepoValidator is the slice of the validation Validator the doctor needs. It
 // stays in this consumer package so tests can supply a hand-written fake
 // without depending on the live Slack / GitHub clients.
 type RepoValidator interface {
-	Validate(ctx context.Context, repository string) validate.Report
+	Validate(ctx context.Context, repository string) validationdomain.Report
 }
 
 // Doctor bundles a parsed config with an optional RepoValidator. Construct
@@ -66,14 +66,14 @@ func (d *Doctor) Run(ctx context.Context, target string) []Section {
 // one section does not short-circuit other sections.
 type Section struct {
 	Name   string
-	Checks []validate.CheckResult
+	Checks []validationdomain.CheckResult
 }
 
 // OK reports whether every check in the section passed (StatusSkip does not
 // count as a failure).
 func (s Section) OK() bool {
 	for _, c := range s.Checks {
-		if c.Status == validate.StatusFail {
+		if c.Status == validationdomain.StatusFail {
 			return false
 		}
 	}
@@ -89,7 +89,7 @@ func WriteReport(w io.Writer, sections []Section) bool {
 	for _, sec := range sections {
 		fmt.Fprintf(w, "[%s]\n", sec.Name)
 		for _, c := range sec.Checks {
-			if c.Status == validate.StatusFail {
+			if c.Status == validationdomain.StatusFail {
 				allOK = false
 			}
 			if c.Detail == "" {

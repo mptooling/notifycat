@@ -20,7 +20,9 @@ import (
 	routingapp "github.com/mptooling/notifycat/internal/routing/application"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 	"github.com/mptooling/notifycat/internal/slack"
-	"github.com/mptooling/notifycat/internal/validate"
+	validationapp "github.com/mptooling/notifycat/internal/validation/application"
+	validationdomain "github.com/mptooling/notifycat/internal/validation/domain"
+	validationinfra "github.com/mptooling/notifycat/internal/validation/infrastructure"
 )
 
 func main() {
@@ -55,11 +57,11 @@ func buildValidator(cfg config.Config) doctor.RepoValidator {
 	provider := routingapp.NewProvider(routingdomain.Defaults{}, cfg.Mappings, cfg.Digest)
 	hc := &http.Client{Timeout: 10 * time.Second}
 	slackClient := slack.NewClient(hc, cfg.SlackBotToken.Reveal(), slack.WithBaseURL(cfg.SlackBaseURL))
-	var ghChecker validate.GitHubChecker
+	var ghChecker validationdomain.GitHubChecker
 	if cfg.GitHubToken.Reveal() != "" {
 		ghChecker = github.NewClient(hc, cfg.GitHubToken.Reveal(), github.WithBaseURL(cfg.GitHubBaseURL))
 	}
-	return validate.NewValidator(provider, slackClient, ghChecker)
+	return validationapp.NewValidator(provider, validationinfra.NewSlackProbe(slackClient), ghChecker)
 }
 
 func parseArgs(args []string, stderr io.Writer) (target string, code int, ok bool) {

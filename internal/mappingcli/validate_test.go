@@ -11,15 +11,15 @@ import (
 
 	routingapp "github.com/mptooling/notifycat/internal/routing/application"
 	routinginfra "github.com/mptooling/notifycat/internal/routing/infrastructure"
-	"github.com/mptooling/notifycat/internal/validate"
+	validationdomain "github.com/mptooling/notifycat/internal/validation/domain"
 )
 
 type stubChecker struct {
-	fn    func(ctx context.Context, repository string) validate.Report
+	fn    func(ctx context.Context, repository string) validationdomain.Report
 	calls []string
 }
 
-func (s *stubChecker) Validate(ctx context.Context, repository string) validate.Report {
+func (s *stubChecker) Validate(ctx context.Context, repository string) validationdomain.Report {
 	s.calls = append(s.calls, repository)
 	if s.fn != nil {
 		return s.fn(ctx, repository)
@@ -27,17 +27,17 @@ func (s *stubChecker) Validate(ctx context.Context, repository string) validate.
 	return passingReport(repository)
 }
 
-func passingReport(repository string) validate.Report {
-	return validate.Report{
+func passingReport(repository string) validationdomain.Report {
+	return validationdomain.Report{
 		Repository: repository,
-		Checks:     []validate.CheckResult{{Name: "x", Status: validate.StatusOK, Detail: "ok"}},
+		Checks:     []validationdomain.CheckResult{{Name: "x", Status: validationdomain.StatusOK, Detail: "ok"}},
 	}
 }
 
-func failingReport(repository string) validate.Report {
-	return validate.Report{
+func failingReport(repository string) validationdomain.Report {
+	return validationdomain.Report{
 		Repository: repository,
-		Checks:     []validate.CheckResult{{Name: "x", Status: validate.StatusFail, Detail: "boom"}},
+		Checks:     []validationdomain.CheckResult{{Name: "x", Status: validationdomain.StatusFail, Detail: "boom"}},
 	}
 }
 
@@ -106,7 +106,7 @@ func TestMappingsValidator_Targeted_AllPass_WritesLock(t *testing.T) {
 
 func TestMappingsValidator_Targeted_Failure_DoesNotWriteLock(t *testing.T) {
 	p, lockPath := loadProvider(t, explicitYAML)
-	sc := &stubChecker{fn: func(_ context.Context, r string) validate.Report { return failingReport(r) }}
+	sc := &stubChecker{fn: func(_ context.Context, r string) validationdomain.Report { return failingReport(r) }}
 	v := NewMappingsValidator(p, sc, nil, lockPath, fixedClock())
 	var out, errOut bytes.Buffer
 
@@ -228,7 +228,7 @@ func TestMappingsValidator_Full_Force_IgnoresLock(t *testing.T) {
 
 func TestMappingsValidator_Full_PartialFailure_OnlySuccessesEnterLock(t *testing.T) {
 	p, lockPath := loadProvider(t, explicitYAML)
-	sc := &stubChecker{fn: func(_ context.Context, r string) validate.Report {
+	sc := &stubChecker{fn: func(_ context.Context, r string) validationdomain.Report {
 		if r == "acme/api" {
 			return failingReport(r)
 		}

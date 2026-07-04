@@ -12,15 +12,15 @@ import (
 	routingapp "github.com/mptooling/notifycat/internal/routing/application"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 	routinginfra "github.com/mptooling/notifycat/internal/routing/infrastructure"
-	"github.com/mptooling/notifycat/internal/validate"
+	validationdomain "github.com/mptooling/notifycat/internal/validation/domain"
 )
 
 type fakeRepoValidator struct {
 	got    string
-	report validate.Report
+	report validationdomain.Report
 }
 
-func (f *fakeRepoValidator) Validate(_ context.Context, repository string) validate.Report {
+func (f *fakeRepoValidator) Validate(_ context.Context, repository string) validationdomain.Report {
 	f.got = repository
 	if f.report.Repository == "" {
 		f.report.Repository = repository
@@ -41,9 +41,9 @@ func validConfig() config.Config {
 
 func TestWriteReport_AllOK_ReturnsTrue(t *testing.T) {
 	sections := []doctor.Section{
-		{Name: "config", Checks: []validate.CheckResult{
-			{Name: "GITHUB_WEBHOOK_SECRET", Status: validate.StatusOK, Detail: "set"},
-			{Name: "SLACK_BOT_TOKEN", Status: validate.StatusOK, Detail: "set"},
+		{Name: "config", Checks: []validationdomain.CheckResult{
+			{Name: "GITHUB_WEBHOOK_SECRET", Status: validationdomain.StatusOK, Detail: "set"},
+			{Name: "SLACK_BOT_TOKEN", Status: validationdomain.StatusOK, Detail: "set"},
 		}},
 	}
 	var buf bytes.Buffer
@@ -62,11 +62,11 @@ func TestWriteReport_AllOK_ReturnsTrue(t *testing.T) {
 
 func TestWriteReport_AnyFail_ReturnsFalse(t *testing.T) {
 	sections := []doctor.Section{
-		{Name: "config", Checks: []validate.CheckResult{
-			{Name: "GITHUB_WEBHOOK_SECRET", Status: validate.StatusOK, Detail: "set"},
+		{Name: "config", Checks: []validationdomain.CheckResult{
+			{Name: "GITHUB_WEBHOOK_SECRET", Status: validationdomain.StatusOK, Detail: "set"},
 		}},
-		{Name: "database", Checks: []validate.CheckResult{
-			{Name: "open", Status: validate.StatusFail, Detail: "no such file: /missing/path.db"},
+		{Name: "database", Checks: []validationdomain.CheckResult{
+			{Name: "open", Status: validationdomain.StatusFail, Detail: "no such file: /missing/path.db"},
 		}},
 	}
 	var buf bytes.Buffer
@@ -85,8 +85,8 @@ func TestWriteReport_AnyFail_ReturnsFalse(t *testing.T) {
 
 func TestWriteReport_SkipDoesNotFailOverall(t *testing.T) {
 	sections := []doctor.Section{
-		{Name: "github", Checks: []validate.CheckResult{
-			{Name: "webhook-events", Status: validate.StatusSkip, Detail: "GITHUB_TOKEN not set"},
+		{Name: "github", Checks: []validationdomain.CheckResult{
+			{Name: "webhook-events", Status: validationdomain.StatusSkip, Detail: "GITHUB_TOKEN not set"},
 		}},
 	}
 	var buf bytes.Buffer
@@ -128,7 +128,7 @@ func TestCheckConfig_MissingSecretsFail(t *testing.T) {
 
 	want := map[string]bool{"GITHUB_WEBHOOK_SECRET": false, "SLACK_BOT_TOKEN": false}
 	for _, c := range sec.Checks {
-		if _, ok := want[c.Name]; ok && c.Status == validate.StatusFail {
+		if _, ok := want[c.Name]; ok && c.Status == validationdomain.StatusFail {
 			want[c.Name] = true
 		}
 	}
@@ -149,7 +149,7 @@ func TestCheckConfig_NeverPrintsSecretValues(t *testing.T) {
 	}
 }
 
-func findConfigCheck(t *testing.T, sec doctor.Section, name string) validate.CheckResult {
+func findConfigCheck(t *testing.T, sec doctor.Section, name string) validationdomain.CheckResult {
 	t.Helper()
 	for _, c := range sec.Checks {
 		if c.Name == name {
@@ -157,7 +157,7 @@ func findConfigCheck(t *testing.T, sec doctor.Section, name string) validate.Che
 		}
 	}
 	t.Fatalf("check %q not found in section: %+v", name, sec.Checks)
-	return validate.CheckResult{}
+	return validationdomain.CheckResult{}
 }
 
 func TestCheckConfig_ValidDomainReportsWebhookURL(t *testing.T) {
@@ -165,7 +165,7 @@ func TestCheckConfig_ValidDomainReportsWebhookURL(t *testing.T) {
 	cfg.Domain = "notifycat.example.com"
 	sec := doctor.CheckConfig(cfg)
 	c := findConfigCheck(t, sec, "server.domain")
-	if c.Status != validate.StatusOK {
+	if c.Status != validationdomain.StatusOK {
 		t.Fatalf("DOMAIN check = %+v; want OK", c)
 	}
 	if !strings.Contains(c.Detail, "https://notifycat.example.com/webhook/github") {
@@ -178,7 +178,7 @@ func TestCheckConfig_DomainWithSchemeFails(t *testing.T) {
 	cfg.Domain = "https://notifycat.example.com"
 	sec := doctor.CheckConfig(cfg)
 	c := findConfigCheck(t, sec, "server.domain")
-	if c.Status != validate.StatusFail {
+	if c.Status != validationdomain.StatusFail {
 		t.Fatalf("DOMAIN carrying a scheme should FAIL (it must be a bare host), got %+v", c)
 	}
 	if sec.OK() {
@@ -191,7 +191,7 @@ func TestCheckConfig_MalformedDomainFails(t *testing.T) {
 	cfg.Domain = "not a valid host"
 	sec := doctor.CheckConfig(cfg)
 	c := findConfigCheck(t, sec, "server.domain")
-	if c.Status != validate.StatusFail {
+	if c.Status != validationdomain.StatusFail {
 		t.Fatalf("malformed DOMAIN should FAIL, got %+v", c)
 	}
 }
@@ -200,7 +200,7 @@ func TestCheckConfig_UnsetDomainSkips(t *testing.T) {
 	cfg := validConfig() // Domain is empty
 	sec := doctor.CheckConfig(cfg)
 	c := findConfigCheck(t, sec, "server.domain")
-	if c.Status != validate.StatusSkip {
+	if c.Status != validationdomain.StatusSkip {
 		t.Fatalf("unset DOMAIN should SKIP (local-dev/tunnel users), got %+v", c)
 	}
 	if !sec.OK() {
@@ -277,7 +277,7 @@ func pathRoutingProvider(t *testing.T) *routingapp.Provider {
 	return routingapp.NewProvider(routingdomain.Defaults{}, f.Mappings, nil)
 }
 
-func pathRoutingCheck(t *testing.T, sec doctor.Section) validate.CheckResult {
+func pathRoutingCheck(t *testing.T, sec doctor.Section) validationdomain.CheckResult {
 	t.Helper()
 	for _, c := range sec.Checks {
 		if c.Name == "path routing" {
@@ -285,12 +285,12 @@ func pathRoutingCheck(t *testing.T, sec doctor.Section) validate.CheckResult {
 		}
 	}
 	t.Fatalf("no \"path routing\" check in section: %+v", sec.Checks)
-	return validate.CheckResult{}
+	return validationdomain.CheckResult{}
 }
 
 func TestCheckMappings_PathRoutingActiveWithToken(t *testing.T) {
 	sec := doctor.CheckMappings(pathRoutingProvider(t), true)
-	if c := pathRoutingCheck(t, sec); c.Status != validate.StatusOK {
+	if c := pathRoutingCheck(t, sec); c.Status != validationdomain.StatusOK {
 		t.Errorf("path routing status = %v; want OK with a token", c.Status)
 	}
 	if !sec.OK() {
@@ -301,7 +301,7 @@ func TestCheckMappings_PathRoutingActiveWithToken(t *testing.T) {
 func TestCheckMappings_PathRoutingInertWithoutToken(t *testing.T) {
 	sec := doctor.CheckMappings(pathRoutingProvider(t), false)
 	c := pathRoutingCheck(t, sec)
-	if c.Status != validate.StatusSkip {
+	if c.Status != validationdomain.StatusSkip {
 		t.Errorf("path routing status = %v; want SKIP without a token", c.Status)
 	}
 	if !sec.OK() {
@@ -332,11 +332,11 @@ func TestDoctorRun_TargetRepositoryDelegatesToValidator(t *testing.T) {
 	cfg.DatabaseURL = "file:" + filepath.Join(t.TempDir(), "doctor.db")
 
 	fake := &fakeRepoValidator{
-		report: validate.Report{
+		report: validationdomain.Report{
 			Repository: "octo/widget",
-			Checks: []validate.CheckResult{
-				{Name: "slack-auth", Status: validate.StatusOK, Detail: "ok"},
-				{Name: "slack-channel", Status: validate.StatusFail, Detail: "bot not in channel"},
+			Checks: []validationdomain.CheckResult{
+				{Name: "slack-auth", Status: validationdomain.StatusOK, Detail: "ok"},
+				{Name: "slack-channel", Status: validationdomain.StatusFail, Detail: "bot not in channel"},
 			},
 		},
 	}

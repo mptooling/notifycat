@@ -30,7 +30,9 @@ import (
 	"github.com/mptooling/notifycat/internal/slackhook"
 	"github.com/mptooling/notifycat/internal/startreview"
 	"github.com/mptooling/notifycat/internal/store"
-	"github.com/mptooling/notifycat/internal/validate"
+	validationapp "github.com/mptooling/notifycat/internal/validation/application"
+	validationdomain "github.com/mptooling/notifycat/internal/validation/domain"
+	validationinfra "github.com/mptooling/notifycat/internal/validation/infrastructure"
 )
 
 // Cleanup releases resources acquired by Wire (database connections, ...).
@@ -256,7 +258,7 @@ func startupValidate(
 	}
 
 	checker, lister := newValidationDeps(provider, cfg, slackClient, httpClient)
-	results := validate.RunForEntries(context.Background(), diff.Needs, lister, checker)
+	results := validationapp.RunForEntries(context.Background(), diff.Needs, lister, checker)
 	successes, failed := splitResults(results, time.Now)
 	_ = persistLock(lockPath, lock, successes, diff.Stale, logger)
 	if len(failed) == 0 {
@@ -266,18 +268,18 @@ func startupValidate(
 	return fmt.Errorf("app: startup validation failed for %d entries: %s", len(failed), strings.Join(failed, ", "))
 }
 
-func newValidationDeps(provider *routingapp.Provider, cfg config.Config, slackClient *slack.Client, httpClient *http.Client) (validate.RepoValidator, validate.OrgRepoLister) {
-	var ghChecker validate.GitHubChecker
-	var lister validate.OrgRepoLister
+func newValidationDeps(provider *routingapp.Provider, cfg config.Config, slackClient *slack.Client, httpClient *http.Client) (validationdomain.RepoValidator, validationdomain.OrgRepoLister) {
+	var ghChecker validationdomain.GitHubChecker
+	var lister validationdomain.OrgRepoLister
 	if cfg.GitHubToken.Reveal() != "" {
 		gh := github.NewClient(httpClient, cfg.GitHubToken.Reveal(), github.WithBaseURL(cfg.GitHubBaseURL))
 		ghChecker = gh
 		lister = gh
 	}
-	return validate.NewValidator(provider, slackClient, ghChecker), lister
+	return validationapp.NewValidator(provider, validationinfra.NewSlackProbe(slackClient), ghChecker), lister
 }
 
-func splitResults(results []validate.EntryResult, clock func() time.Time) (map[string]routinginfra.LockEntry, []string) {
+func splitResults(results []validationdomain.EntryResult, clock func() time.Time) (map[string]routinginfra.LockEntry, []string) {
 	successes := map[string]routinginfra.LockEntry{}
 	var failed []string
 	for _, r := range results {
@@ -299,14 +301,14 @@ func persistLock(lockPath string, lock routinginfra.Lock, ok map[string]routingi
 	return nil
 }
 
-func logFailures(results []validate.EntryResult, logger *slog.Logger) {
+func logFailures(results []validationdomain.EntryResult, logger *slog.Logger) {
 	for _, r := range results {
 		if r.OK() {
 			continue
 		}
 		for _, rep := range r.Reports {
 			for _, c := range rep.Checks {
-				if c.Status != validate.StatusFail {
+				if c.Status != validationdomain.StatusFail {
 					continue
 				}
 				logger.Error("startup validate failure",

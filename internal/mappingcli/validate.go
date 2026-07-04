@@ -9,7 +9,8 @@ import (
 	routingapp "github.com/mptooling/notifycat/internal/routing/application"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 	routinginfra "github.com/mptooling/notifycat/internal/routing/infrastructure"
-	"github.com/mptooling/notifycat/internal/validate"
+	validationapp "github.com/mptooling/notifycat/internal/validation/application"
+	validationdomain "github.com/mptooling/notifycat/internal/validation/domain"
 )
 
 // MappingsValidator is the validate use case. main_test.go swaps it for a
@@ -21,8 +22,8 @@ type MappingsValidator interface {
 // mappingsValidator is the production implementation.
 type mappingsValidator struct {
 	provider *routingapp.Provider
-	checker  validate.RepoValidator
-	lister   validate.OrgRepoLister
+	checker  validationdomain.RepoValidator
+	lister   validationdomain.OrgRepoLister
 	lockPath string
 	clock    func() time.Time
 }
@@ -33,8 +34,8 @@ type mappingsValidator struct {
 // in this package. `lister` may be nil when no GitHub credentials exist.
 func NewMappingsValidator(
 	provider *routingapp.Provider,
-	checker validate.RepoValidator,
-	lister validate.OrgRepoLister,
+	checker validationdomain.RepoValidator,
+	lister validationdomain.OrgRepoLister,
 	lockPath string,
 	clock func() time.Time,
 ) MappingsValidator {
@@ -51,7 +52,7 @@ func (v *mappingsValidator) Validate(ctx context.Context, target string, force b
 
 func (v *mappingsValidator) runTargeted(ctx context.Context, target string, stdout, stderr io.Writer) int {
 	report := v.checker.Validate(ctx, target)
-	if code := renderReports([]validate.Report{report}, stdout); code != 0 {
+	if code := renderReports([]validationdomain.Report{report}, stdout); code != 0 {
 		return code
 	}
 	return v.lockExplicitEntry(target, stderr)
@@ -100,7 +101,7 @@ func (v *mappingsValidator) runFull(ctx context.Context, force bool, stdout, std
 		}
 		return v.writeMerged(lock, nil, stale, stderr)
 	}
-	results := validate.RunForEntries(ctx, toValidate, v.lister, v.checker)
+	results := validationapp.RunForEntries(ctx, toValidate, v.lister, v.checker)
 	code := renderReports(flattenReports(results), stdout)
 	if writeErr := v.writeMerged(lock, successMap(results, v.clock), stale, stderr); writeErr != 0 && code == 0 {
 		code = writeErr
@@ -131,7 +132,7 @@ func (v *mappingsValidator) writeMerged(lock routinginfra.Lock, ok map[string]ro
 	return 0
 }
 
-func successMap(results []validate.EntryResult, clock func() time.Time) map[string]routinginfra.LockEntry {
+func successMap(results []validationdomain.EntryResult, clock func() time.Time) map[string]routinginfra.LockEntry {
 	out := map[string]routinginfra.LockEntry{}
 	for _, r := range results {
 		if r.OK() {
@@ -141,15 +142,15 @@ func successMap(results []validate.EntryResult, clock func() time.Time) map[stri
 	return out
 }
 
-func flattenReports(results []validate.EntryResult) []validate.Report {
-	var out []validate.Report
+func flattenReports(results []validationdomain.EntryResult) []validationdomain.Report {
+	var out []validationdomain.Report
 	for _, r := range results {
 		out = append(out, r.Reports...)
 	}
 	return out
 }
 
-func renderReports(reports []validate.Report, stdout io.Writer) int {
+func renderReports(reports []validationdomain.Report, stdout io.Writer) int {
 	allOK := true
 	for i, r := range reports {
 		if i > 0 {
