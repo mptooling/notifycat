@@ -22,7 +22,7 @@ func newOpenHandler(
 
 func openedEvent(repo string, prNumber int) kernel.Event {
 	return kernel.Event{
-		Action:     kernel.ActionOpened,
+		Kind:       kernel.KindOpened,
 		Repository: repo,
 		PR:         kernel.PR{Number: prNumber, Title: fmt.Sprintf("PR #%d", prNumber), Draft: false},
 	}
@@ -36,11 +36,10 @@ func TestOpenHandler_Applicable(t *testing.T) {
 		e    kernel.Event
 		want bool
 	}{
-		{"opened non-draft", kernel.Event{Action: kernel.ActionOpened, PR: kernel.PR{Draft: false}}, true},
-		{"opened draft", kernel.Event{Action: kernel.ActionOpened, PR: kernel.PR{Draft: true}}, false},
-		{"ready_for_review", kernel.Event{Action: kernel.ActionReadyForReview}, true},
-		{"closed", kernel.Event{Action: kernel.ActionClosed}, false},
-		{"submitted approved", kernel.Event{Action: kernel.ActionSubmitted, Review: &kernel.Review{State: kernel.ReviewApproved}}, false},
+		{"opened non-draft", kernel.Event{Kind: kernel.KindOpened}, true},
+		{"ready_for_review", kernel.Event{Kind: kernel.KindReadyForReview}, true},
+		{"closed", kernel.Event{Kind: kernel.KindClosed}, false},
+		{"submitted approved", kernel.Event{Kind: kernel.KindApproved}, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -66,7 +65,7 @@ func TestOpenHandler_Handle_PostsAndStoresTS(t *testing.T) {
 	h := newOpenHandler(store, resolver, messenger)
 
 	e := kernel.Event{
-		Action:     kernel.ActionOpened,
+		Kind:       kernel.KindOpened,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42, Title: "fix", URL: "u", Author: "a", Draft: false},
 	}
@@ -108,7 +107,7 @@ func TestOpenHandler_Handle_ThreadsCreatedAtAndFallback(t *testing.T) {
 	h := newOpenHandler(store, resolver, messenger)
 
 	e := kernel.Event{
-		Action:     kernel.ActionOpened,
+		Kind:       kernel.KindOpened,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42, Title: "fix", URL: "u", Author: "alice"},
 	}
@@ -143,7 +142,7 @@ func TestOpenHandler_Handle_SkipsIfMessageAlreadyExists(t *testing.T) {
 	h := newOpenHandler(store, resolver, messenger)
 
 	e := kernel.Event{
-		Action:     kernel.ActionOpened,
+		Kind:       kernel.KindOpened,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42},
 	}
@@ -162,7 +161,7 @@ func TestOpenHandler_Handle_SkipsIfNoMapping(t *testing.T) {
 	h := newOpenHandler(store, resolver, messenger)
 
 	e := kernel.Event{
-		Action:     kernel.ActionOpened,
+		Kind:       kernel.KindOpened,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42},
 	}
@@ -189,10 +188,10 @@ func TestOpenHandler_Handle_DependabotRoutine(t *testing.T) {
 	h := newOpenHandler(store, resolver, messenger)
 
 	e := kernel.Event{
-		Action:     kernel.ActionOpened,
+		Kind:       kernel.KindOpened,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42, Title: "bump acme/lib from 1.2.0 to 1.2.1", URL: "u", Author: "dependabot[bot]"},
-		Sender:     kernel.Sender{Login: "dependabot[bot]", Type: kernel.SenderTypeBot},
+		Sender:     kernel.Sender{Login: "dependabot[bot]", IsBot: true},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -228,13 +227,13 @@ func TestOpenHandler_Handle_DependabotSecurity(t *testing.T) {
 	h := newOpenHandler(store, resolver, messenger)
 
 	e := kernel.Event{
-		Action:     kernel.ActionOpened,
+		Kind:       kernel.KindOpened,
 		Repository: "octo/widget",
 		PR: kernel.PR{
 			Number: 42, Title: "bump acme/lib from 1.2.0 to 1.2.1", URL: "u", Author: "dependabot[bot]",
 			Body: "Bumps acme/lib.\n\n## Vulnerabilities fixed\n\nCVE-2026-1234.",
 		},
-		Sender: kernel.Sender{Login: "dependabot[bot]", Type: kernel.SenderTypeBot},
+		Sender: kernel.Sender{Login: "dependabot[bot]", IsBot: true},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -270,10 +269,10 @@ func TestOpenHandler_Handle_Renovate(t *testing.T) {
 	h := newOpenHandler(store, resolver, messenger)
 
 	e := kernel.Event{
-		Action:     kernel.ActionOpened,
+		Kind:       kernel.KindOpened,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 7, Title: "Update acme/lib to v2", URL: "u", Author: "renovate[bot]"},
-		Sender:     kernel.Sender{Login: "renovate[bot]", Type: kernel.SenderTypeBot},
+		Sender:     kernel.Sender{Login: "renovate[bot]", IsBot: true},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -311,10 +310,10 @@ func TestOpenHandler_Handle_DependabotReadyForReviewByHuman(t *testing.T) {
 	h := newOpenHandler(store, resolver, messenger)
 
 	e := kernel.Event{
-		Action:     kernel.ActionReadyForReview,
+		Kind:       kernel.KindReadyForReview,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42, Title: "bump acme/lib from 1.2.0 to 1.2.1", URL: "u", Author: "dependabot[bot]"},
-		Sender:     kernel.Sender{Login: "alice", Type: kernel.SenderTypeUser},
+		Sender:     kernel.Sender{Login: "alice"},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -346,10 +345,10 @@ func TestOpenHandler_Handle_DependabotFormatDisabled(t *testing.T) {
 	h := newOpenHandler(store, resolver, messenger)
 
 	e := kernel.Event{
-		Action:     kernel.ActionOpened,
+		Kind:       kernel.KindOpened,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42, Title: "bump acme/lib", URL: "u", Author: "dependabot[bot]"},
-		Sender:     kernel.Sender{Login: "dependabot[bot]", Type: kernel.SenderTypeBot},
+		Sender:     kernel.Sender{Login: "dependabot[bot]", IsBot: true},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -379,10 +378,10 @@ func TestOpenHandler_Handle_DependabotEmptyMentions(t *testing.T) {
 	h := newOpenHandler(store, resolver, messenger)
 
 	e := kernel.Event{
-		Action:     kernel.ActionOpened,
+		Kind:       kernel.KindOpened,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42, Title: "bump acme/lib", URL: "u", Author: "dependabot[bot]"},
-		Sender:     kernel.Sender{Login: "dependabot[bot]", Type: kernel.SenderTypeBot},
+		Sender:     kernel.Sender{Login: "dependabot[bot]", IsBot: true},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -414,7 +413,7 @@ func TestOpenHandler_Handle_DoesNotPersistOnSlackFailure(t *testing.T) {
 	h := newOpenHandler(store, resolver, messenger)
 
 	e := kernel.Event{
-		Action:     kernel.ActionOpened,
+		Kind:       kernel.KindOpened,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42},
 	}

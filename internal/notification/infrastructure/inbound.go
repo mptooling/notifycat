@@ -198,12 +198,121 @@ func ParsePayload(body []byte) (Payload, error) {
 	return p, nil
 }
 
-// toEvent maps a parsed Payload to the kernel event the dispatcher consumes.
+// GitHub webhook vocabulary. Confined to this adapter — the kind-mapper is the
+// only code that reads these; no other package speaks GitHub verbs.
+const (
+	ghEventReviewComment = "pull_request_review_comment"
+	ghEventIssueComment  = "issue_comment"
+
+	ghActionOpened           = "opened"
+	ghActionClosed           = "closed"
+	ghActionReadyForReview   = "ready_for_review"
+	ghActionConvertedToDraft = "converted_to_draft"
+	ghActionSubmitted        = "submitted"
+	ghActionCreated          = "created"
+	ghActionEdited           = "edited"
+
+	ghReviewApproved         = "approved"
+	ghReviewCommented        = "commented"
+	ghReviewChangesRequested = "changes_requested"
+
+	ghSenderTypeBot = "Bot"
+)
+
+// mapKind classifies a parsed GitHub payload into a neutral kernel.EventKind,
+// owning every GitHub-vocabulary decision and all draft gating. It tries each
+// classifier in turn — a review submission, then the PR lifecycle, then a created
+// comment — and the first to claim the payload wins. Anything unclaimed (a draft
+// open, a synchronize or label edit, a plain-issue comment, an edited
+// approve/request-change) is KindUnknown, so the dispatcher debug-logs no_handler
+// exactly as before.
+func mapKind(p Payload) kernel.EventKind {
+	if kind, ok := reviewKind(p); ok {
+		return kind
+	}
+	if kind, ok := lifecycleKind(p); ok {
+		return kind
+	}
+	if kind, ok := commentKind(p); ok {
+		return kind
+	}
+	return kernel.KindUnknown
+}
+
+// submittedReviewKinds maps a submitted review's state to its kind. A submitted
+// review carrying only comments is KindReviewCommented — distinct from a plain
+// comment because it finishes the PR's review session.
+var submittedReviewKinds = map[string]kernel.EventKind{
+	ghReviewApproved:         kernel.KindApproved,
+	ghReviewChangesRequested: kernel.KindChangesRequested,
+	ghReviewCommented:        kernel.KindReviewCommented,
+}
+
+// reviewKind claims any payload that carries a review object and keys it by
+// state. The review object is the unambiguous signal, so this is
+// header-independent; an unrecognized action or state resolves to KindUnknown
+// rather than falling through to the lifecycle classifier.
+func reviewKind(p Payload) (kernel.EventKind, bool) {
+	if p.Review == nil {
+		return kernel.KindUnknown, false
+	}
+	if p.Action == ghActionSubmitted {
+		return submittedReviewKinds[p.Review.State], true
+	}
+	if p.Action == ghActionEdited && p.Review.State == ghReviewCommented {
+		return kernel.KindCommented, true
+	}
+	return kernel.KindUnknown, true
+}
+
+// lifecycleKind claims a PR lifecycle event, keyed by action alone (these actions
+// are unique to pull_request webhooks, so no header is needed). A draft open is
+// gated to KindUnknown, and a close splits into KindMerged/KindClosed.
+func lifecycleKind(p Payload) (kernel.EventKind, bool) {
+	switch p.Action {
+	case ghActionOpened:
+		if p.PullRequest.Draft {
+			return kernel.KindUnknown, true
+		}
+		return kernel.KindOpened, true
+	case ghActionReadyForReview:
+		return kernel.KindReadyForReview, true
+	case ghActionConvertedToDraft:
+		return kernel.KindConvertedToDraft, true
+	case ghActionClosed:
+		if p.PullRequest.Merged {
+			return kernel.KindMerged, true
+		}
+		return kernel.KindClosed, true
+	}
+	return kernel.KindUnknown, false
+}
+
+// commentKind claims a created comment. The X-GitHub-Event header tells a line
+// comment from a PR-conversation comment and excludes plain-issue comments (which
+// carry no PR reference).
+func commentKind(p Payload) (kernel.EventKind, bool) {
+	if p.Action != ghActionCreated {
+		return kernel.KindUnknown, false
+	}
+	switch p.Event {
+	case ghEventReviewComment:
+		return kernel.KindCommented, true
+	case ghEventIssueComment:
+		if p.PRComment {
+			return kernel.KindCommented, true
+		}
+	}
+	return kernel.KindUnknown, false
+}
+
+// toEvent maps a parsed Payload to the neutral kernel event the dispatcher
+// consumes, resolving the GitHub sender type to Sender.IsBot.
 func toEvent(p Payload) kernel.Event {
-	event := kernel.Event{
-		GitHubEvent: kernel.GitHubEventType(p.Event),
-		Action:      kernel.Action(p.Action),
-		Repository:  p.Repository,
+	return kernel.Event{
+		Provider:   kernel.ProviderGitHub,
+		Kind:       mapKind(p),
+		Repository: p.Repository,
 		PR: kernel.PR{
 			Number:    p.PullRequest.Number,
 			Title:     p.PullRequest.Title,
@@ -214,11 +323,6 @@ func toEvent(p Payload) kernel.Event {
 			Body:      p.PullRequest.Body,
 			CreatedAt: p.PullRequest.CreatedAt,
 		},
-		PRComment: p.PRComment,
-		Sender:    kernel.Sender{Login: p.Sender.Login, Type: p.Sender.Type},
+		Sender: kernel.Sender{Login: p.Sender.Login, IsBot: p.Sender.Type == ghSenderTypeBot},
 	}
-	if p.Review != nil {
-		event.Review = &kernel.Review{State: kernel.ReviewState(p.Review.State)}
-	}
-	return event
 }

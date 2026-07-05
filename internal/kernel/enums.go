@@ -1,44 +1,61 @@
 package kernel
 
-// GitHubEventType is the value of the X-GitHub-Event header, naming the webhook
-// event family.
-type GitHubEventType string
-
-// Recognised X-GitHub-Event header values.
+// Provider identifies the git host an event originated from. The inbound adapter
+// stamps it on every event so handlers, the store, and logs stay
+// provider-agnostic.
 const (
-	EventPullRequest              GitHubEventType = "pull_request"
-	EventPullRequestReview        GitHubEventType = "pull_request_review"
-	EventPullRequestReviewComment GitHubEventType = "pull_request_review_comment"
-	EventIssueComment             GitHubEventType = "issue_comment"
+	ProviderGitHub = "github"
 )
 
-// Action is the webhook payload's action field.
-type Action string
+// EventKind is the provider-neutral classification of an inbound
+// pull-request webhook. Each inbound adapter maps its provider's own vocabulary
+// (event names, action strings, review states, draft gating) onto one of these
+// kinds; handlers match on the kind alone and never see provider verbs.
+//
+// The zero value KindUnknown marks a payload no handler acts on — the adapter
+// returns it for draft opens, synchronize/label churn, plain-issue comments, and
+// anything unmapped, so the dispatcher debug-logs no_handler exactly as before.
+type EventKind int
 
-// Recognised webhook action values.
+// Recognised event kinds. KindReviewCommented is distinct from KindCommented: a
+// submitted review carrying only comments finishes the PR's review session,
+// whereas a line/conversation comment (or an edited review) does not.
 const (
-	ActionOpened           Action = "opened"
-	ActionClosed           Action = "closed"
-	ActionReadyForReview   Action = "ready_for_review"
-	ActionConvertedToDraft Action = "converted_to_draft"
-	ActionSubmitted        Action = "submitted"
-	ActionCreated          Action = "created"
-	ActionEdited           Action = "edited"
+	KindUnknown EventKind = iota
+	KindOpened
+	KindReadyForReview
+	KindClosed
+	KindMerged
+	KindConvertedToDraft
+	KindApproved
+	KindChangesRequested
+	KindCommented
+	KindReviewCommented
 )
 
-// ReviewState is the state of a submitted review.
-type ReviewState string
-
-// Recognised review state values.
-const (
-	ReviewApproved         ReviewState = "approved"
-	ReviewCommented        ReviewState = "commented"
-	ReviewChangesRequested ReviewState = "changes_requested"
-)
-
-// Sender type values. Kept as plain string constants because the AI-suppression
-// policy compares the raw sender type string.
-const (
-	SenderTypeUser = "User"
-	SenderTypeBot  = "Bot"
-)
+// String returns the neutral log token for the kind, used in the ignored-event
+// log contract (the kind field).
+func (k EventKind) String() string {
+	switch k {
+	case KindOpened:
+		return "opened"
+	case KindReadyForReview:
+		return "ready_for_review"
+	case KindClosed:
+		return "closed"
+	case KindMerged:
+		return "merged"
+	case KindConvertedToDraft:
+		return "converted_to_draft"
+	case KindApproved:
+		return "approved"
+	case KindChangesRequested:
+		return "changes_requested"
+	case KindCommented:
+		return "commented"
+	case KindReviewCommented:
+		return "review_commented"
+	default:
+		return "unknown"
+	}
+}

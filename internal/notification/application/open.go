@@ -25,12 +25,11 @@ func NewOpenHandler(store domain.MessageStore, resolver domain.TargetResolver, m
 	return &OpenHandler{store: store, resolver: resolver, messenger: messenger, logger: logger}
 }
 
-// Applicable returns true for "ready_for_review", or "opened" on a non-draft PR.
+// Applicable returns true for a freshly opened or ready-for-review PR. The
+// inbound adapter does the draft gating (a draft open never yields KindOpened),
+// so no handler branches on PR.Draft.
 func (h *OpenHandler) Applicable(event kernel.Event) bool {
-	if event.Action == kernel.ActionReadyForReview {
-		return true
-	}
-	return event.Action == kernel.ActionOpened && !event.PR.Draft
+	return event.Kind == kernel.KindOpened || event.Kind == kernel.KindReadyForReview
 }
 
 // Handle posts one notification per resolved target channel and records each. It
@@ -94,8 +93,8 @@ func (h *OpenHandler) logIgnored(event kernel.Event, reason string) {
 	h.logger.Warn("ignored webhook event",
 		slog.String("reason", reason),
 		slog.String("handler", "open"),
-		slog.String("github_event", string(event.GitHubEvent)),
-		slog.String("action", string(event.Action)),
+		slog.String("provider", event.Provider),
+		slog.String("kind", event.Kind.String()),
 		slog.String("repository", event.Repository),
 		slog.Int("pr", event.PR.Number),
 	)

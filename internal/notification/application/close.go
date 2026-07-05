@@ -26,9 +26,11 @@ func NewCloseHandler(store domain.MessageStore, behavior domain.RepoBehavior, me
 	return &CloseHandler{store: store, behavior: behavior, messenger: messenger, logger: logger, reviews: reviews}
 }
 
-// Applicable returns true when the action is "closed".
+// Applicable returns true when a PR is closed, merged or not. The adapter splits
+// GitHub's single "closed" action into KindMerged/KindClosed; Handle still reads
+// PR.Merged to pick the decoration and emoji.
 func (h *CloseHandler) Applicable(event kernel.Event) bool {
-	return event.Action == kernel.ActionClosed
+	return event.Kind == kernel.KindClosed || event.Kind == kernel.KindMerged
 }
 
 // Handle updates every stored message and optionally adds a reaction to each.
@@ -107,8 +109,8 @@ func (h *CloseHandler) logIgnored(event kernel.Event, reason string) {
 	attrs := []any{
 		slog.String("reason", reason),
 		slog.String("handler", "close"),
-		slog.String("github_event", string(event.GitHubEvent)),
-		slog.String("action", string(event.Action)),
+		slog.String("provider", event.Provider),
+		slog.String("kind", event.Kind.String()),
 		slog.String("repository", event.Repository),
 		slog.Int("pr", event.PR.Number),
 	}

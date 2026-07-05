@@ -2,6 +2,10 @@
 
 Notifycat applies its database migrations automatically on server startup (see [Operations → Startup](operations.md#startup-and-shutdown)), so most upgrades are "pull the new image and restart." This page calls out the releases that need an operator action beyond that.
 
+## Ignored-event log fields renamed
+
+The internal git-provider-neutral event refactor renames two fields on the `ignored webhook event` log line: `github_event` becomes `provider` (currently always `github`) and `action` becomes `kind` (a provider-neutral event classification such as `opened`, `merged`, `review_commented`, or `unknown`). No operator action is required to upgrade, but any log dashboards or alerts that filter on `github_event`/`action` should be updated to `provider`/`kind`. See [Operations → Debugging a 200 OK with no Slack change](operations.md#debugging-a-200-ok-with-no-slack-change) for the full field set.
+
 ## 0.20.0 — Multi-message fan-out
 
 This release replaces the single `slack_messages` table with normalized `pull_requests` and `messages` tables, so a monorepo PR can fan out to [one Slack message per matched path channel](mappings.md#per-path-routing-monorepos).

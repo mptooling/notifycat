@@ -39,7 +39,7 @@ func TestDispatcher_RunsFirstApplicableHandler(t *testing.T) {
 	}
 
 	d := application.NewDispatcher(discardLogger(), []domain.Handler{skip, match, other})
-	if err := d.Dispatch(context.Background(), kernel.Event{Action: kernel.ActionOpened}); err != nil {
+	if err := d.Dispatch(context.Background(), kernel.Event{Kind: kernel.KindOpened}); err != nil {
 		t.Fatalf("Dispatch: %v", err)
 	}
 	if match.called != 1 {
@@ -82,23 +82,22 @@ func TestDispatcher_NoApplicableHandlerLogsContext(t *testing.T) {
 	}
 	d := application.NewDispatcher(logger, []domain.Handler{skip})
 	if err := d.Dispatch(context.Background(), kernel.Event{
-		GitHubEvent: kernel.EventPullRequest,
-		Action:      "labeled",
-		Repository:  "octo/widget",
-		PR:          kernel.PR{Number: 42},
+		Provider:   kernel.ProviderGitHub,
+		Repository: "octo/widget",
+		PR:         kernel.PR{Number: 42},
 	}); err != nil {
 		t.Fatalf("Dispatch: %v", err)
 	}
 
 	rec := decodeLog(t, buf.Bytes())
 	wantFields(t, rec, map[string]any{
-		"level":        "DEBUG",
-		"msg":          "ignored webhook event",
-		"reason":       "no_handler",
-		"handler":      "",
-		"github_event": "pull_request",
-		"action":       "labeled",
-		"repository":   "octo/widget",
-		"pr":           float64(42),
+		"level":      "DEBUG",
+		"msg":        "ignored webhook event",
+		"reason":     "no_handler",
+		"handler":    "",
+		"provider":   "github",
+		"kind":       "unknown",
+		"repository": "octo/widget",
+		"pr":         float64(42),
 	})
 }

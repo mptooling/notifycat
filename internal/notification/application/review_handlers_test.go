@@ -47,14 +47,14 @@ func noActiveSession() *fakeReviewSessions {
 func TestApproveHandler_Applicable(t *testing.T) {
 	h := application.NewApproveHandler(nil, nil, nil, discardLogger(), noActiveSession())
 
-	if !h.Applicable(kernel.Event{Action: kernel.ActionSubmitted, Review: &kernel.Review{State: kernel.ReviewApproved}}) {
-		t.Error("submitted+approved should be applicable")
+	if !h.Applicable(kernel.Event{Kind: kernel.KindApproved}) {
+		t.Error("KindApproved should be applicable")
 	}
-	if h.Applicable(kernel.Event{Action: kernel.ActionSubmitted, Review: &kernel.Review{State: kernel.ReviewCommented}}) {
-		t.Error("submitted+commented should not be approve-applicable")
+	if h.Applicable(kernel.Event{Kind: kernel.KindReviewCommented}) {
+		t.Error("a commented review should not be approve-applicable")
 	}
-	if h.Applicable(kernel.Event{Action: kernel.ActionSubmitted}) {
-		t.Error("submitted with no review should not be applicable")
+	if h.Applicable(kernel.Event{Kind: kernel.KindUnknown}) {
+		t.Error("an unmapped event should not be applicable")
 	}
 }
 
@@ -63,10 +63,9 @@ func TestApproveHandler_Handle_AddsReaction(t *testing.T) {
 	h := application.NewApproveHandler(store, behavior, messenger, discardLogger(), noActiveSession())
 
 	e := kernel.Event{
-		Action:     kernel.ActionSubmitted,
+		Kind:       kernel.KindApproved,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42},
-		Review:     &kernel.Review{State: kernel.ReviewApproved},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -85,10 +84,9 @@ func TestApproveHandler_Handle_TouchesActivity(t *testing.T) {
 	h := application.NewApproveHandler(store, behavior, messenger, discardLogger(), noActiveSession())
 
 	e := kernel.Event{
-		Action:     kernel.ActionSubmitted,
+		Kind:       kernel.KindApproved,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42},
-		Review:     &kernel.Review{State: kernel.ReviewApproved},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -106,11 +104,10 @@ func TestApproveHandler_IgnoreAIReviews_BotSenderDoesNotTouch(t *testing.T) {
 	h := application.NewApproveHandler(store, behavior, messenger, discardLogger(), noActiveSession())
 
 	e := kernel.Event{
-		Action:     kernel.ActionSubmitted,
+		Kind:       kernel.KindApproved,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42},
-		Review:     &kernel.Review{State: kernel.ReviewApproved},
-		Sender:     kernel.Sender{Login: "copilot[bot]", Type: "Bot"},
+		Sender:     kernel.Sender{Login: "copilot[bot]", IsBot: true},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -133,15 +130,11 @@ func TestCommentedHandler_Applicable(t *testing.T) {
 		e    kernel.Event
 		want bool
 	}{
-		{"submitted+commented", kernel.Event{Action: kernel.ActionSubmitted, Review: &kernel.Review{State: kernel.ReviewCommented}}, true},
-		{"edited+commented", kernel.Event{Action: kernel.ActionEdited, Review: &kernel.Review{State: kernel.ReviewCommented}}, true},
-		{"line comment created", kernel.Event{GitHubEvent: kernel.EventPullRequestReviewComment, Action: kernel.ActionCreated}, true},
-		{"line comment edited", kernel.Event{GitHubEvent: kernel.EventPullRequestReviewComment, Action: kernel.ActionEdited}, false},
-		{"pr conversation comment created", kernel.Event{GitHubEvent: kernel.EventIssueComment, Action: kernel.ActionCreated, PRComment: true}, true},
-		{"pr conversation comment edited", kernel.Event{GitHubEvent: kernel.EventIssueComment, Action: kernel.ActionEdited, PRComment: true}, false},
-		{"plain issue comment created", kernel.Event{GitHubEvent: kernel.EventIssueComment, Action: kernel.ActionCreated, PRComment: false}, false},
-		{"submitted+approved", kernel.Event{Action: kernel.ActionSubmitted, Review: &kernel.Review{State: kernel.ReviewApproved}}, false},
-		{"submitted no review", kernel.Event{Action: kernel.ActionSubmitted}, false},
+		{"comment (line/conversation/edited-review)", kernel.Event{Kind: kernel.KindCommented}, true},
+		{"submitted commented review", kernel.Event{Kind: kernel.KindReviewCommented}, true},
+		{"approved review", kernel.Event{Kind: kernel.KindApproved}, false},
+		{"changes requested", kernel.Event{Kind: kernel.KindChangesRequested}, false},
+		{"unmapped event", kernel.Event{Kind: kernel.KindUnknown}, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -157,10 +150,9 @@ func TestCommentedHandler_Handle_AddsReaction(t *testing.T) {
 	h := application.NewCommentedHandler(store, behavior, messenger, discardLogger(), noActiveSession())
 
 	e := kernel.Event{
-		Action:     kernel.ActionSubmitted,
+		Kind:       kernel.KindReviewCommented,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42},
-		Review:     &kernel.Review{State: kernel.ReviewCommented},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -176,10 +168,9 @@ func TestCommentedHandler_Handle_LineCommentAddsReaction(t *testing.T) {
 	h := application.NewCommentedHandler(store, behavior, messenger, discardLogger(), noActiveSession())
 
 	e := kernel.Event{
-		GitHubEvent: kernel.EventPullRequestReviewComment,
-		Action:      kernel.ActionCreated,
-		Repository:  "octo/widget",
-		PR:          kernel.PR{Number: 42},
+		Kind:       kernel.KindCommented,
+		Repository: "octo/widget",
+		PR:         kernel.PR{Number: 42},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -195,11 +186,14 @@ func TestCommentedHandler_Handle_LineCommentAddsReaction(t *testing.T) {
 func TestRequestChangeHandler_Applicable(t *testing.T) {
 	h := application.NewRequestChangeHandler(nil, nil, nil, discardLogger(), noActiveSession())
 
-	if !h.Applicable(kernel.Event{Action: kernel.ActionSubmitted, Review: &kernel.Review{State: kernel.ReviewChangesRequested}}) {
-		t.Error("submitted+changes_requested should be applicable")
+	if !h.Applicable(kernel.Event{Kind: kernel.KindChangesRequested}) {
+		t.Error("KindChangesRequested should be applicable")
 	}
-	if h.Applicable(kernel.Event{Action: kernel.ActionEdited, Review: &kernel.Review{State: kernel.ReviewChangesRequested}}) {
-		t.Error("edited+changes_requested should not be applicable (PHP parity)")
+	if h.Applicable(kernel.Event{Kind: kernel.KindCommented}) {
+		t.Error("a comment should not be request-change-applicable")
+	}
+	if h.Applicable(kernel.Event{Kind: kernel.KindUnknown}) {
+		t.Error("an unmapped event should not be applicable")
 	}
 }
 
@@ -208,10 +202,9 @@ func TestRequestChangeHandler_Handle_AddsReaction(t *testing.T) {
 	h := application.NewRequestChangeHandler(store, behavior, messenger, discardLogger(), noActiveSession())
 
 	e := kernel.Event{
-		Action:     kernel.ActionSubmitted,
+		Kind:       kernel.KindChangesRequested,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42},
-		Review:     &kernel.Review{State: kernel.ReviewChangesRequested},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -233,10 +226,9 @@ func TestReactionHandler_ReactsOnEveryMessage(t *testing.T) {
 	h := application.NewApproveHandler(store, behavior, messenger, discardLogger(), noActiveSession())
 
 	e := kernel.Event{
-		Action:     kernel.ActionSubmitted,
+		Kind:       kernel.KindApproved,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42},
-		Review:     &kernel.Review{State: kernel.ReviewApproved},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -259,11 +251,10 @@ func TestApproveHandler_IgnoreAIReviews_BotSenderSuppressesReaction(t *testing.T
 	h := application.NewApproveHandler(store, behavior, messenger, discardLogger(), noActiveSession())
 
 	e := kernel.Event{
-		Action:     kernel.ActionSubmitted,
+		Kind:       kernel.KindApproved,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42},
-		Review:     &kernel.Review{State: kernel.ReviewApproved},
-		Sender:     kernel.Sender{Login: "copilot[bot]", Type: "Bot"},
+		Sender:     kernel.Sender{Login: "copilot[bot]", IsBot: true},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -281,11 +272,10 @@ func TestApproveHandler_IgnoreAIReviews_HumanSenderReacts(t *testing.T) {
 	h := application.NewApproveHandler(store, behavior, messenger, discardLogger(), noActiveSession())
 
 	e := kernel.Event{
-		Action:     kernel.ActionSubmitted,
+		Kind:       kernel.KindApproved,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42},
-		Review:     &kernel.Review{State: kernel.ReviewApproved},
-		Sender:     kernel.Sender{Login: "alice", Type: "User"},
+		Sender:     kernel.Sender{Login: "alice"},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -303,11 +293,10 @@ func TestApproveHandler_IgnoreAIReviewsFalse_BotSenderStillReacts(t *testing.T) 
 	h := application.NewApproveHandler(store, behavior, messenger, discardLogger(), noActiveSession())
 
 	e := kernel.Event{
-		Action:     kernel.ActionSubmitted,
+		Kind:       kernel.KindApproved,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42},
-		Review:     &kernel.Review{State: kernel.ReviewApproved},
-		Sender:     kernel.Sender{Login: "dependabot[bot]", Type: "Bot"},
+		Sender:     kernel.Sender{Login: "dependabot[bot]", IsBot: true},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -325,11 +314,10 @@ func TestCommentedHandler_IgnoreAIReviews_BotSenderSuppressesReaction(t *testing
 	h := application.NewCommentedHandler(store, behavior, messenger, discardLogger(), noActiveSession())
 
 	e := kernel.Event{
-		Action:     kernel.ActionSubmitted,
+		Kind:       kernel.KindReviewCommented,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42},
-		Review:     &kernel.Review{State: kernel.ReviewCommented},
-		Sender:     kernel.Sender{Login: "claude[bot]", Type: "Bot"},
+		Sender:     kernel.Sender{Login: "claude[bot]", IsBot: true},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -347,11 +335,10 @@ func TestCommentedHandler_IgnoreAIReviews_BotLineCommentSuppressed(t *testing.T)
 	h := application.NewCommentedHandler(store, behavior, messenger, discardLogger(), noActiveSession())
 
 	e := kernel.Event{
-		GitHubEvent: kernel.EventPullRequestReviewComment,
-		Action:      kernel.ActionCreated,
-		Repository:  "octo/widget",
-		PR:          kernel.PR{Number: 42},
-		Sender:      kernel.Sender{Login: "github-actions[bot]", Type: "Bot"},
+		Kind:       kernel.KindCommented,
+		Repository: "octo/widget",
+		PR:         kernel.PR{Number: 42},
+		Sender:     kernel.Sender{Login: "github-actions[bot]", IsBot: true},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -369,11 +356,10 @@ func TestRequestChangeHandler_IgnoreAIReviews_BotSenderSuppressesReaction(t *tes
 	h := application.NewRequestChangeHandler(store, behavior, messenger, discardLogger(), noActiveSession())
 
 	e := kernel.Event{
-		Action:     kernel.ActionSubmitted,
+		Kind:       kernel.KindChangesRequested,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42},
-		Review:     &kernel.Review{State: kernel.ReviewChangesRequested},
-		Sender:     kernel.Sender{Login: "release-please[bot]", Type: "Bot"},
+		Sender:     kernel.Sender{Login: "release-please[bot]", IsBot: true},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -393,11 +379,10 @@ func TestReactionHandler_SuppressedReactionLogsAtDebug(t *testing.T) {
 	h := application.NewApproveHandler(store, behavior, messenger, logger, noActiveSession())
 
 	e := kernel.Event{
-		Action:     kernel.ActionSubmitted,
+		Kind:       kernel.KindApproved,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42},
-		Review:     &kernel.Review{State: kernel.ReviewApproved},
-		Sender:     kernel.Sender{Login: "copilot[bot]", Type: "Bot"},
+		Sender:     kernel.Sender{Login: "copilot[bot]", IsBot: true},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -421,11 +406,10 @@ func TestCommentedHandler_BotMarker_AddsMarkerAlongsideStateReaction(t *testing.
 	h := application.NewCommentedHandler(store, behavior, messenger, discardLogger(), noActiveSession())
 
 	e := kernel.Event{
-		Action:     kernel.ActionSubmitted,
+		Kind:       kernel.KindReviewCommented,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42},
-		Review:     &kernel.Review{State: kernel.ReviewCommented},
-		Sender:     kernel.Sender{Login: "copilot[bot]", Type: "Bot"},
+		Sender:     kernel.Sender{Login: "copilot[bot]", IsBot: true},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -447,11 +431,10 @@ func TestApproveHandler_BotMarker_AddsMarkerAlongsideStateReaction(t *testing.T)
 	h := application.NewApproveHandler(store, behavior, messenger, discardLogger(), noActiveSession())
 
 	e := kernel.Event{
-		Action:     kernel.ActionSubmitted,
+		Kind:       kernel.KindApproved,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42},
-		Review:     &kernel.Review{State: kernel.ReviewApproved},
-		Sender:     kernel.Sender{Login: "dependabot[bot]", Type: "Bot"},
+		Sender:     kernel.Sender{Login: "dependabot[bot]", IsBot: true},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -470,11 +453,10 @@ func TestCommentedHandler_BotMarker_LineCommentBotGetsMarker(t *testing.T) {
 	h := application.NewCommentedHandler(store, behavior, messenger, discardLogger(), noActiveSession())
 
 	e := kernel.Event{
-		GitHubEvent: kernel.EventPullRequestReviewComment,
-		Action:      kernel.ActionCreated,
-		Repository:  "octo/widget",
-		PR:          kernel.PR{Number: 42},
-		Sender:      kernel.Sender{Login: "github-actions[bot]", Type: "Bot"},
+		Kind:       kernel.KindCommented,
+		Repository: "octo/widget",
+		PR:         kernel.PR{Number: 42},
+		Sender:     kernel.Sender{Login: "github-actions[bot]", IsBot: true},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -493,11 +475,10 @@ func TestCommentedHandler_BotMarker_HumanGetsOnlyStateReaction(t *testing.T) {
 	h := application.NewCommentedHandler(store, behavior, messenger, discardLogger(), noActiveSession())
 
 	e := kernel.Event{
-		Action:     kernel.ActionSubmitted,
+		Kind:       kernel.KindReviewCommented,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42},
-		Review:     &kernel.Review{State: kernel.ReviewCommented},
-		Sender:     kernel.Sender{Login: "alice", Type: "User"},
+		Sender:     kernel.Sender{Login: "alice"},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -518,11 +499,10 @@ func TestCommentedHandler_BotMarker_SuppressedBotGetsNothing(t *testing.T) {
 	h := application.NewCommentedHandler(store, behavior, messenger, discardLogger(), noActiveSession())
 
 	e := kernel.Event{
-		Action:     kernel.ActionSubmitted,
+		Kind:       kernel.KindReviewCommented,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42},
-		Review:     &kernel.Review{State: kernel.ReviewCommented},
-		Sender:     kernel.Sender{Login: "copilot[bot]", Type: "Bot"},
+		Sender:     kernel.Sender{Login: "copilot[bot]", IsBot: true},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -540,11 +520,9 @@ func TestApproveHandler_SubmittedReview_FinishesSession(t *testing.T) {
 	h := application.NewApproveHandler(store, behavior, messenger, discardLogger(), reviews)
 
 	e := kernel.Event{
-		GitHubEvent: kernel.EventPullRequestReview,
-		Action:      kernel.ActionSubmitted,
-		Repository:  "octo/widget",
-		PR:          kernel.PR{Number: 42},
-		Review:      &kernel.Review{State: kernel.ReviewApproved},
+		Kind:       kernel.KindApproved,
+		Repository: "octo/widget",
+		PR:         kernel.PR{Number: 42},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -566,11 +544,9 @@ func TestRequestChangeHandler_SubmittedReview_FinishesSession(t *testing.T) {
 	h := application.NewRequestChangeHandler(store, behavior, messenger, discardLogger(), reviews)
 
 	e := kernel.Event{
-		GitHubEvent: kernel.EventPullRequestReview,
-		Action:      kernel.ActionSubmitted,
-		Repository:  "octo/widget",
-		PR:          kernel.PR{Number: 42},
-		Review:      &kernel.Review{State: kernel.ReviewChangesRequested},
+		Kind:       kernel.KindChangesRequested,
+		Repository: "octo/widget",
+		PR:         kernel.PR{Number: 42},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -586,10 +562,9 @@ func TestCommentedHandler_LineComment_DoesNotFinishSession(t *testing.T) {
 	h := application.NewCommentedHandler(store, behavior, messenger, discardLogger(), reviews)
 
 	e := kernel.Event{
-		GitHubEvent: kernel.EventPullRequestReviewComment,
-		Action:      kernel.ActionCreated,
-		Repository:  "octo/widget",
-		PR:          kernel.PR{Number: 42},
+		Kind:       kernel.KindCommented,
+		Repository: "octo/widget",
+		PR:         kernel.PR{Number: 42},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -604,12 +579,12 @@ func TestCommentedHandler_IssueComment_DoesNotFinishSession(t *testing.T) {
 	reviews := noActiveSession()
 	h := application.NewCommentedHandler(store, behavior, messenger, discardLogger(), reviews)
 
+	// A conversation comment on a PR also maps to KindCommented and must not
+	// finish the review session.
 	e := kernel.Event{
-		GitHubEvent: kernel.EventIssueComment,
-		Action:      kernel.ActionCreated,
-		Repository:  "octo/widget",
-		PR:          kernel.PR{Number: 42},
-		PRComment:   true,
+		Kind:       kernel.KindCommented,
+		Repository: "octo/widget",
+		PR:         kernel.PR{Number: 42},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -625,11 +600,9 @@ func TestCommentedHandler_SubmittedCommentReview_FinishesSession(t *testing.T) {
 	h := application.NewCommentedHandler(store, behavior, messenger, discardLogger(), reviews)
 
 	e := kernel.Event{
-		GitHubEvent: kernel.EventPullRequestReview,
-		Action:      kernel.ActionSubmitted,
-		Repository:  "octo/widget",
-		PR:          kernel.PR{Number: 42},
-		Review:      &kernel.Review{State: kernel.ReviewCommented},
+		Kind:       kernel.KindReviewCommented,
+		Repository: "octo/widget",
+		PR:         kernel.PR{Number: 42},
 	}
 	if err := h.Handle(context.Background(), e); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -641,20 +614,18 @@ func TestCommentedHandler_SubmittedCommentReview_FinishesSession(t *testing.T) {
 
 // ----- Submit takes the message out of the in-review state (AC #1) -----
 
-// submittedReviewEvent is an approved pull_request_review with the full PR
-// object the recompose depends on (title/url/author come from the webhook).
+// submittedReviewEvent is an approved review with the full PR object the
+// recompose depends on (title/url/author come from the webhook).
 func submittedReviewEvent() kernel.Event {
 	return kernel.Event{
-		GitHubEvent: kernel.EventPullRequestReview,
-		Action:      kernel.ActionSubmitted,
-		Repository:  "octo/widget",
+		Kind:       kernel.KindApproved,
+		Repository: "octo/widget",
 		PR: kernel.PR{
 			Number: 42,
 			Title:  "Add widget",
 			URL:    "https://github.com/octo/widget/pull/42",
 			Author: "alice",
 		},
-		Review: &kernel.Review{State: kernel.ReviewApproved},
 	}
 }
 
@@ -770,15 +741,15 @@ func TestReviewHandlers_NoStoredMessageIsNoop(t *testing.T) {
 	}{
 		{
 			name: "approve",
-			e:    kernel.Event{Action: kernel.ActionSubmitted, Repository: "octo/widget", PR: kernel.PR{Number: 42}, Review: &kernel.Review{State: kernel.ReviewApproved}},
+			e:    kernel.Event{Kind: kernel.KindApproved, Repository: "octo/widget", PR: kernel.PR{Number: 42}},
 		},
 		{
 			name: "commented",
-			e:    kernel.Event{Action: kernel.ActionSubmitted, Repository: "octo/widget", PR: kernel.PR{Number: 42}, Review: &kernel.Review{State: kernel.ReviewCommented}},
+			e:    kernel.Event{Kind: kernel.KindReviewCommented, Repository: "octo/widget", PR: kernel.PR{Number: 42}},
 		},
 		{
 			name: "request_change",
-			e:    kernel.Event{Action: kernel.ActionSubmitted, Repository: "octo/widget", PR: kernel.PR{Number: 42}, Review: &kernel.Review{State: kernel.ReviewChangesRequested}},
+			e:    kernel.Event{Kind: kernel.KindChangesRequested, Repository: "octo/widget", PR: kernel.PR{Number: 42}},
 		},
 	}
 	for _, c := range cases {

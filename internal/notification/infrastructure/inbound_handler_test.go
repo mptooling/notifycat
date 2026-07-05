@@ -46,11 +46,11 @@ func TestGitHubHandler_HappyPath(t *testing.T) {
 	if !dispatcher.called {
 		t.Fatal("dispatcher not called")
 	}
-	if dispatcher.event.GitHubEvent != "pull_request" {
-		t.Errorf("GitHubEvent = %q; want %q", dispatcher.event.GitHubEvent, "pull_request")
+	if dispatcher.event.Provider != kernel.ProviderGitHub {
+		t.Errorf("Provider = %q; want %q", dispatcher.event.Provider, kernel.ProviderGitHub)
 	}
-	if dispatcher.event.Action != "opened" {
-		t.Errorf("Action = %q; want %q", dispatcher.event.Action, "opened")
+	if dispatcher.event.Kind != kernel.KindOpened {
+		t.Errorf("Kind = %v; want KindOpened", dispatcher.event.Kind)
 	}
 	if dispatcher.event.PR.Number != 7 {
 		t.Errorf("PR.Number = %d; want 7", dispatcher.event.PR.Number)
@@ -130,7 +130,9 @@ func TestGitHubHandler_XGitHubEventHeaderMapped(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d; want 200", rec.Code)
 	}
-	if dispatcher.event.GitHubEvent != "pull_request_review" {
-		t.Errorf("GitHubEvent = %q; want %q", dispatcher.event.GitHubEvent, "pull_request_review")
+	// The X-GitHub-Event header drives the kind mapping: without it the adapter
+	// cannot tell this is a review and would fall through to KindUnknown.
+	if dispatcher.event.Kind != kernel.KindApproved {
+		t.Errorf("Kind = %v; want KindApproved", dispatcher.event.Kind)
 	}
 }
