@@ -27,6 +27,14 @@ func TestEntry_Hash_DiffersOnWildcardVsExplicit(t *testing.T) {
 	}
 }
 
+func TestEntry_Hash_DiffersOnProvider(t *testing.T) {
+	github := Entry{Org: "acme", Repo: "api", Channel: "C1", Provider: "github"}
+	bitbucket := Entry{Org: "acme", Repo: "api", Channel: "C1", Provider: "bitbucket"}
+	if github.Hash() == bitbucket.Hash() {
+		t.Errorf("flipping the provider must change the hash (so the whole lock revalidates)")
+	}
+}
+
 func TestEntry_Hash_DiffersOnPathChannels(t *testing.T) {
 	a := Entry{Org: "acme", Repo: "api", Channel: "C1"}
 	b := Entry{Org: "acme", Repo: "api", Channel: "C1", PathChannels: []string{"C2"}}

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mptooling/notifycat/internal/platform/config"
@@ -31,12 +32,64 @@ func writeConfig(t *testing.T, body string) {
 	}
 }
 
-const minimalConfig = "server:\n  log_level: info\n"
+const minimalConfig = "git_provider: github\nserver:\n  log_level: info\n"
 
 func setSecrets(t *testing.T) {
 	t.Helper()
 	t.Setenv("GITHUB_WEBHOOK_SECRET", "shh")
 	t.Setenv("SLACK_BOT_TOKEN", "xoxb-x")
+}
+
+func TestLoad_RequiresGitProvider(t *testing.T) {
+	writeConfig(t, "server:\n  log_level: info\n") // no git_provider
+	setSecrets(t)
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("Load() succeeded with no git_provider; want a fail-fast error")
+	}
+	if msg := err.Error(); !strings.Contains(msg, "git_provider") || !strings.Contains(msg, "upgrading.md") {
+		t.Errorf("error = %q; want it to name git_provider and point at the upgrade doc", msg)
+	}
+}
+
+func TestLoad_GitProviderGitHub_Boots(t *testing.T) {
+	writeConfig(t, minimalConfig)
+	setSecrets(t)
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() with git_provider: github = %v; want nil", err)
+	}
+	if cfg.GitProvider != "github" {
+		t.Errorf("GitProvider = %q; want github", cfg.GitProvider)
+	}
+}
+
+func TestLoad_RejectsBitbucketProvider(t *testing.T) {
+	writeConfig(t, "git_provider: bitbucket\n")
+	setSecrets(t)
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("Load() succeeded with git_provider: bitbucket; want a not-yet-supported error")
+	}
+	if msg := err.Error(); !strings.Contains(msg, "not yet supported") {
+		t.Errorf("error = %q; want a clear not-yet-supported message", msg)
+	}
+}
+
+func TestLoad_RejectsInvalidProvider(t *testing.T) {
+	writeConfig(t, "git_provider: gitlab\n")
+	setSecrets(t)
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("Load() succeeded with an unknown git_provider; want an invalid-enum error")
+	}
+	if msg := err.Error(); !strings.Contains(msg, "git_provider") || !strings.Contains(msg, "invalid") {
+		t.Errorf("error = %q; want it to name git_provider as invalid", msg)
+	}
 }
 
 func TestLoad_RequiresWebhookSecret(t *testing.T) {
@@ -128,6 +181,7 @@ func TestLoad_AppliesDefaultsForAbsentKeys(t *testing.T) {
 
 func TestLoad_OverridesAndMappings(t *testing.T) {
 	writeConfig(t, `
+git_provider: github
 server:
   addr: ":9000"
   log_level: debug
@@ -206,7 +260,7 @@ func TestLoad_DigestTimezone_DefaultsToUTC(t *testing.T) {
 }
 
 func TestLoad_DigestTimezone_Valid(t *testing.T) {
-	writeConfig(t, "digest:\n  timezone: \"Europe/Kyiv\"\n")
+	writeConfig(t, "git_provider: github\ndigest:\n  timezone: \"Europe/Kyiv\"\n")
 	setSecrets(t)
 	cfg, err := config.Load()
 	if err != nil {
@@ -218,7 +272,7 @@ func TestLoad_DigestTimezone_Valid(t *testing.T) {
 }
 
 func TestLoad_DigestTimezone_InvalidRejected(t *testing.T) {
-	writeConfig(t, "digest:\n  timezone: \"Mars/Phobos\"\n")
+	writeConfig(t, "git_provider: github\ndigest:\n  timezone: \"Mars/Phobos\"\n")
 	setSecrets(t)
 	if _, err := config.Load(); err == nil {
 		t.Fatal("Load() succeeded with an invalid timezone; want a descriptive error")
@@ -234,7 +288,7 @@ func TestLoad_RejectsUnknownTierKey(t *testing.T) {
 }
 
 func TestLoad_MessageTTLDays_RejectsZero(t *testing.T) {
-	writeConfig(t, "cleanup:\n  message_ttl_days: 0\n")
+	writeConfig(t, "git_provider: github\ncleanup:\n  message_ttl_days: 0\n")
 	setSecrets(t)
 	if _, err := config.Load(); err == nil {
 		t.Fatal("Load() succeeded with message_ttl_days=0; want error")
@@ -261,6 +315,7 @@ func TestLoad_UnknownKeyRejected(t *testing.T) {
 func TestLoad_MappingsTierWithNoChannel_Rejected(t *testing.T) {
 	// api has no channel and there is no org/* to inherit from → structural error.
 	writeConfig(t, `
+git_provider: github
 mappings:
   acme:
     api:
@@ -273,7 +328,7 @@ mappings:
 }
 
 func TestLoad_EmptyOrg_Rejected(t *testing.T) {
-	writeConfig(t, "mappings:\n  acme: {}\n")
+	writeConfig(t, "git_provider: github\nmappings:\n  acme: {}\n")
 	setSecrets(t)
 	if _, err := config.Load(); err == nil {
 		t.Fatal("Load() succeeded with an empty org entry; want error")
@@ -281,7 +336,7 @@ func TestLoad_EmptyOrg_Rejected(t *testing.T) {
 }
 
 func TestLoad_EmptyMappings_Valid(t *testing.T) {
-	writeConfig(t, "mappings: {}\n")
+	writeConfig(t, "git_provider: github\nmappings: {}\n")
 	setSecrets(t)
 	if _, err := config.Load(); err != nil {
 		t.Fatalf("Load() with empty mappings returned error %v; want nil", err)

@@ -26,6 +26,11 @@ type Config struct {
 	// config.lock is derived from it.
 	ConfigFile string
 
+	// GitProvider is the required git_provider enum ("github"). It selects which
+	// provider's secrets are required (see readSecrets) and hashes into every
+	// lock entry (see routing Entry.Provider).
+	GitProvider string
+
 	Addr        string
 	LogLevel    string
 	LogFormat   string
@@ -84,7 +89,8 @@ const DefaultConfigFile = "./config.yaml"
 // document. Bool/int leaves are pointers so an absent key is distinguishable
 // from an explicit zero and the Go-side default survives.
 type fileSchema struct {
-	Server struct {
+	GitProvider string `yaml:"git_provider"`
+	Server      struct {
 		Addr      string `yaml:"addr"`
 		LogLevel  string `yaml:"log_level"`
 		LogFormat string `yaml:"log_format"`
@@ -191,6 +197,10 @@ func Load() (Config, error) {
 	cfg.ConfigFile = path
 	applyFileSchema(&cfg, fs)
 
+	if err := validateGitProvider(cfg.GitProvider); err != nil {
+		return Config{}, err
+	}
+
 	tz, err := resolveDigestTimezone(cfg.Digest)
 	if err != nil {
 		return Config{}, err
@@ -212,6 +222,7 @@ func Load() (Config, error) {
 // applyFileSchema overlays the file's present keys onto cfg (which starts at
 // defaults). Empty strings and nil pointers mean "absent": keep the default.
 func applyFileSchema(cfg *Config, fs fileSchema) {
+	cfg.GitProvider = fs.GitProvider // required; validated after overlay
 	setString(&cfg.Addr, fs.Server.Addr)
 	setString(&cfg.LogLevel, fs.Server.LogLevel)
 	setString(&cfg.LogFormat, fs.Server.LogFormat)
@@ -271,19 +282,31 @@ func setString(dst *string, v string) {
 	}
 }
 
-// readSecrets pulls the secrets from the environment into cfg. The two required
-// ones (GITHUB_WEBHOOK_SECRET, SLACK_BOT_TOKEN) produce a MissingVarError when
-// unset/empty; GITHUB_TOKEN and SLACK_SIGNING_SECRET are optional features.
+// readSecrets pulls the secrets from the environment into cfg. SLACK_BOT_TOKEN is
+// always required; the webhook secret requirement follows the selected provider
+// (see requireProviderSecret). GITHUB_TOKEN and SLACK_SIGNING_SECRET are optional
+// features.
 func readSecrets(cfg *Config) error {
 	cfg.GitHubWebhookSecret = Secret(os.Getenv("GITHUB_WEBHOOK_SECRET"))
 	cfg.SlackBotToken = Secret(os.Getenv("SLACK_BOT_TOKEN"))
 	cfg.GitHubToken = Secret(os.Getenv("GITHUB_TOKEN"))
 	cfg.SlackSigningSecret = Secret(os.Getenv("SLACK_SIGNING_SECRET"))
-	if cfg.GitHubWebhookSecret.Reveal() == "" {
-		return fmt.Errorf("config: %w", &MissingVarError{Var: "GITHUB_WEBHOOK_SECRET"})
-	}
 	if cfg.SlackBotToken.Reveal() == "" {
 		return fmt.Errorf("config: %w", &MissingVarError{Var: "SLACK_BOT_TOKEN"})
+	}
+	return requireProviderSecret(cfg)
+}
+
+// requireProviderSecret enforces the webhook secret of the selected git provider
+// (D8): git_provider: github requires GITHUB_WEBHOOK_SECRET. A second provider's
+// secret joins here as its inbound stack lands; a deployment never needs another
+// provider's credential.
+func requireProviderSecret(cfg *Config) error {
+	switch cfg.GitProvider {
+	case gitProviderGitHub:
+		if cfg.GitHubWebhookSecret.Reveal() == "" {
+			return fmt.Errorf("config: %w", &MissingVarError{Var: "GITHUB_WEBHOOK_SECRET"})
+		}
 	}
 	return nil
 }

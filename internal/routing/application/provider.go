@@ -113,11 +113,12 @@ func (p *Provider) Entries() []domain.Entry {
 				Channel:      res.Channel,
 				Mentions:     res.Mentions,
 				PathChannels: pathChannels(rc.Paths),
+				Provider:     p.defaults.GitProvider,
 			})
 		}
 		if starPtr != nil {
 			res := resolveRouting(starPtr, nil)
-			out = append(out, domain.Entry{Org: org, Wildcard: true, Channel: res.Channel, Mentions: res.Mentions})
+			out = append(out, domain.Entry{Org: org, Wildcard: true, Channel: res.Channel, Mentions: res.Mentions, Provider: p.defaults.GitProvider})
 		}
 	}
 	return out

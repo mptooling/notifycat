@@ -19,6 +19,10 @@ type Entry struct {
 	// and the entry hash, so adding or repointing a path channel re-triggers
 	// validation. Always empty for a wildcard entry (paths are named-tier only).
 	PathChannels []string
+	// Provider is the deployment's git_provider (e.g. "github"). It hashes into
+	// every entry so flipping the provider — under which the same org/repo names
+	// point at different remote objects — revalidates the whole lock.
+	Provider string
 }
 
 // Key returns the lock-file key for the entry: "org/repo" or "org/*".
@@ -40,11 +44,12 @@ func (e Entry) Hash() string {
 		repo = "*"
 	}
 	payload := struct {
+		Provider     string   `json:"provider"`
 		Org          string   `json:"org"`
 		Repo         string   `json:"repo"`
 		Channel      string   `json:"channel"`
 		PathChannels []string `json:"path_channels,omitempty"`
-	}{e.Org, repo, e.Channel, e.PathChannels}
+	}{e.Provider, e.Org, repo, e.Channel, e.PathChannels}
 	// json.Marshal cannot fail for a fixed struct of supported types.
 	b, _ := json.Marshal(payload)
 	sum := sha256.Sum256(b)

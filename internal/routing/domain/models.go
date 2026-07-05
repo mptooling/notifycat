@@ -124,4 +124,7 @@ type Defaults struct {
 	Reactions        Reactions
 	IgnoreAIReviews  bool
 	DependabotFormat bool
+	// GitProvider is the deployment's single git_provider; the Provider stamps it
+	// on every entry so it hashes into the lock (see Entry.Provider).
+	GitProvider string
 }

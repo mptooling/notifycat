@@ -50,7 +50,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	provider := routingapp.NewProvider(routingdomain.Defaults{}, cfg.Mappings, cfg.Digest)
+	provider := routingapp.NewProvider(routingdomain.Defaults{GitProvider: cfg.GitProvider}, cfg.Mappings, cfg.Digest)
 	db, err := persistence.Open(cfg.DatabaseURL)
 	if err != nil {
 		fmt.Fprintln(stderr, "notifycat-smoke: cannot open database:", err)
