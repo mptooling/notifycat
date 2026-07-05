@@ -41,3 +41,7 @@ config.yaml
 
 # graphify knowledge-graph output
 graphify-out/
+
+# Local docs build (mkdocs)
+/site/
+.venv-docs/

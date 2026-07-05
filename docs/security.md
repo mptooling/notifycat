@@ -34,7 +34,7 @@ By default neither `GITHUB_TOKEN` nor `BITBUCKET_TOKEN` is used by the server. T
 
 The one runtime use for either token is **[per-path routing](mappings.md#per-path-routing-monorepos)**: when a repo's mapping has a `paths:` block, the server reads each PR's changed files to pick the path channel. Without a token, path rules are inert and PRs route to the repo tier.
 
-For GitHub: a fine-grained token with **Webhooks: Read** is enough for validation; add **Pull requests: Read** for per-path routing. See [GitHub webhook setup](github-webhook.md#security-notes) for details. For Bitbucket: an access token with `repository` + `pullrequest` + `webhook` scopes covers both uses; a scoped Atlassian API token with the equivalent `read:*:bitbucket` scopes works too. See [Bitbucket webhook setup](bitbucket-webhook.md#access-token--scopes) for the full options including the Free-plan Basic-auth path.
+For GitHub: a fine-grained token with **Webhooks: Read** is enough for validation; add **Pull requests: Read** for per-path routing. See [GitHub webhook setup](github-webhook.md#security-notes) for details. For Bitbucket: an access token with `repository` + `pullrequest` + `webhook` scopes covers both uses; a scoped Atlassian API token with the equivalent `read:*:bitbucket` scopes works too. See [Bitbucket webhook setup](bitbucket-webhook.md#access-token-scopes) for the full options including the Free-plan Basic-auth path.
 
 <a id="signature-validation"></a>
 
