@@ -83,8 +83,8 @@ func TestNewConfigSnapshot_SecretBooleans(t *testing.T) {
 	if !snap.SlackTokenSet {
 		t.Error("SlackTokenSet = false; want true")
 	}
-	if !snap.GitHubTokenSet {
-		t.Error("GitHubTokenSet = false; want true")
+	if !snap.TokenSet {
+		t.Error("TokenSet = false; want true")
 	}
 
 	// Raw secret values must never appear in the snapshot.

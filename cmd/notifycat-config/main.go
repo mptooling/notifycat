@@ -15,6 +15,8 @@ import (
 
 	diagnosticsapp "github.com/mptooling/notifycat/internal/diagnostics/application"
 	diagnosticsinfra "github.com/mptooling/notifycat/internal/diagnostics/infrastructure"
+	"github.com/mptooling/notifycat/internal/kernel"
+	"github.com/mptooling/notifycat/internal/platform/bitbucket"
 	"github.com/mptooling/notifycat/internal/platform/config"
 	"github.com/mptooling/notifycat/internal/platform/github"
 	"github.com/mptooling/notifycat/internal/platform/slack"
@@ -33,7 +35,7 @@ func main() {
 		os.Exit(1)
 	}
 	provider := routingapp.NewProvider(routingdomain.Defaults{GitProvider: cfg.GitProvider}, cfg.Mappings, cfg.Digest)
-	if w := pathTokenWarning(provider, cfg.GitHubToken.Reveal() != ""); w != "" {
+	if w := pathTokenWarning(provider, cfg); w != "" {
 		fmt.Fprintln(os.Stderr, w)
 	}
 	checker, lister := buildValidationDeps(cfg, provider)
@@ -43,33 +45,49 @@ func main() {
 	os.Exit(dispatch(os.Args[1:], provider, validator, os.Stdout, os.Stderr))
 }
 
-// buildValidationDeps wires the production checker (Slack always, GitHub
-// when a token is configured) and the org-repo lister (the same GitHub
-// client, or nil when there is no token).
-func buildValidationDeps(cfg config.Config, provider *routingapp.Provider) (validationdomain.RepoValidator, validationdomain.OrgRepoLister) {
+// buildValidationDeps wires the production checker (Slack always, plus the
+// selected git provider's webhook-coverage probe when a token is configured) and
+// the repo lister for wildcard expansion (nil when there is no token).
+func buildValidationDeps(cfg config.Config, provider *routingapp.Provider) (validationdomain.RepoValidator, validationdomain.RepoLister) {
 	hc := &http.Client{Timeout: 10 * time.Second}
 	slackClient := slack.NewClient(hc, cfg.SlackBotToken.Reveal(), slack.WithBaseURL(cfg.SlackBaseURL))
-	var gh *github.Client
-	if cfg.GitHubToken.Reveal() != "" {
-		gh = github.NewClient(hc, cfg.GitHubToken.Reveal(), github.WithBaseURL(cfg.GitHubBaseURL))
-	}
-	var ghChecker validationdomain.GitHubChecker
-	var lister validationdomain.OrgRepoLister
-	if gh != nil {
-		ghChecker = gh
-		lister = gh
-	}
-	return validationapp.NewValidator(provider, validationinfra.NewSlackProbe(slackClient), ghChecker), lister
+	hook, lister := providerValidationDeps(hc, cfg)
+	return validationapp.NewValidator(provider, validationinfra.NewSlackProbe(slackClient), hook), lister
 }
 
-// pathTokenWarning returns a warning when per-path routing is configured but no
-// GitHub token is available — path rules are inert without one (a token is
-// needed to read a PR's changed files). It returns "" when there is nothing to
-// warn about.
-func pathTokenWarning(provider *routingapp.Provider, hasGitHubToken bool) string {
-	if provider.HasPathRules() && !hasGitHubToken {
-		return "warning: path routing is configured but GITHUB_TOKEN is unset; " +
-			"path rules are inert and PRs route to the repo tier until a token is set"
+// providerValidationDeps builds the selected provider's webhook-coverage probe
+// and repo lister; both are nil-checker/nil when the provider's read token is
+// unset, so validation skips the hook and wildcard checks (identical degradation
+// for github and bitbucket).
+func providerValidationDeps(hc *http.Client, cfg config.Config) (validationdomain.HookProbe, validationdomain.RepoLister) {
+	switch cfg.GitProvider {
+	case kernel.ProviderBitbucket:
+		hook := validationdomain.HookProbe{URLSuffix: validationdomain.WebhookURLPathBitbucket, RequiredEvents: validationdomain.RequiredBitbucketEvents}
+		if cfg.BitbucketToken.Reveal() == "" {
+			return hook, nil
+		}
+		client := bitbucket.NewClient(hc, cfg.BitbucketToken.Reveal(), cfg.BitbucketAuthEmail, bitbucket.WithBaseURL(cfg.BitbucketBaseURL))
+		hook.Checker = client
+		return hook, validationinfra.NewBitbucketRepoLister(client)
+	default:
+		hook := validationdomain.HookProbe{URLSuffix: validationdomain.WebhookURLPathGitHub, RequiredEvents: validationdomain.RequiredGitHubEvents}
+		if cfg.GitHubToken.Reveal() == "" {
+			return hook, nil
+		}
+		client := github.NewClient(hc, cfg.GitHubToken.Reveal(), github.WithBaseURL(cfg.GitHubBaseURL))
+		hook.Checker = client
+		return hook, client
+	}
+}
+
+// pathTokenWarning returns a warning when per-path routing is configured but the
+// selected provider's read token is unset — path rules are inert without one (a
+// token is needed to read a PR's changed files). It returns "" when there is
+// nothing to warn about.
+func pathTokenWarning(provider *routingapp.Provider, cfg config.Config) string {
+	if provider.HasPathRules() && cfg.ProviderToken().Reveal() == "" {
+		return fmt.Sprintf("warning: path routing is configured but %s is unset; "+
+			"path rules are inert and PRs route to the repo tier until a token is set", cfg.ProviderTokenVar())
 	}
 	return ""
 }

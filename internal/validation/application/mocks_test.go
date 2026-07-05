@@ -39,10 +39,10 @@ func (m *mockSlackChecker) ConversationsInfo(ctx context.Context, channel string
 	return m.conversationsInfo(ctx, channel)
 }
 
-type mockGitHubChecker struct {
+type mockHookChecker struct {
 	listHookEvents func(ctx context.Context, owner, repo, urlSuffix string) ([]string, error)
 }
 
-func (m *mockGitHubChecker) ListHookEvents(ctx context.Context, owner, repo, urlSuffix string) ([]string, error) {
+func (m *mockHookChecker) ListHookEvents(ctx context.Context, owner, repo, urlSuffix string) ([]string, error) {
 	return m.listHookEvents(ctx, owner, repo, urlSuffix)
 }

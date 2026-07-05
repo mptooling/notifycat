@@ -1,6 +1,8 @@
 // Package security holds notifycat's inbound-request authentication: signature
 // verifiers for the signed webhooks it receives. It exposes a provider-agnostic
-// SignatureVerifier port and the GitHub raw-body HMAC-SHA256 adapter.
+// SignatureVerifier port and the GitHub and Bitbucket raw-body HMAC-SHA256
+// adapters (identical scheme; they differ only in the header the middleware
+// reads).
 package security
 
 import (
@@ -12,10 +14,15 @@ import (
 )
 
 // SignatureHeader is the HTTP header GitHub uses to carry the HMAC-SHA256 digest
-// of the raw request body.
-const SignatureHeader = "X-Hub-Signature-256"
+// of the raw request body. SignatureHeaderBitbucket is Bitbucket's equivalent —
+// same "sha256=<hex>" scheme, different header name.
+const (
+	SignatureHeader          = "X-Hub-Signature-256"
+	SignatureHeaderBitbucket = "X-Hub-Signature"
+)
 
-// signaturePrefix is the only scheme accepted (GitHub's modern signature).
+// signaturePrefix is the only scheme accepted (GitHub's and Bitbucket's modern
+// signature).
 const signaturePrefix = "sha256="
 
 // ErrInvalidSignature is returned when a signature does not match.
@@ -50,6 +57,15 @@ func Sign(secret string, body []byte) string {
 // verifier's secret. Returns ErrInvalidSignature for any mismatch. The
 // comparison runs in constant time to prevent timing oracles.
 func (v *GitHubVerifier) Verify(body []byte, signature string) error {
+	return verifyRawBodyHMAC(v.secret, body, signature)
+}
+
+var _ SignatureVerifier = (*GitHubVerifier)(nil)
+
+// verifyRawBodyHMAC is the shared "sha256=<hex>" raw-body HMAC-SHA256 check used
+// by both the GitHub and Bitbucket verifiers. It rejects a wrong scheme,
+// undecodable hex, or a digest mismatch (constant-time) with ErrInvalidSignature.
+func verifyRawBodyHMAC(secret, body []byte, signature string) error {
 	if !strings.HasPrefix(signature, signaturePrefix) {
 		return ErrInvalidSignature
 	}
@@ -58,7 +74,7 @@ func (v *GitHubVerifier) Verify(body []byte, signature string) error {
 		return ErrInvalidSignature
 	}
 
-	mac := hmac.New(sha256.New, v.secret)
+	mac := hmac.New(sha256.New, secret)
 	mac.Write(body)
 	expected := mac.Sum(nil)
 
@@ -67,5 +83,3 @@ func (v *GitHubVerifier) Verify(body []byte, signature string) error {
 	}
 	return nil
 }
-
-var _ SignatureVerifier = (*GitHubVerifier)(nil)

@@ -17,7 +17,7 @@ import (
 func RunForEntries(
 	ctx context.Context,
 	entries []routingdomain.Entry,
-	lister domain.OrgRepoLister,
+	lister domain.RepoLister,
 	v domain.RepoValidator,
 ) []domain.EntryResult {
 	out := make([]domain.EntryResult, 0, len(entries))
@@ -27,7 +27,7 @@ func RunForEntries(
 	return out
 }
 
-func reportsFor(ctx context.Context, e routingdomain.Entry, lister domain.OrgRepoLister, v domain.RepoValidator) []domain.Report {
+func reportsFor(ctx context.Context, e routingdomain.Entry, lister domain.RepoLister, v domain.RepoValidator) []domain.Report {
 	if !e.Wildcard {
 		return []domain.Report{v.Validate(ctx, e.Org+"/"+e.Repo)}
 	}
@@ -36,11 +36,11 @@ func reportsFor(ctx context.Context, e routingdomain.Entry, lister domain.OrgRep
 
 // expandWildcard turns one wildcard entry into per-repo reports, or a single
 // status report when expansion cannot proceed.
-func expandWildcard(ctx context.Context, e routingdomain.Entry, lister domain.OrgRepoLister, v domain.RepoValidator) []domain.Report {
+func expandWildcard(ctx context.Context, e routingdomain.Entry, lister domain.RepoLister, v domain.RepoValidator) []domain.Report {
 	key := e.Key()
 	if lister == nil {
 		return []domain.Report{singleCheckReport(key, domain.StatusSkip,
-			fmt.Sprintf("no GitHub credentials configured; cannot expand %q", key))}
+			fmt.Sprintf("no API credentials configured; cannot expand %q", key))}
 	}
 	repos, err := lister.ListOrgRepos(ctx, e.Org)
 	if err != nil {

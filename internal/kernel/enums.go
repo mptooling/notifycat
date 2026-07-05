@@ -8,10 +8,11 @@ package kernel
 // provider-agnostic.
 type Provider string
 
-// Recognised git providers. Only ProviderGitHub is wired today; the Bitbucket
-// inbound-stack slice adds its constant here when it lands.
+// Recognised git providers. A deployment serves exactly one, selected by the
+// required git_provider config key.
 const (
-	ProviderGitHub Provider = "github"
+	ProviderGitHub    Provider = "github"
+	ProviderBitbucket Provider = "bitbucket"
 )
 
 // String returns the wire/log token for the provider — the value used for the

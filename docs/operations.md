@@ -190,6 +190,8 @@ If you enable `NOTIFYCAT_IGNORE_AI_REVIEWS`, you are opting into a **uniform** r
 silenced. If a team wants their `github-actions[bot]` auto-approve green checkmark to surface in Slack, they should
 leave the flag off.
 
+On `git_provider: bitbucket` the same suppression keys on `actor.type != "user"`, so a bot that authenticates as an ordinary Bitbucket **user account** is indistinguishable from a human and is not suppressed — see [Configuration → Bitbucket behavior notes](configuration.md#bitbucket-behavior-notes) for that blind spot and the self-healing `pullrequest:updated` draft/ready semantics.
+
 This is also intentionally narrow:
 
 - It only affects `reactions.add`. The initial `chat.postMessage` (with mentions / `@channel` fallback) is unchanged.

@@ -35,16 +35,16 @@ func List(entries diagnosticsdomain.EntrySource, stdout io.Writer) int {
 type MappingsValidator struct {
 	entries diagnosticsdomain.EntrySource
 	checker validationdomain.RepoValidator
-	lister  validationdomain.OrgRepoLister
+	lister  validationdomain.RepoLister
 	gateway diagnosticsdomain.LockGateway
 }
 
 // NewMappingsValidator builds the validate use case from its dependencies.
-// lister may be nil when no GitHub credentials exist.
+// lister may be nil when no provider credentials exist.
 func NewMappingsValidator(
 	entries diagnosticsdomain.EntrySource,
 	checker validationdomain.RepoValidator,
-	lister validationdomain.OrgRepoLister,
+	lister validationdomain.RepoLister,
 	gateway diagnosticsdomain.LockGateway,
 ) *MappingsValidator {
 	return &MappingsValidator{entries: entries, checker: checker, lister: lister, gateway: gateway}

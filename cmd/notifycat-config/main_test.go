@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mptooling/notifycat/internal/platform/config"
 	routingapp "github.com/mptooling/notifycat/internal/routing/application"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 	routinginfra "github.com/mptooling/notifycat/internal/routing/infrastructure"
@@ -170,13 +171,19 @@ func TestPathTokenWarning(t *testing.T) {
 	}
 	withPaths := routingapp.NewProvider(routingdomain.Defaults{}, f.Mappings, nil)
 
-	if w := pathTokenWarning(withPaths, false); !strings.Contains(w, "GITHUB_TOKEN") {
+	if w := pathTokenWarning(withPaths, config.Config{}); !strings.Contains(w, "GITHUB_TOKEN") {
 		t.Errorf("paths + no token: got %q; want a GITHUB_TOKEN warning", w)
 	}
-	if w := pathTokenWarning(withPaths, true); w != "" {
+	if w := pathTokenWarning(withPaths, config.Config{GitHubToken: config.Secret("t")}); w != "" {
 		t.Errorf("paths + token: got %q; want no warning", w)
 	}
-	if w := pathTokenWarning(testProvider(t), false); w != "" {
+	if w := pathTokenWarning(testProvider(t), config.Config{}); w != "" {
 		t.Errorf("no paths: got %q; want no warning", w)
+	}
+
+	// A bitbucket deployment names its own token in the warning.
+	bb := config.Config{GitProvider: "bitbucket"}
+	if w := pathTokenWarning(withPaths, bb); !strings.Contains(w, "BITBUCKET_TOKEN") {
+		t.Errorf("bitbucket paths + no token: got %q; want a BITBUCKET_TOKEN warning", w)
 	}
 }

@@ -35,7 +35,7 @@ type Config struct {
 //   - routingdomain.RoutingProvider (satisfies SmokeMappings Get)
 //   - diagnosticsdomain.EntrySource (the routing provider for MappingsValidator)
 //   - validationdomain.RepoValidator
-//   - validationdomain.OrgRepoLister (may be nil via a provider func)
+//   - validationdomain.RepoLister (may be nil via a provider func)
 //   - diagnostics.Config
 var Module = fx.Module("diagnostics",
 	fx.Provide(
@@ -91,7 +91,7 @@ func provideSmokeUseCase(
 func provideMappingsValidator(
 	entries diagnosticsdomain.EntrySource,
 	checker validationdomain.RepoValidator,
-	lister validationdomain.OrgRepoLister,
+	lister validationdomain.RepoLister,
 	gateway diagnosticsdomain.LockGateway,
 ) *application.MappingsValidator {
 	return application.NewMappingsValidator(entries, checker, lister, gateway)

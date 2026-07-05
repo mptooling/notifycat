@@ -26,12 +26,14 @@ import (
 	digestapp "github.com/mptooling/notifycat/internal/digest/application"
 	digestdomain "github.com/mptooling/notifycat/internal/digest/domain"
 	digestinfra "github.com/mptooling/notifycat/internal/digest/infrastructure"
+	"github.com/mptooling/notifycat/internal/kernel"
 	maintenanceapp "github.com/mptooling/notifycat/internal/maintenance/application"
 	maintenancedomain "github.com/mptooling/notifycat/internal/maintenance/domain"
 	maintenanceinfra "github.com/mptooling/notifycat/internal/maintenance/infrastructure"
 	notificationapp "github.com/mptooling/notifycat/internal/notification/application"
 	notificationdomain "github.com/mptooling/notifycat/internal/notification/domain"
 	notificationinfra "github.com/mptooling/notifycat/internal/notification/infrastructure"
+	"github.com/mptooling/notifycat/internal/platform/bitbucket"
 	"github.com/mptooling/notifycat/internal/platform/config"
 	"github.com/mptooling/notifycat/internal/platform/github"
 	"github.com/mptooling/notifycat/internal/platform/persistence"
@@ -110,9 +112,10 @@ func buildProvider(cfg config.Config, logger *slog.Logger) *routingapp.Provider 
 		GitProvider:      cfg.GitProvider,
 	}
 	provider := routingapp.NewProvider(defaults, cfg.Mappings, cfg.Digest)
-	if provider.HasPathRules() && cfg.GitHubToken.Reveal() == "" {
-		logger.Warn("path routing is configured but GITHUB_TOKEN is unset; " +
-			"path rules are inert and PRs route to the repo tier (a token is needed to read a PR's changed files)")
+	if provider.HasPathRules() && cfg.ProviderToken().Reveal() == "" {
+		logger.Warn(fmt.Sprintf("path routing is configured but %s is unset; "+
+			"path rules are inert and PRs route to the repo tier (a token is needed to read a PR's changed files)",
+			cfg.ProviderTokenVar()))
 	}
 	return provider
 }
@@ -197,11 +200,25 @@ func buildDigestScheduler(cfg config.Config, provider *routingapp.Provider, pull
 // resolves to the repo/org tier. The validation client is scoped to startup, so
 // this builds a dedicated long-lived files fetcher.
 func buildRouter(httpClient *http.Client, cfg config.Config, provider *routingapp.Provider, logger *slog.Logger) *routingapp.Router {
-	var filesFetcher routingdomain.ChangedFilesReader
-	if cfg.GitHubToken.Reveal() != "" {
-		filesFetcher = github.NewClient(httpClient, cfg.GitHubToken.Reveal(), github.WithBaseURL(cfg.GitHubBaseURL))
+	return routingapp.NewRouter(provider, providerFilesFetcher(httpClient, cfg), logger)
+}
+
+// providerFilesFetcher builds the changed-files reader for the configured git
+// provider, or nil when that provider's read token is unset (path rules then go
+// inert — identical degradation for github and bitbucket).
+func providerFilesFetcher(httpClient *http.Client, cfg config.Config) routingdomain.ChangedFilesReader {
+	switch cfg.GitProvider {
+	case kernel.ProviderBitbucket:
+		if cfg.BitbucketToken.Reveal() == "" {
+			return nil
+		}
+		return bitbucket.NewClient(httpClient, cfg.BitbucketToken.Reveal(), cfg.BitbucketAuthEmail, bitbucket.WithBaseURL(cfg.BitbucketBaseURL))
+	default:
+		if cfg.GitHubToken.Reveal() == "" {
+			return nil
+		}
+		return github.NewClient(httpClient, cfg.GitHubToken.Reveal(), github.WithBaseURL(cfg.GitHubBaseURL))
 	}
-	return routingapp.NewRouter(provider, filesFetcher, logger)
 }
 
 // buildDispatcher wires the PR-event handlers behind the dispatcher.
@@ -233,21 +250,16 @@ func buildStartReviewSink(pullRequests *persistence.PullRequests, codeReviews *p
 	return reviewinfra.NewStartReviewSink(startReview, logger)
 }
 
-// buildMux builds the HTTP routes: health check, the GitHub webhook, and the
-// optional inbound Slack interactivity endpoint. The Slack route is registered
-// only when a signing secret is configured; otherwise notifycat stays
-// outbound-only and the route is absent.
+// buildMux builds the HTTP routes: health check, the selected git provider's
+// webhook, and the optional inbound Slack interactivity endpoint. The Slack
+// route is registered only when a signing secret is configured; otherwise
+// notifycat stays outbound-only and the route is absent.
 func buildMux(cfg config.Config, dispatcher *notificationapp.Dispatcher, startReviewSink reviewinfra.InteractionSink, logger *slog.Logger) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	verifier := security.NewGitHubVerifier(cfg.GitHubWebhookSecret.Reveal())
-	mux.Handle("POST /webhook/github",
-		notificationinfra.SignatureMiddleware(verifier)(
-			notificationinfra.NewGitHubHandler(dispatcher),
-		),
-	)
+	registerWebhookRoute(mux, cfg, dispatcher)
 
 	if cfg.SlackSigningSecret.Reveal() == "" {
 		logger.Info("slack interactivity disabled", slog.String("reason", "SLACK_SIGNING_SECRET unset"))
@@ -261,6 +273,29 @@ func buildMux(cfg config.Config, dispatcher *notificationapp.Dispatcher, startRe
 		logger.Info("slack interactivity enabled", slog.String("route", "POST /webhook/slack/interactions"))
 	}
 	return mux
+}
+
+// registerWebhookRoute registers the inbound webhook route for the configured git
+// provider — only the selected provider's route, verifier, and handler exist, so
+// a github deployment has no /webhook/bitbucket and vice versa. Both verifiers
+// reject an unsigned or mis-signed delivery with 401.
+func registerWebhookRoute(mux *http.ServeMux, cfg config.Config, dispatcher *notificationapp.Dispatcher) {
+	switch cfg.GitProvider {
+	case kernel.ProviderBitbucket:
+		verifier := security.NewBitbucketVerifier(cfg.BitbucketWebhookSecret.Reveal())
+		mux.Handle("POST /webhook/bitbucket",
+			notificationinfra.BitbucketSignatureMiddleware(verifier)(
+				notificationinfra.NewBitbucketHandler(dispatcher),
+			),
+		)
+	default:
+		verifier := security.NewGitHubVerifier(cfg.GitHubWebhookSecret.Reveal())
+		mux.Handle("POST /webhook/github",
+			notificationinfra.SignatureMiddleware(verifier)(
+				notificationinfra.NewGitHubHandler(dispatcher),
+			),
+		)
+	}
 }
 
 // buildServer builds the HTTP server with notifycat's hardened timeouts.
@@ -376,15 +411,34 @@ func startupValidate(
 	return fmt.Errorf("app: startup validation failed for %d entries: %s", len(failed), strings.Join(failed, ", "))
 }
 
-func newValidationDeps(provider *routingapp.Provider, cfg config.Config, slackClient *slack.Client, httpClient *http.Client) (validationdomain.RepoValidator, validationdomain.OrgRepoLister) {
-	var ghChecker validationdomain.GitHubChecker
-	var lister validationdomain.OrgRepoLister
-	if cfg.GitHubToken.Reveal() != "" {
-		gh := github.NewClient(httpClient, cfg.GitHubToken.Reveal(), github.WithBaseURL(cfg.GitHubBaseURL))
-		ghChecker = gh
-		lister = gh
+func newValidationDeps(provider *routingapp.Provider, cfg config.Config, slackClient *slack.Client, httpClient *http.Client) (validationdomain.RepoValidator, validationdomain.RepoLister) {
+	hook, lister := providerValidationDeps(httpClient, cfg)
+	return validationapp.NewValidator(provider, validationinfra.NewSlackProbe(slackClient), hook), lister
+}
+
+// providerValidationDeps builds the selected provider's webhook-coverage probe
+// and repo lister. When the provider's read token is unset the probe's Checker
+// and the lister are nil, so validation skips the hook/wildcard checks — the same
+// degradation for github and bitbucket.
+func providerValidationDeps(httpClient *http.Client, cfg config.Config) (validationdomain.HookProbe, validationdomain.RepoLister) {
+	switch cfg.GitProvider {
+	case kernel.ProviderBitbucket:
+		hook := validationdomain.HookProbe{URLSuffix: validationdomain.WebhookURLPathBitbucket, RequiredEvents: validationdomain.RequiredBitbucketEvents}
+		if cfg.BitbucketToken.Reveal() == "" {
+			return hook, nil
+		}
+		client := bitbucket.NewClient(httpClient, cfg.BitbucketToken.Reveal(), cfg.BitbucketAuthEmail, bitbucket.WithBaseURL(cfg.BitbucketBaseURL))
+		hook.Checker = client
+		return hook, validationinfra.NewBitbucketRepoLister(client)
+	default:
+		hook := validationdomain.HookProbe{URLSuffix: validationdomain.WebhookURLPathGitHub, RequiredEvents: validationdomain.RequiredGitHubEvents}
+		if cfg.GitHubToken.Reveal() == "" {
+			return hook, nil
+		}
+		client := github.NewClient(httpClient, cfg.GitHubToken.Reveal(), github.WithBaseURL(cfg.GitHubBaseURL))
+		hook.Checker = client
+		return hook, client
 	}
-	return validationapp.NewValidator(provider, validationinfra.NewSlackProbe(slackClient), ghChecker), lister
 }
 
 func splitResults(results []validationdomain.EntryResult, clock func() time.Time) (map[string]routinginfra.LockEntry, []string) {

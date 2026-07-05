@@ -16,6 +16,8 @@ import (
 
 	diagnosticsapp "github.com/mptooling/notifycat/internal/diagnostics/application"
 	diagnosticsinfra "github.com/mptooling/notifycat/internal/diagnostics/infrastructure"
+	"github.com/mptooling/notifycat/internal/kernel"
+	"github.com/mptooling/notifycat/internal/platform/bitbucket"
 	"github.com/mptooling/notifycat/internal/platform/config"
 	"github.com/mptooling/notifycat/internal/platform/github"
 	"github.com/mptooling/notifycat/internal/platform/slack"
@@ -58,15 +60,33 @@ func run(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// buildValidator constructs a RepoValidator from in-memory config.
+// buildValidator constructs a RepoValidator from in-memory config, probing the
+// selected git provider's webhooks when that provider's token is configured.
 func buildValidator(cfg config.Config, provider *routingapp.Provider) validationdomain.RepoValidator {
 	hc := &http.Client{Timeout: 10 * time.Second}
 	slackClient := slack.NewClient(hc, cfg.SlackBotToken.Reveal(), slack.WithBaseURL(cfg.SlackBaseURL))
-	var ghChecker validationdomain.GitHubChecker
-	if cfg.GitHubToken.Reveal() != "" {
-		ghChecker = github.NewClient(hc, cfg.GitHubToken.Reveal(), github.WithBaseURL(cfg.GitHubBaseURL))
+	hook := providerHookProbe(hc, cfg)
+	return validationapp.NewValidator(provider, validationinfra.NewSlackProbe(slackClient), hook)
+}
+
+// providerHookProbe builds the selected provider's webhook-coverage probe; its
+// Checker is nil when the provider's read token is unset, so the doctor reports a
+// skip for the webhook check (identical degradation for github and bitbucket).
+func providerHookProbe(hc *http.Client, cfg config.Config) validationdomain.HookProbe {
+	switch cfg.GitProvider {
+	case kernel.ProviderBitbucket:
+		hook := validationdomain.HookProbe{URLSuffix: validationdomain.WebhookURLPathBitbucket, RequiredEvents: validationdomain.RequiredBitbucketEvents}
+		if cfg.BitbucketToken.Reveal() != "" {
+			hook.Checker = bitbucket.NewClient(hc, cfg.BitbucketToken.Reveal(), cfg.BitbucketAuthEmail, bitbucket.WithBaseURL(cfg.BitbucketBaseURL))
+		}
+		return hook
+	default:
+		hook := validationdomain.HookProbe{URLSuffix: validationdomain.WebhookURLPathGitHub, RequiredEvents: validationdomain.RequiredGitHubEvents}
+		if cfg.GitHubToken.Reveal() != "" {
+			hook.Checker = github.NewClient(hc, cfg.GitHubToken.Reveal(), github.WithBaseURL(cfg.GitHubBaseURL))
+		}
+		return hook
 	}
-	return validationapp.NewValidator(provider, validationinfra.NewSlackProbe(slackClient), ghChecker)
 }
 
 func parseArgs(args []string, stderr io.Writer) (target string, code int, ok bool) {

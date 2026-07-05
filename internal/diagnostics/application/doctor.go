@@ -49,9 +49,9 @@ func CheckConfig(snapshot diagnosticsdomain.ConfigSnapshot) diagnosticsdomain.Se
 	sec := diagnosticsdomain.Section{Name: "config"}
 
 	if !snapshot.WebhookSecretSet {
-		sec.Checks = append(sec.Checks, failResult("GITHUB_WEBHOOK_SECRET", "missing; set the environment variable"))
+		sec.Checks = append(sec.Checks, failResult(snapshot.WebhookSecretVar, "missing; set the environment variable"))
 	} else {
-		sec.Checks = append(sec.Checks, okResult("GITHUB_WEBHOOK_SECRET", "set"))
+		sec.Checks = append(sec.Checks, okResult(snapshot.WebhookSecretVar, "set"))
 	}
 
 	if !snapshot.SlackTokenSet {
@@ -113,11 +113,11 @@ func CheckMappings(snapshot diagnosticsdomain.ConfigSnapshot) diagnosticsdomain.
 	}
 	sec.Checks = append(sec.Checks, okResult("entries", fmt.Sprintf("%d entries", len(entries))))
 	if snapshot.HasPathRules {
-		if snapshot.GitHubTokenSet {
-			sec.Checks = append(sec.Checks, okResult("path routing", "active (GITHUB_TOKEN set)"))
+		if snapshot.TokenSet {
+			sec.Checks = append(sec.Checks, okResult("path routing", fmt.Sprintf("active (%s set)", snapshot.TokenVar)))
 		} else {
 			sec.Checks = append(sec.Checks, skip("path routing",
-				"GITHUB_TOKEN unset; path rules are inert — PRs route to the repo tier until a token is set"))
+				fmt.Sprintf("%s unset; path rules are inert — PRs route to the repo tier until a token is set", snapshot.TokenVar)))
 		}
 	}
 	return sec

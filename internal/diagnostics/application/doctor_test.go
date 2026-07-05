@@ -35,8 +35,10 @@ func validSnapshot() diagnosticsdomain.ConfigSnapshot {
 		Domain:           "",
 		MessageTTLDays:   30,
 		WebhookSecretSet: true,
+		WebhookSecretVar: "GITHUB_WEBHOOK_SECRET",
 		SlackTokenSet:    true,
-		GitHubTokenSet:   false,
+		TokenSet:         false,
+		TokenVar:         "GITHUB_TOKEN",
 		DatabaseOpenable: true,
 		DatabaseDetail:   "file:./data/notifycat.db",
 	}
@@ -239,7 +241,7 @@ func TestCheckMappings_EmptyMappingsIsOK(t *testing.T) {
 func TestCheckMappings_PathRoutingActiveWithToken(t *testing.T) {
 	snap := oneEntrySnapshot()
 	snap.HasPathRules = true
-	snap.GitHubTokenSet = true
+	snap.TokenSet = true
 	sec := application.CheckMappings(snap)
 	c := findPathRoutingCheck(t, sec)
 	if c.Status != validationdomain.StatusOK {
@@ -253,7 +255,7 @@ func TestCheckMappings_PathRoutingActiveWithToken(t *testing.T) {
 func TestCheckMappings_PathRoutingInertWithoutToken(t *testing.T) {
 	snap := oneEntrySnapshot()
 	snap.HasPathRules = true
-	snap.GitHubTokenSet = false
+	snap.TokenSet = false
 	sec := application.CheckMappings(snap)
 	c := findPathRoutingCheck(t, sec)
 	if c.Status != validationdomain.StatusSkip {

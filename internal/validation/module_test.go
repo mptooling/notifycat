@@ -22,9 +22,9 @@ func (stubMappingLookup) Get(_ context.Context, _ string) (routingdomain.RepoMap
 
 func (stubMappingLookup) PathChannels(_ string) []string { return nil }
 
-type stubGitHubChecker struct{}
+type stubHookChecker struct{}
 
-func (stubGitHubChecker) ListHookEvents(_ context.Context, _, _, _ string) ([]string, error) {
+func (stubHookChecker) ListHookEvents(_ context.Context, _, _, _ string) ([]string, error) {
 	return nil, nil
 }
 
@@ -36,7 +36,13 @@ func TestModule_BuildsGraph(t *testing.T) {
 		fx.Supply(slack.NewClient(http.DefaultClient, "xoxb-test")),
 		fx.Provide(
 			func() domain.MappingLookup { return stubMappingLookup{} },
-			func() domain.GitHubChecker { return stubGitHubChecker{} },
+			func() domain.HookProbe {
+				return domain.HookProbe{
+					Checker:        stubHookChecker{},
+					URLSuffix:      domain.WebhookURLPathGitHub,
+					RequiredEvents: domain.RequiredGitHubEvents,
+				}
+			},
 		),
 		validation.Module,
 		fx.Invoke(func(domain.RepoValidator) {}),

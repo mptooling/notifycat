@@ -8,13 +8,18 @@ Secrets should stay in environment variables or your deployment secret manager. 
 
 ## Secrets (environment variables only)
 
+Which webhook secret and read token apply depends on [`git_provider`](#git_provider): a github deployment uses the `GITHUB_*` variables, a bitbucket deployment uses the `BITBUCKET_*` variables. `SLACK_BOT_TOKEN` is always required; a deployment never needs the other provider's credentials.
+
 | Variable | Required | Notes |
 | --- | --- | --- |
-| `GITHUB_WEBHOOK_SECRET` | Required | The secret configured on the GitHub webhook. Use a long random value; 32 characters or more is a good baseline. |
 | `SLACK_BOT_TOKEN` | Required | Slack bot token, usually starting with `xoxb-`. |
-| `GITHUB_TOKEN` | Optional | PAT used by `notifycat-config validate` and `notifycat-doctor` to read repo webhook config. Required scope: `admin:repo_hook` (or `repo` for private repos). The server does not need this; if unset, the webhook-coverage check is skipped. |
+| `GITHUB_WEBHOOK_SECRET` | Required for `git_provider: github` | The secret configured on the GitHub webhook. Use a long random value; 32 characters or more is a good baseline. |
+| `GITHUB_TOKEN` | Optional (github) | PAT used by `notifycat-config validate` and `notifycat-doctor` to read repo webhook config and by path routing to read a PR's changed files. Required scope: `admin:repo_hook` (or `repo` for private repos). The server does not need this; if unset, the webhook-coverage and path-routing checks are skipped. |
+| `BITBUCKET_WEBHOOK_SECRET` | Required for `git_provider: bitbucket` | The secret configured on the Bitbucket repository/workspace webhook. Bitbucket signs deliveries with `X-Hub-Signature: sha256=<hmac>`; an unsigned delivery (no secret configured) is rejected. |
+| `BITBUCKET_TOKEN` | Optional (bitbucket) | Access token (Bearer) used by validate/doctor to read webhook config and by path routing to read changed files — exact `GITHUB_TOKEN` degradation parity. Least-privilege scopes: `repository` + `pullrequest` + `webhook`. |
+| `BITBUCKET_AUTH_EMAIL` | Optional (bitbucket) | Pair with `BITBUCKET_TOKEN` to switch to HTTP Basic with a scoped Atlassian API token (the Free-plan path for workspace-wildcard listing). Unset ⇒ Bearer. |
 
-The server and CLIs fail fast when `SLACK_BOT_TOKEN` is missing, or when the webhook secret required by the selected [`git_provider`](#git_provider) is missing (`GITHUB_WEBHOOK_SECRET` for `git_provider: github`).
+The server and CLIs fail fast when `SLACK_BOT_TOKEN` is missing, or when the webhook secret required by the selected [`git_provider`](#git_provider) is missing (`GITHUB_WEBHOOK_SECRET` for `git_provider: github`, `BITBUCKET_WEBHOOK_SECRET` for `git_provider: bitbucket`).
 
 `GITHUB_TOKEN` is also read by `scripts/github-webhook-create.sh`, but that script *creates* the webhook and only needs the `Webhooks: Read and write` permission on a fine-grained PAT. The validate/doctor reading path needs `admin:repo_hook` / `repo`. A single token that has both works everywhere; otherwise issue separate PATs.
 
@@ -33,9 +38,16 @@ These are not secrets but must live in `.env` because `docker-compose` and Caddy
 
 | Key | Default | Notes |
 | --- | --- | --- |
-| `git_provider` | _(required)_ | The git host this deployment serves. The only supported value today is `github`. An absent or unknown value fails startup with an error naming the key and pointing here. |
+| `git_provider` | _(required)_ | The git host this deployment serves — `github` or `bitbucket`. An absent or unknown value fails startup with an error naming the key and pointing here. |
 
-`git_provider` selects which webhook secret is required — `git_provider: github` requires `GITHUB_WEBHOOK_SECRET` (`SLACK_BOT_TOKEN` is always required regardless) — and which `/webhook/...` route the server registers. Switching `git_provider` against an existing database requires a fresh database; see [Upgrading](upgrading.md#git_provider-is-now-required).
+`git_provider` selects which webhook secret is required (`git_provider: github` ⇒ `GITHUB_WEBHOOK_SECRET`, `git_provider: bitbucket` ⇒ `BITBUCKET_WEBHOOK_SECRET`; `SLACK_BOT_TOKEN` is always required regardless), which `/webhook/...` route the server registers (`/webhook/github` or `/webhook/bitbucket`), and which provider's validation probes run. A deployment serves exactly one provider and never needs the other's credentials. Switching `git_provider` against an existing database requires a fresh database; see [Upgrading](upgrading.md#git_provider-is-now-required).
+
+#### Bitbucket behavior notes
+
+Two provider-specific behaviors are worth knowing when running `git_provider: bitbucket`:
+
+- **Self-healing draft/ready transitions.** Bitbucket has no distinct "opened as draft" vs "marked ready" events — both arrive as `pullrequest:updated`. Notifycat reads the PR's `draft` flag on each update: `draft: true` converts the tracked message to draft (deletes it), and `draft: false` on an `OPEN` PR treats it as ready-for-review. An `updated` event on a non-`OPEN` PR is ignored. This means a PR toggled draft↔ready re-announces correctly without a dedicated event.
+- **The user-account-bot blind spot.** Bot suppression keys on `actor.type != "user"` (so `team` and `app_user` actors are treated as bots). A bot that authenticates as an ordinary Bitbucket **user account** reports `actor.type: "user"` and is therefore indistinguishable from a human — its reviews are not suppressed even with `reviews.ignore_ai_reviews: true`. Prefer app-based integrations for reviewers you want suppressed.
 
 ### server
 
@@ -74,7 +86,13 @@ Use Slack emoji names without surrounding colons. For example, set `approved: sh
 
 | Key | Default | Notes |
 | --- | --- | --- |
-| `github.base_url` | `https://api.github.com` | Override for GitHub Enterprise or tests. |
+| `github.base_url` | `https://api.github.com` | Override for GitHub Enterprise or tests. Used when `git_provider: github`. |
+
+### bitbucket
+
+| Key | Default | Notes |
+| --- | --- | --- |
+| `bitbucket.base_url` | `https://api.bitbucket.org/2.0` | Override for tests. Used when `git_provider: bitbucket`. |
 
 ### cleanup
 
