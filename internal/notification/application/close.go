@@ -109,7 +109,7 @@ func (h *CloseHandler) logIgnored(event kernel.Event, reason string) {
 	attrs := []any{
 		slog.String("reason", reason),
 		slog.String("handler", "close"),
-		slog.String("provider", event.Provider),
+		slog.String("provider", event.Provider.String()),
 		slog.String("kind", event.Kind.String()),
 		slog.String("repository", event.Repository),
 		slog.Int("pr", event.PR.Number),

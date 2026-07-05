@@ -93,7 +93,7 @@ func (h *OpenHandler) logIgnored(event kernel.Event, reason string) {
 	h.logger.Warn("ignored webhook event",
 		slog.String("reason", reason),
 		slog.String("handler", "open"),
-		slog.String("provider", event.Provider),
+		slog.String("provider", event.Provider.String()),
 		slog.String("kind", event.Kind.String()),
 		slog.String("repository", event.Repository),
 		slog.Int("pr", event.PR.Number),

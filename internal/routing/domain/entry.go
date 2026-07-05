@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+
+	"github.com/mptooling/notifycat/internal/kernel"
 )
 
 // Entry is one validation unit: an explicit (org, repo) pair or an
@@ -22,7 +24,7 @@ type Entry struct {
 	// Provider is the deployment's git_provider (e.g. "github"). It hashes into
 	// every entry so flipping the provider — under which the same org/repo names
 	// point at different remote objects — revalidates the whole lock.
-	Provider string
+	Provider kernel.Provider
 }
 
 // Key returns the lock-file key for the entry: "org/repo" or "org/*".
@@ -44,11 +46,11 @@ func (e Entry) Hash() string {
 		repo = "*"
 	}
 	payload := struct {
-		Provider     string   `json:"provider"`
-		Org          string   `json:"org"`
-		Repo         string   `json:"repo"`
-		Channel      string   `json:"channel"`
-		PathChannels []string `json:"path_channels,omitempty"`
+		Provider     kernel.Provider `json:"provider"`
+		Org          string          `json:"org"`
+		Repo         string          `json:"repo"`
+		Channel      string          `json:"channel"`
+		PathChannels []string        `json:"path_channels,omitempty"`
 	}{e.Provider, e.Org, repo, e.Channel, e.PathChannels}
 	// json.Marshal cannot fail for a fixed struct of supported types.
 	b, _ := json.Marshal(payload)

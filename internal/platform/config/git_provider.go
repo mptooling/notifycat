@@ -11,15 +11,15 @@ import (
 // value so a config that reaches for it gets a "coming soon" message rather than
 // a generic "invalid" one. The Bitbucket inbound-stack slice flips it on.
 const (
-	gitProviderGitHub    = kernel.ProviderGitHub // "github"
-	gitProviderBitbucket = "bitbucket"
+	gitProviderGitHub    = kernel.ProviderGitHub        // "github"
+	gitProviderBitbucket = kernel.Provider("bitbucket") // recognized, not yet wired
 )
 
 // validateGitProvider enforces the required git_provider enum. An absent key
 // (empty value) or an unknown token fails fast, naming the key, showing the one
 // valid line, and pointing at the upgrade doc; bitbucket gets its own
 // not-yet-supported message so operators know the flip is coming, not a typo.
-func validateGitProvider(value string) error {
+func validateGitProvider(value kernel.Provider) error {
 	switch value {
 	case gitProviderGitHub:
 		return nil

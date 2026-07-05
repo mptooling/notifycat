@@ -14,6 +14,7 @@ import (
 	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
 
+	"github.com/mptooling/notifycat/internal/kernel"
 	routingapp "github.com/mptooling/notifycat/internal/routing/application"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 )
@@ -29,7 +30,7 @@ type Config struct {
 	// GitProvider is the required git_provider enum ("github"). It selects which
 	// provider's secrets are required (see readSecrets) and hashes into every
 	// lock entry (see routing Entry.Provider).
-	GitProvider string
+	GitProvider kernel.Provider
 
 	Addr        string
 	LogLevel    string
@@ -89,7 +90,7 @@ const DefaultConfigFile = "./config.yaml"
 // document. Bool/int leaves are pointers so an absent key is distinguishable
 // from an explicit zero and the Go-side default survives.
 type fileSchema struct {
-	GitProvider string `yaml:"git_provider"`
+	GitProvider kernel.Provider `yaml:"git_provider"`
 	Server      struct {
 		Addr      string `yaml:"addr"`
 		LogLevel  string `yaml:"log_level"`

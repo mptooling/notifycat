@@ -35,7 +35,7 @@ type Sender struct {
 // Sender.IsBot — and handlers inspect only the neutral fields to decide whether
 // to run.
 type Event struct {
-	Provider   string
+	Provider   Provider
 	Kind       EventKind
 	Repository string
 
