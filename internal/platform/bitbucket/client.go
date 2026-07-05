@@ -242,6 +242,14 @@ func (c *Client) ListPullRequestFiles(ctx context.Context, workspace, repoSlug s
 		if isStaleSourceRef(req.URL) {
 			return errStaleSourceRef
 		}
+		// A narrow Bitbucket client only ever talks to one host. Refuse to follow a
+		// redirect off the original host so the request — and the Authorization
+		// credential re-applied below — never reaches an arbitrary target (Go strips
+		// Authorization cross-host by default; re-applying it here would otherwise
+		// leak it). This also blocks a redirect-driven SSRF hop.
+		if req.URL.Host != via[0].URL.Host {
+			return fmt.Errorf("bitbucket: refusing cross-host redirect to %q", req.URL.Host)
+		}
 		c.applyAuth(req)
 		return nil
 	}

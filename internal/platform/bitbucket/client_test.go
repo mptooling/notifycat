@@ -287,6 +287,34 @@ func TestListPullRequestFiles_SpecNoneSoftFail(t *testing.T) {
 	}
 }
 
+func TestListPullRequestFiles_RefusesCrossHostRedirect(t *testing.T) {
+	var attacker atomic.Bool
+	evil := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		attacker.Store(true)
+		if r.Header.Get("Authorization") != "" {
+			t.Errorf("credential leaked to cross-host redirect target: %q", r.Header.Get("Authorization"))
+		}
+	}))
+	defer evil.Close()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, evil.URL+"/steal?from_pullrequest_id=42", http.StatusFound)
+	}))
+	defer srv.Close()
+
+	c := bitbucket.NewClient(srv.Client(), "tok", "", bitbucket.WithBaseURL(srv.URL))
+	_, err := c.ListPullRequestFiles(context.Background(), "acme", "web", 42)
+	if err == nil {
+		t.Fatal("expected an error refusing the cross-host redirect, got nil")
+	}
+	if errors.Is(err, bitbucket.ErrDiffstatUnavailable) {
+		t.Fatalf("cross-host redirect should surface as a hard error, not the soft-fail: %v", err)
+	}
+	if attacker.Load() {
+		t.Fatal("cross-host redirect target was contacted; it must never be reached")
+	}
+}
+
 func TestListPullRequestFiles_FollowsNext(t *testing.T) {
 	var page atomic.Int32
 	var base string
