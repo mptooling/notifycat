@@ -16,8 +16,8 @@ The sibling **lock file** is `config.lock`, derived by the same mechanism as the
 
 ```yaml
 mappings:
-  <org>:                          # GitHub org name; map key
-    <repo>:                       # GitHub repo name within the org, or "*" for catch-all
+  <org>:                          # GitHub org name (or Bitbucket workspace slug); map key
+    <repo>:                       # GitHub repo name (or Bitbucket repo_slug) within the org, or "*" for catch-all
       channel: <slack-channel-id>
       mentions: [<string>, ...]   # optional; see "Mention states" below
     "*":                          # Optional catch-all tier (supplies defaults, routes unlisted repos)
@@ -25,12 +25,32 @@ mappings:
       mentions: [<string>, ...]   # optional
 ```
 
+<a id="bitbucket-workspace-and-repo-slug"></a>
+
+### Bitbucket workspace & repo slug
+
+Under `git_provider: bitbucket` the top-level map key is the Bitbucket **workspace slug** (the short identifier in your Bitbucket URLs, e.g. `acme-corp`) and the repo key is the **repo slug** — the lowercase, hyphenated URL identifier, not the display name (e.g. `my-service`, not `My Service`). You can find both in any repository URL: `bitbucket.org/<workspace>/<repo_slug>`. A GitHub deployment uses the GitHub org name and repo name in the same positions; the schema is identical, only the semantics of the keys differ.
+
+**Bitbucket example:**
+
+```yaml
+git_provider: bitbucket
+
+mappings:
+  acme-corp:                      # Bitbucket workspace slug
+    my-service:                   # Bitbucket repo_slug (URL slug, not display name)
+      channel: C0123ABCDE
+      mentions: ["<!subteam^S0ENG>"]
+    "*":                          # catch-all for every other repo in the workspace
+      channel: C0DEFAULT00
+```
+
 ### Rules
 
 | Field | Rule |
 | --- | --- |
-| `mappings` | Map keyed by GitHub org. Org keys match `^[A-Za-z0-9_.-]+$`. |
-| `<org>.<repo>` | Repo tier keys are GitHub repo names (matching `^[A-Za-z0-9_.-]+$`) or the literal string `"*"`. |
+| `mappings` | Map keyed by GitHub org name or Bitbucket workspace slug. Keys match `^[A-Za-z0-9_.-]+$`. |
+| `<org>.<repo>` | Repo tier keys are GitHub repo names or Bitbucket repo slugs (matching `^[A-Za-z0-9_.-]+$`) or the literal string `"*"`. |
 | `channel` | Required on at least one tier per org. Slack channel ID, matches `^[CGD][A-Z0-9]{2,}$` (must be the ID, not `#display-name`). If omitted on a repo tier, inherits from the `"*"` tier. Every resolvable org/repo pair must yield a channel. |
 | `mentions` | Optional. See [Mention states](#mention-states) for the three accepted shapes. If omitted on a repo tier, inherits from the `"*"` tier. `null` is rejected. |
 | `"*"` tier | Optional. Supplies channel/mentions defaults for repo tiers that omit them. Also acts as the catch-all: any webhook for `org/repo` without an explicit tier routes to `org/*`. An org may be wholly defined via `"*"` alone. |

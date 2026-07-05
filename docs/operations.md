@@ -5,15 +5,17 @@ external queue.
 
 ## Process Model
 
-Run one `notifycat-server` process behind your normal HTTPS ingress. GitHub posts webhooks to `/webhook/github`, and
-Notifycat makes outbound HTTPS calls to Slack.
+Run one `notifycat-server` process behind your normal HTTPS ingress. The selected provider posts webhooks to the matching route, and Notifycat makes outbound HTTPS calls to Slack.
 
 The server exposes:
 
 | Route | Purpose |
 | --- | --- |
 | `GET /healthz` | Liveness/readiness check. Returns `200 OK` once the HTTP listener is up — wire it as the target-group health check (ALB, nginx upstream, Cloud Run) or the `livenessProbe`/`readinessProbe` path in Kubernetes. Because startup validation and migrations run before the listener opens, a `200` means the process is healthy in both senses. |
-| `POST /webhook/github` | GitHub webhook receiver. |
+| `POST /webhook/github` | GitHub webhook receiver. Only registered when `git_provider: github`. |
+| `POST /webhook/bitbucket` | Bitbucket webhook receiver. Only registered when `git_provider: bitbucket`. |
+
+Only the webhook route for the configured `git_provider` is registered. Sending a Bitbucket payload to `/webhook/github` (or vice versa) returns `404`.
 
 ## Startup and Shutdown
 
@@ -34,6 +36,21 @@ State lives in two places:
 Back up the SQLite file if losing notification state would be painful. If the database is lost, Notifycat can still receive webhooks, but existing PRs may get new Slack messages because the old Slack timestamp mapping is gone. `config.yaml` and `config.lock` live in your repo, so losing the container's local copy is harmless on the next deploy.
 
 > ⚠️ **Changing `git_provider` requires a fresh database.** The provider is not recorded per row. Pointing an existing database at a different `git_provider` lets stale rows (keyed by the old provider's repository names and PR numbering) collide with the new provider's — silently suppressing posts until the cleanup TTL (`cleanup.message_ttl_days`) purges them. Start from a fresh database when you switch providers. See [Upgrading → `git_provider` is now required](upgrading.md#git_provider-is-now-required).
+
+## Bitbucket Delivery Behavior
+
+When `git_provider: bitbucket`, webhook deliveries from Bitbucket behave as follows:
+
+| Property | Value |
+| --- | --- |
+| Timeout per attempt | 10 seconds |
+| Retry attempts on 5xx or timeout | Up to 3 total |
+| Attempt number header | `X-Attempt-Number` (1 on the first attempt) |
+| Maximum payload size | 256 KB (Notifycat's 1 MiB body guard covers it) |
+
+To inspect past deliveries, open the repository's **Repository settings → Webhooks → View requests** in the Bitbucket UI. Each entry shows the request headers, the payload, the response status, and the response body — useful for diagnosing a `401` signature mismatch or an unexpected `200` with no Slack change.
+
+If Notifycat returns `200` but Slack did not change, check the structured logs for `ignored webhook event` with a `reason` field — the reason table below applies to Bitbucket deliveries exactly as it does to GitHub ones. The `provider` field on the log line will read `bitbucket`.
 
 ## Stuck-PR digest
 

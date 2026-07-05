@@ -2,7 +2,6 @@ package application
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -14,21 +13,12 @@ import (
 // delete the Slack message they produce. It is part of the acceptance contract.
 const smokeTitlePrefix = "[notifycat smoke]"
 
-// smokeGHEvent describes one synthetic webhook to replay.
-type smokeGHEvent struct {
-	event       string // X-GitHub-Event header value
-	action      string
-	reviewState string // review.state, empty when there is no review object
-	merged      bool
-	senderType  string // sender.type; empty defaults to "User" in buildPayload
-}
-
-// smokeLifecycleStep pairs a synthetic event with the emoji the server is
+// smokeLifecycleStep pairs a neutral SmokeEvent with the emoji the server is
 // expected to add for it, plus a label for the report.
 type smokeLifecycleStep struct {
 	name  string
 	emoji string
-	ev    smokeGHEvent
+	ev    diagnosticsdomain.SmokeEvent
 }
 
 // SmokeUseCase runs the delivery test. Construct via NewSmokeUseCase; Run is
@@ -39,6 +29,7 @@ type SmokeUseCase struct {
 	reactions diagnosticsdomain.SmokeReactions
 	cleanup   diagnosticsdomain.SmokeCleanup
 	signer    diagnosticsdomain.Signer
+	builder   diagnosticsdomain.WebhookBuilder
 	sender    diagnosticsdomain.WebhookSender
 	cfg       diagnosticsdomain.SmokeConfig
 }
@@ -50,6 +41,7 @@ func NewSmokeUseCase(
 	reactions diagnosticsdomain.SmokeReactions,
 	cleanup diagnosticsdomain.SmokeCleanup,
 	signer diagnosticsdomain.Signer,
+	builder diagnosticsdomain.WebhookBuilder,
 	sender diagnosticsdomain.WebhookSender,
 	cfg diagnosticsdomain.SmokeConfig,
 ) *SmokeUseCase {
@@ -59,6 +51,7 @@ func NewSmokeUseCase(
 		reactions: reactions,
 		cleanup:   cleanup,
 		signer:    signer,
+		builder:   builder,
 		sender:    sender,
 		cfg:       cfg,
 	}
@@ -111,7 +104,7 @@ func (s *SmokeUseCase) Run(ctx context.Context, target string, withReactions boo
 		BotReviewMarker:    s.cfg.Reactions.BotReview,
 	}
 
-	if deliverErr := s.deliver(ctx, target, prNumber, title, smokeGHEvent{event: "pull_request", action: "opened"}); deliverErr != nil {
+	if deliverErr := s.deliver(ctx, target, prNumber, title, diagnosticsdomain.SmokeEvent{Kind: diagnosticsdomain.SmokeOpened}); deliverErr != nil {
 		return diagnosticsdomain.SmokeResult{}, deliverErr
 	}
 
@@ -145,16 +138,16 @@ func (s *SmokeUseCase) Run(ctx context.Context, target string, withReactions boo
 // emoji is configured.
 func (s *SmokeUseCase) lifecycleSteps() []smokeLifecycleStep {
 	steps := []smokeLifecycleStep{
-		{"comment", s.cfg.Reactions.Commented, smokeGHEvent{event: "pull_request_review", action: "submitted", reviewState: "commented"}},
+		{"comment", s.cfg.Reactions.Commented, diagnosticsdomain.SmokeEvent{Kind: diagnosticsdomain.SmokeCommented}},
 	}
 	if !s.cfg.IgnoreAIReviews && s.cfg.Reactions.BotReview != "" {
-		steps = append(steps, smokeLifecycleStep{"bot", s.cfg.Reactions.BotReview, smokeGHEvent{
-			event: "pull_request_review", action: "submitted", reviewState: "commented", senderType: "Bot",
-		}})
+		steps = append(steps, smokeLifecycleStep{
+			"bot", s.cfg.Reactions.BotReview, diagnosticsdomain.SmokeEvent{Kind: diagnosticsdomain.SmokeCommented, IsBot: true},
+		})
 	}
 	return append(steps,
-		smokeLifecycleStep{"approve", s.cfg.Reactions.Approved, smokeGHEvent{event: "pull_request_review", action: "submitted", reviewState: "approved"}},
-		smokeLifecycleStep{"merge", s.cfg.Reactions.MergedPR, smokeGHEvent{event: "pull_request", action: "closed", merged: true}},
+		smokeLifecycleStep{"approve", s.cfg.Reactions.Approved, diagnosticsdomain.SmokeEvent{Kind: diagnosticsdomain.SmokeApproved}},
+		smokeLifecycleStep{"merge", s.cfg.Reactions.MergedPR, diagnosticsdomain.SmokeEvent{Kind: diagnosticsdomain.SmokeMerged}},
 	)
 }
 
@@ -181,20 +174,20 @@ func (s *SmokeUseCase) replayReactions(ctx context.Context, target string, prNum
 
 // deliver signs and POSTs one synthetic event, mapping the response to a
 // sentinel error.
-func (s *SmokeUseCase) deliver(ctx context.Context, repository string, number int, title string, ev smokeGHEvent) error {
-	body, err := buildPayload(repository, number, title, ev)
+func (s *SmokeUseCase) deliver(ctx context.Context, repository string, number int, title string, ev diagnosticsdomain.SmokeEvent) error {
+	forged, err := s.builder.Build(repository, number, title, ev)
 	if err != nil {
 		return err
 	}
 
-	header, value := s.signer.Sign(s.cfg.WebhookSecret, body)
+	header, value := s.signer.Sign(s.cfg.WebhookSecret, forged.Body)
 	headers := map[string]string{
-		"Content-Type":   "application/json",
-		"X-GitHub-Event": ev.event,
-		header:           value,
+		"Content-Type":     "application/json",
+		forged.EventHeader: forged.EventValue,
+		header:             value,
 	}
 
-	status, sendErr := s.sender.Send(ctx, s.cfg.WebhookURL, body, headers)
+	status, sendErr := s.sender.Send(ctx, s.cfg.WebhookURL, forged.Body, headers)
 	if sendErr != nil {
 		return fmt.Errorf("%w at %s: %v", diagnosticsdomain.ErrUnreachable, s.cfg.WebhookURL, sendErr)
 	}
@@ -216,54 +209,4 @@ func containsReaction(names []string, name string) bool {
 		}
 	}
 	return false
-}
-
-// buildPayload renders a minimal webhook body carrying only the fields
-// githubhook.ParsePayload and the handlers read for ev.
-func buildPayload(repository string, number int, title string, ev smokeGHEvent) ([]byte, error) {
-	type user struct {
-		Login string `json:"login"`
-	}
-	type review struct {
-		State string `json:"state"`
-	}
-	payload := struct {
-		Action     string `json:"action"`
-		Repository struct {
-			FullName string `json:"full_name"`
-		} `json:"repository"`
-		PullRequest struct {
-			Number  int    `json:"number"`
-			Title   string `json:"title"`
-			HTMLURL string `json:"html_url"`
-			User    user   `json:"user"`
-			Merged  bool   `json:"merged"`
-			Draft   bool   `json:"draft"`
-		} `json:"pull_request"`
-		Review *review `json:"review,omitempty"`
-		Sender struct {
-			Login string `json:"login"`
-			Type  string `json:"type"`
-		} `json:"sender"`
-	}{Action: ev.action}
-	payload.Repository.FullName = repository
-	payload.PullRequest.Number = number
-	payload.PullRequest.Title = title
-	payload.PullRequest.HTMLURL = fmt.Sprintf("https://github.com/%s/pull/%d", repository, number)
-	payload.PullRequest.User = user{Login: "notifycat-smoke"}
-	payload.PullRequest.Merged = ev.merged
-	if ev.reviewState != "" {
-		payload.Review = &review{State: ev.reviewState}
-	}
-	payload.Sender.Login = "notifycat-smoke"
-	payload.Sender.Type = "User"
-	if ev.senderType != "" {
-		payload.Sender.Type = ev.senderType
-	}
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("smoke: marshal payload: %w", err)
-	}
-	return body, nil
 }

@@ -127,3 +127,36 @@ type SmokeCleanup interface {
 type Smoke interface {
 	Run(ctx context.Context, target string, withReactions bool) (SmokeResult, error)
 }
+
+// SmokeEventKind is the provider-neutral lifecycle event a smoke run replays.
+type SmokeEventKind int
+
+// SmokeOpened through SmokeMerged enumerate the four provider-neutral lifecycle
+// stages the smoke run replays.
+const (
+	SmokeOpened SmokeEventKind = iota
+	SmokeCommented
+	SmokeApproved
+	SmokeMerged
+)
+
+// SmokeEvent is one provider-neutral synthetic event. IsBot marks the actor as a
+// bot (meaningful only for SmokeCommented — the bot-review lifecycle step).
+type SmokeEvent struct {
+	Kind  SmokeEventKind
+	IsBot bool
+}
+
+// ForgedWebhook is a provider-specific webhook ready to sign and POST: the
+// provider event header (name + value) and the JSON body.
+type ForgedWebhook struct {
+	EventHeader string // e.g. "X-GitHub-Event" or "X-Event-Key"
+	EventValue  string // e.g. "pull_request" or "pullrequest:created"
+	Body        []byte
+}
+
+// WebhookBuilder renders a ForgedWebhook for one neutral SmokeEvent. It owns all
+// provider vocabulary; the use case speaks only neutral SmokeEvents.
+type WebhookBuilder interface {
+	Build(repository string, number int, title string, ev SmokeEvent) (ForgedWebhook, error)
+}

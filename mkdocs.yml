@@ -58,6 +58,7 @@ nav:
   - Mappings: mappings.md
   - Slack app: slack-app.md
   - GitHub webhook: github-webhook.md
+  - Bitbucket webhook: bitbucket-webhook.md
   - Docker (manual): docker.md
   - Operations: operations.md
   - Doctor: doctor.md

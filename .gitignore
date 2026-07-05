@@ -4,6 +4,10 @@
 /notifycat-server
 /notifycat-mapping
 /notifycat-migrate
+/notifycat-config
+/notifycat-doctor
+/notifycat-reconcile
+/notifycat-smoke
 
 # Go build cache / vendor
 /vendor/
