@@ -1,5 +1,5 @@
 // Command notifycat-reconcile is a one-time maintenance tool that marks
-// slack_messages rows closed when their PR is no longer open on GitHub.
+// slack_messages rows closed when their PR is no longer open on the git provider.
 //
 // It exists for the migration to stuck-PR digest tracking: rows created before
 // the close handler recorded closed_at all have closed_at = NULL and look open
@@ -8,12 +8,12 @@
 //
 // Usage:
 //
-//	notifycat-reconcile            — mark closed PRs from their GitHub state
+//	notifycat-reconcile            — mark closed PRs from their provider state
 //	notifycat-reconcile -dry-run   — report what would change, write nothing
 //
-// It reads PR state from GitHub, so GITHUB_TOKEN must be set with read access
-// to the repos, and DATABASE_URL must point at the same database the server
-// uses.
+// It reads PR state from the selected git provider, so the provider's token
+// must be set with read access to the repos, and DATABASE_URL must point at
+// the same database the server uses.
 package main
 
 import (
@@ -27,9 +27,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mptooling/notifycat/internal/kernel"
 	maintenanceapp "github.com/mptooling/notifycat/internal/maintenance/application"
 	maintenancedomain "github.com/mptooling/notifycat/internal/maintenance/domain"
 	maintenanceinfra "github.com/mptooling/notifycat/internal/maintenance/infrastructure"
+	"github.com/mptooling/notifycat/internal/platform/bitbucket"
 	"github.com/mptooling/notifycat/internal/platform/config"
 	"github.com/mptooling/notifycat/internal/platform/github"
 	"github.com/mptooling/notifycat/internal/platform/persistence"
@@ -53,8 +55,8 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	if cfg.GitHubToken.Reveal() == "" {
-		return fmt.Errorf("GITHUB_TOKEN is required: the reconcile reads PR state from GitHub")
+	if cfg.ProviderToken().Reveal() == "" {
+		return fmt.Errorf("%s is required: reconcile reads PR state from the git provider", cfg.ProviderTokenVar())
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
@@ -72,10 +74,9 @@ func run(args []string) error {
 	messages := persistence.NewPullRequests(db)
 	repo := maintenanceinfra.NewPRRepository(messages)
 	httpClient := &http.Client{Timeout: 10 * time.Second}
-	gh := github.NewClient(httpClient, cfg.GitHubToken.Reveal(), github.WithBaseURL(cfg.GitHubBaseURL))
 	rec := maintenanceapp.NewReconciler(maintenancedomain.ReconcilerParams{
 		Lister:  repo,
-		Checker: maintenanceinfra.NewGitHubChecker(gh),
+		Checker: providerChecker(cfg, httpClient),
 		Closer:  repo,
 		Deleter: repo,
 		Logger:  logger,
@@ -100,4 +101,15 @@ func run(args []string) error {
 		return fmt.Errorf("%d PR(s) could not be checked; resolve (e.g. token scope) and re-run — it is idempotent", summary.Errors)
 	}
 	return nil
+}
+
+func providerChecker(cfg config.Config, hc *http.Client) maintenancedomain.PRChecker {
+	switch cfg.GitProvider {
+	case kernel.ProviderBitbucket:
+		client := bitbucket.NewClient(hc, cfg.BitbucketToken.Reveal(), cfg.BitbucketAuthEmail, bitbucket.WithBaseURL(cfg.BitbucketBaseURL))
+		return maintenanceinfra.NewBitbucketChecker(client)
+	default:
+		gh := github.NewClient(hc, cfg.GitHubToken.Reveal(), github.WithBaseURL(cfg.GitHubBaseURL))
+		return maintenanceinfra.NewGitHubChecker(gh)
+	}
 }

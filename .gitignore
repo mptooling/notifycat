@@ -4,6 +4,10 @@
 /notifycat-server
 /notifycat-mapping
 /notifycat-migrate
+/notifycat-config
+/notifycat-doctor
+/notifycat-reconcile
+/notifycat-smoke
 
 # Go build cache / vendor
 /vendor/
@@ -37,3 +41,7 @@ config.yaml
 
 # graphify knowledge-graph output
 graphify-out/
+
+# Local docs build (mkdocs)
+/site/
+.venv-docs/

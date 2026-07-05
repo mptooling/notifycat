@@ -12,7 +12,6 @@ theme:
   features:
     - navigation.instant
     - navigation.tracking
-    - navigation.tabs
     - navigation.sections
     - navigation.top
     - content.code.copy
@@ -58,6 +57,7 @@ nav:
   - Mappings: mappings.md
   - Slack app: slack-app.md
   - GitHub webhook: github-webhook.md
+  - Bitbucket webhook: bitbucket-webhook.md
   - Docker (manual): docker.md
   - Operations: operations.md
   - Doctor: doctor.md

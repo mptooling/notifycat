@@ -1,8 +1,8 @@
 // Command notifycat-smoke runs an end-to-end delivery test against the running
-// notifycat stack. It forges a signed `pull_request: opened` webhook for a
-// mapped repository, POSTs it to the live /webhook/github endpoint, and reports
-// the Slack channel and message timestamp it produced — the honest "does my
-// config actually deliver?" check to run before wiring a real GitHub webhook.
+// notifycat stack. It forges a signed webhook for a mapped repository, POSTs it
+// to the live provider endpoint, and reports the Slack channel and message
+// timestamp it produced — the honest "does my config actually deliver?" check to
+// run before wiring a real webhook.
 //
 // With --reactions it also replays a comment, an approval, and a merge for the
 // same synthetic PR and verifies the configured emoji landed on the message.
@@ -22,6 +22,7 @@ import (
 	diagnosticsapp "github.com/mptooling/notifycat/internal/diagnostics/application"
 	diagnosticsdomain "github.com/mptooling/notifycat/internal/diagnostics/domain"
 	diagnosticsinfra "github.com/mptooling/notifycat/internal/diagnostics/infrastructure"
+	"github.com/mptooling/notifycat/internal/kernel"
 	"github.com/mptooling/notifycat/internal/platform/config"
 	"github.com/mptooling/notifycat/internal/platform/persistence"
 	"github.com/mptooling/notifycat/internal/platform/slack"
@@ -29,9 +30,22 @@ import (
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 )
 
-// defaultURL targets the server over the compose network — the same name the
-// doctor one-off container reaches. Override with --url for a host-local run.
-const defaultURL = "http://notifycat:8080/webhook/github"
+// defaultURLGitHub and defaultURLBitbucket target the server over the compose
+// network — the same name the doctor one-off container reaches. Override with
+// --url for a host-local run.
+const (
+	defaultURLGitHub    = "http://notifycat:8080/webhook/github"
+	defaultURLBitbucket = "http://notifycat:8080/webhook/bitbucket"
+)
+
+// defaultWebhookURL returns the compose-network default endpoint for the
+// selected git provider.
+func defaultWebhookURL(provider kernel.Provider) string {
+	if provider == kernel.ProviderBitbucket {
+		return defaultURLBitbucket
+	}
+	return defaultURLGitHub
+}
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -50,6 +64,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
+	// Resolve the webhook URL: explicit --url wins; otherwise use the provider
+	// default so the operator does not need to specify it for the standard case.
+	webhookURL := opts.url
+	if webhookURL == "" {
+		webhookURL = defaultWebhookURL(cfg.GitProvider)
+	}
+
 	provider := routingapp.NewProvider(routingdomain.Defaults{GitProvider: cfg.GitProvider}, cfg.Mappings, cfg.Digest)
 	db, err := persistence.Open(cfg.DatabaseURL)
 	if err != nil {
@@ -65,12 +86,23 @@ func run(args []string, stdout, stderr io.Writer) int {
 	smokeMessages := diagnosticsinfra.NewStoreSmokeMessages(pullRequests)
 	smokeReactions := diagnosticsinfra.NewSlackSmokeReactions(slackClient)
 	smokeCleanup := diagnosticsinfra.NewStoreSmokeCleanup(pullRequests)
-	signer := diagnosticsinfra.NewGitHubSigner()
+
+	var signer diagnosticsdomain.Signer
+	var builder diagnosticsdomain.WebhookBuilder
+	switch cfg.GitProvider {
+	case kernel.ProviderBitbucket:
+		signer = diagnosticsinfra.NewBitbucketSigner()
+		builder = diagnosticsinfra.NewBitbucketWebhookBuilder()
+	default:
+		signer = diagnosticsinfra.NewGitHubSigner()
+		builder = diagnosticsinfra.NewGitHubWebhookBuilder()
+	}
+
 	sender := diagnosticsinfra.NewHTTPWebhookSender(hc)
 
 	smokeCfg := diagnosticsdomain.SmokeConfig{
-		WebhookURL:      opts.url,
-		WebhookSecret:   cfg.GitHubWebhookSecret.Reveal(),
+		WebhookURL:      webhookURL,
+		WebhookSecret:   cfg.ProviderWebhookSecret().Reveal(),
 		IgnoreAIReviews: cfg.IgnoreAIReviews,
 		Reactions: diagnosticsdomain.SmokeReactionsConfig{
 			Enabled:       cfg.Reactions.Enabled,
@@ -90,13 +122,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 		smokeReactions,
 		smokeCleanup,
 		signer,
+		builder,
 		sender,
 		smokeCfg,
 	)
 
 	res, err := smokeUseCase.Run(context.Background(), opts.target, opts.reactions)
 	if err != nil {
-		return report(stderr, opts.target, opts.url, err)
+		return report(stderr, opts.target, webhookURL, cfg.ProviderWebhookSecretVar(), err)
 	}
 	return render(stdout, res)
 }
@@ -153,13 +186,14 @@ func renderReactions(stdout io.Writer, res diagnosticsdomain.SmokeResult) int {
 }
 
 // report maps a Smoke error to a clear, stack-trace-free message and exit code.
-func report(stderr io.Writer, target, url string, err error) int {
+// secretVar is the environment variable name for the provider webhook secret.
+func report(stderr io.Writer, target, url, secretVar string, err error) int {
 	switch {
 	case errors.Is(err, diagnosticsdomain.ErrNoMapping):
 		fmt.Fprintf(stderr, "notifycat-smoke: %s is not in config.yaml mappings — add it before smoke-testing\n", target)
 	case errors.Is(err, diagnosticsdomain.ErrSignatureRejected):
 		fmt.Fprintln(stderr, "notifycat-smoke: the server rejected the signature (401).")
-		fmt.Fprintln(stderr, "  the GITHUB_WEBHOOK_SECRET this command used does not match the running server's — check your .env")
+		fmt.Fprintf(stderr, "  the %s this command used does not match the running server's — check your .env\n", secretVar)
 	case errors.Is(err, diagnosticsdomain.ErrUnreachable):
 		fmt.Fprintf(stderr, "notifycat-smoke: could not reach the server at %s — is the stack running? (docker compose up -d)\n", url)
 	default:
@@ -178,7 +212,7 @@ func parseArgs(args []string, stderr io.Writer) (opts options, code int, ok bool
 	fs := flag.NewFlagSet("notifycat-smoke", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() { fmt.Fprintln(stderr, usage()) }
-	url := fs.String("url", defaultURL, "webhook endpoint to POST the synthetic event to")
+	url := fs.String("url", "", "webhook endpoint (default: provider default compose URL)")
 	reactions := fs.Bool("reactions", false, "also replay comment/approve/merge and verify the configured emoji")
 	if err := fs.Parse(args); err != nil {
 		return options{}, 2, false
@@ -196,6 +230,6 @@ func usage() string {
 usage:
   notifycat-smoke owner/repo              # post a signed test event to the running server
   notifycat-smoke --reactions owner/repo  # also replay comment/approve/merge and verify emoji
-  notifycat-smoke --url URL owner/repo    # override the endpoint (default: ` + defaultURL + `)
+  notifycat-smoke --url URL owner/repo    # override the endpoint (default: provider-specific compose URL)
 `)
 }

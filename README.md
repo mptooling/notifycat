@@ -11,13 +11,24 @@ Card](https://goreportcard.com/badge/github.com/mptooling/notifycat)](https://go
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Conventional
 Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow.svg)](https://www.conventionalcommits.org)
 
-Notifycat listens for GitHub pull request webhooks and keeps Slack up to date.
+Notifycat listens for GitHub and Bitbucket pull request webhooks and keeps Slack up to date.
 
-One pull request gets one Slack message. As the PR opens, moves to draft, gets reviewed, merges, or closes, Notifycat
-updates that message and adds the configured reactions. The result is a quieter channel: reviewers can follow the state
-of a PR without digging through repeated notifications.
+One pull request gets one Slack message. As the PR opens, moves to draft, gets reviewed, merges, or closes, Notifycat updates that message and adds the configured reactions. The result is a quieter channel: reviewers can follow the state of a PR without digging through repeated notifications.
 
 It is intentionally small: one HTTP endpoint, a SQLite database (for Slack message timestamps), and a declarative `config.yaml` that holds all settings and decides which PRs route to which Slack channels.
+
+## Provider support
+
+| Feature | GitHub | Bitbucket |
+| --- | --- | --- |
+| Webhook signature verification (HMAC-SHA256) | Yes | Yes |
+| Per-path / monorepo routing | Yes (requires `GITHUB_TOKEN`) | Yes (requires `BITBUCKET_TOKEN`) |
+| Stuck-PR digest | Yes | Yes |
+| Reactions & review flow | Yes | Yes |
+| Token auth | Fine-grained PAT (Bearer) | Access token (Bearer) or scoped Atlassian API token (Basic, Free-plan fallback) |
+| App passwords | n/a | **Not supported** — removed by Atlassian 2026-07-28; use access tokens |
+
+A deployment serves exactly one provider, selected by `git_provider: github` or `git_provider: bitbucket` in `config.yaml`.
 
 ## Quick start
 
@@ -66,21 +77,21 @@ The binaries pick up `.env` from the current working directory and default to `.
 
 ## What It Handles
 
-- `pull_request` webhooks for opened, closed, and converted-to-draft PRs.
-- `pull_request_review` webhooks for approved, commented, and changes-requested reviews.
-- `pull_request_review_comment` webhooks for line-specific PR comments.
-- GitHub HMAC-SHA256 verification through `X-Hub-Signature-256`.
-- Repository routing from the `mappings:` section of `config.yaml` — per-repo tiers (`org → {repo|*: {channel, mentions}}`) where `*` acts as the org-wide default and catch-all. See [`config.example.yaml`](config.example.yaml).
+- Pull request webhooks for opened, closed, and converted-to-draft PRs (GitHub: `pull_request`; Bitbucket: `pullrequest:created`, `pullrequest:updated`, `pullrequest:fulfilled`, `pullrequest:rejected`).
+- Review webhooks for approved, commented, and changes-requested reviews (GitHub: `pull_request_review`; Bitbucket: `pullrequest:approved`, `pullrequest:changes_request_created`, `pullrequest:comment_created`).
+- Line-specific PR comment webhooks (GitHub: `pull_request_review_comment`).
+- HMAC-SHA256 signature verification — `X-Hub-Signature-256` for GitHub, `X-Hub-Signature` for Bitbucket.
+- Repository routing from the `mappings:` section of `config.yaml` — per-repo tiers (`org → {repo|*: {channel, mentions}}`) where `*` acts as the org-wide default and catch-all. Under Bitbucket, the org key is the workspace slug and the repo key is the repo slug. See [`config.example.yaml`](config.example.yaml).
 - Slack message updates instead of repeated new messages for the same PR.
 
 ## Binaries
 
 | Binary | Purpose |
 | --- | --- |
-| `notifycat-server` | HTTP server for GitHub webhooks |
+| `notifycat-server` | HTTP server for GitHub and Bitbucket webhooks |
 | `notifycat-config` | CLI for listing and validating config.yaml (mappings and settings) |
 | `notifycat-migrate` | Applies embedded SQLite migrations |
-| `notifycat-doctor` | Preflight diagnostics (config, database, mappings, optional per-repo Slack/GitHub) |
+| `notifycat-doctor` | Preflight diagnostics (config, database, mappings, optional per-repo Slack/GitHub/Bitbucket) |
 | `notifycat-smoke` | Forges a signed PR event end-to-end to confirm Slack delivery |
 
 ## Documentation
@@ -94,6 +105,7 @@ Full documentation is published at <https://mptooling.github.io/notifycat/>.
 - [Configuration](https://mptooling.github.io/notifycat/configuration/)
 - [Slack app setup](https://mptooling.github.io/notifycat/slack-app/)
 - [GitHub webhook setup](https://mptooling.github.io/notifycat/github-webhook/)
+- [Bitbucket webhook setup](https://mptooling.github.io/notifycat/bitbucket-webhook/)
 - [Docker (manual)](https://mptooling.github.io/notifycat/docker/)
 - [Operations](https://mptooling.github.io/notifycat/operations/)
 - [Doctor](https://mptooling.github.io/notifycat/doctor/)

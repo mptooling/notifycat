@@ -152,6 +152,57 @@ func (f *fakeSigner) Sign(secret string, body []byte) (header, value string) {
 	return f.header, f.value
 }
 
+// fakeWebhookBuilder reproduces only the GitHub-shaped fields these tests decode, so the
+// application test stays independent of the infrastructure layer. The real
+// GitHubWebhookBuilder's full wire format is covered by github_webhook_builder_test.go.
+type fakeWebhookBuilder struct{}
+
+func (fakeWebhookBuilder) Build(_ string, number int, title string, ev diagnosticsdomain.SmokeEvent) (diagnosticsdomain.ForgedWebhook, error) {
+	type review struct {
+		State string `json:"state"`
+	}
+	payload := struct {
+		Action      string `json:"action"`
+		PullRequest struct {
+			Number int    `json:"number"`
+			Title  string `json:"title"`
+			Merged bool   `json:"merged"`
+		} `json:"pull_request"`
+		Review *review `json:"review,omitempty"`
+		Sender struct {
+			Type string `json:"type"`
+		} `json:"sender"`
+	}{}
+	payload.PullRequest.Number = number
+	payload.PullRequest.Title = title
+	payload.Sender.Type = "User"
+
+	eventValue := "pull_request"
+	switch ev.Kind {
+	case diagnosticsdomain.SmokeOpened:
+		payload.Action = "opened"
+	case diagnosticsdomain.SmokeCommented:
+		eventValue = "pull_request_review"
+		payload.Action = "submitted"
+		payload.Review = &review{State: "commented"}
+		if ev.IsBot {
+			payload.Sender.Type = "Bot"
+		}
+	case diagnosticsdomain.SmokeApproved:
+		eventValue = "pull_request_review"
+		payload.Action = "submitted"
+		payload.Review = &review{State: "approved"}
+	case diagnosticsdomain.SmokeMerged:
+		payload.Action = "closed"
+		payload.PullRequest.Merged = true
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return diagnosticsdomain.ForgedWebhook{}, err
+	}
+	return diagnosticsdomain.ForgedWebhook{EventHeader: "X-GitHub-Event", EventValue: eventValue, Body: body}, nil
+}
+
 // ---- helpers -----
 
 func fixedClock() func() time.Time {
@@ -170,12 +221,14 @@ func defaultCfg(url string) diagnosticsdomain.SmokeConfig {
 
 func newSmoke(sender *fakeSender, msgs *fakeMessages, rx *fakeReactions, cleanup *fakeCleanup, cfg diagnosticsdomain.SmokeConfig) *application.SmokeUseCase {
 	signer := &fakeSigner{}
+	builder := fakeWebhookBuilder{}
 	return application.NewSmokeUseCase(
 		fakeMappings{repo: testRepo, channel: testChannel},
 		msgs,
 		rx,
 		cleanup,
 		signer,
+		builder,
 		sender,
 		cfg,
 	)
@@ -557,6 +610,7 @@ func TestSmokeRun_SignerReceivesSecret(t *testing.T) {
 		&fakeReactions{},
 		cleanup,
 		signer,
+		fakeWebhookBuilder{},
 		sender,
 		cfg,
 	)

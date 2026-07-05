@@ -41,6 +41,7 @@ var Module = fx.Module("diagnostics",
 	fx.Provide(
 		// Infrastructure adapters bound to their domain ports.
 		fx.Annotate(diagnosticsinfra.NewGitHubSigner, fx.As(new(diagnosticsdomain.Signer))),
+		fx.Annotate(diagnosticsinfra.NewGitHubWebhookBuilder, fx.As(new(diagnosticsdomain.WebhookBuilder))),
 		fx.Annotate(diagnosticsinfra.NewHTTPWebhookSender, fx.As(new(diagnosticsdomain.WebhookSender))),
 		fx.Annotate(diagnosticsinfra.NewSlackSmokeReactions, fx.As(new(diagnosticsdomain.SmokeReactions))),
 		fx.Annotate(diagnosticsinfra.NewStoreSmokeMessages, fx.As(new(diagnosticsdomain.SmokeMessages))),
@@ -82,10 +83,11 @@ func provideSmokeUseCase(
 	reactions diagnosticsdomain.SmokeReactions,
 	cleanup diagnosticsdomain.SmokeCleanup,
 	signer diagnosticsdomain.Signer,
+	builder diagnosticsdomain.WebhookBuilder,
 	sender diagnosticsdomain.WebhookSender,
 	cfg Config,
 ) *application.SmokeUseCase {
-	return application.NewSmokeUseCase(mappings, messages, reactions, cleanup, signer, sender, cfg.SmokeConfig)
+	return application.NewSmokeUseCase(mappings, messages, reactions, cleanup, signer, builder, sender, cfg.SmokeConfig)
 }
 
 func provideMappingsValidator(
