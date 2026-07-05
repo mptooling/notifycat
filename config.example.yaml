@@ -15,9 +15,12 @@
 # Docker image default: /app/config.yaml.
 
 # ── Git provider ──────────────────────────────────────────────────────────────────────────────────
-git_provider: github                  # REQUIRED. The only supported value today is `github`.
-                                      # Selects which webhook secret is required (github -> GITHUB_WEBHOOK_SECRET)
-                                      # and which /webhook route is served. An absent or unknown value fails startup.
+git_provider: github                  # REQUIRED. One of `github` or `bitbucket`.
+                                      # Selects the webhook secret required (github -> GITHUB_WEBHOOK_SECRET,
+                                      # bitbucket -> BITBUCKET_WEBHOOK_SECRET), which /webhook route is served
+                                      # (/webhook/github or /webhook/bitbucket), and which provider's validation
+                                      # probes run. A deployment serves exactly one provider and never needs the
+                                      # other's credentials. An absent or unknown value fails startup.
                                       # Switching this against an existing database requires a fresh DB — see docs/upgrading.md.
 
 # ── Server ────────────────────────────────────────────────────────────────────────────────────────
@@ -54,7 +57,11 @@ slack:
 
 # ── GitHub ────────────────────────────────────────────────────────────────────────────────────────
 github:
-  base_url: "https://api.github.com"  # override for GitHub Enterprise or tests
+  base_url: "https://api.github.com"  # override for GitHub Enterprise or tests (used when git_provider: github)
+
+# ── Bitbucket ─────────────────────────────────────────────────────────────────────────────────────
+bitbucket:
+  base_url: "https://api.bitbucket.org/2.0"  # override for tests (used when git_provider: bitbucket)
 
 # ── Cleanup ───────────────────────────────────────────────────────────────────────────────────────
 cleanup:

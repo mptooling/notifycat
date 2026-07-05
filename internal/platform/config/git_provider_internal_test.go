@@ -5,25 +5,35 @@ import (
 	"testing"
 )
 
-// TestRequireProviderSecret_ScopedToGitHub proves the webhook-secret requirement
-// follows the selected provider (D8): github requires GITHUB_WEBHOOK_SECRET, and
-// any other provider does not gate on it. Behavior is identical while github is
-// the only wired value; this pins the seam so a second provider drops in cleanly.
-func TestRequireProviderSecret_ScopedToGitHub(t *testing.T) {
-	github := &Config{GitProvider: gitProviderGitHub} // no GitHubWebhookSecret
-	err := requireProviderSecret(github)
+// TestRequireProviderSecret_FollowsProvider proves the webhook-secret requirement
+// tracks the selected provider (D8): github gates on GITHUB_WEBHOOK_SECRET and is
+// blind to the bitbucket secret; bitbucket gates on BITBUCKET_WEBHOOK_SECRET and
+// is blind to the github one. A deployment never needs the other provider's
+// credential.
+func TestRequireProviderSecret_FollowsProvider(t *testing.T) {
 	var missing *MissingVarError
+
+	// github: requires GITHUB_WEBHOOK_SECRET, ignores the bitbucket secret.
+	err := requireProviderSecret(&Config{GitProvider: gitProviderGitHub})
 	if !errors.As(err, &missing) || missing.Var != "GITHUB_WEBHOOK_SECRET" {
 		t.Fatalf("github with no secret: err = %v; want MissingVarError(GITHUB_WEBHOOK_SECRET)", err)
 	}
-
-	withSecret := &Config{GitProvider: gitProviderGitHub, GitHubWebhookSecret: Secret("shh")}
-	if err := requireProviderSecret(withSecret); err != nil {
+	if err := requireProviderSecret(&Config{GitProvider: gitProviderGitHub, GitHubWebhookSecret: Secret("shh")}); err != nil {
 		t.Errorf("github with secret: err = %v; want nil", err)
 	}
+	if err := requireProviderSecret(&Config{GitProvider: gitProviderGitHub, GitHubWebhookSecret: Secret("shh"), BitbucketWebhookSecret: ""}); err != nil {
+		t.Errorf("github must not gate on BITBUCKET_WEBHOOK_SECRET: err = %v", err)
+	}
 
-	other := &Config{GitProvider: gitProviderBitbucket} // no GitHubWebhookSecret
-	if err := requireProviderSecret(other); err != nil {
-		t.Errorf("non-github provider must not require GITHUB_WEBHOOK_SECRET; err = %v", err)
+	// bitbucket: requires BITBUCKET_WEBHOOK_SECRET, ignores the github secret.
+	err = requireProviderSecret(&Config{GitProvider: gitProviderBitbucket})
+	if !errors.As(err, &missing) || missing.Var != "BITBUCKET_WEBHOOK_SECRET" {
+		t.Fatalf("bitbucket with no secret: err = %v; want MissingVarError(BITBUCKET_WEBHOOK_SECRET)", err)
+	}
+	if err := requireProviderSecret(&Config{GitProvider: gitProviderBitbucket, BitbucketWebhookSecret: Secret("bb")}); err != nil {
+		t.Errorf("bitbucket with secret: err = %v; want nil", err)
+	}
+	if err := requireProviderSecret(&Config{GitProvider: gitProviderBitbucket, BitbucketWebhookSecret: Secret("bb"), GitHubWebhookSecret: ""}); err != nil {
+		t.Errorf("bitbucket must not gate on GITHUB_WEBHOOK_SECRET: err = %v", err)
 	}
 }

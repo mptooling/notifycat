@@ -60,7 +60,7 @@ func TestModule_GraphResolves(t *testing.T) {
 			func() routingdomain.RoutingProvider { return provider },
 			func() diagnosticsdomain.EntrySource { return provider },
 			func() validationdomain.RepoValidator { return stubRepoValidator{} },
-			func() validationdomain.OrgRepoLister { return nil },
+			func() validationdomain.RepoLister { return nil },
 			func() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) },
 		),
 		fx.Supply(cfg),

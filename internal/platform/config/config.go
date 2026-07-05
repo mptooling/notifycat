@@ -37,9 +37,10 @@ type Config struct {
 	LogFormat   string
 	DatabaseURL string
 
-	SlackBaseURL  string
-	GitHubBaseURL string
-	Domain        string
+	SlackBaseURL     string
+	GitHubBaseURL    string
+	BitbucketBaseURL string
+	Domain           string
 
 	MessageTTLDays   int
 	IgnoreAIReviews  bool
@@ -57,6 +58,15 @@ type Config struct {
 	GitHubWebhookSecret Secret
 	SlackBotToken       Secret
 	GitHubToken         Secret
+
+	// BitbucketWebhookSecret is required when git_provider is bitbucket (see
+	// requireProviderSecret). BitbucketToken is the optional read credential with
+	// exact GITHUB_TOKEN degradation parity (absent ⇒ path rules inert +
+	// validation probes skip). BitbucketAuthEmail, when set, pairs with the token
+	// to switch the Bitbucket client to HTTP Basic (the Free-plan wildcard path).
+	BitbucketWebhookSecret Secret
+	BitbucketToken         Secret
+	BitbucketAuthEmail     string
 
 	// SlackSigningSecret gates the inbound Slack interactivity endpoint
 	// (POST /webhook/slack/interactions). Optional: when empty the endpoint is
@@ -116,6 +126,9 @@ type fileSchema struct {
 	GitHub struct {
 		BaseURL string `yaml:"base_url"`
 	} `yaml:"github"`
+	Bitbucket struct {
+		BaseURL string `yaml:"base_url"`
+	} `yaml:"bitbucket"`
 	Cleanup struct {
 		MessageTTLDays *int `yaml:"message_ttl_days"`
 	} `yaml:"cleanup"`
@@ -137,6 +150,7 @@ func defaults() Config {
 		DatabaseURL:      "file:./data/notifycat.db",
 		SlackBaseURL:     "https://slack.com",
 		GitHubBaseURL:    "https://api.github.com",
+		BitbucketBaseURL: "https://api.bitbucket.org/2.0",
 		MessageTTLDays:   30,
 		IgnoreAIReviews:  false,
 		DependabotFormat: true,
@@ -231,6 +245,7 @@ func applyFileSchema(cfg *Config, fs fileSchema) {
 	setString(&cfg.DatabaseURL, fs.Database.URL)
 	setString(&cfg.SlackBaseURL, fs.Slack.BaseURL)
 	setString(&cfg.GitHubBaseURL, fs.GitHub.BaseURL)
+	setString(&cfg.BitbucketBaseURL, fs.Bitbucket.BaseURL)
 
 	r := fs.Slack.Reactions
 	if r.Enabled != nil {
@@ -292,21 +307,66 @@ func readSecrets(cfg *Config) error {
 	cfg.SlackBotToken = Secret(os.Getenv("SLACK_BOT_TOKEN"))
 	cfg.GitHubToken = Secret(os.Getenv("GITHUB_TOKEN"))
 	cfg.SlackSigningSecret = Secret(os.Getenv("SLACK_SIGNING_SECRET"))
+	cfg.BitbucketWebhookSecret = Secret(os.Getenv("BITBUCKET_WEBHOOK_SECRET"))
+	cfg.BitbucketToken = Secret(os.Getenv("BITBUCKET_TOKEN"))
+	cfg.BitbucketAuthEmail = os.Getenv("BITBUCKET_AUTH_EMAIL")
 	if cfg.SlackBotToken.Reveal() == "" {
 		return fmt.Errorf("config: %w", &MissingVarError{Var: "SLACK_BOT_TOKEN"})
 	}
 	return requireProviderSecret(cfg)
 }
 
+// ProviderToken returns the optional read token for the selected git provider
+// (GitHubToken for github, BitbucketToken for bitbucket). Empty when unset; an
+// empty token degrades path routing and validation probes identically for both
+// providers.
+func (c Config) ProviderToken() Secret {
+	if c.GitProvider == gitProviderBitbucket {
+		return c.BitbucketToken
+	}
+	return c.GitHubToken
+}
+
+// ProviderTokenVar is the environment-variable name of the selected provider's
+// read token, used in the path-routing degradation messages.
+func (c Config) ProviderTokenVar() string {
+	if c.GitProvider == gitProviderBitbucket {
+		return "BITBUCKET_TOKEN"
+	}
+	return "GITHUB_TOKEN"
+}
+
+// ProviderWebhookSecret returns the required webhook secret for the selected git
+// provider (GitHubWebhookSecret or BitbucketWebhookSecret).
+func (c Config) ProviderWebhookSecret() Secret {
+	if c.GitProvider == gitProviderBitbucket {
+		return c.BitbucketWebhookSecret
+	}
+	return c.GitHubWebhookSecret
+}
+
+// ProviderWebhookSecretVar is the environment-variable name of the selected
+// provider's webhook secret, used in doctor's config report.
+func (c Config) ProviderWebhookSecretVar() string {
+	if c.GitProvider == gitProviderBitbucket {
+		return "BITBUCKET_WEBHOOK_SECRET"
+	}
+	return "GITHUB_WEBHOOK_SECRET"
+}
+
 // requireProviderSecret enforces the webhook secret of the selected git provider
-// (D8): git_provider: github requires GITHUB_WEBHOOK_SECRET. A second provider's
-// secret joins here as its inbound stack lands; a deployment never needs another
+// (D8): git_provider: github requires GITHUB_WEBHOOK_SECRET, git_provider:
+// bitbucket requires BITBUCKET_WEBHOOK_SECRET. A deployment never needs another
 // provider's credential.
 func requireProviderSecret(cfg *Config) error {
 	switch cfg.GitProvider {
 	case gitProviderGitHub:
 		if cfg.GitHubWebhookSecret.Reveal() == "" {
 			return fmt.Errorf("config: %w", &MissingVarError{Var: "GITHUB_WEBHOOK_SECRET"})
+		}
+	case gitProviderBitbucket:
+		if cfg.BitbucketWebhookSecret.Reveal() == "" {
+			return fmt.Errorf("config: %w", &MissingVarError{Var: "BITBUCKET_WEBHOOK_SECRET"})
 		}
 	}
 	return nil

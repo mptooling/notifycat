@@ -12,8 +12,18 @@ import (
 
 // happy returns mocks that all report success for repo "acme/widgets" mapped to
 // channel C1234567. Tests override individual fields to inject failures.
-func happy() (*mockMappingLookup, *mockSlackChecker, *mockGitHubChecker) {
+func happy() (*mockMappingLookup, *mockSlackChecker, *mockHookChecker) {
 	return happyMappingLookup(), happySlack(), happyGitHub()
+}
+
+// githubProbe wraps a HookChecker in the GitHub-flavored HookProbe the tests
+// exercise. Pass nil to model "no API token configured".
+func githubProbe(gh domain.HookChecker) domain.HookProbe {
+	return domain.HookProbe{
+		Checker:        gh,
+		URLSuffix:      domain.WebhookURLPathGitHub,
+		RequiredEvents: domain.RequiredGitHubEvents,
+	}
 }
 
 func happyMappingLookup() *mockMappingLookup {
@@ -38,8 +48,8 @@ func happySlack() *mockSlackChecker {
 	}
 }
 
-func happyGitHub() *mockGitHubChecker {
-	return &mockGitHubChecker{
+func happyGitHub() *mockHookChecker {
+	return &mockHookChecker{
 		listHookEvents: func(_ context.Context, _, _, _ string) ([]string, error) {
 			return []string{"pull_request", "pull_request_review", "pull_request_review_comment", "issue_comment"}, nil
 		},
@@ -60,7 +70,7 @@ func findCheck(t *testing.T, r domain.Report, name string) domain.CheckResult {
 
 func TestValidate_AllPass(t *testing.T) {
 	m, s, gh := happy()
-	v := application.NewValidator(m, s, gh)
+	v := application.NewValidator(m, s, githubProbe(gh))
 
 	r := v.Validate(context.Background(), "acme/widgets")
 	if !r.OK() {
@@ -70,7 +80,7 @@ func TestValidate_AllPass(t *testing.T) {
 
 func TestValidate_MappingNotFound(t *testing.T) {
 	m, s, gh := happy()
-	v := application.NewValidator(m, s, gh)
+	v := application.NewValidator(m, s, githubProbe(gh))
 
 	r := v.Validate(context.Background(), "ghost/repo")
 	if r.OK() {
@@ -90,7 +100,7 @@ func TestValidate_PathChannelsProbed(t *testing.T) {
 		probed = append(probed, channel)
 		return domain.ChannelInfo{ID: channel, Name: "ok", IsMember: true}, nil
 	}
-	v := application.NewValidator(m, s, gh)
+	v := application.NewValidator(m, s, githubProbe(gh))
 
 	r := v.Validate(context.Background(), "acme/widgets")
 	if !r.OK() {
@@ -111,7 +121,7 @@ func TestValidate_PathChannelBotNotMemberFails(t *testing.T) {
 		member := channel == "C1234567" // bot is in the base channel but not the path channel
 		return domain.ChannelInfo{ID: channel, Name: channel, IsMember: member}, nil
 	}
-	v := application.NewValidator(m, s, gh)
+	v := application.NewValidator(m, s, githubProbe(gh))
 
 	r := v.Validate(context.Background(), "acme/widgets")
 	if r.OK() {

@@ -66,16 +66,37 @@ func TestLoad_GitProviderGitHub_Boots(t *testing.T) {
 	}
 }
 
-func TestLoad_RejectsBitbucketProvider(t *testing.T) {
-	writeConfig(t, "git_provider: bitbucket\n")
-	setSecrets(t)
+func TestLoad_GitProviderBitbucket_Boots(t *testing.T) {
+	writeConfig(t, "git_provider: bitbucket\nserver:\n  log_level: info\n")
+	t.Setenv("SLACK_BOT_TOKEN", "xoxb-x")
+	t.Setenv("BITBUCKET_WEBHOOK_SECRET", "bb-shh")
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() with git_provider: bitbucket = %v; want nil", err)
+	}
+	if cfg.GitProvider != "bitbucket" {
+		t.Errorf("GitProvider = %q; want bitbucket", cfg.GitProvider)
+	}
+}
+
+func TestLoad_BitbucketRequiresWebhookSecret(t *testing.T) {
+	writeConfig(t, "git_provider: bitbucket\nserver:\n  log_level: info\n")
+	t.Setenv("SLACK_BOT_TOKEN", "xoxb-x") // no BITBUCKET_WEBHOOK_SECRET
 
 	_, err := config.Load()
-	if err == nil {
-		t.Fatal("Load() succeeded with git_provider: bitbucket; want a not-yet-supported error")
+	var missing *config.MissingVarError
+	if !errors.As(err, &missing) || missing.Var != "BITBUCKET_WEBHOOK_SECRET" {
+		t.Fatalf("Load() error = %v; want MissingVarError(BITBUCKET_WEBHOOK_SECRET)", err)
 	}
-	if msg := err.Error(); !strings.Contains(msg, "not yet supported") {
-		t.Errorf("error = %q; want a clear not-yet-supported message", msg)
+}
+
+func TestLoad_GitHubProviderDoesNotRequireBitbucketSecret(t *testing.T) {
+	writeConfig(t, minimalConfig)
+	setSecrets(t) // GITHUB_WEBHOOK_SECRET + SLACK_BOT_TOKEN, no BITBUCKET_WEBHOOK_SECRET
+
+	if _, err := config.Load(); err != nil {
+		t.Fatalf("Load() github with no BITBUCKET_WEBHOOK_SECRET = %v; want nil", err)
 	}
 }
 

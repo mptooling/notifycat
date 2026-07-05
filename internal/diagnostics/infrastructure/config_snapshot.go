@@ -20,9 +20,11 @@ func NewConfigSnapshot(cfg config.Config, entries []routingdomain.Entry, hasPath
 		Domain:         cfg.Domain,
 		MessageTTLDays: cfg.MessageTTLDays,
 
-		WebhookSecretSet: cfg.GitHubWebhookSecret.Reveal() != "",
+		WebhookSecretSet: cfg.ProviderWebhookSecret().Reveal() != "",
+		WebhookSecretVar: cfg.ProviderWebhookSecretVar(),
 		SlackTokenSet:    cfg.SlackBotToken.Reveal() != "",
-		GitHubTokenSet:   cfg.GitHubToken.Reveal() != "",
+		TokenSet:         cfg.ProviderToken().Reveal() != "",
+		TokenVar:         cfg.ProviderTokenVar(),
 
 		Entries:      entries,
 		HasPathRules: hasPathRules,

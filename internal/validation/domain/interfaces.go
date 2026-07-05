@@ -24,20 +24,32 @@ type SlackChecker interface {
 	ConversationsInfo(ctx context.Context, channel string) (ChannelInfo, error)
 }
 
-// GitHubChecker exposes the GitHub endpoints the validator needs.
+// HookChecker exposes the provider-neutral endpoint the validator needs to
+// confirm a repo's webhook coverage.
 //
-// ListHookEvents returns the union of events configured across active webhooks
-// whose target URL matches urlSuffix, or an empty slice when no such hook
-// exists. Implementations should not error when no hook matches — "no hook" is
-// a validation outcome, not a transport failure.
-type GitHubChecker interface {
+// ListHookEvents lists the event types configured on the repo's webhooks whose
+// target URL matches urlSuffix, returning the union across them or an empty
+// slice when no such hook exists. Implementations should not error when no hook
+// matches — "no hook" is a validation outcome, not a transport failure.
+type HookChecker interface {
 	ListHookEvents(ctx context.Context, owner, repo, urlSuffix string) ([]string, error)
 }
 
-// OrgRepoLister enumerates a GitHub org's repositories. Used to expand "*" at
-// validate time. May be nil; the runner reports a skip in that case.
-type OrgRepoLister interface {
+// RepoLister enumerates the repositories owned by an org (GitHub) or workspace
+// (Bitbucket); either fills the same owner slot. Used to expand "*" at validate
+// time. May be nil; the runner reports a skip in that case.
+type RepoLister interface {
 	ListOrgRepos(ctx context.Context, org string) ([]string, error)
+}
+
+// HookProbe is the provider-neutral webhook-coverage check: the client that
+// lists a repo's configured hook events, plus the URL suffix and required event
+// set to check them against. Checker is nil when no API token is configured, in
+// which case the check reports a skip.
+type HookProbe struct {
+	Checker        HookChecker
+	URLSuffix      string
+	RequiredEvents []string
 }
 
 // RepoValidator validates one repository at a time. The application Validator

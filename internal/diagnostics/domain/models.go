@@ -26,13 +26,20 @@ func (s Section) OK() bool {
 // the infrastructure layer from config.Config so the application stays free of
 // config/store imports.
 type ConfigSnapshot struct {
-	ConfigFile       string
-	DatabaseURL      string
-	Domain           string
-	MessageTTLDays   int
+	ConfigFile     string
+	DatabaseURL    string
+	Domain         string
+	MessageTTLDays int
+	// WebhookSecretSet reports whether the selected git provider's webhook secret
+	// is set; WebhookSecretVar names that env var (e.g. GITHUB_WEBHOOK_SECRET,
+	// BITBUCKET_WEBHOOK_SECRET) for the report.
 	WebhookSecretSet bool
+	WebhookSecretVar string
 	SlackTokenSet    bool
-	GitHubTokenSet   bool
+	// TokenSet reports whether the selected provider's optional read token is set;
+	// TokenVar names that env var (GITHUB_TOKEN, BITBUCKET_TOKEN).
+	TokenSet         bool
+	TokenVar         string
 	DatabaseOpenable bool
 	DatabaseDetail   string
 	Entries          []routingdomain.Entry

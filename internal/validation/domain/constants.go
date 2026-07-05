@@ -2,9 +2,13 @@ package domain
 
 import "regexp"
 
-// WebhookURLPath is the path the GitHub webhook posts to. Used to identify
-// which configured hook on a repository belongs to notifycat.
-const WebhookURLPath = "/webhook/github"
+// WebhookURLPathGitHub is the path the GitHub webhook posts to. Used to
+// identify which configured hook on a repository belongs to notifycat.
+const WebhookURLPathGitHub = "/webhook/github"
+
+// WebhookURLPathBitbucket is the path the Bitbucket webhook posts to. Used to
+// identify which configured hook on a repository belongs to notifycat.
+const WebhookURLPathBitbucket = "/webhook/bitbucket"
 
 // RequiredSlackScopes mirror what the runtime handlers actually call:
 // chat.postMessage requires chat:write, reactions.add requires
@@ -19,6 +23,14 @@ var RequiredGitHubEvents = []string{
 	"pull_request_review",
 	"pull_request_review_comment",
 	"issue_comment",
+}
+
+// RequiredBitbucketEvents are the Bitbucket webhook event types the dispatcher
+// consumes.
+var RequiredBitbucketEvents = []string{
+	"pullrequest:created", "pullrequest:updated", "pullrequest:fulfilled",
+	"pullrequest:rejected", "pullrequest:approved",
+	"pullrequest:changes_request_created", "pullrequest:comment_created",
 }
 
 // ChannelIDPattern mirrors the regex enforced when `add` writes a row, but is

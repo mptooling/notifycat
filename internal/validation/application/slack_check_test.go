@@ -19,7 +19,7 @@ func TestValidate_InvalidChannelFormat_ShortCircuitsSlackProbe(t *testing.T) {
 		t.Fatal("ConversationsInfo should not be called when channel format is invalid")
 		return domain.ChannelInfo{}, nil
 	}
-	v := application.NewValidator(m, s, gh)
+	v := application.NewValidator(m, s, githubProbe(gh))
 
 	r := v.Validate(context.Background(), "acme/widgets")
 	if c := findCheck(t, r, "channel-format"); c.Status != domain.StatusFail {
@@ -35,7 +35,7 @@ func TestValidate_InvalidAuthToken(t *testing.T) {
 	s.authTest = func(_ context.Context) (string, []string, error) {
 		return "", nil, &domain.SlackAPIError{Method: "auth.test", Code: "invalid_auth"}
 	}
-	v := application.NewValidator(m, s, gh)
+	v := application.NewValidator(m, s, githubProbe(gh))
 
 	r := v.Validate(context.Background(), "acme/widgets")
 	c := findCheck(t, r, "slack-auth")
@@ -49,7 +49,7 @@ func TestValidate_MissingScope(t *testing.T) {
 	s.authTest = func(_ context.Context) (string, []string, error) {
 		return "UBOT", []string{"chat:write"}, nil // reactions:write missing
 	}
-	v := application.NewValidator(m, s, gh)
+	v := application.NewValidator(m, s, githubProbe(gh))
 
 	r := v.Validate(context.Background(), "acme/widgets")
 	c := findCheck(t, r, "slack-auth")
@@ -63,7 +63,7 @@ func TestValidate_ChannelNotFound(t *testing.T) {
 	s.conversationsInfo = func(_ context.Context, _ string) (domain.ChannelInfo, error) {
 		return domain.ChannelInfo{}, &domain.SlackAPIError{Method: "conversations.info", Code: "channel_not_found"}
 	}
-	v := application.NewValidator(m, s, gh)
+	v := application.NewValidator(m, s, githubProbe(gh))
 
 	r := v.Validate(context.Background(), "acme/widgets")
 	c := findCheck(t, r, "slack-channel")
@@ -77,7 +77,7 @@ func TestValidate_BotNotMember(t *testing.T) {
 	s.conversationsInfo = func(_ context.Context, _ string) (domain.ChannelInfo, error) {
 		return domain.ChannelInfo{ID: "C1234567", Name: "general", IsMember: false}, nil
 	}
-	v := application.NewValidator(m, s, gh)
+	v := application.NewValidator(m, s, githubProbe(gh))
 
 	r := v.Validate(context.Background(), "acme/widgets")
 	c := findCheck(t, r, "slack-channel")
@@ -91,7 +91,7 @@ func TestValidate_ChannelArchived(t *testing.T) {
 	s.conversationsInfo = func(_ context.Context, _ string) (domain.ChannelInfo, error) {
 		return domain.ChannelInfo{ID: "C1234567", Name: "old", IsMember: true, IsArchived: true}, nil
 	}
-	v := application.NewValidator(m, s, gh)
+	v := application.NewValidator(m, s, githubProbe(gh))
 
 	r := v.Validate(context.Background(), "acme/widgets")
 	c := findCheck(t, r, "slack-channel")

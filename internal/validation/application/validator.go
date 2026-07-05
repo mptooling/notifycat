@@ -10,20 +10,20 @@ import (
 )
 
 // Validator runs the per-mapping checks. Construct with NewValidator; the
-// GitHubChecker may be nil, in which case webhook coverage is reported as
+// HookProbe's Checker may be nil, in which case webhook coverage is reported as
 // skipped.
 type Validator struct {
 	mappings domain.MappingLookup
 	slack    domain.SlackChecker
-	github   domain.GitHubChecker
+	hook     domain.HookProbe
 }
 
 var _ domain.RepoValidator = (*Validator)(nil)
 
-// NewValidator builds a Validator. gh may be nil when no GitHub token is
+// NewValidator builds a Validator. hook.Checker may be nil when no API token is
 // configured.
-func NewValidator(m domain.MappingLookup, s domain.SlackChecker, gh domain.GitHubChecker) *Validator {
-	return &Validator{mappings: m, slack: s, github: gh}
+func NewValidator(m domain.MappingLookup, s domain.SlackChecker, hook domain.HookProbe) *Validator {
+	return &Validator{mappings: m, slack: s, hook: hook}
 }
 
 // Validate runs every check for a single repository.
@@ -57,12 +57,12 @@ func (v *Validator) validateMapping(ctx context.Context, m routingdomain.RepoMap
 		r.Checks = append(r.Checks,
 			skip("slack-auth", "channel id is invalid"),
 			skip("slack-channel", "channel id is invalid"),
-			v.githubCheck(ctx, m.Repository),
+			v.hookCheck(ctx, m.Repository),
 		)
 		return r
 	}
 	r.Checks = append(r.Checks, v.slackChecks(ctx, m.SlackChannel, v.mappings.PathChannels(m.Repository))...)
-	r.Checks = append(r.Checks, v.githubCheck(ctx, m.Repository))
+	r.Checks = append(r.Checks, v.hookCheck(ctx, m.Repository))
 	return r
 }
 

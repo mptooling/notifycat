@@ -4,7 +4,7 @@ Notifycat applies its database migrations automatically on server startup (see [
 
 ## `git_provider` is now required
 
-Notifycat now requires a top-level `git_provider:` key in `config.yaml` declaring which git host the deployment serves. The only supported value today is `github`, which reproduces exactly today's behavior. A config without the key (or with an unknown value) fails startup with an error naming the key and pointing here.
+Notifycat now requires a top-level `git_provider:` key in `config.yaml` declaring which git host the deployment serves — `github` or `bitbucket`. `git_provider: github` reproduces exactly the previous behavior. A config without the key (or with an unknown value) fails startup with an error naming the key and pointing here.
 
 **The upgrade is one added line:**
 
