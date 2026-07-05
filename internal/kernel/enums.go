@@ -1,11 +1,22 @@
 package kernel
 
-// Provider identifies the git host an event originated from. The inbound adapter
-// stamps it on every event so handlers, the store, and logs stay
+// Provider is the git host a deployment serves and an event originates from. It
+// is a named type rather than a bare string so a provider value can never be
+// crossed with an arbitrary string: every call site names one of the constants
+// below, and config, routing, and the inbound adapter share this one enum. The
+// inbound adapter stamps it on every event so handlers, the store, and logs stay
 // provider-agnostic.
+type Provider string
+
+// Recognised git providers. Only ProviderGitHub is wired today; the Bitbucket
+// inbound-stack slice adds its constant here when it lands.
 const (
-	ProviderGitHub = "github"
+	ProviderGitHub Provider = "github"
 )
+
+// String returns the wire/log token for the provider — the value used for the
+// git_provider config key and the ignored-event log's provider field.
+func (p Provider) String() string { return string(p) }
 
 // EventKind is the provider-neutral classification of an inbound
 // pull-request webhook. Each inbound adapter maps its provider's own vocabulary

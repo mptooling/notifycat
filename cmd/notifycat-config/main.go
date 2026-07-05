@@ -32,7 +32,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "notifycat-config:", err)
 		os.Exit(1)
 	}
-	provider := routingapp.NewProvider(routingdomain.Defaults{}, cfg.Mappings, cfg.Digest)
+	provider := routingapp.NewProvider(routingdomain.Defaults{GitProvider: cfg.GitProvider}, cfg.Mappings, cfg.Digest)
 	if w := pathTokenWarning(provider, cfg.GitHubToken.Reveal() != ""); w != "" {
 		fmt.Fprintln(os.Stderr, w)
 	}

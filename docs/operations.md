@@ -33,6 +33,8 @@ State lives in two places:
 
 Back up the SQLite file if losing notification state would be painful. If the database is lost, Notifycat can still receive webhooks, but existing PRs may get new Slack messages because the old Slack timestamp mapping is gone. `config.yaml` and `config.lock` live in your repo, so losing the container's local copy is harmless on the next deploy.
 
+> ⚠️ **Changing `git_provider` requires a fresh database.** The provider is not recorded per row. Pointing an existing database at a different `git_provider` lets stale rows (keyed by the old provider's repository names and PR numbering) collide with the new provider's — silently suppressing posts until the cleanup TTL (`cleanup.message_ttl_days`) purges them. Start from a fresh database when you switch providers. See [Upgrading → `git_provider` is now required](upgrading.md#git_provider-is-now-required).
+
 ## Stuck-PR digest
 
 A scheduled job reminds channels about open PRs that have gone unreviewed. It is **on by default** (opt-out) and configured in the global `digest:` section of `config.yaml` — see [Mappings → Stuck-PR digest](mappings.md#stuck-pr-digest) for the schema.

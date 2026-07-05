@@ -36,7 +36,7 @@ func (h *DraftHandler) Handle(ctx context.Context, event kernel.Event) error {
 		h.logger.Info("ignored webhook event",
 			slog.String("reason", domain.ReasonNoStoredMessage),
 			slog.String("handler", "draft"),
-			slog.String("provider", event.Provider),
+			slog.String("provider", event.Provider.String()),
 			slog.String("kind", event.Kind.String()),
 			slog.String("repository", event.Repository),
 			slog.Int("pr", event.PR.Number),

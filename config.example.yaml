@@ -14,6 +14,12 @@
 # The config file path defaults to ./config.yaml. Override with NOTIFYCAT_CONFIG_FILE.
 # Docker image default: /app/config.yaml.
 
+# ── Git provider ──────────────────────────────────────────────────────────────────────────────────
+git_provider: github                  # REQUIRED. The only supported value today is `github`.
+                                      # Selects which webhook secret is required (github -> GITHUB_WEBHOOK_SECRET)
+                                      # and which /webhook route is served. An absent or unknown value fails startup.
+                                      # Switching this against an existing database requires a fresh DB — see docs/upgrading.md.
+
 # ── Server ────────────────────────────────────────────────────────────────────────────────────────
 server:
   addr: ":8080"                       # HTTP listen address

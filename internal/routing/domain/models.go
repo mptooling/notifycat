@@ -1,5 +1,7 @@
 package domain
 
+import "github.com/mptooling/notifycat/internal/kernel"
+
 // File is the parsed mappings.yaml document.
 type File struct {
 	Digest   *DigestConfig  `yaml:"digest"`
@@ -124,4 +126,7 @@ type Defaults struct {
 	Reactions        Reactions
 	IgnoreAIReviews  bool
 	DependabotFormat bool
+	// GitProvider is the deployment's single git_provider; the Provider stamps it
+	// on every entry so it hashes into the lock (see Entry.Provider).
+	GitProvider kernel.Provider
 }

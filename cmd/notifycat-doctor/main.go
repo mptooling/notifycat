@@ -43,7 +43,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	provider := routingapp.NewProvider(routingdomain.Defaults{}, cfg.Mappings, cfg.Digest)
+	provider := routingapp.NewProvider(routingdomain.Defaults{GitProvider: cfg.GitProvider}, cfg.Mappings, cfg.Digest)
 	entries := provider.Entries()
 	hasPathRules := provider.HasPathRules()
 

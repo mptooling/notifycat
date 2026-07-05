@@ -80,7 +80,7 @@ func (h *reactionHandler) logIgnored(event kernel.Event, reason string) {
 	attrs := []any{
 		slog.String("reason", reason),
 		slog.String("handler", h.name),
-		slog.String("provider", event.Provider),
+		slog.String("provider", event.Provider.String()),
 		slog.String("kind", event.Kind.String()),
 		slog.String("repository", event.Repository),
 		slog.Int("pr", event.PR.Number),
@@ -97,7 +97,7 @@ func (h *reactionHandler) logIgnored(event kernel.Event, reason string) {
 func (h *reactionHandler) logSkippedBotReviewer(event kernel.Event) {
 	h.logger.Debug("skipped bot reviewer reaction",
 		slog.String("login", event.Sender.Login),
-		slog.String("provider", event.Provider),
+		slog.String("provider", event.Provider.String()),
 		slog.String("kind", event.Kind.String()),
 		slog.String("handler", h.name),
 		slog.String("repository", event.Repository),

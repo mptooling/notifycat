@@ -40,7 +40,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, event kernel.Event) error {
 	d.logger.Debug("ignored webhook event",
 		slog.String("reason", domain.ReasonNoHandler),
 		slog.String("handler", ""),
-		slog.String("provider", event.Provider),
+		slog.String("provider", event.Provider.String()),
 		slog.String("kind", event.Kind.String()),
 		slog.String("repository", event.Repository),
 		slog.Int("pr", event.PR.Number),

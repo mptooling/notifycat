@@ -2,6 +2,20 @@
 
 Notifycat applies its database migrations automatically on server startup (see [Operations → Startup](operations.md#startup-and-shutdown)), so most upgrades are "pull the new image and restart." This page calls out the releases that need an operator action beyond that.
 
+## `git_provider` is now required
+
+Notifycat now requires a top-level `git_provider:` key in `config.yaml` declaring which git host the deployment serves. The only supported value today is `github`, which reproduces exactly today's behavior. A config without the key (or with an unknown value) fails startup with an error naming the key and pointing here.
+
+**The upgrade is one added line:**
+
+```yaml
+git_provider: github
+```
+
+`git_provider: github` requires `GITHUB_WEBHOOK_SECRET` exactly as before (`SLACK_BOT_TOKEN` stays required regardless); nothing else changes. On the first boot after upgrading, every mapping entry revalidates once, because `git_provider` now participates in each entry's lock hash — this is a one-time, idempotent revalidation, not an error.
+
+> ⚠️ **Switching `git_provider` later requires a fresh database.** The provider is *not* recorded per row. If you point an existing database at a different provider, stale rows keyed by the old provider's repository names and PR numbering can collide with the new provider's — silently suppressing posts until the cleanup TTL (`cleanup.message_ttl_days`) purges them. When you change `git_provider`, start from a fresh database (or, not recommended, disable the digest and wait out `message_ttl_days`).
+
 ## Ignored-event log fields renamed
 
 The internal git-provider-neutral event refactor renames two fields on the `ignored webhook event` log line: `github_event` becomes `provider` (currently always `github`) and `action` becomes `kind` (a provider-neutral event classification such as `opened`, `merged`, `review_commented`, or `unknown`). No operator action is required to upgrade, but any log dashboards or alerts that filter on `github_event`/`action` should be updated to `provider`/`kind`. See [Operations → Debugging a 200 OK with no Slack change](operations.md#debugging-a-200-ok-with-no-slack-change) for the full field set.

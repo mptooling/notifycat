@@ -14,7 +14,7 @@ Secrets should stay in environment variables or your deployment secret manager. 
 | `SLACK_BOT_TOKEN` | Required | Slack bot token, usually starting with `xoxb-`. |
 | `GITHUB_TOKEN` | Optional | PAT used by `notifycat-config validate` and `notifycat-doctor` to read repo webhook config. Required scope: `admin:repo_hook` (or `repo` for private repos). The server does not need this; if unset, the webhook-coverage check is skipped. |
 
-The server and CLIs fail fast when `GITHUB_WEBHOOK_SECRET` or `SLACK_BOT_TOKEN` is missing.
+The server and CLIs fail fast when `SLACK_BOT_TOKEN` is missing, or when the webhook secret required by the selected [`git_provider`](#git_provider) is missing (`GITHUB_WEBHOOK_SECRET` for `git_provider: github`).
 
 `GITHUB_TOKEN` is also read by `scripts/github-webhook-create.sh`, but that script *creates* the webhook and only needs the `Webhooks: Read and write` permission on a fine-grained PAT. The validate/doctor reading path needs `admin:repo_hook` / `repo`. A single token that has both works everywhere; otherwise issue separate PATs.
 
@@ -28,6 +28,14 @@ These are not secrets but must live in `.env` because `docker-compose` and Caddy
 | `ACME_EMAIL` | Contact email for Let's Encrypt registration. Required when using `compose.yaml` — Caddy will fail to start without it. |
 
 ## config.yaml reference
+
+### git_provider
+
+| Key | Default | Notes |
+| --- | --- | --- |
+| `git_provider` | _(required)_ | The git host this deployment serves. The only supported value today is `github`. An absent or unknown value fails startup with an error naming the key and pointing here. |
+
+`git_provider` selects which webhook secret is required — `git_provider: github` requires `GITHUB_WEBHOOK_SECRET` (`SLACK_BOT_TOKEN` is always required regardless) — and which `/webhook/...` route the server registers. Switching `git_provider` against an existing database requires a fresh database; see [Upgrading](upgrading.md#git_provider-is-now-required).
 
 ### server
 

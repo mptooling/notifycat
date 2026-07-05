@@ -107,6 +107,7 @@ func buildProvider(cfg config.Config, logger *slog.Logger) *routingapp.Provider 
 		},
 		IgnoreAIReviews:  cfg.IgnoreAIReviews,
 		DependabotFormat: cfg.DependabotFormat,
+		GitProvider:      cfg.GitProvider,
 	}
 	provider := routingapp.NewProvider(defaults, cfg.Mappings, cfg.Digest)
 	if provider.HasPathRules() && cfg.GitHubToken.Reveal() == "" {
