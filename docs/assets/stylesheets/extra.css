@@ -44,6 +44,7 @@
 .md-tabs { border-bottom: none; }
 .md-tabs__link--active { color: var(--nc-accent); font-weight: 700; }
 .md-header__button.md-logo svg { height: 1.4rem; width: auto; }
+.md-header__button.md-logo .nc-bell { fill: var(--nc-accent); }
 
 /* ---------- Typography ---------- */
 .md-typeset h1,
