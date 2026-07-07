@@ -2,7 +2,7 @@
 
 **Low-noise pull request notifications for Slack.** One pull request gets one Slack message. As the PR moves — reviewed, approved, merged, closed — that message updates in place instead of posting again.
 
-<!-- TODO(media): hero screenshot — a Slack channel showing 3–4 Notifycat PR messages in different states: one fresh (mentions + title + context line), one with an :eye: reviewer marker, one merged (struck-through title, [Merged] label). This is the single most important visual in the docs. Light theme, ~900px wide. Suggested file: assets/hero-channel.png -->
+![A Slack channel where every pull request is one message: the morning digest, a closed and a merged PR struck through, a PR under review with an :eye: marker and Start review button, and a fresh announcement](assets/images/slack_notifications.png)
 
 Your channel becomes a status board, not an event log. Anyone can see where every PR stands at a glance, without scrolling through five notifications to work out whether something still needs eyes.
 
@@ -21,21 +21,21 @@ The usual way to connect pull requests to Slack is the official GitHub app: `/gi
 ```mermaid
 flowchart LR
     subgraph github_app[GitHub app for Slack]
-        opened[PR opened] --> opened_msg[Slack message]
-        review[Review added] --> review_msg[Slack message]
-        comment[Comment added] --> comment_msg[Slack message]
-        merged[PR merged] --> merged_msg[Slack message]
+        opened[PR opened] --create message--> opened_msg[Slack message]
+        review[Review added] --create message--> review_msg[Slack message]
+        comment[Comment added] --create message--> comment_msg[Slack message]
+        merged[PR merged] --create message--> merged_msg[Slack message]
     end
 ```
 
 Notifycat inverts that. Your git host sends PR webhooks, Notifycat routes each repository to the right channel, and one PR keeps one message. Reviews and comments land on it as reactions; merge strikes it through.
 
 ```mermaid
-flowchart LR
-    events[PR webhooks] --> notifycat[Notifycat]
-    routing[Routing rules in config.yaml] --> notifycat
-    notifycat --> message[One Slack message per PR]
-    message --> current[Updated as the PR changes]
+flowchart TB
+    opened[PR opened] --create message--> SlackMessage[Slack message]
+    review[Review added] --update message--> SlackMessage[Slack message]
+    comment[Comment added] --update message--> SlackMessage[Slack message]
+    merged[PR merged] --update message--> SlackMessage[Slack message]
 ```
 
 ## When it's not the fit

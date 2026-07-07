@@ -13,7 +13,7 @@ Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow.svg)](
 
 **Low-noise pull request notifications for Slack.** One pull request gets one Slack message: as the PR opens, gets reviewed, merges, or closes, that message updates in place and collects reactions instead of posting again. The channel becomes a status board, not an event log.
 
-<!-- TODO(media): hero screenshot — same asset as docs/index.md (assets/hero-channel.png): a Slack channel with 3–4 PR messages in different lifecycle states. Embed here with <img> once captured. -->
+<img src="docs/assets/images/slack_notifications.png" width="900">)
 
 Three things it's built around:
 
@@ -23,17 +23,13 @@ Three things it's built around:
 
 ## Documentation
 
-Full documentation is published at <https://mptooling.github.io/notifycat/>, organized by what you're trying to do:
-
-- [What is Notifycat](https://mptooling.github.io/notifycat/) — the model, and [what you see in Slack](https://mptooling.github.io/notifycat/features/)
-- [Install](https://mptooling.github.io/notifycat/compose/) — Docker Compose (recommended), [manual Docker](https://mptooling.github.io/notifycat/docker/), [from source](https://mptooling.github.io/notifycat/getting-started/), plus [Slack app](https://mptooling.github.io/notifycat/slack-app/), [GitHub webhook](https://mptooling.github.io/notifycat/github-webhook/), and [Bitbucket webhook](https://mptooling.github.io/notifycat/bitbucket-webhook/) setup and the [security checklist](https://mptooling.github.io/notifycat/security/)
-- [Use](https://mptooling.github.io/notifycat/configure/) — [configuration basics](https://mptooling.github.io/notifycat/configure/), [routing repositories to channels](https://mptooling.github.io/notifycat/routing/), [monorepos](https://mptooling.github.io/notifycat/monorepo/), [reactions & bot reviews](https://mptooling.github.io/notifycat/bots-and-reactions/), the [stuck-PR digest](https://mptooling.github.io/notifycat/digest/)
-- [Troubleshoot](https://mptooling.github.io/notifycat/troubleshooting/) — symptom-indexed runbooks, the [doctor](https://mptooling.github.io/notifycat/doctor/)
-- [Reference](https://mptooling.github.io/notifycat/configuration/) — every config key, the [mappings schema](https://mptooling.github.io/notifycat/mappings/), [CLI binaries](https://mptooling.github.io/notifycat/cli/), [operations](https://mptooling.github.io/notifycat/operations/), and [upgrade notes](https://mptooling.github.io/notifycat/upgrading/)
+Please visit <https://mptooling.github.io/notifycat/>
 
 ## Quick start
 
-**You'll need** a host with Docker + Compose V2, a domain name pointing at it, inbound ports 80/443 open, and a Slack app installed in your workspace ([setup](https://mptooling.github.io/notifycat/slack-app/)). **In about 10 minutes** you'll have Notifycat running behind automatic HTTPS and posting PR updates to Slack — no Go toolchain, no SQLite client, no manual file editing.
+### Docker(recommended)
+
+**You'll need** a host with Docker installed, a domain name pointing at it, inbound ports 80/443 open, and a Slack app installed in your workspace ([setup](https://mptooling.github.io/notifycat/slack-app/)). **In about 10 minutes** you'll have Notifycat running behind automatic HTTPS and posting PR updates to Slack.
 
 ```sh
 curl -fsSL https://github.com/mptooling/notifycat/releases/latest/download/install.sh | sh
@@ -86,17 +82,6 @@ One message per PR: opening it posts the message, reviews land on it as reaction
 | App passwords | n/a | **Not supported** — removed by Atlassian 2026-07-28; use access tokens |
 
 A deployment serves one git host, and routing lives in the `mappings:` section of `config.yaml` — per-repository tiers with an org-wide `"*"` catch-all. See [Configuration basics](https://mptooling.github.io/notifycat/configure/).
-
-## Binaries
-
-| Binary | Purpose |
-| --- | --- |
-| `notifycat-server` | The HTTP server — webhooks in, Slack out |
-| `notifycat-config` | Parse and validate `config.yaml` against Slack and the git host |
-| `notifycat-doctor` | Preflight diagnostics: config, database, mappings, per-repository probes |
-| `notifycat-smoke` | Forge a signed PR event end-to-end to prove Slack delivery |
-| `notifycat-migrate` | Apply or inspect the embedded SQLite migrations |
-| `notifycat-reconcile` | One-time backfill: mark long-closed PRs closed in the database |
 
 ## Development
 
