@@ -1,0 +1,41 @@
+<svg class="nc-diagram" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 300" font-family="JetBrains Mono, monospace" font-size="13">
+  <style>
+    .lbl { fill: var(--nc-ink); }
+    .dim { fill: color-mix(in srgb, var(--nc-ink) 55%, transparent); }
+    .evt { fill: var(--nc-surface); stroke: var(--nc-border); }
+    .msg { fill: color-mix(in srgb, var(--nc-accent) 10%, transparent); stroke: var(--nc-accent); stroke-width: 1.5; }
+    .edge { stroke: color-mix(in srgb, var(--nc-ink) 40%, transparent); stroke-width: 1.2; fill: none; }
+    .edge-accent { stroke: var(--nc-accent); stroke-width: 1.5; fill: none; }
+    .title { font-weight: 700; }
+  </style>
+  <text x="95" y="26" class="lbl title">Event log</text>
+  <text x="95" y="46" class="dim" font-size="11">official GitHub app</text>
+  <g>
+    <rect class="evt" x="20" y="66"  width="150" height="34" rx="8"/><text class="lbl" x="34" y="88">PR opened</text>
+    <rect class="evt" x="20" y="118" width="150" height="34" rx="8"/><text class="lbl" x="34" y="140">Review added</text>
+    <rect class="evt" x="20" y="170" width="150" height="34" rx="8"/><text class="lbl" x="34" y="192">Comment added</text>
+    <rect class="evt" x="20" y="222" width="150" height="34" rx="8"/><text class="lbl" x="34" y="244">PR merged</text>
+  </g>
+  <g>
+    <path class="edge" d="M170 83 H 230"/><rect class="evt" x="234" y="66" width="120" height="34" rx="8"/><text class="dim" x="248" y="88">message 1</text>
+    <path class="edge" d="M170 135 H 230"/><rect class="evt" x="234" y="118" width="120" height="34" rx="8"/><text class="dim" x="248" y="140">message 2</text>
+    <path class="edge" d="M170 187 H 230"/><rect class="evt" x="234" y="170" width="120" height="34" rx="8"/><text class="dim" x="248" y="192">message 3</text>
+    <path class="edge" d="M170 239 H 230"/><rect class="evt" x="234" y="222" width="120" height="34" rx="8"/><text class="dim" x="248" y="244">message 4</text>
+  </g>
+  <line x1="395" y1="20" x2="395" y2="280" stroke="var(--nc-border)" stroke-width="1"/>
+  <text x="425" y="26" class="lbl title">Status board</text>
+  <text x="425" y="46" class="dim" font-size="11">Notifycat</text>
+  <g>
+    <rect class="evt" x="425" y="66"  width="130" height="34" rx="8"/><text class="lbl" x="437" y="88">opened</text>
+    <rect class="evt" x="425" y="118" width="130" height="34" rx="8"/><text class="lbl" x="437" y="140">reviewed</text>
+    <rect class="evt" x="425" y="170" width="130" height="34" rx="8"/><text class="lbl" x="437" y="192">commented</text>
+    <rect class="evt" x="425" y="222" width="130" height="34" rx="8"/><text class="lbl" x="437" y="244">merged</text>
+  </g>
+  <path class="edge-accent" d="M555 83  C 600 83,  600 158, 640 158"/>
+  <path class="edge-accent" d="M555 135 C 595 135, 600 158, 640 158"/>
+  <path class="edge-accent" d="M555 187 C 595 187, 600 160, 640 160"/>
+  <path class="edge-accent" d="M555 239 C 600 239, 600 162, 640 162"/>
+  <rect class="msg" x="612" y="136" width="128" height="46" rx="10"/>
+  <text class="lbl" x="628" y="156">one Slack</text>
+  <text class="lbl" x="628" y="172">message</text>
+</svg>

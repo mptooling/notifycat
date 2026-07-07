@@ -1,0 +1,20 @@
+{% extends "main.html" %}
+
+{% block tabs %}
+{{ super() }}
+<section class="nc-hero">
+  <div class="nc-hero__inner">
+    <p class="nc-eyebrow">One PR &middot; One message</p>
+    <h1>One PR.<br><span>One message.</span></h1>
+    <p class="nc-hero__sub">Low-noise pull request notifications for Slack. As a PR moves — reviewed, approved, merged — its one message updates in place. No scroll, no spam.</p>
+    <p class="nc-hero__cta">
+      <a href="compose/" class="md-button md-button--primary">Get started &rarr;</a>
+      <a href="features/" class="md-button">See it in Slack</a>
+    </p>
+  </div>
+</section>
+{% endblock %}
+
+{% block content %}
+{{ page.content }}
+{% endblock %}

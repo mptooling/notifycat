@@ -133,6 +133,39 @@
   box-shadow: none;
 }
 
+/* ---------- Homepage hero ---------- */
+.nc-hero {
+  background-color: var(--nc-bg);
+  text-align: center;
+  padding: 3.6rem 0.8rem 2.6rem;
+}
+[data-md-color-scheme="slate"] .nc-hero {
+  background-image: radial-gradient(ellipse 70% 90% at 50% 0%, rgba(52, 211, 153, 0.14), transparent 65%);
+}
+.nc-hero__inner { max-width: 42rem; margin: 0 auto; }
+.nc-hero h1 {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 2.6rem;
+  font-weight: 700;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  color: var(--nc-ink);
+  margin: 0.6rem 0;
+}
+.nc-hero h1 span { color: var(--nc-accent); }
+.nc-hero__sub {
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: color-mix(in srgb, var(--nc-ink) 72%, transparent);
+  max-width: 30rem;
+  margin: 0 auto 1.4rem;
+}
+.nc-hero__cta .md-button { margin: 0 0.3rem; }
+@media screen and (max-width: 44rem) {
+  .nc-hero h1 { font-size: 1.9rem; }
+  .nc-hero { padding-top: 2.4rem; }
+}
+
 /* ---------- Mermaid (future diagrams) ---------- */
 :root {
   --md-mermaid-font-family: var(--md-code-font-family, monospace);

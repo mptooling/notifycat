@@ -1,6 +1,9 @@
-# Notifycat
-
-**Low-noise pull request notifications for Slack.** One pull request gets one Slack message. As the PR moves — reviewed, approved, merged, closed — that message updates in place instead of posting again.
+---
+template: home.html
+hide:
+  - navigation
+  - toc
+---
 
 ![A Slack channel where every pull request is one message: the morning digest, a closed and a merged PR struck through, a PR under review with an :eye: marker and Start review button, and a fresh announcement](assets/images/slack_notifications.png)
 
@@ -8,35 +11,29 @@ Your channel becomes a status board, not an event log. Anyone can see where ever
 
 ## Why teams run it
 
-**Quiet.** State changes become message updates and emoji reactions, not new posts. Dependabot bumps collapse to a single compact line. Bot reviews can be marked or muted entirely. A busy repository produces one Slack line per PR — total.
+<div class="grid cards" markdown>
 
-**Nothing slips through.** A morning digest resurfaces open PRs that nobody touched yesterday. The "Start review" button shows who is already reviewing, so two people don't pick up the same PR — and forgotten ones don't stay forgotten. See [What you see in Slack](features.md) for the full tour.
+- :material-bell-off-outline: **Quiet**
 
-**Easy to own.** One Go binary, one declarative `config.yaml`, one SQLite file. The server validates its whole configuration against Slack and your git host *before it boots*, so a typo'd channel ID fails at deploy time, not at webhook time. Runtime needs exactly two secrets: a webhook secret and a Slack bot token — no GitHub App, no OAuth flow, no admin scopes.
+    State changes become message updates and emoji reactions, not new posts. Dependabot bumps collapse to a single compact line. A busy repository produces one Slack line per PR — total.
+
+- :material-eye-check-outline: **Nothing slips through**
+
+    A morning digest resurfaces open PRs that nobody touched yesterday. The "Start review" button shows who is already reviewing. See [What you see in Slack](features.md) for the full tour.
+
+- :material-package-variant-closed: **Easy to own**
+
+    One Go binary, one declarative `config.yaml`, one SQLite file. The whole configuration is validated against Slack and your git host *before boot*. Two secrets, no GitHub App, no OAuth.
+
+</div>
 
 ## The problem it solves
 
-The usual way to connect pull requests to Slack is the official GitHub app: `/github subscribe owner/repo` plus `pulls`, `reviews`, and `comments`. It works, but every event becomes another Slack item. A PR opens, collects two reviews and a few comments, leaves draft, and merges — and the channel gets each of those as a separate message. The events are all there; the *current state* is nowhere.
-
-```mermaid
-flowchart LR
-    subgraph github_app[GitHub app for Slack]
-        opened[PR opened] --create message--> opened_msg[Slack message]
-        review[Review added] --create message--> review_msg[Slack message]
-        comment[Comment added] --create message--> comment_msg[Slack message]
-        merged[PR merged] --create message--> merged_msg[Slack message]
-    end
-```
+The usual way to connect pull requests to Slack is the official GitHub app: `/github subscribe owner/repo` plus `pulls`, `reviews`, and `comments`. It works, but every event becomes another Slack item. The events are all there; the *current state* is nowhere.
 
 Notifycat inverts that. Your git host sends PR webhooks, Notifycat routes each repository to the right channel, and one PR keeps one message. Reviews and comments land on it as reactions; merge strikes it through.
 
-```mermaid
-flowchart TB
-    opened[PR opened] --create message--> SlackMessage[Slack message]
-    review[Review added] --update message--> SlackMessage[Slack message]
-    comment[Comment added] --update message--> SlackMessage[Slack message]
-    merged[PR merged] --update message--> SlackMessage[Slack message]
-```
+--8<-- "docs/assets/images/diagrams/event-log-vs-status-board.svg"
 
 ## When it's not the fit
 
@@ -59,11 +56,13 @@ Notifycat is deliberately narrow. Pick something else if:
 
 ## Where next
 
-| You want to… | Go to |
-| --- | --- |
-| See what it looks like in Slack | [What you see in Slack](features.md) |
-| Get it running in ~10 minutes | [Install with Docker Compose](compose.md) |
-| Understand the configuration model in two minutes | [Configuration basics](configure.md) |
-| Point repositories at channels, tune mentions and reactions | [Route repositories to channels](routing.md) |
-| Fix a delivery that didn't reach Slack | [Troubleshooting](troubleshooting.md) |
-| Look up every config key | [config.yaml reference](configuration.md) |
+<div class="grid cards" markdown>
+
+- **[What you see in Slack](features.md)** — the message lifecycle, reactions, digest, and Start review button
+- **[Install with Docker Compose](compose.md)** — running in ~10 minutes
+- **[Configuration basics](configure.md)** — the whole model in two minutes
+- **[Route repositories to channels](routing.md)** — mappings, mentions, reactions
+- **[Troubleshooting](troubleshooting.md)** — fix a delivery that didn't reach Slack
+- **[config.yaml reference](configuration.md)** — every key
+
+</div>
