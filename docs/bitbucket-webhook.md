@@ -1,4 +1,4 @@
-# Bitbucket Webhook Setup
+# Bitbucket webhook setup
 
 Notifycat receives Bitbucket webhook requests at:
 
@@ -6,9 +6,17 @@ Notifycat receives Bitbucket webhook requests at:
 POST /webhook/bitbucket
 ```
 
-This route is only registered when `git_provider: bitbucket` is set in `config.yaml`. Bitbucket must send JSON payloads and sign them with the same secret you set in `BITBUCKET_WEBHOOK_SECRET`. See [Configuration → git_provider](configuration.md#git_provider) for the provider switch and [Mappings](mappings.md#bitbucket-workspace-and-repo-slug) for how Bitbucket workspaces and repo slugs map to Slack channels.
+This route is only registered when `git_provider: bitbucket` is set in `config.yaml`. Bitbucket must send JSON payloads and sign them with the same secret you set in `BITBUCKET_WEBHOOK_SECRET`. See [Configuration → git_provider](configuration.md#git_provider) for the provider switch and [Mappings](mappings.md#bitbucket-workspace-and-repository-slug) for how Bitbucket workspaces and repository slugs map to Slack channels.
 
-## Creating the Webhook
+## Creating the webhook
+
+**First, generate the webhook secret** — exactly as described in [Generating the webhook secret](security.md#generating-the-webhook-secret):
+
+```sh
+openssl rand -base64 32
+```
+
+The output becomes `BITBUCKET_WEBHOOK_SECRET`, and the same value goes into the webhook's **Secret** field below.
 
 There is no creation script for Bitbucket webhooks (unlike GitHub). Create the webhook in the repository settings:
 
@@ -23,7 +31,7 @@ There is no creation script for Bitbucket webhooks (unlike GitHub). Create the w
    https://notifycat.example.com/webhook/bitbucket
    ```
 
-7. Set **Secret** to a long random value — at least 32 characters from a password manager or secret store. This becomes `BITBUCKET_WEBHOOK_SECRET`.
+7. Set **Secret** to the value you generated above.
 
    > **Secret is mandatory.** If you leave the secret field blank, Bitbucket sends no `X-Hub-Signature` header. Notifycat hard-requires a valid signature and will reject every unsigned delivery with `401`. The secret must be the same value you set in `BITBUCKET_WEBHOOK_SECRET`.
 
@@ -46,7 +54,7 @@ There is no creation script for Bitbucket webhooks (unlike GitHub). Create the w
 
 Bitbucket sends a test ping after creation; you can ignore it. Use Bitbucket's **request history** view (below) to inspect real PR deliveries after you open or update a pull request.
 
-## Access Token & Scopes
+## Access token & scopes
 
 `BITBUCKET_TOKEN` is optional but required for two capabilities: **per-path routing** (reading a PR's changed files to select a path channel) and **validate/reconcile probes** (checking whether the webhook subscribes to the right events). Without it, path rules are inert and those probes are skipped — behavior identical to how `GITHUB_TOKEN` degrades on a GitHub deployment.
 
@@ -100,7 +108,7 @@ When `BITBUCKET_AUTH_EMAIL` is set, the client sends HTTP Basic `email:token` in
 
 > **App passwords are not supported and are being removed by Atlassian on 2026-07-28.** If your current setup uses a Bitbucket app password, migrate to a repository/workspace access token (Bearer) or a scoped Atlassian API token (Basic) before that date.
 
-## Signature Verification
+## Signature verification
 
 Bitbucket signs each delivery with HMAC-SHA256 over the raw request body and sends the result in the `X-Hub-Signature` header:
 
@@ -110,13 +118,9 @@ X-Hub-Signature: sha256=<hex-digest>
 
 Notifycat verifies this header on every request before the JSON payload is parsed. Requests without a valid signature are rejected with `401`. See [Security & permissions](security.md#signature-validation) for the full validation model.
 
-If deliveries fail with `401`, check that:
+A delivery failing with `401` has its runbook in [Troubleshooting → Webhook returns 401](troubleshooting.md#webhook-returns-401) — `invalid signature` in Bitbucket's request history is exactly the secret mismatch it describes. To change the secret later, follow [Rotating the webhook secret](security.md#rotating-the-webhook-secret).
 
-- The Bitbucket webhook secret and `BITBUCKET_WEBHOOK_SECRET` are **byte-identical**. Set the same generated value in both places by copy-paste (don't retype), and store it **unquoted** in `.env` — the value is read verbatim, so surrounding quotes become part of the secret and break the HMAC. `invalid signature` in the request history is exactly this mismatch.
-- The payload reaches Notifycat as `application/json` without body modification.
-- No proxy rewrites the request body before it reaches Notifycat (body must be byte-for-byte identical to what Bitbucket signed).
-
-## Delivery & Troubleshooting
+## Delivery & troubleshooting
 
 Bitbucket's webhook delivery behavior:
 
@@ -127,15 +131,9 @@ Bitbucket's webhook delivery behavior:
 | Attempt number header | `X-Attempt-Number` (1 on the first try) |
 | Maximum payload size | 256 KB (Notifycat's 1 MiB body guard covers it) |
 
-To inspect past deliveries, open the Bitbucket repository's **Repository settings → Webhooks → View requests** (or the equivalent in your Bitbucket version). Each entry shows the request headers, payload, response status, and response body — useful for diagnosing silent failures.
+To inspect past deliveries, open the Bitbucket repository's **Repository settings → Webhooks → View requests** (or the equivalent in your Bitbucket version). Each entry shows the request headers, payload, response status, and response body. What you find there picks the runbook — start at [Troubleshooting → No message for a new PR](troubleshooting.md#no-message-for-a-new-pr).
 
-Standard troubleshooting sequence:
-
-1. Check Bitbucket's request history to confirm the delivery reached Notifycat and what status it received.
-2. Check Notifycat's logs for a line with `ignored webhook event` and a `reason` field — this means the delivery was received and the `200` was intentional. See [Operations → Debugging a 200 OK](operations.md#debugging-a-200-ok-with-no-slack-change) for the full reason table.
-3. If the delivery returned `401`, verify the webhook secret matches `BITBUCKET_WEBHOOK_SECRET` and no proxy is rewriting the body.
-
-## Optional IP Allowlisting
+## Optional IP allowlisting
 
 For defense in depth, you can restrict inbound traffic to Bitbucket's delivery IP ranges. Atlassian publishes the current list at:
 
@@ -144,14 +142,3 @@ https://ip-ranges.atlassian.com
 ```
 
 Allowlisting these ranges at your reverse proxy or firewall means only Bitbucket (and your own testing traffic) can reach `/webhook/bitbucket`. This is optional — signature verification provides the same authenticity guarantee — but it limits the attack surface if an attacker can reach your endpoint.
-
-## Secret Rotation
-
-To rotate the webhook secret:
-
-1. Generate a new long random secret.
-2. Update `BITBUCKET_WEBHOOK_SECRET` in Notifycat.
-3. Update the **Secret** field in the Bitbucket webhook settings to the same value.
-4. Restart Notifycat if your runtime does not reload environment variables.
-
-During the window between steps 2 and 3 (or 3 and 2), deliveries will fail with `401`. Keep the window short.

@@ -1,9 +1,17 @@
 site_name: Notifycat
-site_description: GitHub pull request webhooks to a single, updating Slack message.
+site_description: Low-noise pull request notifications for Slack — one updating message per PR.
 site_url: https://mptooling.github.io/notifycat/
 repo_url: https://github.com/mptooling/notifycat
 repo_name: mptooling/notifycat
 edit_uri: edit/main/docs/
+
+exclude_docs: |
+  superpowers/
+  requirements.txt
+
+validation:
+  links:
+    anchors: warn
 
 theme:
   name: material
@@ -49,15 +57,32 @@ markdown_extensions:
       alternate_style: true
 
 nav:
-  - Home: index.md
-  - Install with Docker Compose: compose.md
-  - Security & permissions: security.md
-  - Getting started: getting-started.md
-  - Configuration: configuration.md
-  - Mappings: mappings.md
-  - Slack app: slack-app.md
-  - GitHub webhook: github-webhook.md
-  - Bitbucket webhook: bitbucket-webhook.md
-  - Docker (manual): docker.md
-  - Operations: operations.md
-  - Doctor: doctor.md
+  - What is Notifycat:
+      - Overview: index.md
+      - What you see in Slack: features.md
+  - Install:
+      - Docker Compose (recommended): compose.md
+      - Manual Docker: docker.md
+      - Run from source: getting-started.md
+      - Slack app: slack-app.md
+      - GitHub webhook: github-webhook.md
+      - Bitbucket webhook: bitbucket-webhook.md
+      - Security & permissions: security.md
+  - Use:
+      - Configuration basics: configure.md
+      - Route repositories to channels: routing.md
+      - Monorepos: monorepo.md
+      - Reactions & bot reviews: bots-and-reactions.md
+      - Stuck-PR digest: digest.md
+  - Troubleshoot:
+      - Start here: troubleshooting.md
+      - Doctor: doctor.md
+  - Reference:
+      - config.yaml: configuration.md
+      - Mappings schema: mappings.md
+      - CLI binaries: cli.md
+      - Operations: operations.md
+  - Upgrading:
+      - Upgrade notes: upgrading.md
+      - 0.17 — config.yaml migration: 0.17-config-migration.md
+      - 0.18 — mappings tiers migration: 0.18-per-repo-mappings-migration.md

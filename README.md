@@ -11,30 +11,25 @@ Card](https://goreportcard.com/badge/github.com/mptooling/notifycat)](https://go
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Conventional
 Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow.svg)](https://www.conventionalcommits.org)
 
-Notifycat listens for GitHub and Bitbucket pull request webhooks and keeps Slack up to date.
+**Low-noise pull request notifications for Slack.** One pull request gets one Slack message: as the PR opens, gets reviewed, merges, or closes, that message updates in place and collects reactions instead of posting again. The channel becomes a status board, not an event log.
 
-One pull request gets one Slack message. As the PR opens, moves to draft, gets reviewed, merges, or closes, Notifycat updates that message and adds the configured reactions. The result is a quieter channel: reviewers can follow the state of a PR without digging through repeated notifications.
+<img src="docs/assets/images/slack_notifications.png" width="900" alt="A Slack channel where every pull request is one updating message">
 
-It is intentionally small: one HTTP endpoint, a SQLite database (for Slack message timestamps), and a declarative `config.yaml` that holds all settings and decides which PRs route to which Slack channels.
+Three things it's built around:
 
-## Provider support
+- **Quiet** — state changes are message updates and emoji, not new posts; dependency bumps collapse to one compact line; bot reviews can be marked or muted.
+- **Nothing slips through** — a morning digest resurfaces PRs nobody touched yesterday, and the "Start review" button shows who's already on it.
+- **Easy to own** — one Go binary, one declarative `config.yaml`, one SQLite file. The server validates its whole configuration against Slack and your git host before it will boot, and runtime needs only a webhook secret plus a Slack bot token — no GitHub App, no OAuth.
 
-| Feature | GitHub | Bitbucket |
-| --- | --- | --- |
-| Webhook signature verification (HMAC-SHA256) | Yes | Yes |
-| Per-path / monorepo routing | Yes (requires `GITHUB_TOKEN`) | Yes (requires `BITBUCKET_TOKEN`) |
-| Stuck-PR digest | Yes | Yes |
-| Reactions & review flow | Yes | Yes |
-| Token auth | Fine-grained PAT (Bearer) | Access token (Bearer) or scoped Atlassian API token (Basic, Free-plan fallback) |
-| App passwords | n/a | **Not supported** — removed by Atlassian 2026-07-28; use access tokens |
+## Documentation
 
-A deployment serves exactly one provider, selected by `git_provider: github` or `git_provider: bitbucket` in `config.yaml`.
+Please visit <https://mptooling.github.io/notifycat/>
 
 ## Quick start
 
-**You'll need** a host with Docker + Compose V2, a domain name pointing at it, and inbound ports 80/443 open.
-**In about 10 minutes** you'll have Notifycat running behind automatic HTTPS and posting PR updates to Slack — no Go
-toolchain, no SQLite client, no manual file editing.
+### Docker (recommended)
+
+**You'll need** a host with Docker installed, a domain name pointing at it, inbound ports 80/443 open, and a Slack app installed in your workspace ([setup](https://mptooling.github.io/notifycat/slack-app/)). **In about 10 minutes** you'll have Notifycat running behind automatic HTTPS and posting PR updates to Slack.
 
 ```sh
 curl -fsSL https://github.com/mptooling/notifycat/releases/latest/download/install.sh | sh
@@ -44,10 +39,7 @@ docker compose up -d       # start Notifycat + Caddy (HTTPS via Let's Encrypt)
 ./notifycat doctor         # verify setup
 ```
 
-The installer downloads a pinned, checksum-verified bundle into `./notifycat`. The setup wizard prompts for your domain,
-Slack token, webhook secret, and first mapping. For the full walkthrough — webhook registration, a delivery smoke test,
-and troubleshooting — see [Install with Docker Compose](https://mptooling.github.io/notifycat/compose/), then run through
-the [Security & permissions](https://mptooling.github.io/notifycat/security/) checklist before go-live.
+The installer downloads a pinned, checksum-verified bundle into `./notifycat`. The setup wizard prompts for your domain, Slack token, webhook secret, and first mapping. For the full walkthrough — webhook registration, a delivery smoke test, and verifying with a real PR — see [Install with Docker Compose](https://mptooling.github.io/notifycat/compose/), then run through the [Security & permissions](https://mptooling.github.io/notifycat/security/) checklist before go-live.
 
 ### Alternative: run from source (contributors)
 
@@ -58,8 +50,7 @@ Most users want the one-command path above. Build from source if you're contribu
 - Go 1.25.10 or newer (`go version` to check).
 - `git` to clone the repository.
 - `sh` and `curl` for the helper scripts under `scripts/`.
-- A public URL (ngrok or Cloudflare Tunnel) only if you want GitHub to deliver real webhooks to your laptop. Local CLI
-  commands (validate / doctor) don't need one.
+- A public URL (ngrok or Cloudflare Tunnel) only if you want your git host to deliver real webhooks to your laptop. Local CLI commands (validate / doctor) don't need one.
 
 Six commands from "nothing" to "running":
 
@@ -73,47 +64,28 @@ go run ./cmd/notifycat-doctor
 go run ./cmd/notifycat-server
 ```
 
-The binaries pick up `.env` from the current working directory and default to `./config.yaml` and `./data/notifycat.db`. See [Getting started](https://mptooling.github.io/notifycat/getting-started/) for the end-to-end walkthrough including the tunnel + webhook setup.
+The binaries pick up `.env` from the current working directory and default to `./config.yaml` and `./data/notifycat.db`. See [Run from source](https://mptooling.github.io/notifycat/getting-started/) for the end-to-end walkthrough including the tunnel + webhook setup.
 
-## What It Handles
+## What you see in Slack
 
-- Pull request webhooks for opened, closed, and converted-to-draft PRs (GitHub: `pull_request`; Bitbucket: `pullrequest:created`, `pullrequest:updated`, `pullrequest:fulfilled`, `pullrequest:rejected`).
-- Review webhooks for approved, commented, and changes-requested reviews (GitHub: `pull_request_review`; Bitbucket: `pullrequest:approved`, `pullrequest:changes_request_created`, `pullrequest:comment_created`).
-- Line-specific PR comment webhooks (GitHub: `pull_request_review_comment`).
-- HMAC-SHA256 signature verification — `X-Hub-Signature-256` for GitHub, `X-Hub-Signature` for Bitbucket.
-- Repository routing from the `mappings:` section of `config.yaml` — per-repo tiers (`org → {repo|*: {channel, mentions}}`) where `*` acts as the org-wide default and catch-all. Under Bitbucket, the org key is the workspace slug and the repo key is the repo slug. See [`config.example.yaml`](config.example.yaml).
-- Slack message updates instead of repeated new messages for the same PR.
+One message per PR: opening it posts the message, reviews land on it as reactions (✅ 💬 ❗), and merging strikes the title through. A **Start review** button shows who's already reviewing. Dependabot and Renovate bumps collapse to one compact line, and a morning digest resurfaces the PRs nobody touched yesterday. The full tour, message by message: [What you see in Slack](https://mptooling.github.io/notifycat/features/).
 
-## Binaries
+## Git Provider Support
 
-| Binary | Purpose |
-| --- | --- |
-| `notifycat-server` | HTTP server for GitHub and Bitbucket webhooks |
-| `notifycat-config` | CLI for listing and validating config.yaml (mappings and settings) |
-| `notifycat-migrate` | Applies embedded SQLite migrations |
-| `notifycat-doctor` | Preflight diagnostics (config, database, mappings, optional per-repo Slack/GitHub/Bitbucket) |
-| `notifycat-smoke` | Forges a signed PR event end-to-end to confirm Slack delivery |
+| Feature | GitHub | Bitbucket |
+| --- | --- | --- |
+| Webhook signature verification (HMAC-SHA256) | Yes | Yes |
+| Per-path / monorepo routing | Yes (requires `GITHUB_TOKEN`) | Yes (requires `BITBUCKET_TOKEN`) |
+| Stuck-PR digest | Yes | Yes |
+| Reactions & review flow | Yes | Yes |
+| Token auth | Fine-grained PAT (Bearer) | Access token (Bearer) or scoped Atlassian API token (Basic, Free-plan fallback) |
+| App passwords | n/a | **Not supported** — removed by Atlassian 2026-07-28; use access tokens |
 
-## Documentation
-
-Full documentation is published at <https://mptooling.github.io/notifycat/>.
-
-- [Install with Docker Compose](https://mptooling.github.io/notifycat/compose/) — the recommended one-command path
-- [Security & permissions](https://mptooling.github.io/notifycat/security/) — least-privilege model and pre-go-live checklist
-- [Getting started](https://mptooling.github.io/notifycat/getting-started/)
-- [Mappings file](https://mptooling.github.io/notifycat/mappings/)
-- [Configuration](https://mptooling.github.io/notifycat/configuration/)
-- [Slack app setup](https://mptooling.github.io/notifycat/slack-app/)
-- [GitHub webhook setup](https://mptooling.github.io/notifycat/github-webhook/)
-- [Bitbucket webhook setup](https://mptooling.github.io/notifycat/bitbucket-webhook/)
-- [Docker (manual)](https://mptooling.github.io/notifycat/docker/)
-- [Operations](https://mptooling.github.io/notifycat/operations/)
-- [Doctor](https://mptooling.github.io/notifycat/doctor/)
+A deployment serves one git host, and routing lives in the `mappings:` section of `config.yaml` — per-repository tiers with an org-wide `"*"` catch-all. See [Configuration basics](https://mptooling.github.io/notifycat/configure/).
 
 ## Development
 
-The project includes a `justfile` for common development commands. Install [`just`](https://github.com/casey/just)
-(`brew install just` on macOS), then run:
+The project includes a `justfile` for common development commands. Install [`just`](https://github.com/casey/just) (`brew install just` on macOS), then run:
 
 ```sh
 just

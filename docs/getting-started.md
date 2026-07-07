@@ -1,77 +1,54 @@
-# Getting Started
+# Run from source
 
-This guide gets Notifycat running on your machine with a local SQLite database. Use it when you want to test the full
-GitHub-to-Slack flow before deploying. For the production path, see [Install with Docker Compose](compose.md) instead —
-it covers the full install, HTTPS setup, and preflight checks.
+Build and run Notifycat from a clone, with a local SQLite database — the path for contributors and for testing the full webhook-to-Slack flow before deploying. For production, use [Install with Docker Compose](compose.md) instead.
 
 ## Requirements
 
 - Go 1.25.10 or newer.
 - `sh` and `curl` for the setup helper scripts.
-- Permission to create a Slack app in your workspace. See [Slack app setup](slack-app.md).
-- A GitHub repository where you can create webhooks. See [GitHub webhook setup](github-webhook.md).
+- Permission to create a Slack app in your workspace — see [Slack app setup](slack-app.md).
+- A repository where you can create webhooks — see [GitHub webhook setup](github-webhook.md).
 
-## Clone the Repository
+## Clone and configure
 
-Clone Notifycat and work from the repository root. The setup scripts use files from this repository.
+Clone the repository and work from its root — the setup scripts live there.
 
-## Create the Slack App
-
-Create the Slack app from the committed manifest:
+Create the Slack app from the committed manifest, install it from its settings page, and copy the **Bot User OAuth Token**:
 
 ```sh
 SLACK_APP_CONFIG_TOKEN=xoxe-your-token ./scripts/slack-app-create.sh
 ```
 
-Install the Slack app from its app settings page, then copy the **Bot User OAuth Token**. You will use it as
-`SLACK_BOT_TOKEN`.
-
-## Configure Local Environment
-
-Create a local env file:
+Then create your local env file and fill in the secrets ([why the secret is generated exactly this way](security.md#generating-the-webhook-secret)):
 
 ```sh
 cp .env.example .env
+openssl rand -base64 32          # generate a webhook secret
 ```
 
-Generate a GitHub webhook secret with your password manager, secret manager, or:
+Edit `.env`:
 
 ```sh
-openssl rand -base64 32
-```
-
-Edit `.env` and set these values:
-
-```sh
-GITHUB_WEBHOOK_SECRET=your-32-plus-character-random-secret
+GITHUB_WEBHOOK_SECRET=your-generated-secret
 SLACK_BOT_TOKEN=xoxb-your-slack-bot-token
 ```
 
-The default database path is `file:./data/notifycat.db`. You can keep it for local work.
+The default database path is `file:./data/notifycat.db` — fine for local work.
 
-## Apply Migrations
-
-Create the SQLite schema:
+## Apply migrations
 
 ```sh
 go run ./cmd/notifycat-migrate up
+go run ./cmd/notifycat-migrate status   # inspect state
 ```
 
-You can inspect migration state with:
+## Add a mapping
 
-```sh
-go run ./cmd/notifycat-migrate status
-```
-
-## Add a Repository Mapping
-
-Mappings tell Notifycat where each repository should post in Slack. They live in the `mappings:` section of `config.yaml` (default path `./config.yaml`, override with `NOTIFYCAT_CONFIG_FILE`). Start from the bundled example:
+Routing lives in the `mappings:` section of `config.yaml` (default path `./config.yaml`, overridable with `NOTIFYCAT_CONFIG_FILE`). Start from the bundled example:
 
 ```sh
 cp config.example.yaml config.yaml
 ```
-
-Edit `config.yaml` so each org points at the right Slack channel:
 
 ```yaml
 mappings:
@@ -79,106 +56,56 @@ mappings:
     repo:
       channel: C123ABCDE             # the Slack channel ID, not "#name"
       mentions:
-        - "<@U123456>"               # user
-        - "<!subteam^S123456>"       # user group
+        - "<@U123456>"
 ```
 
-For a whole-org rule, use the `"*"` catch-all tier:
-
-```yaml
-mappings:
-  owner:
-    "*":
-      channel: C123ABCDE
-      mentions: ["<!channel>"]
-```
-
-See [Mappings file](mappings.md) for the full schema, lookup rules, and the lock-file cache. Validate what you wrote against the live workspace before starting the server:
+The full schema, inheritance, and the `"*"` catch-all are covered in [Route repositories to channels](routing.md). Validate what you wrote against the live workspace:
 
 ```sh
 go run ./cmd/notifycat-config list      # show what's parsed
 go run ./cmd/notifycat-config validate  # check each entry end-to-end
 ```
 
-Repository names must use `owner/name` format. Slack channel IDs should be real Slack IDs such as `C123ABCDE`, not
-display names like `#engineering`.
-
-## Preflight with the Doctor
-
-Before starting the server, run the doctor to surface any remaining configuration, database, or mappings issues:
+## Preflight with the doctor
 
 ```sh
 go run ./cmd/notifycat-doctor                 # config + database + mappings file
-go run ./cmd/notifycat-doctor owner/repo      # + Slack + GitHub webhook for one repo
+go run ./cmd/notifycat-doctor owner/repo      # + Slack + webhook checks for one repository
 ```
 
-Exit code is `0` on success and `1` on the first failure. See [Doctor](doctor.md) for the full check matrix.
+On a first-time setup the `webhook` check is **expected to fail or skip** — the webhook doesn't exist yet. With `GITHUB_TOKEN` unset it reports `SKIP`; with it set, `FAIL`. Both flip to `OK` after the webhook step below. The same caveat applies to `notifycat-config validate`.
 
-On a first-time local setup the `github-webhook` check is **expected to fail or skip** here — the webhook is created
-later in [Create the GitHub Webhook](#create-the-github-webhook). With `GITHUB_TOKEN` unset, the check reports `SKIP`;
-with it set, the check reports `FAIL` because no webhook is registered yet. The same caveat applies to `notifycat-config validate` above. Both flip to `OK` once you re-run them after the webhook step.
-
-## Start the Server
-
-Run:
+## Start the server
 
 ```sh
-go run ./cmd/notifycat-server
+go run ./cmd/notifycat-server    # or: just serve
 ```
 
-Or, if you use `just` (`brew install just` on macOS):
-
-```sh
-just serve
-```
-
-`just` is a local development shortcut. It is not needed for production setup.
-
-The server listens on `:8080` by default.
-
-Check health:
+The server listens on `:8080`. Check health and note the webhook endpoint:
 
 ```sh
 curl -i http://localhost:8080/healthz
+# webhook receiver: POST /webhook/github
 ```
 
-The webhook endpoint is:
+## Create the webhook
 
-```text
-POST /webhook/github
-```
-
-## Create the GitHub Webhook
-
-For local GitHub webhook testing, expose your running local server with a tunnel such as ngrok or Cloudflare Tunnel.
-
-Then use the tunnel base URL as `NOTIFYCAT_PUBLIC_URL`:
+GitHub needs a public URL, so expose the local server with a tunnel (ngrok, Cloudflare Tunnel), then create the webhook with the tunnel URL:
 
 ```sh
 GITHUB_TOKEN=github_pat_your-token \
-GITHUB_WEBHOOK_SECRET=your-32-plus-character-random-secret \
+GITHUB_WEBHOOK_SECRET=your-generated-secret \
 NOTIFYCAT_PUBLIC_URL=https://your-tunnel.example \
 ./scripts/github-webhook-create.sh owner/repo
 ```
 
-Use the same `GITHUB_WEBHOOK_SECRET` value in `.env` and in the GitHub webhook.
+Use the same `GITHUB_WEBHOOK_SECRET` value in `.env` and in the webhook. Re-run the doctor with `GITHUB_TOKEN` exported — the `webhook` check should now report `OK`.
 
-Re-run the doctor with `GITHUB_TOKEN` exported now that the webhook exists — the `github-webhook` check should flip to
-`OK`:
-
-```sh
-GITHUB_TOKEN=github_pat_your-token \
-  go run ./cmd/notifycat-doctor owner/repo
-```
-
-## Verify the Flow
-
-After Slack and GitHub are configured:
+## Verify the flow
 
 1. Open a pull request in the mapped repository.
 2. Confirm Notifycat posts one Slack message in the mapped channel.
 3. Approve, comment, request changes, convert to draft, close, or merge the PR.
-4. Add a line-specific comment on the diff.
-5. Confirm the existing Slack message changes instead of a new message appearing for each event.
+4. Confirm the existing message changes — reactions accumulate, no new messages appear.
 
-If GitHub reports a failed delivery, check the response code in the GitHub webhook delivery page and the Notifycat logs.
+If a delivery fails, start from the response code in the webhook delivery page and [Troubleshooting](troubleshooting.md).
