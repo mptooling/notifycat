@@ -8,12 +8,13 @@ hide:
 <div class="nc-lifecycle">
   <div class="nc-lifecycle__stage">
     <div class="nc-lifecycle__label">1 · OPENED</div>
-    <div class="nc-lifecycle__txt">🚀 please review <span class="nc-lifecycle__link">PR #169</span></div>
+    <div class="nc-lifecycle__txt">🚀 <span class="nc-lifecycle__mention">@John Doe</span>, please review <span class="nc-lifecycle__link">PR #169</span></div>
+    <span class="nc-lifecycle__btn">Start review</span>
   </div>
   <div class="nc-lifecycle__arrow">→</div>
   <div class="nc-lifecycle__stage">
     <div class="nc-lifecycle__label">2 · IN REVIEW</div>
-    <div class="nc-lifecycle__txt">🚀 <span class="nc-lifecycle__mention">@channel</span>, please review <span class="nc-lifecycle__link">PR #169</span></div>
+    <div class="nc-lifecycle__txt">🚀 <span class="nc-lifecycle__mention">@John Doe</span>, please review <span class="nc-lifecycle__link">PR #169</span></div>
     <div class="nc-lifecycle__ctx">mptooling/notifycat · opened Today at 8:30 PM</div>
     <div class="nc-lifecycle__ctx">👁️ @John Doe reviewing · since 8:41 PM</div>
     <span class="nc-lifecycle__btn">Start review</span>
@@ -23,7 +24,8 @@ hide:
     <div class="nc-lifecycle__label">3 · MERGED</div>
     <div class="nc-lifecycle__txt"><s>[Merged] <span class="nc-lifecycle__link">PR #169</span></s></div>
     <div class="nc-lifecycle__ctx">reviewed by @John Doe</div>
-    <div><span class="nc-rx">✅ 2</span><span class="nc-rx">🎉 1</span></div>
+    <div class="nc-lifecycle__ctx">reviewed by @CodeOwner</div>
+    <div><span class="nc-rx">✅ 2</span><span class="nc-rx">💬</span><span class="nc-rx">🔀</span></div>
   </div>
   <div class="nc-lifecycle__caption">the same message, updating in place</div>
 </div>
@@ -57,15 +59,6 @@ Notifycat inverts that. Your git host sends PR webhooks, Notifycat routes each r
 <div class="nc-diagram-wrap">
 --8<-- "docs/assets/images/diagrams/event-log-vs-status-board.svg"
 </div>
-
-## When it's not the fit
-
-Notifycat is deliberately narrow. Pick something else if:
-
-- **You want the full event stream in Slack.** Every review and comment as its own post is exactly what the official GitHub app does well.
-- **You need GitHub and Bitbucket in one place.** A deployment serves one git host; covering both means two instances, each with its own configuration and database.
-- **You need more than pull requests.** Issues, deployments, CI status — out of scope by design.
-- **You post to more than one Slack workspace.** One deployment carries one bot token, so it posts to one workspace.
 
 ## Git Provider Support
 
