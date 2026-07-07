@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.22.2](https://github.com/mptooling/notifycat/compare/v0.22.1...v0.22.2) (2026-07-07)
+
+
+### 📝 Documentation
+
+* correct bitbucket webhook event labels and expand 401 troubleshooting ([#166](https://github.com/mptooling/notifycat/issues/166)) ([90d1478](https://github.com/mptooling/notifycat/commit/90d14786f649c56aadd12ed39b2089b81cd2b7c4))
+* restructure documentation around user journeys ([#168](https://github.com/mptooling/notifycat/issues/168)) ([5ca85a8](https://github.com/mptooling/notifycat/commit/5ca85a88df3948d36b4c133b1cb2ce023d0c97bc))
+* visual redesign - jade/charcoal brand, landing page, diagrams ([#169](https://github.com/mptooling/notifycat/issues/169)) ([c4decbb](https://github.com/mptooling/notifycat/commit/c4decbb8163757697c7d4ca5b553a5b2b0abc10f))
+
 ## [0.22.1](https://github.com/mptooling/notifycat/compare/v0.22.0...v0.22.1) (2026-07-07)
 
 
