@@ -223,7 +223,31 @@
 .nc-lifecycle__txt { font-size: 0.68rem; line-height: 1.5; color: var(--nc-ink); }
 .nc-lifecycle__txt s { color: color-mix(in srgb, var(--nc-ink) 50%, transparent); }
 .nc-lifecycle__txt s .nc-lifecycle__link { color: inherit; }
-.nc-lifecycle__link { color: var(--nc-accent); font-weight: 600; }
+.nc-lifecycle__link { color: var(--nc-accent); font-weight: 600; white-space: nowrap; }
+.nc-lifecycle__mention {
+  background-color: color-mix(in srgb, var(--nc-accent) 14%, transparent);
+  color: var(--nc-accent);
+  border-radius: 0.2rem;
+  padding: 0 0.15rem;
+  font-weight: 600;
+}
+.nc-lifecycle__ctx {
+  font-size: 0.58rem;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--nc-ink) 45%, transparent);
+  margin: 0.15rem 0;
+}
+/* Depicts Slack's primary button, so it keeps Slack's green in both themes */
+.nc-lifecycle__btn {
+  display: inline-block;
+  background-color: #007a5a;
+  color: #ffffff;
+  font-size: 0.6rem;
+  font-weight: 700;
+  border-radius: 0.25rem;
+  padding: 0.2rem 0.7rem;
+  margin-top: 0.4rem;
+}
 .nc-lifecycle__arrow {
   display: flex;
   align-items: center;

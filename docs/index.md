@@ -12,9 +12,11 @@ hide:
   </div>
   <div class="nc-lifecycle__arrow">→</div>
   <div class="nc-lifecycle__stage">
-    <div class="nc-lifecycle__label">2 · REVIEWED</div>
-    <div class="nc-lifecycle__txt">🚀 please review <span class="nc-lifecycle__link">PR #169</span></div>
-    <div><span class="nc-rx">👀 1</span><span class="nc-rx">✅ 1</span></div>
+    <div class="nc-lifecycle__label">2 · IN REVIEW</div>
+    <div class="nc-lifecycle__txt">🚀 <span class="nc-lifecycle__mention">@channel</span>, please review <span class="nc-lifecycle__link">PR #169</span></div>
+    <div class="nc-lifecycle__ctx">mptooling/notifycat · opened Today at 8:30 PM</div>
+    <div class="nc-lifecycle__txt">👁️ @Pavel reviewing · since 8:41 PM</div>
+    <span class="nc-lifecycle__btn">Start review</span>
   </div>
   <div class="nc-lifecycle__arrow">→</div>
   <div class="nc-lifecycle__stage">
