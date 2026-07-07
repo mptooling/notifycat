@@ -2,6 +2,8 @@
 
 This page is a tour of Notifycat from inside Slack — every message shape and reaction the bot produces, and where to change each one.
 
+![A Slack channel where every pull request is one message: the morning digest, a closed and a merged PR struck through, a PR under review with an :eye: marker and Start review button, and a fresh announcement](assets/images/slack_notifications.png)
+
 ## The PR message
 
 A new pull request (non-draft, or freshly marked ready for review) posts one message to the mapped channel:

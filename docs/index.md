@@ -5,7 +5,25 @@ hide:
   - toc
 ---
 
-![A Slack channel where every pull request is one message: the morning digest, a closed and a merged PR struck through, a PR under review with an :eye: marker and Start review button, and a fresh announcement](assets/images/slack_notifications.png)
+<div class="nc-lifecycle">
+  <div class="nc-lifecycle__stage">
+    <div class="nc-lifecycle__label">1 · OPENED</div>
+    <div class="nc-lifecycle__txt">🚀 please review <span class="nc-lifecycle__link">PR #169</span></div>
+  </div>
+  <div class="nc-lifecycle__arrow">→</div>
+  <div class="nc-lifecycle__stage">
+    <div class="nc-lifecycle__label">2 · REVIEWED</div>
+    <div class="nc-lifecycle__txt">🚀 please review <span class="nc-lifecycle__link">PR #169</span></div>
+    <div><span class="nc-rx">👀 1</span><span class="nc-rx">✅ 1</span></div>
+  </div>
+  <div class="nc-lifecycle__arrow">→</div>
+  <div class="nc-lifecycle__stage">
+    <div class="nc-lifecycle__label">3 · MERGED</div>
+    <div class="nc-lifecycle__txt"><s>[Merged] <span class="nc-lifecycle__link">PR #169</span></s></div>
+    <div><span class="nc-rx">✅ 2</span><span class="nc-rx">🎉 1</span></div>
+  </div>
+  <div class="nc-lifecycle__caption">the same message, updating in place</div>
+</div>
 
 Your channel becomes a status board, not an event log. Anyone can see where every PR stands at a glance, without scrolling through five notifications to work out whether something still needs eyes.
 
