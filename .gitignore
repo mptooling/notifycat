@@ -45,3 +45,4 @@ graphify-out/
 # Local docs build (mkdocs)
 /site/
 .venv-docs/
+.superpowers/
