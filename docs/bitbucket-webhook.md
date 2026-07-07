@@ -27,17 +27,19 @@ There is no creation script for Bitbucket webhooks (unlike GitHub). Create the w
 
    > **Secret is mandatory.** If you leave the secret field blank, Bitbucket sends no `X-Hub-Signature` header. Notifycat hard-requires a valid signature and will reject every unsigned delivery with `401`. The secret must be the same value you set in `BITBUCKET_WEBHOOK_SECRET`.
 
-8. Under **Triggers**, choose **Choose from a full list of triggers** and enable the following pull request events:
+8. Under **Triggers**, choose **Choose from a full list of triggers** and, under **Pull request**, enable the following events (the labels below are exactly what you tick in the Bitbucket UI):
 
-   | Event | Trigger key | Purpose |
+   | UI label (Pull request) | Event key (`X-Event-Key`) | Purpose |
    | --- | --- | --- |
-   | Pull request created | `pullrequest:created` | New PR opened. |
-   | Pull request updated | `pullrequest:updated` | PR details changed, and also draft↔ready transitions (Bitbucket has no distinct draft event). |
-   | Pull request fulfilled | `pullrequest:fulfilled` | PR merged. |
-   | Pull request rejected | `pullrequest:rejected` | PR declined/closed. |
-   | Pull request approved | `pullrequest:approved` | Reviewer approved. |
-   | Pull request changes requested | `pullrequest:changes_request_created` | Reviewer requested changes. |
-   | Pull request comment created | `pullrequest:comment_created` | Comment posted on the PR. |
+   | Created | `pullrequest:created` | New PR opened. |
+   | Updated | `pullrequest:updated` | PR details changed, and also draft↔ready transitions (Bitbucket has no distinct draft event). |
+   | Changes Request created | `pullrequest:changes_request_created` | Reviewer requested changes. |
+   | Approved | `pullrequest:approved` | Reviewer approved. |
+   | Merged | `pullrequest:fulfilled` | PR merged. |
+   | Declined | `pullrequest:rejected` | PR declined/closed. |
+   | Comment created | `pullrequest:comment_created` | Comment posted on the PR. |
+
+   > **Heads up on two labels.** Bitbucket names two of these differently in the UI than on the wire: ticking **Merged** delivers `pullrequest:fulfilled`, and **Declined** delivers `pullrequest:rejected`. Notifycat keys on the event key (the `X-Event-Key` value you see in request history and logs), so seeing `fulfilled`/`rejected` there for a merged/declined PR is expected, not a bug.
 
 9. Keep **Active** checked.
 10. Save the webhook.
@@ -85,6 +87,15 @@ BITBUCKET_AUTH_EMAIL=you@example.com
 
 When `BITBUCKET_AUTH_EMAIL` is set, the client sends HTTP Basic `email:token` instead of Bearer.
 
+> **Getting `401` on validation or reconcile?** A `401` (as opposed to `403`) means the auth *scheme* doesn't match the token *type* — not a scope problem. The two token types use different schemes, and mixing them is the most common cause:
+>
+> | Token type | Auth scheme | `BITBUCKET_AUTH_EMAIL` |
+> | --- | --- | --- |
+> | Repository / workspace access token | Bearer | **unset** |
+> | Scoped Atlassian API token (Free-plan path) | Basic | **set** to your Atlassian email |
+>
+> An access token with an email set (forces Basic), or an API token with no email (falls back to Bearer), both produce `401`. The token and email are read verbatim, so also check for stray quotes or whitespace in `.env`. To isolate it, replay the same call `curl` makes — a `200` from `curl -H "Authorization: Bearer $BITBUCKET_TOKEN" https://api.bitbucket.org/2.0/repositories/<workspace>/<repo>/hooks` means you want the Bearer/no-email combo.
+
 ### App passwords — not supported
 
 > **App passwords are not supported and are being removed by Atlassian on 2026-07-28.** If your current setup uses a Bitbucket app password, migrate to a repository/workspace access token (Bearer) or a scoped Atlassian API token (Basic) before that date.
@@ -101,7 +112,7 @@ Notifycat verifies this header on every request before the JSON payload is parse
 
 If deliveries fail with `401`, check that:
 
-- The Bitbucket webhook secret and `BITBUCKET_WEBHOOK_SECRET` are the same value.
+- The Bitbucket webhook secret and `BITBUCKET_WEBHOOK_SECRET` are **byte-identical**. Set the same generated value in both places by copy-paste (don't retype), and store it **unquoted** in `.env` — the value is read verbatim, so surrounding quotes become part of the secret and break the HMAC. `invalid signature` in the request history is exactly this mismatch.
 - The payload reaches Notifycat as `application/json` without body modification.
 - No proxy rewrites the request body before it reaches Notifycat (body must be byte-for-byte identical to what Bitbucket signed).
 
