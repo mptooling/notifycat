@@ -33,7 +33,9 @@ The usual way to connect pull requests to Slack is the official GitHub app: `/gi
 
 Notifycat inverts that. Your git host sends PR webhooks, Notifycat routes each repository to the right channel, and one PR keeps one message. Reviews and comments land on it as reactions; merge strikes it through.
 
+<div class="nc-diagram-wrap">
 --8<-- "docs/assets/images/diagrams/event-log-vs-status-board.svg"
+</div>
 
 ## When it's not the fit
 

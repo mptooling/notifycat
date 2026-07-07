@@ -119,6 +119,8 @@
   border-radius: 0;
   box-shadow: none;
 }
+.nc-diagram-wrap { margin: 1.2em 0; overflow-x: auto; }
+.nc-diagram-wrap svg { width: 100%; max-width: 46rem; height: auto; display: block; margin: 0 auto; }
 
 /* ---------- Grid cards ---------- */
 .md-typeset .grid.cards > :is(ul, ol) > li,
@@ -160,7 +162,33 @@
   max-width: 30rem;
   margin: 0 auto 1.4rem;
 }
-.nc-hero__cta .md-button { margin: 0 0.3rem; }
+/* The hero sits outside .md-typeset, so Material's .md-button styles don't reach it */
+.nc-hero__cta .md-button {
+  display: inline-block;
+  margin: 0 0.3rem;
+  padding: 0.5em 1.4em;
+  border: 0.1rem solid var(--nc-border);
+  border-radius: 0.4rem;
+  color: var(--nc-ink);
+  font-weight: 600;
+  font-size: 0.72rem;
+  transition: border-color 125ms, color 125ms, background-color 125ms;
+}
+.nc-hero__cta .md-button:hover {
+  border-color: var(--nc-accent);
+  color: var(--nc-accent);
+}
+.nc-hero__cta .md-button--primary {
+  background-color: var(--nc-accent);
+  border-color: var(--nc-accent);
+  color: var(--nc-bg);
+  font-weight: 700;
+}
+.nc-hero__cta .md-button--primary:hover {
+  background-color: var(--nc-accent-strong);
+  border-color: var(--nc-accent-strong);
+  color: var(--nc-bg);
+}
 @media screen and (max-width: 44rem) {
   .nc-hero h1 { font-size: 1.9rem; }
   .nc-hero { padding-top: 2.4rem; }

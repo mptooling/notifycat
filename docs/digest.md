@@ -2,7 +2,9 @@
 
 Once a day, Notifycat reminds each channel about the open PRs nobody has touched since the previous day. It's the safety net under the quiet: a PR that got buried yesterday resurfaces this morning, every morning, until someone deals with it.
 
+<div class="nc-diagram-wrap">
 --8<-- "docs/assets/images/diagrams/digest-timeline.svg"
+</div>
 
 ## What it posts
 
