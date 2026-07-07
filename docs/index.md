@@ -22,6 +22,7 @@ hide:
   <div class="nc-lifecycle__stage">
     <div class="nc-lifecycle__label">3 · MERGED</div>
     <div class="nc-lifecycle__txt"><s>[Merged] <span class="nc-lifecycle__link">PR #169</span></s></div>
+    <div class="nc-lifecycle__txt">👁️ reviewed by @Pavel</div>
     <div><span class="nc-rx">✅ 2</span><span class="nc-rx">🎉 1</span></div>
   </div>
   <div class="nc-lifecycle__caption">the same message, updating in place</div>
