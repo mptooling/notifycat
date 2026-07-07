@@ -17,33 +17,39 @@ theme:
   name: material
   logo: assets/logo.png
   favicon: assets/logo.png
+  font:
+    text: Inter
+    code: JetBrains Mono
   features:
     - navigation.instant
     - navigation.tracking
+    - navigation.tabs
     - navigation.sections
     - navigation.top
     - content.code.copy
     - content.action.edit
   palette:
     - scheme: default
-      primary: indigo
-      accent: indigo
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
     - scheme: slate
-      primary: indigo
-      accent: indigo
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
+
+extra_css:
+  - assets/stylesheets/extra.css
 
 plugins:
   - search
 
 markdown_extensions:
   - admonition
+  - attr_list
+  - md_in_html
   - tables
+  - pymdownx.snippets
   - toc:
       permalink: true
   - pymdownx.details

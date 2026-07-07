@@ -1,0 +1,146 @@
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap");
+
+/* ---------- Brand tokens ---------- */
+[data-md-color-scheme="default"] {
+  --nc-bg: #ffffff;
+  --nc-surface: #f5f6f5;
+  --nc-ink: #161817;
+  --nc-accent: #0e8a5f;
+  --nc-accent-strong: #0b6b4a;
+  --nc-border: #e4e6e5;
+
+  --md-default-bg-color: var(--nc-bg);
+  --md-default-fg-color: var(--nc-ink);
+  --md-code-bg-color: var(--nc-surface);
+  --md-typeset-a-color: var(--nc-accent);
+  --md-accent-fg-color: var(--nc-accent-strong);
+  --md-primary-fg-color: var(--nc-ink);
+}
+
+[data-md-color-scheme="slate"] {
+  --nc-bg: #111413;
+  --nc-surface: #1a1e1c;
+  --nc-ink: #edf1ef;
+  --nc-accent: #34d399;
+  --nc-accent-strong: #6ee7b7;
+  --nc-border: #2a302d;
+
+  --md-default-bg-color: var(--nc-bg);
+  --md-default-fg-color: var(--nc-ink);
+  --md-code-bg-color: var(--nc-surface);
+  --md-typeset-a-color: var(--nc-accent);
+  --md-accent-fg-color: var(--nc-accent-strong);
+  --md-primary-fg-color: var(--nc-ink);
+}
+
+/* Header/tabs follow the page background in both schemes */
+.md-header,
+.md-tabs {
+  background-color: var(--nc-bg);
+  color: var(--nc-ink);
+  border-bottom: 1px solid var(--nc-border);
+}
+.md-header { box-shadow: none; }
+.md-tabs { border-bottom: none; }
+.md-tabs__link--active { color: var(--nc-accent); font-weight: 700; }
+.md-header__button.md-logo svg { height: 1.4rem; width: auto; }
+
+/* ---------- Typography ---------- */
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3,
+.md-typeset h4 {
+  font-family: "Space Grotesk", var(--md-text-font-family, sans-serif);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--nc-ink);
+}
+
+.nc-eyebrow {
+  font-family: var(--md-code-font-family, monospace);
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--nc-accent);
+  font-weight: 600;
+}
+
+/* ---------- Links & buttons ---------- */
+.md-typeset a { font-weight: 600; }
+.md-typeset .md-button--primary {
+  background-color: var(--nc-accent);
+  border-color: var(--nc-accent);
+  color: var(--nc-bg);
+  border-radius: 0.4rem;
+  font-weight: 700;
+}
+.md-typeset .md-button--primary:hover {
+  background-color: var(--nc-accent-strong);
+  border-color: var(--nc-accent-strong);
+  color: var(--nc-bg);
+}
+.md-typeset .md-button {
+  border-radius: 0.4rem;
+  border-color: var(--nc-border);
+  color: var(--nc-ink);
+}
+.md-typeset .md-button:hover {
+  border-color: var(--nc-accent);
+  color: var(--nc-accent);
+  background-color: transparent;
+}
+
+/* ---------- Admonitions: tip/note/info take the accent family ---------- */
+.md-typeset :is(.admonition, details):is(.tip, .note, .info) {
+  border-color: var(--nc-accent);
+}
+.md-typeset :is(.tip, .note, .info) > :is(.admonition-title, summary) {
+  background-color: color-mix(in srgb, var(--nc-accent) 10%, transparent);
+}
+.md-typeset :is(.tip, .note, .info) > :is(.admonition-title, summary)::before {
+  background-color: var(--nc-accent);
+}
+
+/* ---------- Media framing: screenshots & videos ---------- */
+.md-typeset img,
+.md-typeset video {
+  border-radius: 0.5rem;
+  border: 1px solid var(--nc-border);
+}
+[data-md-color-scheme="slate"] .md-typeset img,
+[data-md-color-scheme="slate"] .md-typeset video {
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+}
+/* Inline SVG diagrams and emoji are not screenshots — no frame */
+.md-typeset svg.nc-diagram,
+.md-typeset img.twemoji {
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* ---------- Grid cards ---------- */
+.md-typeset .grid.cards > :is(ul, ol) > li,
+.md-typeset .grid > .card {
+  border-radius: 0.6rem;
+  border-color: var(--nc-border);
+  background-color: var(--nc-surface);
+}
+.md-typeset .grid.cards > :is(ul, ol) > li:hover,
+.md-typeset .grid > .card:hover {
+  border-color: var(--nc-accent);
+  box-shadow: none;
+}
+
+/* ---------- Mermaid (future diagrams) ---------- */
+:root {
+  --md-mermaid-font-family: var(--md-code-font-family, monospace);
+}
+[data-md-color-scheme="default"],
+[data-md-color-scheme="slate"] {
+  --md-mermaid-node-bg-color: var(--nc-surface);
+  --md-mermaid-node-fg-color: var(--nc-ink);
+  --md-mermaid-label-bg-color: var(--nc-bg);
+  --md-mermaid-label-fg-color: var(--nc-ink);
+  --md-mermaid-edge-color: var(--nc-accent);
+}
