@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.22.1](https://github.com/mptooling/notifycat/compare/v0.22.0...v0.22.1) (2026-07-07)
+
+
+### 🧹 Maintenance
+
+* **deps:** bump github.com/pressly/goose/v3 from 3.27.1 to 3.27.2 in the go-modules group ([#163](https://github.com/mptooling/notifycat/issues/163)) ([637631b](https://github.com/mptooling/notifycat/commit/637631b0a7f42e4cecba61530ede0e561e74a92f))
+
+## [0.22.0](https://github.com/mptooling/notifycat/compare/v0.21.2...v0.22.0) (2026-07-05)
+
+
+### 🚀 Features
+
+* bitbucket API client ([#160](https://github.com/mptooling/notifycat/issues/160)) ([d265dad](https://github.com/mptooling/notifycat/commit/d265dadffab0df1250c88ecbea7eea5707ef6721))
+* bitbucket inbound webhook stack ([#161](https://github.com/mptooling/notifycat/issues/161)) ([a99644d](https://github.com/mptooling/notifycat/commit/a99644dc8b1a8cc962765018bb43980a9262eaa8))
+* bitbucket ops parity and docs ([#162](https://github.com/mptooling/notifycat/issues/162)) ([d96bb31](https://github.com/mptooling/notifycat/commit/d96bb3169a98c00cd3a1407c93391fc199f2640d))
+* required git_provider config ([#159](https://github.com/mptooling/notifycat/issues/159)) ([1cff372](https://github.com/mptooling/notifycat/commit/1cff3721416c09d0e4b3a19cd11bb6e8a6da7fa5))
+
+
+### ♻️ Refactors
+
+* neutral git-provider event taxonomy ([#157](https://github.com/mptooling/notifycat/issues/157)) ([04ced35](https://github.com/mptooling/notifycat/commit/04ced3580a11620a06892f2079b197de714e6104))
+
 ## [0.21.2](https://github.com/mptooling/notifycat/compare/v0.21.1...v0.21.2) (2026-07-04)
 
 
