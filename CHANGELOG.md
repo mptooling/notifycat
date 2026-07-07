@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.1](https://github.com/mptooling/notifycat/compare/v0.22.0...v0.22.1) (2026-07-07)
+
+
+### 🧹 Maintenance
+
+* **deps:** bump github.com/pressly/goose/v3 from 3.27.1 to 3.27.2 in the go-modules group ([#163](https://github.com/mptooling/notifycat/issues/163)) ([637631b](https://github.com/mptooling/notifycat/commit/637631b0a7f42e4cecba61530ede0e561e74a92f))
+
 ## [0.22.0](https://github.com/mptooling/notifycat/compare/v0.21.2...v0.22.0) (2026-07-05)
 
 
