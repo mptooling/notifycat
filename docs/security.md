@@ -8,7 +8,7 @@ Run through this before you point a production webhook at Notifycat:
 
 - [ ] `.env` is owned by you and not world-readable (`0600`). The setup wizard writes it this way; see
   [File permissions](#file-permissions) to confirm or fix an existing install.
-- [ ] `GITHUB_WEBHOOK_SECRET` (GitHub) or `BITBUCKET_WEBHOOK_SECRET` (Bitbucket) is a long random string (32+ characters), set to the **same** value in `.env` and in the webhook settings. Only the secret for your active `git_provider` is required.
+- [ ] `GITHUB_WEBHOOK_SECRET` (GitHub) or `BITBUCKET_WEBHOOK_SECRET` (Bitbucket) was [generated with `openssl rand -base64 32`](#generating-the-webhook-secret) and is set to the **same** value in `.env` and in the webhook settings. Only the secret for your active `git_provider` is required.
 - [ ] Unless you use per-path routing, the running server has **no** read token configured — it needs only the webhook secret to verify deliveries.
 - [ ] If you set the optional `GITHUB_TOKEN` or `BITBUCKET_TOKEN`, it is read-only (fine-grained scopes for webhook config reads and PR file lists only), not a write-scoped token.
 - [ ] The Slack bot has only the [documented scopes](slack-app.md#bot-scopes) — nothing broader.
@@ -32,9 +32,26 @@ It deliberately never requires org-admin access, write-scoped tokens, a GitHub A
 
 By default neither `GITHUB_TOKEN` nor `BITBUCKET_TOKEN` is used by the server. They are read by `notifycat-config validate` (and the doctor) to query webhook configuration and confirm the expected PR events are subscribed. Without them those checks are skipped and everything else works.
 
-The one runtime use for either token is **[per-path routing](mappings.md#per-path-routing-monorepos)**: when a repo's mapping has a `paths:` block, the server reads each PR's changed files to pick the path channel. Without a token, path rules are inert and PRs route to the repo tier.
+The one runtime use for either token is **[per-path routing](monorepo.md)**: when a repository's mapping has a `paths:` block, the server reads each PR's changed files to pick the path channel. Without a token, path rules are inert and PRs route to the repository tier.
 
 For GitHub: a fine-grained token with **Webhooks: Read** is enough for validation; add **Pull requests: Read** for per-path routing. See [GitHub webhook setup](github-webhook.md#security-notes) for details. For Bitbucket: an access token with `repository` + `pullrequest` + `webhook` scopes covers both uses; a scoped Atlassian API token with the equivalent `read:*:bitbucket` scopes works too. See [Bitbucket webhook setup](bitbucket-webhook.md#access-token-scopes) for the full options including the Free-plan Basic-auth path.
+
+## Generating the webhook secret
+
+Generate the secret — `GITHUB_WEBHOOK_SECRET` or `BITBUCKET_WEBHOOK_SECRET`, depending on your provider — with:
+
+```sh
+openssl rand -base64 32
+```
+
+Set the output as the value in `.env` **and** in the webhook's secret field, byte-identical — paste, don't retype.
+
+Why exactly this way: the signature check accepts any byte string (HMAC-SHA256 has no format requirement), but a hand-made secret containing `$`, `#`, quotes, or spaces routinely gets mangled by `.env` parsing or shell interpolation — and the resulting one-byte difference fails every delivery with `401`. Base64 output is strong (256 bits of randomness) and survives `.env` files, shells, and Compose untouched.
+
+Two rules follow:
+
+- **One secret per deployment.** Every webhook pointing at this Notifycat instance must carry the same secret. A webhook created with a different one 401s while the rest work — and `validate` cannot catch it, because the git host's API never returns webhook secrets.
+- **Store it unquoted in `.env`.** The value is read verbatim, so quotes that reach it become part of the secret and break the HMAC.
 
 <a id="signature-validation"></a>
 

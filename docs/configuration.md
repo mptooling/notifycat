@@ -1,5 +1,7 @@
 # Configuration
 
+This page is the complete key-by-key reference. New to Notifycat? Read [Configuration basics](configure.md) first — it shows the whole model (two files, one change loop) in two minutes; come back here to look up exact keys, defaults, and rules.
+
 Notifycat is configured through a single `config.yaml` file that holds all non-secret settings. Secrets and infra-interpolation values live in environment variables (or `.env` for local development). For local development, `.env` is loaded automatically if the file exists.
 
 The config file path defaults to `./config.yaml`. Override with `NOTIFYCAT_CONFIG_FILE`. The Docker image default is `/app/config.yaml`.
@@ -14,7 +16,7 @@ Which webhook secret and read token apply depends on [`git_provider`](#git_provi
 | --- | --- | --- |
 | `SLACK_BOT_TOKEN` | Required | Slack bot token, usually starting with `xoxb-`. |
 | `GITHUB_WEBHOOK_SECRET` | Required for `git_provider: github` | The secret configured on the GitHub webhook. Use a long random value; 32 characters or more is a good baseline. |
-| `GITHUB_TOKEN` | Optional (github) | PAT used by `notifycat-config validate` and `notifycat-doctor` to read repo webhook config and by path routing to read a PR's changed files. Required scope: `admin:repo_hook` (or `repo` for private repos). The server does not need this; if unset, the webhook-coverage and path-routing checks are skipped. |
+| `GITHUB_TOKEN` | Optional (github) | PAT used by `notifycat-config validate` and `notifycat-doctor` to read repository webhook config and by path routing to read a PR's changed files. Required scope: `admin:repo_hook` (or `repo` for private repositories). The server does not need this; if unset, the webhook-coverage and path-routing checks are skipped. |
 | `BITBUCKET_WEBHOOK_SECRET` | Required for `git_provider: bitbucket` | The secret configured on the Bitbucket repository/workspace webhook. Bitbucket signs deliveries with `X-Hub-Signature: sha256=<hmac>`; an unsigned delivery (no secret configured) is rejected. |
 | `BITBUCKET_TOKEN` | Optional (bitbucket) | Access token (Bearer) used by validate/doctor to read webhook config and by path routing to read changed files — exact `GITHUB_TOKEN` degradation parity. Least-privilege scopes: `repository` + `pullrequest` + `webhook`. |
 | `BITBUCKET_AUTH_EMAIL` | Optional (bitbucket) | Pair with `BITBUCKET_TOKEN` to switch to HTTP Basic with a scoped Atlassian API token (the Free-plan path for workspace-wildcard listing). Unset ⇒ Bearer. |
@@ -104,8 +106,8 @@ Use Slack emoji names without surrounding colons. For example, set `approved: sh
 
 | Key | Default | Notes |
 | --- | --- | --- |
-| `reviews.ignore_ai_reviews` | `false` | When `true`, suppress `reactions.add` for any review event whose `sender.type == "Bot"` — Copilot, Claude, Codex, dependabot, github-actions, release-please, and any other GitHub App or legacy bot account. Detection is intentionally coarse: notifycat does **not** distinguish AI reviewers from scripted bots. See [Operations → Bot-reviewer suppression](operations.md#bot-reviewer-suppression) for the trade-off and failure-mode guide. |
-| `reviews.dependabot_format` | `true` | When `true`, PRs opened by `dependabot[bot]` or `renovate[bot]` post a compact Slack message instead of the standard "please review" format: `:package: <bot> bumped <link>` for routine bumps, or `:rotating_light: <bot> security update <link>` when the PR body shows a security advisory. Set `false` to render those PRs with the standard format. See [Operations → Dependabot / Renovate format](operations.md#dependabot--renovate-format) for detection details. |
+| `reviews.ignore_ai_reviews` | `false` | When `true`, suppress `reactions.add` for any review event whose `sender.type == "Bot"` — Copilot, Claude, Codex, dependabot, github-actions, release-please, and any other GitHub App or legacy bot account. Detection is intentionally coarse: notifycat does **not** distinguish AI reviewers from scripted bots. See [Reactions & bot reviews](bots-and-reactions.md#bot-reviewers) for the trade-off and failure-mode guide. |
+| `reviews.dependabot_format` | `true` | When `true`, PRs opened by `dependabot[bot]` or `renovate[bot]` post a compact Slack message instead of the standard "please review" format: `:package: <bot> bumped <link>` for routine bumps, or `:rotating_light: <bot> security update <link>` when the PR body shows a security advisory. Set `false` to render those PRs with the standard format. See [Reactions & bot reviews → Dependabot and Renovate](bots-and-reactions.md#dependabot-and-renovate) for detection details. |
 
 ### digest
 
@@ -113,23 +115,12 @@ Use Slack emoji names without surrounding colons. For example, set `approved: sh
 | --- | --- | --- |
 | `digest.enabled` | `true` | Turns the stuck-PR digest on or off. The feature is on by default: omitting this section entirely keeps the digest running. |
 | `digest.schedule` | `0 9 * * *` | Standard 5-field cron expression, evaluated in `digest.timezone`. An invalid expression fails server startup. |
-| `digest.timezone` | `UTC` | IANA timezone name (e.g. `Europe/Kyiv`) the schedule and the "stuck since before today" cutoff are evaluated in. Absent/empty means UTC. An unrecognized zone fails server startup. Global only — a per-repo `digest:` override may not set it. |
+| `digest.timezone` | `UTC` | IANA timezone name (e.g. `Europe/Kyiv`) the schedule and the "stuck since before today" cutoff are evaluated in. Absent/empty means UTC. An unrecognized zone fails server startup. Global only — a per-repository `digest:` override may not set it. |
 
 ### mappings
 
-Routing from repositories to Slack channels lives in the `mappings:` section of `config.yaml`. The per-repository-tier schema (0.18+) organizes each org into named repo tiers plus an optional `"*"` catch-all tier. Each tier sets its own channel and optional mentions; repo tiers inherit from the `"*"` tier. Behavioral settings (`reactions`, `reviews`, `digest`) can also be overridden per-repo tier; when omitted they inherit from the `"*"` tier or fall back to the global values. See [Mappings](mappings.md) for the full schema reference and examples.
+Routing from repositories to Slack channels lives in the `mappings:` section of `config.yaml`. The per-repository-tier schema (0.18+) organizes each org into named repository tiers plus an optional `"*"` catch-all tier. Each tier sets its own channel and optional mentions; repository tiers inherit from the `"*"` tier. Behavioral settings (`reactions`, `reviews`, `digest`) can also be overridden per-repository tier; when omitted they inherit from the `"*"` tier or fall back to the global values. See [Mappings](mappings.md) for the full schema reference and examples.
 
 ## Config CLI
 
-Mappings and the full configuration are operated via the `notifycat-config` binary:
-
-```sh
-notifycat-config list                    # print the parsed config (no network)
-notifycat-config validate                # validate every entry, cache-aware
-notifycat-config validate owner/repo     # validate a single entry, ignore cache for it
-notifycat-config validate --force        # ignore the lock entirely; revalidate everything
-```
-
-`validate` checks each entry end-to-end: the Slack channel ID is well-formed, the bot token has the required scopes, the bot is a member of the channel, and (when `GITHUB_TOKEN` is set) the GitHub webhook is subscribed to `pull_request`, `pull_request_review`, and `pull_request_review_comment`. See `docs/operations.md` for the failure-mode remediation table. The server runs the same validation at boot and refuses to start on failure.
-
-Successful validation results are cached in `config.lock`. On the next boot, only entries whose hash has changed are revalidated.
+The file is operated via the `notifycat-config` binary — `list` prints the parsed config, `validate` checks each entry end-to-end against Slack and the git host, with results cached in `config.lock` so only changed entries revalidate. The server runs the same validation at boot and refuses to start on failure. Commands, checks, and the remediation table: [CLI → notifycat-config](cli.md#notifycat-config).

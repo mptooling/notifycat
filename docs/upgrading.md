@@ -1,6 +1,6 @@
 # Upgrading
 
-Notifycat applies its database migrations automatically on server startup (see [Operations → Startup](operations.md#startup-and-shutdown)), so most upgrades are "pull the new image and restart." This page calls out the releases that need an operator action beyond that.
+Notifycat applies its database migrations automatically on server startup (see [Operations → Startup](operations.md#startup-and-shutdown)), so most upgrades are "pull the new image and restart" — for Compose, `docker compose pull && ./notifycat up`. This page calls out the releases that need an operator action beyond that.
 
 ## `git_provider` is now required
 
@@ -18,7 +18,7 @@ git_provider: github
 
 ## Ignored-event log fields renamed
 
-The internal git-provider-neutral event refactor renames two fields on the `ignored webhook event` log line: `github_event` becomes `provider` (currently always `github`) and `action` becomes `kind` (a provider-neutral event classification such as `opened`, `merged`, `review_commented`, or `unknown`). No operator action is required to upgrade, but any log dashboards or alerts that filter on `github_event`/`action` should be updated to `provider`/`kind`. See [Operations → Debugging a 200 OK with no Slack change](operations.md#debugging-a-200-ok-with-no-slack-change) for the full field set.
+The internal git-provider-neutral event refactor renames two fields on the `ignored webhook event` log line: `github_event` becomes `provider` (currently always `github`) and `action` becomes `kind` (a provider-neutral event classification such as `opened`, `merged`, `review_commented`, or `unknown`). No operator action is required to upgrade, but any log dashboards or alerts that filter on `github_event`/`action` should be updated to `provider`/`kind`. See [Troubleshooting → 200 OK, no Slack change](troubleshooting.md#200-ok-no-slack-change) for the full field set.
 
 ## 0.20.0 — Multi-message fan-out
 
@@ -30,7 +30,7 @@ No operator action is required beyond the normal restart. If you want close/merg
 
 ## 0.16.0 — Stuck-PR digest
 
-0.16.0 adds a scheduled [stuck-PR digest](mappings.md#stuck-pr-digest): a per-channel reminder listing open PRs nobody has touched since before today. Two things make this upgrade more than a restart.
+0.16.0 adds a scheduled [stuck-PR digest](digest.md): a per-channel reminder listing open PRs nobody has touched since before today. Two things make this upgrade more than a restart.
 
 > ⚠️ **The digest is on by default.** With no `digest:` section in `config.yaml`, the server starts posting a digest at **9am daily, UTC** (configurable via `digest.timezone` since 0.19.0 — see below), to every mapped channel. This is a deliberate opt-out design. To keep the previous quiet behavior, add the section and disable it:
 >
@@ -43,7 +43,7 @@ No operator action is required beyond the normal restart. If you want close/merg
 
 ### Upgrade steps
 
-1. **Deploy the new image and restart.** The embedded migration (`00004`) runs on startup: it adds the `closed_at` column and backfills each existing row's `updated_at` from its Slack message timestamp (the PR's registration time) so ages are correct. For a controlled rollout, run `notifycat-migrate up` as a separate step first — see [Operations → migrations](operations.md#stuck-pr-digest).
+1. **Deploy the new image and restart.** The embedded migration (`00004`) runs on startup: it adds the `closed_at` column and backfills each existing row's `updated_at` from its Slack message timestamp (the PR's registration time) so ages are correct. For a controlled rollout, run `notifycat-migrate up` as a separate step first — see [CLI → notifycat-migrate](cli.md#notifycat-migrate).
 
 2. **Decide on the schedule (optional).** The digest is global, configured in `config.yaml`. Defaults to `0 9 * * *`. To change it, or to disable the feature, add a `digest:` section:
 
@@ -54,14 +54,14 @@ No operator action is required beyond the normal restart. If you want close/merg
      timezone: "UTC"        # IANA zone; default UTC (since 0.19.0)
    ```
 
-3. **Reconcile the closed-PR backlog (one-time).** This drops already-merged PRs out of the digest by marking their rows closed from their real GitHub state. It needs `GITHUB_TOKEN` (read access) and the same `DATABASE_URL` the server uses. Preview, then apply:
+3. **Reconcile the closed-PR backlog (one-time).** This drops already-merged PRs out of the digest by marking their rows closed from their real GitHub state. It needs `GITHUB_TOKEN` (read access) and the same `database.url` the server uses. Preview, then apply:
 
    ```sh
    docker compose run --rm notifycat /usr/local/bin/notifycat-reconcile -dry-run
    docker compose run --rm notifycat /usr/local/bin/notifycat-reconcile
    ```
 
-   It is idempotent and leaves untouched any PR it cannot read (so a token-scope miss never hides an open PR). See [Operations → Reconciling the closed-PR backlog](operations.md#reconciling-the-closed-pr-backlog-one-time). Without a token, clear stale rows manually instead.
+   It is idempotent and leaves untouched any PR it cannot read (so a token-scope miss never hides an open PR). See [Stuck-PR digest → first run](digest.md#reconcile). Without a token, clear stale rows manually instead.
 
 ### Behavior changes to be aware of
 
@@ -83,4 +83,28 @@ Notes:
 
 - Named zones (e.g. `Europe/Kyiv`) resolve on the `scratch` image because the binary now embeds the IANA timezone database (`time/tzdata`, ~450KB). Setting `TZ` alone still does nothing — use `digest.timezone`.
 - An unrecognized zone fails startup with a descriptive error, the same fail-fast contract as an invalid cron spec.
-- `timezone` is **global only**. A per-repo `digest:` override may still set its own `schedule`, but setting `timezone` on a per-repo tier is rejected at parse time — the server runs a single cron clock.
+- `timezone` is **global only**. A per-repository `digest:` override may still set its own `schedule`, but setting `timezone` on a per-repository tier is rejected at parse time — the server runs a single cron clock.
+
+<a id="pre-040--data-layout"></a>
+
+## 0.4.0 — All state moved under `/app`
+
+`0.4.0` consolidated all container state under `/app`. If a `0.3.x` `docker run` mounted a volume at `/data` (and possibly a separate config path), migrate like this:
+
+```sh
+docker stop notifycat && docker rm notifycat
+
+# Move the SQLite DB and config into the new single state dir
+mkdir -p ~/notifycat
+mv /path/to/old-data-dir/notifycat.db ~/notifycat/notifycat.db
+mv /path/to/old-config.yaml ~/notifycat/config.yaml
+mv /path/to/old-config.lock ~/notifycat/config.lock   # optional
+
+# Re-run with the single mount — the old -v ...:/data and config-path flags are now defaults
+docker run -d --name notifycat --restart unless-stopped \
+  -p 127.0.0.1:8080:8080 \
+  --user $(id -u):$(id -g) -v "$HOME/notifycat:/app" --env-file ~/notifycat/.env \
+  ghcr.io/mptooling/notifycat:latest
+```
+
+The migration does not touch the SQLite schema; existing rows continue to serve and update. The related symptom — `write lock tmp: open config.lock.tmp: permission denied` on a pre-0.4.0 image — is fixed by this upgrade: the new `WORKDIR=/app` puts the lock file inside the mount, where atomic write-and-rename works.

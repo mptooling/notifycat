@@ -1,11 +1,11 @@
-# Slack App Setup
+# Slack app setup
 
 Notifycat posts to Slack with a bot token. You need one Slack app in the workspace where PR notifications should appear.
 
 For production setup, use the shell script directly. It only needs `sh` and `curl`; `jq` is optional and only makes the
 output easier to read.
 
-## Create the App from the Manifest
+## Create the app from the manifest
 
 The repository includes the Slack app manifest at `docs/slack-app-manifest.json`. The manifest defines the bot user and
 the Slack scopes Notifycat needs.
@@ -46,7 +46,7 @@ The Slack API response can include an `oauth_authorize_url`. Do not use that URL
 full OAuth callback flow, and Notifycat does not implement the redirect handler or code exchange. Use **Install App** in
 the Slack app settings instead.
 
-## Local Development Shortcut
+## Local development shortcut
 
 If you use `just` while working on the repository, this recipe calls the same script:
 
@@ -56,7 +56,7 @@ SLACK_APP_CONFIG_TOKEN=xoxe-your-token just slack-app-create
 
 Production instructions should use `./scripts/slack-app-create.sh` directly so operators do not need to install `just`.
 
-## Manual Fallback
+## Manual fallback
 
 If the API-based setup is not available in your workspace, create the app in the Slack UI:
 
@@ -69,7 +69,7 @@ If the API-based setup is not available in your workspace, create the app in the
 7. Click **Install to Workspace**.
 8. Copy the **Bot User OAuth Token** and set it as `SLACK_BOT_TOKEN`.
 
-## Bot Scopes
+## Bot scopes
 
 | Scope | Why Notifycat needs it |
 | --- | --- |
@@ -91,7 +91,7 @@ lifecycle emoji it triggered actually landed on the message. Without `reactions:
 and exits successfully. Grant `reactions:read` only if you want that readback verification — leaving it off keeps the
 bot at least privilege.
 
-## Channel Access
+## Channel access
 
 Invite the bot to every channel listed in the `mappings:` section of `config.yaml`:
 
@@ -108,26 +108,4 @@ starts with `C`.
 
 ## Mentions
 
-Each entry in `config.yaml`'s `mappings:` section lists the Slack mentions that prefix the PR notification:
-
-```yaml
-mappings:
-  owner:
-    repo:
-      channel: C123ABCDE
-      mentions:
-        - "<@U123456>"
-        - "<!subteam^S123456>"
-```
-
-Common formats:
-
-| Mention type | Format |
-| --- | --- |
-| User | `<@U123456>` |
-| User group | `<!subteam^S123456>` |
-| Channel broadcast | `<!channel>` |
-| Online-only broadcast | `<!here>` |
-
-For a user ID, open the user profile menu in Slack and use **Copy member ID**. For a user group ID, inspect the user
-group mention in Slack or use Slack's admin/API tooling.
+Each mapping in `config.yaml` can list Slack mentions that prefix the PR notification — users, user groups, `@channel`, or nobody at all. The formats, the three mention states, and how to find the IDs are covered in [Route repositories to channels → Mentions](routing.md#mentions).
