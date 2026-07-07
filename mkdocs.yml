@@ -45,6 +45,12 @@ extra_css:
 
 plugins:
   - search
+  - social:
+      enabled: !ENV [DOCS_SOCIAL, true]
+      cards_layout_options:
+        background_color: "#111413"
+        color: "#edf1ef"
+        font_family: Space Grotesk
 
 markdown_extensions:
   - admonition
