@@ -41,7 +41,7 @@ Neither applies? Open the webhook's **delivery history** on the git host (GitHub
 3. Restart after editing: `docker compose restart notifycat`.
 4. Redeliver the failed event from the webhook's delivery history and confirm a `200`.
 
-Two provider-specific traps: Bitbucket sends **no signature header at all** when the webhook's secret field is blank — the secret is mandatory, not optional. And on either provider, a proxy that rewrites the request body invalidates the signature; the bytes must arrive exactly as signed. Provider checklists: [GitHub](github-webhook.md#signature-verification) · [Bitbucket](bitbucket-webhook.md#signature-verification).
+Two provider-specific traps: Bitbucket sends **no signature header at all** when the webhook's secret field is blank — the secret is mandatory, not optional. And on either provider, a proxy that rewrites the request body invalidates the signature; the bytes must arrive exactly as signed.
 
 To avoid this class of failure entirely, generate secrets exactly as described in [Generating the webhook secret](security.md#generating-the-webhook-secret) — a hand-made secret with `$`, `#`, quotes, or spaces is the classic cause of a 401 that survives careful re-pasting. Also remember that a deployment has exactly **one** webhook secret: if several repository webhooks were created with different secrets, the mismatched ones 401 while the rest work, and `validate` cannot catch it (the git host's API never returns a webhook's secret).
 

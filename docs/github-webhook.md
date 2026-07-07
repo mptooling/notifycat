@@ -13,7 +13,7 @@ output easier to read.
 
 ## Create the webhook with the script
 
-**1. Generate the webhook secret** — as described in [Generating the webhook secret](security.md#generating-the-webhook-secret):
+**1. Generate the webhook secret** — as described in [Generating the webhook secret](security.md#generating-the-webhook-secret).
 
 **2. Create a fine-grained GitHub token** for the target repository with only:
 
@@ -113,14 +113,7 @@ Use a fine-grained GitHub token scoped to the target repository with **Webhooks:
 Use HTTPS for `NOTIFYCAT_PUBLIC_URL`. The script rejects plain `http://` URLs and creates the webhook with SSL
 verification enabled.
 
-Generate the webhook secret exactly as described in [Generating the webhook secret](security.md#generating-the-webhook-secret), and set the same value in Notifycat and in the GitHub webhook.
-
-To rotate the secret:
-
-1. Generate a new random secret.
-2. Update `GITHUB_WEBHOOK_SECRET` in Notifycat.
-3. Update the GitHub webhook secret to the same value.
-4. Restart Notifycat if your runtime does not reload environment variables.
+Generate the webhook secret exactly as described in [Generating the webhook secret](security.md#generating-the-webhook-secret), and set the same value in Notifycat and in the GitHub webhook. To change it later, follow [Rotating the webhook secret](security.md#rotating-the-webhook-secret).
 
 ## Event coverage
 
@@ -146,14 +139,7 @@ GitHub uses different events for different comment surfaces:
 
 ## Signature verification
 
-Notifycat verifies `X-Hub-Signature-256` with HMAC-SHA256. Requests without a valid signature are rejected before the
-JSON payload is processed.
-
-If deliveries fail with `401` or `403`, check that:
-
-- GitHub and Notifycat use the same webhook secret.
-- The payload is sent as `application/json`.
-- No proxy rewrites the request body before it reaches Notifycat.
+Notifycat verifies `X-Hub-Signature-256` with HMAC-SHA256. Requests without a valid signature are rejected before the JSON payload is processed. The full validation model is in [Security & permissions](security.md#signature-validation); a delivery failing with `401` has its runbook in [Troubleshooting → Webhook returns 401](troubleshooting.md#webhook-returns-401).
 
 ## Local testing
 

@@ -118,11 +118,7 @@ X-Hub-Signature: sha256=<hex-digest>
 
 Notifycat verifies this header on every request before the JSON payload is parsed. Requests without a valid signature are rejected with `401`. See [Security & permissions](security.md#signature-validation) for the full validation model.
 
-If deliveries fail with `401`, check that:
-
-- The Bitbucket webhook secret and `BITBUCKET_WEBHOOK_SECRET` are **byte-identical**. Set the same generated value in both places by copy-paste (don't retype), and store it **unquoted** in `.env` — the value is read verbatim, so surrounding quotes become part of the secret and break the HMAC. `invalid signature` in the request history is exactly this mismatch.
-- The payload reaches Notifycat as `application/json` without body modification.
-- No proxy rewrites the request body before it reaches Notifycat (body must be byte-for-byte identical to what Bitbucket signed).
+A delivery failing with `401` has its runbook in [Troubleshooting → Webhook returns 401](troubleshooting.md#webhook-returns-401) — `invalid signature` in Bitbucket's request history is exactly the secret mismatch it describes. To change the secret later, follow [Rotating the webhook secret](security.md#rotating-the-webhook-secret).
 
 ## Delivery & troubleshooting
 
@@ -135,13 +131,7 @@ Bitbucket's webhook delivery behavior:
 | Attempt number header | `X-Attempt-Number` (1 on the first try) |
 | Maximum payload size | 256 KB (Notifycat's 1 MiB body guard covers it) |
 
-To inspect past deliveries, open the Bitbucket repository's **Repository settings → Webhooks → View requests** (or the equivalent in your Bitbucket version). Each entry shows the request headers, payload, response status, and response body — useful for diagnosing silent failures.
-
-Standard troubleshooting sequence:
-
-1. Check Bitbucket's request history to confirm the delivery reached Notifycat and what status it received.
-2. Check Notifycat's logs for a line with `ignored webhook event` and a `reason` field — this means the delivery was received and the `200` was intentional. See [Troubleshooting → 200 OK, no Slack change](troubleshooting.md#200-ok-no-slack-change) for the full reason table.
-3. If the delivery returned `401`, verify the webhook secret matches `BITBUCKET_WEBHOOK_SECRET` and no proxy is rewriting the body.
+To inspect past deliveries, open the Bitbucket repository's **Repository settings → Webhooks → View requests** (or the equivalent in your Bitbucket version). Each entry shows the request headers, payload, response status, and response body. What you find there picks the runbook — start at [Troubleshooting → No message for a new PR](troubleshooting.md#no-message-for-a-new-pr).
 
 ## Optional IP allowlisting
 
@@ -152,14 +142,3 @@ https://ip-ranges.atlassian.com
 ```
 
 Allowlisting these ranges at your reverse proxy or firewall means only Bitbucket (and your own testing traffic) can reach `/webhook/bitbucket`. This is optional — signature verification provides the same authenticity guarantee — but it limits the attack surface if an attacker can reach your endpoint.
-
-## Secret rotation
-
-To rotate the webhook secret:
-
-1. Generate a new long random secret.
-2. Update `BITBUCKET_WEBHOOK_SECRET` in Notifycat.
-3. Update the **Secret** field in the Bitbucket webhook settings to the same value.
-4. Restart Notifycat if your runtime does not reload environment variables.
-
-During the window between steps 2 and 3 (or 3 and 2), deliveries will fail with `401`. Keep the window short.

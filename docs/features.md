@@ -6,7 +6,7 @@ This page is a tour of Notifycat from inside Slack — every message shape and r
 
 A new pull request (non-draft, or freshly marked ready for review) posts one message to the mapped channel:
 
-<!-- TODO(media): screenshot — a single fresh PR message: ":eyes: @team, please review PR #42: Add rate limiting" headline plus the muted "owner/repo · alice · opened Today at 2:04 PM" context line. Crop tight to the message. Suggested file: assets/message-opened.png -->
+![New PR](assets/images/slack_new_pr.png)
 
 - **Headline** — `:eyes: <mentions>, please review <PR #N: title>`, linked to the PR. Mentions come from your [mapping](routing.md#mentions); with none configured the message falls back to `@channel`, and with `mentions: []` it posts silently.
 - **Context line** — `owner/repo · author · opened <time>`, rendered in each viewer's own timezone.
@@ -33,7 +33,7 @@ Every emoji is configurable globally and per repository — see [Reactions & bot
 
 When the PR merges or closes, the message updates in place: the title is struck through, the leading emoji swaps to the merged/closed reaction, and a `[Merged]` or `[Closed]` label is prepended. The context line stays, and if anyone reviewed the PR, a muted `reviewed by @user, …` line lists them.
 
-<!-- TODO(media): screenshot — the same message after merge: strikethrough title, [Merged] label, reactions accumulated, "reviewed by @bob" context line. Suggested file: assets/message-merged.png -->
+![PR MErged](assets/images/slack_merged_pr.png)
 
 A PR converted back to draft is the one case where the message is *removed* — drafts aren't up for review, so they don't occupy the channel. Marking it ready again re-announces it.
 
@@ -41,7 +41,9 @@ A PR converted back to draft is the one case where the message is *removed* — 
 
 Each PR message carries a **Start review** button. Clicking it appends an `:eye: @you reviewing` marker, visible to the whole channel — no more two people silently reviewing the same PR, and no more "is anyone on this?".
 
-<!-- TODO(media): short video or GIF (~15s) — click "Start review", the :eye: marker appears, then a GitHub review submit clears the marker and shows the "reviewed by" line. This is the feature that's hardest to convey in text. Suggested file: assets/review-flow.mp4 -->
+<video autoplay loop muted playsinline width="700">
+  <source src="../assets/videos/review-flow.mp4" type="video/mp4">
+</video>
 
 When a review is actually submitted on the git host, all active markers clear and a muted `reviewed by @user, …` line replaces them. The button stays as long as the PR is open, so a second round of review can start the same way. Only a real review submission ends a session — line comments and conversation comments don't.
 
@@ -56,7 +58,7 @@ Dependency PRs don't deserve a "please review" ceremony. PRs opened by `dependab
 - `:package: <bot> bumped <PR link>` for routine bumps
 - `:rotating_light: <bot> security update <PR link>` when the PR body carries a security advisory
 
-<!-- TODO(media): screenshot — two compact bot lines in a channel, one :package: and one :rotating_light:, ideally directly under a full-size human PR message for contrast. Suggested file: assets/message-dependabot.png -->
+![Renovate Bot bump PR notification](assets/images/slack_renovate_bot.png)
 
 Set `reviews.dependabot_format: false` to give bot PRs the standard format instead.
 
@@ -64,6 +66,6 @@ Set `reviews.dependabot_format: false` to give bot PRs the standard format inste
 
 Once a day (9am UTC by default), each channel with stuck PRs gets a two-part reminder: a parent message with the count that pings the channel's configured mentions, and a single threaded reply listing the PRs. The list lives in the thread, so the channel feed pays exactly one line per day.
 
-<!-- TODO(media): screenshot — a digest parent message ("3 PRs are waiting for review") with its threaded reply expanded showing the PR list. Suggested file: assets/digest.png -->
+![Morning digest message with the stuck-PR list in its thread](assets/images/slack_digest.png)
 
 A PR counts as stuck when nothing happened on it since the previous day — no review, no comment, nothing. Suppressed bot reviews deliberately don't count as activity, so an AI-only pass never hides a PR that still needs a human. Schedule, timezone, per-repository overrides, and how to turn it off: [Stuck-PR digest](digest.md).

@@ -6,7 +6,7 @@ Once a day, Notifycat reminds each channel about the open PRs nobody has touched
 
 Two items per channel with stuck PRs: a parent message carrying the count and pinging the channel's configured `mentions`, and a single threaded reply listing the PRs. The list lives in the thread, so the channel feed pays one line per day — and channels with nothing stuck get nothing at all.
 
-<!-- TODO(media): screenshot — digest parent message with thread expanded (reuse assets/digest.png from features.md if you capture it once). -->
+![Morning digest message with the stuck-PR list in its thread](assets/images/slack_digest.png)
 
 Mentions sit on the parent because Slack thread replies don't notify the channel.
 

@@ -53,6 +53,15 @@ Two rules follow:
 - **One secret per deployment.** Every webhook pointing at this Notifycat instance must carry the same secret. A webhook created with a different one 401s while the rest work — and `validate` cannot catch it, because the git host's API never returns webhook secrets.
 - **Store it unquoted in `.env`.** The value is read verbatim, so quotes that reach it become part of the secret and break the HMAC.
 
+## Rotating the webhook secret
+
+1. Generate a new secret with the same command.
+2. Update `GITHUB_WEBHOOK_SECRET` / `BITBUCKET_WEBHOOK_SECRET` in `.env`.
+3. Update the webhook's secret field to the same value.
+4. Restart Notifycat if your runtime does not reload environment variables.
+
+Deliveries sent between steps 2 and 3 fail with `401` — keep the window short, then redeliver the failed events from the webhook's delivery history.
+
 <a id="signature-validation"></a>
 
 ## Signature validation — why the secret matters

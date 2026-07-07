@@ -32,7 +32,7 @@ Back up the SQLite file if losing notification state would hurt. If it's lost, w
 A background cleanup removes `slack_messages` rows untouched for longer than `cleanup.message_ttl_days` (default 30), once at startup and then every 24 hours. It deletes only the database row — never the Slack message.
 
 !!! warning "Changing `git_provider` requires a fresh database"
-    The provider is not recorded per row. Pointing an existing database at a different `git_provider` lets stale rows — keyed by the old provider's repository names and PR numbering — collide with the new provider's, silently suppressing posts until the cleanup TTL purges them. Start from a fresh database when you switch. See [Upgrading](upgrading.md#git_provider-is-now-required).
+    Stale rows keyed by the old provider collide with the new one and silently suppress posts — details in [Upgrading](upgrading.md#git_provider-is-now-required).
 
 ## Logging
 
@@ -42,6 +42,4 @@ The one log contract worth knowing by heart: every intentionally-ignored deliver
 
 ## Release images
 
-The release workflow runs on `v*` tags and publishes multi-arch images to `ghcr.io/mptooling/notifycat` — tag semantics (pinned / minor / major / `latest`) are in [Supported tags](docker.md#supported-tags). To move a running Compose deployment to a new release: `docker compose pull && ./notifycat up`. Release-specific operator actions are collected in [Upgrading](upgrading.md).
-
-Every open same-repository PR also publishes a `pr-<number>` beta image for pre-merge testing — see [Supported tags](docker.md#supported-tags).
+Each release publishes multi-arch images to `ghcr.io/mptooling/notifycat`; tags — including the per-PR beta images — are covered in [Supported tags](docker.md#supported-tags). To move a running Compose deployment to a new release: `docker compose pull && ./notifycat up`. Release-specific operator actions are collected in [Upgrading](upgrading.md).

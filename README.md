@@ -13,7 +13,7 @@ Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow.svg)](
 
 **Low-noise pull request notifications for Slack.** One pull request gets one Slack message: as the PR opens, gets reviewed, merges, or closes, that message updates in place and collects reactions instead of posting again. The channel becomes a status board, not an event log.
 
-<img src="docs/assets/images/slack_notifications.png" width="900">)
+<img src="docs/assets/images/slack_notifications.png" width="900" alt="A Slack channel where every pull request is one updating message">
 
 Three things it's built around:
 
@@ -27,7 +27,7 @@ Please visit <https://mptooling.github.io/notifycat/>
 
 ## Quick start
 
-### Docker(recommended)
+### Docker (recommended)
 
 **You'll need** a host with Docker installed, a domain name pointing at it, inbound ports 80/443 open, and a Slack app installed in your workspace ([setup](https://mptooling.github.io/notifycat/slack-app/)). **In about 10 minutes** you'll have Notifycat running behind automatic HTTPS and posting PR updates to Slack.
 
