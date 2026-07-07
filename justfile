@@ -39,6 +39,18 @@ build:
 serve:
   go run ./cmd/notifycat-server
 
+# Serve the docs site with live reload at http://127.0.0.1:8000/notifycat/
+docs: _docs-venv
+  .venv-docs/bin/mkdocs serve
+
+# Build the docs site exactly as CI does (output in ./site)
+docs-build: _docs-venv
+  .venv-docs/bin/mkdocs build --strict
+
+_docs-venv:
+  [ -d .venv-docs ] || python3 -m venv .venv-docs
+  .venv-docs/bin/pip install -q -r docs/requirements.txt
+
 # Create a Slack app from the committed manifest
 slack-app-create:
   ./scripts/slack-app-create.sh
