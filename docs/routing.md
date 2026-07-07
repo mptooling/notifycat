@@ -2,6 +2,8 @@
 
 All routing lives in the `mappings:` section of `config.yaml`. Edit the file, validate it, restart the server — no database, no UI. This page covers the everyday tasks; the exact schema and matching rules are in the [mappings reference](mappings.md).
 
+--8<-- "docs/assets/images/diagrams/request-flow.svg"
+
 ## Point a repository at a channel
 
 ```yaml

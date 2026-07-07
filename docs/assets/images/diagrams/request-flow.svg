@@ -1,0 +1,22 @@
+<svg class="nc-diagram" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 150" font-family="JetBrains Mono, monospace" font-size="13">
+  <style>
+    .lbl { fill: var(--nc-ink); }
+    .dim { fill: color-mix(in srgb, var(--nc-ink) 55%, transparent); }
+    .evt { fill: var(--nc-surface); stroke: var(--nc-border); }
+    .msg { fill: color-mix(in srgb, var(--nc-accent) 10%, transparent); stroke: var(--nc-accent); stroke-width: 1.5; }
+    .edge { stroke: color-mix(in srgb, var(--nc-ink) 40%, transparent); stroke-width: 1.2; fill: none; marker-end: url(#nc-arrow); }
+  </style>
+  <defs>
+    <marker id="nc-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 L8 4 L0 8 Z" fill="color-mix(in srgb, var(--nc-ink) 40%, transparent)"/>
+    </marker>
+  </defs>
+  <rect class="evt" x="14"  y="50" width="128" height="40" rx="9"/><text class="lbl" x="28" y="70">webhook</text><text class="dim" x="28" y="84" font-size="10">from git host</text>
+  <path class="edge" d="M142 70 H 176"/>
+  <rect class="evt" x="180" y="50" width="150" height="40" rx="9"/><text class="lbl" x="194" y="70">verify HMAC</text><text class="dim" x="194" y="84" font-size="10">signature check</text>
+  <path class="edge" d="M330 70 H 364"/>
+  <rect class="evt" x="368" y="50" width="128" height="40" rx="9"/><text class="lbl" x="382" y="70">route</text><text class="dim" x="382" y="84" font-size="10">repo &#8594; channel</text>
+  <path class="edge" d="M496 70 H 530"/>
+  <g transform="translate(506, 20)"><path d="M2 1 L5.5 5 Q8.4 4.1 11.3 5 L14.8 1 Q16.2 5.4 15.5 9.4 Q14.5 14.2 8.4 14.2 Q2.3 14.2 1.2 9.4 Q0.5 5.4 2 1 Z" fill="color-mix(in srgb, var(--nc-ink) 35%, transparent)" transform="scale(1.1)"/><circle cx="12.5" cy="7" r="1.5" fill="var(--nc-accent)"/></g>
+  <rect class="msg" x="534" y="50" width="196" height="40" rx="9"/><text class="lbl" x="548" y="70">one Slack message</text><text class="dim" x="548" y="84" font-size="10">posted or updated in place</text>
+</svg>
