@@ -1,0 +1,293 @@
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap");
+
+/* ---------- Brand tokens ---------- */
+[data-md-color-scheme="default"] {
+  --nc-bg: #ffffff;
+  --nc-surface: #f5f6f5;
+  --nc-ink: #161817;
+  --nc-accent: #0e8a5f;
+  --nc-accent-strong: #0b6b4a;
+  --nc-border: #e4e6e5;
+
+  --md-default-bg-color: var(--nc-bg);
+  --md-default-fg-color: var(--nc-ink);
+  --md-code-bg-color: var(--nc-surface);
+  --md-typeset-a-color: var(--nc-accent);
+  --md-accent-fg-color: var(--nc-accent-strong);
+  --md-primary-fg-color: var(--nc-ink);
+}
+
+[data-md-color-scheme="slate"] {
+  --nc-bg: #111413;
+  --nc-surface: #1a1e1c;
+  --nc-ink: #edf1ef;
+  --nc-accent: #34d399;
+  --nc-accent-strong: #6ee7b7;
+  --nc-border: #2a302d;
+
+  --md-default-bg-color: var(--nc-bg);
+  --md-default-fg-color: var(--nc-ink);
+  --md-code-bg-color: var(--nc-surface);
+  --md-typeset-a-color: var(--nc-accent);
+  --md-accent-fg-color: var(--nc-accent-strong);
+  --md-primary-fg-color: var(--nc-ink);
+}
+
+/* Header/tabs follow the page background in both schemes */
+.md-header,
+.md-tabs {
+  background-color: var(--nc-bg);
+  color: var(--nc-ink);
+  border-bottom: 1px solid var(--nc-border);
+}
+.md-header { box-shadow: none; }
+.md-tabs { border-bottom: none; }
+.md-tabs__link--active { color: var(--nc-accent); font-weight: 700; }
+.md-header__button.md-logo svg { height: 1.4rem; width: auto; }
+.md-header__button.md-logo .nc-bell { fill: var(--nc-accent); }
+
+/* ---------- Typography ---------- */
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3,
+.md-typeset h4 {
+  font-family: "Space Grotesk", var(--md-text-font-family, sans-serif);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--nc-ink);
+}
+
+.nc-eyebrow {
+  font-family: var(--md-code-font-family, monospace);
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--nc-accent);
+  font-weight: 600;
+}
+
+/* ---------- Links & buttons ---------- */
+.md-typeset a { font-weight: 600; }
+.md-typeset .md-button--primary {
+  background-color: var(--nc-accent);
+  border-color: var(--nc-accent);
+  color: var(--nc-bg);
+  border-radius: 0.4rem;
+  font-weight: 700;
+}
+.md-typeset .md-button--primary:hover {
+  background-color: var(--nc-accent-strong);
+  border-color: var(--nc-accent-strong);
+  color: var(--nc-bg);
+}
+.md-typeset .md-button {
+  border-radius: 0.4rem;
+  border-color: var(--nc-border);
+  color: var(--nc-ink);
+}
+.md-typeset .md-button:hover {
+  border-color: var(--nc-accent);
+  color: var(--nc-accent);
+  background-color: transparent;
+}
+
+/* ---------- Admonitions: tip/note/info take the accent family ---------- */
+.md-typeset :is(.admonition, details):is(.tip, .note, .info) {
+  border-color: var(--nc-accent);
+}
+.md-typeset :is(.tip, .note, .info) > :is(.admonition-title, summary) {
+  background-color: color-mix(in srgb, var(--nc-accent) 10%, transparent);
+}
+.md-typeset :is(.tip, .note, .info) > :is(.admonition-title, summary)::before {
+  background-color: var(--nc-accent);
+}
+
+/* ---------- Media framing: screenshots & videos ---------- */
+.md-typeset img,
+.md-typeset video {
+  border-radius: 0.5rem;
+  border: 1px solid var(--nc-border);
+}
+[data-md-color-scheme="slate"] .md-typeset img,
+[data-md-color-scheme="slate"] .md-typeset video {
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+}
+/* Inline SVG diagrams and emoji are not screenshots — no frame */
+.md-typeset svg.nc-diagram,
+.md-typeset img.twemoji {
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+.nc-diagram-wrap { margin: 1.2em 0; overflow-x: auto; }
+.nc-diagram-wrap svg { width: 100%; max-width: 46rem; height: auto; display: block; margin: 0 auto; }
+
+/* ---------- Grid cards ---------- */
+.md-typeset .grid.cards > :is(ul, ol) > li,
+.md-typeset .grid > .card {
+  border-radius: 0.6rem;
+  border-color: var(--nc-border);
+  background-color: var(--nc-surface);
+}
+.md-typeset .grid.cards > :is(ul, ol) > li:hover,
+.md-typeset .grid > .card:hover {
+  border-color: var(--nc-accent);
+  box-shadow: none;
+}
+
+/* ---------- Homepage hero ---------- */
+.nc-hero {
+  background-color: var(--nc-bg);
+  text-align: center;
+  padding: 3.6rem 0.8rem 2.6rem;
+}
+[data-md-color-scheme="slate"] .nc-hero {
+  background-image: radial-gradient(ellipse 70% 90% at 50% 0%, rgba(52, 211, 153, 0.14), transparent 65%);
+}
+.nc-hero__inner { max-width: 42rem; margin: 0 auto; }
+.nc-hero h1 {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 2.6rem;
+  font-weight: 700;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  color: var(--nc-ink);
+  margin: 0.6rem 0;
+}
+.nc-hero h1 span { color: var(--nc-accent); }
+.nc-hero__sub {
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: color-mix(in srgb, var(--nc-ink) 72%, transparent);
+  max-width: 30rem;
+  margin: 0 auto 1.4rem;
+}
+/* The hero sits outside .md-typeset, so Material's .md-button styles don't reach it */
+.nc-hero__cta .md-button {
+  display: inline-block;
+  margin: 0 0.3rem;
+  padding: 0.5em 1.4em;
+  border: 0.1rem solid var(--nc-border);
+  border-radius: 0.4rem;
+  color: var(--nc-ink);
+  font-weight: 600;
+  font-size: 0.72rem;
+  transition: border-color 125ms, color 125ms, background-color 125ms;
+}
+.nc-hero__cta .md-button:hover {
+  border-color: var(--nc-accent);
+  color: var(--nc-accent);
+}
+.nc-hero__cta .md-button--primary {
+  background-color: var(--nc-accent);
+  border-color: var(--nc-accent);
+  color: var(--nc-bg);
+  font-weight: 700;
+}
+.nc-hero__cta .md-button--primary:hover {
+  background-color: var(--nc-accent-strong);
+  border-color: var(--nc-accent-strong);
+  color: var(--nc-bg);
+}
+@media screen and (max-width: 44rem) {
+  .nc-hero h1 { font-size: 1.9rem; }
+  .nc-hero { padding-top: 2.4rem; }
+}
+
+/* ---------- Homepage lifecycle strip ---------- */
+.nc-lifecycle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0.6rem;
+  margin: 1.6em 0;
+}
+.nc-lifecycle__stage {
+  flex: 1 1 10rem;
+  min-width: 10rem;
+  max-width: 14rem;
+  background-color: var(--nc-surface);
+  border: 1px solid var(--nc-border);
+  border-radius: 0.6rem;
+  padding: 0.7rem 0.9rem;
+}
+.nc-lifecycle__label {
+  font-family: var(--md-code-font-family, monospace);
+  font-size: 0.55rem;
+  letter-spacing: 0.1em;
+  color: var(--nc-accent);
+  font-weight: 700;
+  margin-bottom: 0.4rem;
+}
+.nc-lifecycle__txt { font-size: 0.68rem; line-height: 1.5; color: var(--nc-ink); }
+.nc-lifecycle__txt s { color: color-mix(in srgb, var(--nc-ink) 50%, transparent); }
+.nc-lifecycle__txt s .nc-lifecycle__link { color: inherit; }
+.nc-lifecycle__link { color: var(--nc-accent); font-weight: 600; white-space: nowrap; }
+.nc-lifecycle__mention {
+  background-color: color-mix(in srgb, var(--nc-accent) 14%, transparent);
+  color: var(--nc-accent);
+  border-radius: 0.2rem;
+  padding: 0 0.15rem;
+  font-weight: 600;
+}
+.nc-lifecycle__ctx {
+  font-size: 0.58rem;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--nc-ink) 45%, transparent);
+  margin: 0.15rem 0;
+}
+/* Depicts Slack's primary button, so it keeps Slack's green in both themes */
+.nc-lifecycle__btn {
+  display: inline-block;
+  background-color: #007a5a;
+  color: #ffffff;
+  font-size: 0.6rem;
+  font-weight: 700;
+  border-radius: 0.25rem;
+  padding: 0.2rem 0.7rem;
+  margin-top: 0.4rem;
+}
+.nc-lifecycle__arrow {
+  display: flex;
+  align-items: center;
+  color: var(--nc-accent);
+  font-size: 1rem;
+}
+.nc-rx {
+  display: inline-flex;
+  gap: 0.2rem;
+  align-items: center;
+  background-color: var(--nc-bg);
+  border: 1px solid var(--nc-border);
+  border-radius: 0.7rem;
+  padding: 0.05rem 0.45rem;
+  font-size: 0.58rem;
+  color: color-mix(in srgb, var(--nc-ink) 65%, transparent);
+  margin-right: 0.3rem;
+  margin-top: 0.35rem;
+}
+.nc-lifecycle__caption {
+  flex-basis: 100%;
+  text-align: center;
+  font-family: var(--md-code-font-family, monospace);
+  font-size: 0.6rem;
+  color: color-mix(in srgb, var(--nc-ink) 50%, transparent);
+  margin-top: 0.2rem;
+}
+@media screen and (max-width: 44rem) {
+  .nc-lifecycle__arrow { flex-basis: 100%; justify-content: center; transform: rotate(90deg); }
+}
+
+/* ---------- Mermaid (future diagrams) ---------- */
+:root {
+  --md-mermaid-font-family: var(--md-code-font-family, monospace);
+}
+[data-md-color-scheme="default"],
+[data-md-color-scheme="slate"] {
+  --md-mermaid-node-bg-color: var(--nc-surface);
+  --md-mermaid-node-fg-color: var(--nc-ink);
+  --md-mermaid-label-bg-color: var(--nc-bg);
+  --md-mermaid-label-fg-color: var(--nc-ink);
+  --md-mermaid-edge-color: var(--nc-accent);
+}

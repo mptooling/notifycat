@@ -2,6 +2,10 @@
 
 Once a day, Notifycat reminds each channel about the open PRs nobody has touched since the previous day. It's the safety net under the quiet: a PR that got buried yesterday resurfaces this morning, every morning, until someone deals with it.
 
+<div class="nc-diagram-wrap">
+--8<-- "docs/assets/images/diagrams/digest-timeline.svg"
+</div>
+
 ## What it posts
 
 Two items per channel with stuck PRs: a parent message carrying the count and pinging the channel's configured `mentions`, and a single threaded reply listing the PRs. The list lives in the thread, so the channel feed pays one line per day — and channels with nothing stuck get nothing at all.

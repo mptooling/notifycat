@@ -1,0 +1,21 @@
+<svg class="nc-diagram" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 170" font-family="JetBrains Mono, monospace" font-size="13">
+  <style>
+    .lbl { fill: var(--nc-ink); }
+    .dim { fill: color-mix(in srgb, var(--nc-ink) 55%, transparent); }
+    .evt { fill: var(--nc-surface); stroke: var(--nc-border); }
+    .msg { fill: color-mix(in srgb, var(--nc-accent) 10%, transparent); stroke: var(--nc-accent); stroke-width: 1.5; }
+    .axis { stroke: color-mix(in srgb, var(--nc-ink) 35%, transparent); stroke-width: 1.2; }
+  </style>
+  <line class="axis" x1="20" y1="120" x2="740" y2="120"/>
+  <text class="dim" x="30"  y="140" font-size="11">yesterday</text>
+  <text class="dim" x="330" y="140" font-size="11">overnight</text>
+  <text class="dim" x="600" y="140" font-size="11">09:00 digest</text>
+  <rect class="evt" x="30"  y="60" width="118" height="34" rx="8"/><text class="lbl" x="42"  y="82">#412 open</text>
+  <rect class="evt" x="160" y="60" width="118" height="34" rx="8"/><text class="lbl" x="172" y="82">#415 open</text>
+  <text class="dim" x="330" y="82" font-size="20">&#128564;</text>
+  <text class="dim" x="368" y="82" font-size="11">no reviews, no comments</text>
+  <rect class="msg" x="580" y="46" width="160" height="62" rx="10"/>
+  <text class="lbl" x="594" y="68">morning digest</text>
+  <text class="dim" x="594" y="86" font-size="11">#412, #415 still</text>
+  <text class="dim" x="594" y="99" font-size="11">waiting for eyes</text>
+</svg>

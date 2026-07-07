@@ -49,13 +49,15 @@ docker compose restart notifycat
 
 When you outgrow the minimal config, each need has its own page:
 
-| You want to… | Go to |
-| --- | --- |
-| Route more repositories, catch a whole org, tune who gets pinged | [Route repositories to channels](routing.md) |
-| Route a monorepo by the directories a PR touches | [Monorepos](monorepo.md) |
-| Change the reaction emoji, mark or mute bot reviews, tune the Dependabot format | [Reactions & bot reviews](bots-and-reactions.md) |
-| Change the digest schedule or timezone, or turn it off | [Stuck-PR digest](digest.md) |
-| Look up any key, its default, and its exact rules | [config.yaml reference](configuration.md) |
-| The exact `mappings:` schema and inheritance rules | [Mappings schema](mappings.md) |
+<div class="grid cards" markdown>
+
+- **[Route repositories to channels](routing.md)** — route more repositories, catch a whole org, tune who gets pinged
+- **[Monorepos](monorepo.md)** — route a monorepo by the directories a PR touches
+- **[Reactions & bot reviews](bots-and-reactions.md)** — change the reaction emoji, mark or mute bot reviews, tune the Dependabot format
+- **[Stuck-PR digest](digest.md)** — change the digest schedule or timezone, or turn it off
+- **[config.yaml reference](configuration.md)** — look up any key, its default, and its exact rules
+- **[Mappings schema](mappings.md)** — the exact `mappings:` schema and inheritance rules
+
+</div>
 
 Behavioral settings (reactions, reviews, digest) can also be overridden per repository or per org — most specific wins. The override list lives in the [mappings reference](mappings.md#behavioral-overrides).
