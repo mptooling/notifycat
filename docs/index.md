@@ -15,14 +15,14 @@ hide:
     <div class="nc-lifecycle__label">2 · IN REVIEW</div>
     <div class="nc-lifecycle__txt">🚀 <span class="nc-lifecycle__mention">@channel</span>, please review <span class="nc-lifecycle__link">PR #169</span></div>
     <div class="nc-lifecycle__ctx">mptooling/notifycat · opened Today at 8:30 PM</div>
-    <div class="nc-lifecycle__txt">👁️ @Pavel reviewing · since 8:41 PM</div>
+    <div class="nc-lifecycle__ctx">👁️ @John Doe reviewing · since 8:41 PM</div>
     <span class="nc-lifecycle__btn">Start review</span>
   </div>
   <div class="nc-lifecycle__arrow">→</div>
   <div class="nc-lifecycle__stage">
     <div class="nc-lifecycle__label">3 · MERGED</div>
     <div class="nc-lifecycle__txt"><s>[Merged] <span class="nc-lifecycle__link">PR #169</span></s></div>
-    <div class="nc-lifecycle__txt">👁️ reviewed by @Pavel</div>
+    <div class="nc-lifecycle__ctx">reviewed by @John Doe</div>
     <div><span class="nc-rx">✅ 2</span><span class="nc-rx">🎉 1</span></div>
   </div>
   <div class="nc-lifecycle__caption">the same message, updating in place</div>
