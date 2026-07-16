@@ -385,3 +385,35 @@ func (rc repoConfigWire) toDomain() domain.RepoConfig {
 	}
 	return out
 }
+
+// DecodeMappings decodes a raw `mappings:` YAML node through the wire codec,
+// preserving the tri-state mentions semantics, per-tier behavioral blocks
+// (reactions/reviews/digest/paths), unknown-key rejection, and duplicate-key
+// detection. platform/config routes config.yaml's mappings section here so
+// the file and the domain types stay decoupled.
+func DecodeMappings(node *yaml.Node) (map[string]domain.Org, error) {
+	var wire map[string]map[string]repoConfigWire
+	if err := node.Decode(&wire); err != nil {
+		return nil, fmt.Errorf("mappings: %w", err)
+	}
+	out := make(map[string]domain.Org, len(wire))
+	for org, repos := range wire {
+		tiers := make(domain.Org, len(repos))
+		for name, repoConfig := range repos {
+			tiers[name] = repoConfig.toDomain()
+		}
+		out[org] = tiers
+	}
+	return out, nil
+}
+
+// DecodeDigest decodes a raw global `digest:` YAML node through the wire
+// codec, defaulting enabled to true when the key is absent.
+func DecodeDigest(node *yaml.Node) (*domain.DigestConfig, error) {
+	var wire digestConfigWire
+	if err := node.Decode(&wire); err != nil {
+		return nil, err
+	}
+	out := wire.toDomain()
+	return &out, nil
+}
