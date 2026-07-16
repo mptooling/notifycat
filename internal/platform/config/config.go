@@ -18,6 +18,7 @@ import (
 	routingapp "github.com/mptooling/notifycat/internal/routing/application"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 	routinginfra "github.com/mptooling/notifycat/internal/routing/infrastructure"
+	saliencedomain "github.com/mptooling/notifycat/internal/salience/domain"
 )
 
 // Config is the parsed runtime configuration. Field names are flat so consumers
@@ -55,6 +56,12 @@ type Config struct {
 	// DigestTimezone is the resolved timezone the digest scheduler and reporter
 	// run in. Derived from Digest.Timezone at Load (default UTC); never nil.
 	DigestTimezone *time.Location
+
+	// AI is the parsed ai: block (default disabled). AIAPIKey is the AI_API_KEY
+	// env var — required for gemini, optional for openai_compatible (keyless
+	// local endpoints send no auth header).
+	AI       saliencedomain.Config
+	AIAPIKey Secret
 
 	GitHubWebhookSecret Secret
 	SlackBotToken       Secret
@@ -139,6 +146,13 @@ type fileSchema struct {
 	} `yaml:"reviews"`
 	Digest   yaml.Node `yaml:"digest"`
 	Mappings yaml.Node `yaml:"mappings"`
+	AI       struct {
+		Enabled      *bool  `yaml:"enabled"`
+		Provider     string `yaml:"provider"`
+		Model        string `yaml:"model"`
+		BaseURL      string `yaml:"base_url"`
+		Instructions string `yaml:"instructions"`
+	} `yaml:"ai"`
 }
 
 // defaults returns a Config pre-filled with every default value. Decode then
@@ -232,6 +246,9 @@ func Load() (Config, error) {
 	if err := readSecrets(&cfg); err != nil {
 		return Config{}, err
 	}
+	if err := validateAI(&cfg); err != nil {
+		return Config{}, err
+	}
 	if cfg.MessageTTLDays <= 0 {
 		return Config{}, fmt.Errorf("config: cleanup.message_ttl_days must be > 0, got %d", cfg.MessageTTLDays)
 	}
@@ -274,6 +291,14 @@ func applyFileSchema(cfg *Config, fs fileSchema) {
 	if fs.Reviews.DependabotFormat != nil {
 		cfg.DependabotFormat = *fs.Reviews.DependabotFormat
 	}
+
+	if fs.AI.Enabled != nil {
+		cfg.AI.Enabled = *fs.AI.Enabled
+	}
+	cfg.AI.Provider = saliencedomain.ProviderName(fs.AI.Provider)
+	cfg.AI.Model = fs.AI.Model
+	cfg.AI.BaseURL = fs.AI.BaseURL
+	cfg.AI.Instructions = fs.AI.Instructions
 }
 
 // decodeRoutingSections decodes the digest: and mappings: nodes through the
@@ -341,6 +366,7 @@ func readSecrets(cfg *Config) error {
 	cfg.BitbucketWebhookSecret = Secret(os.Getenv("BITBUCKET_WEBHOOK_SECRET"))
 	cfg.BitbucketToken = Secret(os.Getenv("BITBUCKET_TOKEN"))
 	cfg.BitbucketAuthEmail = os.Getenv("BITBUCKET_AUTH_EMAIL")
+	cfg.AIAPIKey = Secret(os.Getenv("AI_API_KEY"))
 	if cfg.SlackBotToken.Reveal() == "" {
 		return fmt.Errorf("config: %w", &MissingVarError{Var: "SLACK_BOT_TOKEN"})
 	}
@@ -399,6 +425,32 @@ func requireProviderSecret(cfg *Config) error {
 		if cfg.BitbucketWebhookSecret.Reveal() == "" {
 			return fmt.Errorf("config: %w", &MissingVarError{Var: "BITBUCKET_WEBHOOK_SECRET"})
 		}
+	}
+	return nil
+}
+
+// validateAI fail-fast checks the ai: block shape when the feature is
+// enabled: known provider, model set, gemini requires AI_API_KEY,
+// openai_compatible requires base_url. Provider unreachability is deliberately
+// not a boot check — the runtime fallback owns outages.
+func validateAI(cfg *Config) error {
+	if !cfg.AI.Enabled {
+		return nil
+	}
+	switch cfg.AI.Provider {
+	case saliencedomain.ProviderGemini, saliencedomain.ProviderOpenAICompatible:
+	default:
+		return fmt.Errorf("config: ai.provider must be %q or %q, got %q — see docs/ai.md",
+			saliencedomain.ProviderGemini, saliencedomain.ProviderOpenAICompatible, cfg.AI.Provider)
+	}
+	if strings.TrimSpace(cfg.AI.Model) == "" {
+		return fmt.Errorf("config: ai.model is required when ai.enabled is true")
+	}
+	if cfg.AI.Provider == saliencedomain.ProviderGemini && cfg.AIAPIKey.Reveal() == "" {
+		return fmt.Errorf("config: %w", &MissingVarError{Var: "AI_API_KEY"})
+	}
+	if cfg.AI.Provider == saliencedomain.ProviderOpenAICompatible && strings.TrimSpace(cfg.AI.BaseURL) == "" {
+		return fmt.Errorf("config: ai.base_url is required for ai.provider openai_compatible")
 	}
 	return nil
 }
