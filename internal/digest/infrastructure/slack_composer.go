@@ -31,6 +31,8 @@ func (c *SlackComposer) StuckDigestList(prs []domain.StuckPR) domain.Message {
 			Number:     pr.Number,
 			URL:        pr.URL,
 			IdleDays:   pr.IdleDays,
+			Attention:  pr.Attention,
+			Note:       pr.Note,
 		}
 	}
 	return toDomainMessage(c.composer.StuckDigestList(slackPRs))

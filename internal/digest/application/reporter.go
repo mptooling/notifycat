@@ -10,6 +10,7 @@ import (
 
 	"github.com/mptooling/notifycat/internal/digest/domain"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
+	saliencedomain "github.com/mptooling/notifycat/internal/salience/domain"
 )
 
 // Reporter builds and posts the stuck-PR digest for every channel that owns at
@@ -21,6 +22,7 @@ type Reporter struct {
 	poster   domain.DigestPoster
 	composer domain.DigestComposer
 	digests  domain.DigestResolver
+	advisor  saliencedomain.Advisor
 	now      func() time.Time
 	tz       *time.Location
 	logger   *slog.Logger
@@ -43,6 +45,7 @@ func NewReporter(params domain.ReporterParams) *Reporter {
 		poster:   params.Poster,
 		composer: params.Composer,
 		digests:  params.Digests,
+		advisor:  params.Advisor,
 		now:      now,
 		tz:       tz,
 		logger:   params.Logger,
@@ -88,24 +91,30 @@ func (r *Reporter) report(ctx context.Context, include func(repo string) bool) e
 	}
 
 	for _, group := range r.groupByChannel(ctx, prs, now, include) {
-		ts, err := r.poster.PostMessage(ctx, group.channel, r.composer.StuckDigestParent(group.mentions, len(group.prs)))
+		decision := r.advisor.DecideDigest(ctx, digestDecisionRequest(group))
+		decidedPRs := applyDigestDecision(group.prs, decision)
+		mentions := group.mentions
+		if decision.ParentLoudness == saliencedomain.LoudnessQuiet {
+			mentions = nil
+		}
+		ts, err := r.poster.PostMessage(ctx, group.channel, r.composer.StuckDigestParent(mentions, len(decidedPRs)))
 		if err != nil {
 			r.logger.Error("stuck-pr digest: parent post failed",
 				slog.String("channel", group.channel),
-				slog.Int("prs", len(group.prs)),
+				slog.Int("prs", len(decidedPRs)),
 				slog.Any("err", err))
 			continue
 		}
-		if _, err := r.poster.PostReply(ctx, group.channel, ts, r.composer.StuckDigestList(group.prs)); err != nil {
+		if _, err := r.poster.PostReply(ctx, group.channel, ts, r.composer.StuckDigestList(decidedPRs)); err != nil {
 			r.logger.Error("stuck-pr digest: list reply failed",
 				slog.String("channel", group.channel),
-				slog.Int("prs", len(group.prs)),
+				slog.Int("prs", len(decidedPRs)),
 				slog.Any("err", err))
 			continue
 		}
 		r.logger.Info("stuck-pr digest posted",
 			slog.String("channel", group.channel),
-			slog.Int("prs", len(group.prs)))
+			slog.Int("prs", len(decidedPRs)))
 	}
 	return nil
 }
@@ -200,6 +209,40 @@ func idleDays(now, updatedAt time.Time) int {
 		return 1
 	}
 	return days
+}
+
+// digestDecisionRequest maps one channel group to the advisor's request. The
+// store keeps no PR titles, so summaries carry repo, number, and idle days
+// only; operator instructions are filled by the advisor from global config
+// (digest groups span repos, so per-tier guidance does not apply).
+func digestDecisionRequest(group channelGroup) saliencedomain.DigestDecisionRequest {
+	summaries := make([]saliencedomain.DigestPRSummary, len(group.prs))
+	for i, pr := range group.prs {
+		summaries[i] = saliencedomain.DigestPRSummary{Repository: pr.Repository, Number: pr.Number, IdleDays: pr.IdleDays}
+	}
+	return saliencedomain.DigestDecisionRequest{Channel: group.channel, PRs: summaries, Mentions: group.mentions}
+}
+
+// applyDigestDecision reorders the list per the decision and applies the
+// per-PR decorations. The advisor contract guarantees Order is a permutation
+// and the slices are parallel to the input; the guards keep a buggy advisor
+// from panicking the cron — on any shape mismatch the input passes through
+// untouched.
+func applyDigestDecision(prs []domain.StuckPR, decision saliencedomain.DigestDecision) []domain.StuckPR {
+	if len(decision.Order) != len(prs) || len(decision.Highlights) != len(prs) || len(decision.Notes) != len(prs) {
+		return prs
+	}
+	out := make([]domain.StuckPR, 0, len(prs))
+	for _, index := range decision.Order {
+		if index < 0 || index >= len(prs) {
+			return prs
+		}
+		pr := prs[index]
+		pr.Attention = decision.Highlights[index] == saliencedomain.HighlightAttention
+		pr.Note = decision.Notes[index]
+		out = append(out, pr)
+	}
+	return out
 }
 
 var (

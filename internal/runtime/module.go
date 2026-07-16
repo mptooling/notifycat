@@ -180,6 +180,7 @@ func buildDigestScheduler(cfg config.Config, provider *routingapp.Provider, pull
 		Poster:   digestinfra.NewSlackPoster(slackClient),
 		Composer: digestinfra.NewSlackComposer(composer),
 		Digests:  provider,
+		Advisor:  salienceapp.NewDeterministicAdvisor(), // replaced by buildAdvisor in the runtime-wiring task
 		Logger:   logger,
 		TZ:       cfg.DigestTimezone,
 		Now:      time.Now,

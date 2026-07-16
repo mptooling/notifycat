@@ -11,6 +11,7 @@ import (
 	"github.com/mptooling/notifycat/internal/digest/application"
 	"github.com/mptooling/notifycat/internal/digest/domain"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
+	salienceapp "github.com/mptooling/notifycat/internal/salience/application"
 )
 
 func discardLogger() *slog.Logger {
@@ -144,6 +145,7 @@ func newTestReporter(finder domain.StuckFinder, mappings domain.MappingLookup, p
 		Poster:   poster,
 		Composer: composer,
 		Digests:  digests,
+		Advisor:  salienceapp.NewDeterministicAdvisor(),
 		Logger:   discardLogger(),
 		TZ:       tz,
 		Now:      now,

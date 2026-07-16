@@ -285,12 +285,16 @@ const maxSectionChars = 2900
 
 // StuckPR is one entry in a stuck-PR digest: a PR that has seen no activity
 // since before today. The PR title is intentionally absent — the store does
-// not keep it — so the digest links by repository and number.
+// not keep it — so the digest links by repository and number. Attention and
+// Note carry the salience decision's per-PR decoration; both zero values
+// render the legacy line byte-identically.
 type StuckPR struct {
 	Repository string
 	Number     int
 	URL        string
 	IdleDays   int
+	Attention  bool
+	Note       string
 }
 
 // StuckDigestParent renders the static parent of a channel's stuck-PR digest: a
@@ -319,7 +323,10 @@ func (c *Composer) StuckDigestList(prs []StuckPR) Message {
 	var blocks []Block
 	var b strings.Builder
 	for _, pr := range prs {
-		line := fmt.Sprintf("• <%s|%s #%d> · idle %s", pr.URL, pr.Repository, pr.Number, idlePhrase(pr.IdleDays))
+		line := fmt.Sprintf("• %s<%s|%s #%d> · idle %s", attentionPrefix(pr.Attention), pr.URL, pr.Repository, pr.Number, idlePhrase(pr.IdleDays))
+		if pr.Note != "" {
+			line += fmt.Sprintf(" — _%s_", pr.Note)
+		}
 		if b.Len() > 0 && b.Len()+len("\n")+len(line) > maxSectionChars {
 			blocks = append(blocks, section(b.String()))
 			b.Reset()
@@ -341,6 +348,14 @@ func idlePhrase(days int) string {
 		return "1 day"
 	}
 	return fmt.Sprintf("%d days", days)
+}
+
+// attentionPrefix marks an attention-highlighted digest line.
+func attentionPrefix(attention bool) string {
+	if attention {
+		return ":warning: "
+	}
+	return ""
 }
 
 // pluralSuffix returns "" for one and "s" otherwise.
