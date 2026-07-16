@@ -153,13 +153,17 @@ func (f *fakeMessageStore) Delete(_ context.Context, repository string, prNumber
 
 // fakeTargetResolver is a domain.TargetResolver.
 type fakeTargetResolver struct {
-	behavior routingdomain.RepoMapping
-	targets  []routingdomain.Target
-	err      error
+	behavior     routingdomain.RepoMapping
+	targets      []routingdomain.Target
+	changedFiles []string
+	err          error
 }
 
-func (f *fakeTargetResolver) ResolveTargets(_ context.Context, _ string, _ int) (routingdomain.RepoMapping, []routingdomain.Target, error) {
-	return f.behavior, f.targets, f.err
+func (f *fakeTargetResolver) ResolveTargets(_ context.Context, _ string, _ int) (routingdomain.ResolvedTargets, error) {
+	if f.err != nil {
+		return routingdomain.ResolvedTargets{}, f.err
+	}
+	return routingdomain.ResolvedTargets{Mapping: f.behavior, Targets: f.targets, ChangedFiles: f.changedFiles}, nil
 }
 
 // fakeBehavior is a domain.RepoBehavior.

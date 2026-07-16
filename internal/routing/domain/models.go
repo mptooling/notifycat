@@ -130,3 +130,15 @@ type Defaults struct {
 	// on every entry so it hashes into the lock (see Entry.Provider).
 	GitProvider kernel.Provider
 }
+
+// ResolvedTargets is the full fan-out resolution for one PR: the repo's
+// behavioral mapping, the per-channel targets, and the changed files the
+// router already fetched for path routing — kept on the result so the
+// salience advisor can reuse them without a second provider call. ChangedFiles
+// is nil when no fetcher is configured, the repo has no path rules, or the
+// fetch soft-failed.
+type ResolvedTargets struct {
+	Mapping      RepoMapping
+	Targets      []Target
+	ChangedFiles []string
+}

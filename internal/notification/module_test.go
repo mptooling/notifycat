@@ -35,8 +35,8 @@ func (stubBehavior) Get(context.Context, string) (routingdomain.RepoMapping, err
 
 type stubResolver struct{}
 
-func (stubResolver) ResolveTargets(context.Context, string, int) (routingdomain.RepoMapping, []routingdomain.Target, error) {
-	return routingdomain.RepoMapping{}, nil, nil
+func (stubResolver) ResolveTargets(context.Context, string, int) (routingdomain.ResolvedTargets, error) {
+	return routingdomain.ResolvedTargets{}, nil
 }
 
 // TestModule_GraphResolves asserts that notification.Module, given only the

@@ -36,7 +36,7 @@ func (h *OpenHandler) Applicable(event kernel.Event) bool {
 // is idempotent per channel: an existing message for a channel is skipped, so a
 // redelivery or a partial-failure retry only posts the missing channels.
 func (h *OpenHandler) Handle(ctx context.Context, event kernel.Event) error {
-	behavior, targets, err := h.resolver.ResolveTargets(ctx, event.Repository, event.PR.Number)
+	resolved, err := h.resolver.ResolveTargets(ctx, event.Repository, event.PR.Number)
 	if errors.Is(err, routingdomain.ErrNotFound) {
 		h.logIgnored(event, domain.ReasonNoMapping)
 		return nil
@@ -44,6 +44,7 @@ func (h *OpenHandler) Handle(ctx context.Context, event kernel.Event) error {
 	if err != nil {
 		return err
 	}
+	behavior, targets := resolved.Mapping, resolved.Targets
 
 	existing, err := h.store.Messages(ctx, event.Repository, event.PR.Number)
 	if err != nil && !errors.Is(err, routingdomain.ErrNotFound) {
