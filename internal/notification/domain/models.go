@@ -82,3 +82,14 @@ type OpenHandlerParams struct {
 	Advisor   saliencedomain.Advisor
 	Logger    *slog.Logger
 }
+
+// LifecycleHandlerParams bundles the dependencies shared by the close and
+// review-reaction handlers.
+type LifecycleHandlerParams struct {
+	Store     MessageStore
+	Behavior  RepoBehavior
+	Messenger Messenger
+	Advisor   saliencedomain.Advisor
+	Logger    *slog.Logger
+	Reviews   ReviewSessions
+}

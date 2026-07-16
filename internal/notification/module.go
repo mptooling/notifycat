@@ -25,6 +25,7 @@ var Module = fx.Module("notification",
 	fx.Provide(
 		fx.Annotate(infrastructure.NewMessageRepo, fx.As(new(domain.MessageStore))),
 		fx.Annotate(infrastructure.NewSlackMessenger, fx.As(new(domain.Messenger))),
+		provideLifecycleParams,
 		fx.Annotate(provideOpenHandler, fx.As(new(domain.Handler)), fx.ResultTags(`group:"handlers"`)),
 		fx.Annotate(application.NewCloseHandler, fx.As(new(domain.Handler)), fx.ResultTags(`group:"handlers"`)),
 		fx.Annotate(application.NewDraftHandler, fx.As(new(domain.Handler)), fx.ResultTags(`group:"handlers"`)),
@@ -51,4 +52,9 @@ func provideOpenHandler(store domain.MessageStore, resolver domain.TargetResolve
 	return application.NewOpenHandler(domain.OpenHandlerParams{
 		Store: store, Resolver: resolver, Messenger: messenger, Advisor: advisor, Logger: logger,
 	})
+}
+
+// provideLifecycleParams assembles the shared lifecycle params DTO once.
+func provideLifecycleParams(store domain.MessageStore, behavior domain.RepoBehavior, messenger domain.Messenger, advisor saliencedomain.Advisor, logger *slog.Logger, reviews domain.ReviewSessions) domain.LifecycleHandlerParams {
+	return domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: advisor, Logger: logger, Reviews: reviews}
 }

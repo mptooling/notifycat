@@ -227,16 +227,20 @@ func buildDispatcher(pullRequests *persistence.PullRequests, codeReviews *persis
 	messageStore := notificationinfra.NewMessageRepo(pullRequests)
 	messenger := notificationinfra.NewSlackMessenger(slackClient, composer)
 	reviews := reviewinfra.NewCodeReviewsRepo(codeReviews)
-	advisor := salienceapp.NewDeterministicAdvisor() // replaced by buildAdvisor in the runtime-wiring task
+	advisor := salienceapp.NewDeterministicAdvisor()
+	lifecycleParams := notificationdomain.LifecycleHandlerParams{
+		Store: messageStore, Behavior: provider, Messenger: messenger,
+		Advisor: advisor, Logger: logger, Reviews: reviews,
+	}
 	handlers := []notificationdomain.Handler{
 		notificationapp.NewOpenHandler(notificationdomain.OpenHandlerParams{
 			Store: messageStore, Resolver: router, Messenger: messenger, Advisor: advisor, Logger: logger,
 		}),
-		notificationapp.NewCloseHandler(messageStore, provider, messenger, logger, reviews),
+		notificationapp.NewCloseHandler(lifecycleParams),
 		notificationapp.NewDraftHandler(messageStore, messenger, logger),
-		notificationapp.NewApproveHandler(messageStore, provider, messenger, logger, reviews),
-		notificationapp.NewCommentedHandler(messageStore, provider, messenger, logger, reviews),
-		notificationapp.NewRequestChangeHandler(messageStore, provider, messenger, logger, reviews),
+		notificationapp.NewApproveHandler(lifecycleParams),
+		notificationapp.NewCommentedHandler(lifecycleParams),
+		notificationapp.NewRequestChangeHandler(lifecycleParams),
 	}
 	return notificationapp.NewDispatcher(logger, handlers)
 }

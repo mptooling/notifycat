@@ -11,7 +11,10 @@ import (
 )
 
 func newCloseHandler(store *fakeMessageStore, behavior *fakeBehavior, messenger *fakeMessenger) *application.CloseHandler {
-	return application.NewCloseHandler(store, behavior, messenger, discardLogger(), &fakeReviewSessions{})
+	return application.NewCloseHandler(domain.LifecycleHandlerParams{
+		Store: store, Behavior: behavior, Messenger: messenger,
+		Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: &fakeReviewSessions{},
+	})
 }
 
 // closedMergedEvent returns a merged event with PR.Merged = true.
@@ -226,7 +229,10 @@ func TestCloseHandler_ActsOnEveryMessage(t *testing.T) {
 	store.seed("acme/web", 7, domain.Message{Channel: "C0B", MessageID: "200.1"})
 	behavior := &fakeBehavior{mapping: routingdomain.RepoMapping{Reactions: routingdomain.Reactions{Enabled: true, MergedPR: "tada"}}}
 	messenger := &fakeMessenger{}
-	h := application.NewCloseHandler(store, behavior, messenger, discardLogger(), &fakeReviewSessions{})
+	h := application.NewCloseHandler(domain.LifecycleHandlerParams{
+		Store: store, Behavior: behavior, Messenger: messenger,
+		Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: &fakeReviewSessions{},
+	})
 
 	if err := h.Handle(context.Background(), closedMergedEvent("acme/web", 7)); err != nil {
 		t.Fatalf("handle: %v", err)
@@ -249,7 +255,10 @@ func TestCloseHandler_ReviewedByOnClose(t *testing.T) {
 			{SlackUserID: "U2", SlackUserName: "Bob"},
 		},
 	}
-	h := application.NewCloseHandler(store, behavior, messenger, discardLogger(), reviews)
+	h := application.NewCloseHandler(domain.LifecycleHandlerParams{
+		Store: store, Behavior: behavior, Messenger: messenger,
+		Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: reviews,
+	})
 
 	e := closedMergedEvent("octo/widget", 42)
 	if err := h.Handle(context.Background(), e); err != nil {
@@ -282,7 +291,10 @@ func TestCloseHandler_NoReviewersNoReviewedByBlock(t *testing.T) {
 	store.seed("octo/widget", 42, domain.Message{Channel: "C123", MessageID: "ts1"})
 	behavior := &fakeBehavior{mapping: routingdomain.RepoMapping{Reactions: routingdomain.Reactions{Enabled: false}}}
 	messenger := &fakeMessenger{}
-	h := application.NewCloseHandler(store, behavior, messenger, discardLogger(), &fakeReviewSessions{})
+	h := application.NewCloseHandler(domain.LifecycleHandlerParams{
+		Store: store, Behavior: behavior, Messenger: messenger,
+		Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: &fakeReviewSessions{},
+	})
 
 	e := closedMergedEvent("octo/widget", 42)
 	if err := h.Handle(context.Background(), e); err != nil {
@@ -310,7 +322,10 @@ func TestCloseHandler_ReviewedByDedup(t *testing.T) {
 			{SlackUserID: "U2", SlackUserName: "Bob"},
 		},
 	}
-	h := application.NewCloseHandler(store, behavior, messenger, discardLogger(), reviews)
+	h := application.NewCloseHandler(domain.LifecycleHandlerParams{
+		Store: store, Behavior: behavior, Messenger: messenger,
+		Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: reviews,
+	})
 
 	e := closedMergedEvent("octo/widget", 42)
 	if err := h.Handle(context.Background(), e); err != nil {
@@ -345,7 +360,10 @@ func TestCloseHandler_FinishesSessionOnClose(t *testing.T) {
 	behavior := &fakeBehavior{mapping: routingdomain.RepoMapping{Reactions: routingdomain.Reactions{Enabled: false}}}
 	messenger := &fakeMessenger{}
 	reviews := &fakeReviewSessions{}
-	h := application.NewCloseHandler(store, behavior, messenger, discardLogger(), reviews)
+	h := application.NewCloseHandler(domain.LifecycleHandlerParams{
+		Store: store, Behavior: behavior, Messenger: messenger,
+		Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: reviews,
+	})
 
 	e := closedMergedEvent("octo/widget", 42)
 	if err := h.Handle(context.Background(), e); err != nil {
@@ -365,7 +383,10 @@ func TestCloseHandler_ReviewersLoadFailureSoftDegrades(t *testing.T) {
 	behavior := &fakeBehavior{mapping: routingdomain.RepoMapping{Reactions: routingdomain.Reactions{Enabled: false}}}
 	messenger := &fakeMessenger{}
 	reviews := &fakeReviewSessions{reviewersErr: errInjected}
-	h := application.NewCloseHandler(store, behavior, messenger, discardLogger(), reviews)
+	h := application.NewCloseHandler(domain.LifecycleHandlerParams{
+		Store: store, Behavior: behavior, Messenger: messenger,
+		Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: reviews,
+	})
 
 	e := closedMergedEvent("octo/widget", 42)
 	if err := h.Handle(context.Background(), e); err != nil {

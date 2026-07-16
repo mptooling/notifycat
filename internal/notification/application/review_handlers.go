@@ -8,6 +8,7 @@ import (
 	"github.com/mptooling/notifycat/internal/kernel"
 	"github.com/mptooling/notifycat/internal/notification/domain"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
+	saliencedomain "github.com/mptooling/notifycat/internal/salience/domain"
 )
 
 // reactionHandler is the shared implementation behind the three review-state
@@ -21,6 +22,7 @@ type reactionHandler struct {
 	store     domain.MessageStore
 	behavior  domain.RepoBehavior
 	messenger domain.Messenger
+	advisor   saliencedomain.Advisor
 	logger    *slog.Logger
 	reviews   domain.ReviewSessions
 }
@@ -63,7 +65,8 @@ func (h *reactionHandler) Handle(ctx context.Context, event kernel.Event) error 
 		return nil
 	}
 
-	if err := h.addReactions(ctx, event, behavior, messages); err != nil {
+	decision := h.advisor.DecideUpdated(ctx, updatedDecisionRequest(event, behavior, h.emojiOf(behavior.Reactions)))
+	if err := h.addReactions(ctx, event, behavior, messages, decision.Emoji); err != nil {
 		return err
 	}
 	// Count the review as activity so the stuck-PR digest stops nagging until the
@@ -105,12 +108,11 @@ func (h *reactionHandler) logSkippedBotReviewer(event kernel.Event) {
 	)
 }
 
-// addReactions applies the review's state emoji to every stored message, plus a
-// distinct bot marker per message when a surviving bot reviewer is configured
-// (empty BotReview turns the marker off). AddReaction is idempotent, so replaying
-// it on every message is safe.
-func (h *reactionHandler) addReactions(ctx context.Context, event kernel.Event, behavior routingdomain.RepoMapping, messages []domain.Message) error {
-	emoji := h.emojiOf(behavior.Reactions)
+// addReactions applies the decided review-state emoji to every stored
+// message, plus a distinct bot marker per message when a surviving bot
+// reviewer is configured (empty BotReview turns the marker off). AddReaction
+// is idempotent, so replaying it on every message is safe.
+func (h *reactionHandler) addReactions(ctx context.Context, event kernel.Event, behavior routingdomain.RepoMapping, messages []domain.Message, emoji string) error {
 	isBot := event.Sender.IsBot
 	for _, message := range messages {
 		if err := h.messenger.AddReaction(ctx, message.Channel, message.MessageID, emoji); err != nil {
@@ -180,12 +182,13 @@ func (h *reactionHandler) clearInReviewState(ctx context.Context, event kernel.E
 // ApproveHandler adds a reaction when a review is submitted with state "approved".
 type ApproveHandler struct{ reactionHandler }
 
-// NewApproveHandler builds an ApproveHandler.
-func NewApproveHandler(store domain.MessageStore, behavior domain.RepoBehavior, messenger domain.Messenger, logger *slog.Logger, reviews domain.ReviewSessions) *ApproveHandler {
+// NewApproveHandler builds an ApproveHandler from the shared lifecycle params.
+func NewApproveHandler(params domain.LifecycleHandlerParams) *ApproveHandler {
 	return &ApproveHandler{reactionHandler{
 		name:    "approve",
 		emojiOf: approvedEmoji,
-		store:   store, behavior: behavior, messenger: messenger, logger: logger, reviews: reviews,
+		store:   params.Store, behavior: params.Behavior, messenger: params.Messenger,
+		advisor: params.Advisor, logger: params.Logger, reviews: params.Reviews,
 		applicable: func(event kernel.Event) bool {
 			return event.Kind == kernel.KindApproved
 		},
@@ -196,12 +199,13 @@ func NewApproveHandler(store domain.MessageStore, behavior domain.RepoBehavior, 
 // state "commented".
 type CommentedHandler struct{ reactionHandler }
 
-// NewCommentedHandler builds a CommentedHandler.
-func NewCommentedHandler(store domain.MessageStore, behavior domain.RepoBehavior, messenger domain.Messenger, logger *slog.Logger, reviews domain.ReviewSessions) *CommentedHandler {
+// NewCommentedHandler builds a CommentedHandler from the shared lifecycle params.
+func NewCommentedHandler(params domain.LifecycleHandlerParams) *CommentedHandler {
 	return &CommentedHandler{reactionHandler{
 		name:    "commented",
 		emojiOf: commentedEmoji,
-		store:   store, behavior: behavior, messenger: messenger, logger: logger, reviews: reviews,
+		store:   params.Store, behavior: params.Behavior, messenger: params.Messenger,
+		advisor: params.Advisor, logger: params.Logger, reviews: params.Reviews,
 		applicable: func(event kernel.Event) bool {
 			return event.Kind == kernel.KindCommented || event.Kind == kernel.KindReviewCommented
 		},
@@ -212,12 +216,13 @@ func NewCommentedHandler(store domain.MessageStore, behavior domain.RepoBehavior
 // "changes_requested".
 type RequestChangeHandler struct{ reactionHandler }
 
-// NewRequestChangeHandler builds a RequestChangeHandler.
-func NewRequestChangeHandler(store domain.MessageStore, behavior domain.RepoBehavior, messenger domain.Messenger, logger *slog.Logger, reviews domain.ReviewSessions) *RequestChangeHandler {
+// NewRequestChangeHandler builds a RequestChangeHandler from the shared lifecycle params.
+func NewRequestChangeHandler(params domain.LifecycleHandlerParams) *RequestChangeHandler {
 	return &RequestChangeHandler{reactionHandler{
 		name:    "request_change",
 		emojiOf: requestChangeEmoji,
-		store:   store, behavior: behavior, messenger: messenger, logger: logger, reviews: reviews,
+		store:   params.Store, behavior: params.Behavior, messenger: params.Messenger,
+		advisor: params.Advisor, logger: params.Logger, reviews: params.Reviews,
 		applicable: func(event kernel.Event) bool {
 			return event.Kind == kernel.KindChangesRequested
 		},

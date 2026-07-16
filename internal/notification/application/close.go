@@ -8,6 +8,7 @@ import (
 	"github.com/mptooling/notifycat/internal/kernel"
 	"github.com/mptooling/notifycat/internal/notification/domain"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
+	saliencedomain "github.com/mptooling/notifycat/internal/salience/domain"
 )
 
 // CloseHandler reacts to a PR being closed (merged or not). It updates every
@@ -17,13 +18,17 @@ type CloseHandler struct {
 	store     domain.MessageStore
 	behavior  domain.RepoBehavior
 	messenger domain.Messenger
+	advisor   saliencedomain.Advisor
 	logger    *slog.Logger
 	reviews   domain.ReviewSessions
 }
 
-// NewCloseHandler builds a CloseHandler.
-func NewCloseHandler(store domain.MessageStore, behavior domain.RepoBehavior, messenger domain.Messenger, logger *slog.Logger, reviews domain.ReviewSessions) *CloseHandler {
-	return &CloseHandler{store: store, behavior: behavior, messenger: messenger, logger: logger, reviews: reviews}
+// NewCloseHandler builds a CloseHandler from the shared lifecycle params.
+func NewCloseHandler(params domain.LifecycleHandlerParams) *CloseHandler {
+	return &CloseHandler{
+		store: params.Store, behavior: params.Behavior, messenger: params.Messenger,
+		advisor: params.Advisor, logger: params.Logger, reviews: params.Reviews,
+	}
 }
 
 // Applicable returns true when a PR is closed, merged or not. The adapter splits
@@ -57,6 +62,8 @@ func (h *CloseHandler) Handle(ctx context.Context, event kernel.Event) error {
 	if event.PR.Merged {
 		emoji = behavior.Reactions.MergedPR
 	}
+	decision := h.advisor.DecideUpdated(ctx, updatedDecisionRequest(event, behavior, emoji))
+	emoji = decision.Emoji
 
 	reviewers, err := h.reviews.Reviewers(ctx, event.Repository, event.PR.Number)
 	if err != nil {
