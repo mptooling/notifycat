@@ -125,3 +125,16 @@ func TestRepoConfig_UnknownReactionKeyRejected(t *testing.T) {
 		t.Fatal("expected error for unknown reactions key")
 	}
 }
+
+func TestDecodeDigest_NullNodeIsAbsent(t *testing.T) {
+	var doc struct {
+		Digest yaml.Node `yaml:"digest"`
+	}
+	if err := yaml.Unmarshal([]byte("digest:\n"), &doc); err != nil {
+		t.Fatal(err)
+	}
+	digest, err := DecodeDigest(&doc.Digest)
+	if err != nil || digest != nil {
+		t.Fatalf("DecodeDigest(null) = %v, %v; want nil, nil (bare key counts as absent)", digest, err)
+	}
+}
