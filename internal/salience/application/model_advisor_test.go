@@ -131,6 +131,22 @@ func TestModelAdvisorClampViolationKeepsRepairedDecision(t *testing.T) {
 	}
 }
 
+func TestModelAdvisorTrailingContentIsMalformed(t *testing.T) {
+	gateway := &fakeGateway{response: domain.ModelResponse{
+		Text: `{"targets":[],"rationale":"r"} EXTRA`,
+	}}
+	advisor := NewModelAdvisor(gateway, NewDeterministicAdvisor())
+
+	decision := advisor.DecideOpen(context.Background(), modelOpenRequest())
+
+	if decision.FallbackReason != domain.FallbackMalformedOutput {
+		t.Errorf("FallbackReason = %q; want malformed_output", decision.FallbackReason)
+	}
+	if len(decision.Targets) != 1 || decision.Targets[0].LeadingEmoji != "eyes" {
+		t.Errorf("fallback decision not deterministic: %+v", decision.Targets)
+	}
+}
+
 func TestModelAdvisorEnvelopesUntrustedContent(t *testing.T) {
 	gateway := &fakeGateway{err: errors.New("stop before parsing")}
 	advisor := NewModelAdvisor(gateway, NewDeterministicAdvisor())

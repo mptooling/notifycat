@@ -192,11 +192,18 @@ func (a *ModelAdvisor) generate(ctx context.Context, request domain.ModelRequest
 }
 
 // strictUnmarshal parses the model text with unknown fields rejected. No
-// lenient repair, no retry — a malformed response is a fallback.
+// lenient repair, no retry — a malformed response is a fallback. Exactly one
+// JSON object must be present; any trailing content is an error.
 func strictUnmarshal(text string, value any) error {
 	decoder := json.NewDecoder(strings.NewReader(text))
 	decoder.DisallowUnknownFields()
-	return decoder.Decode(value)
+	if err := decoder.Decode(value); err != nil {
+		return err
+	}
+	if decoder.More() {
+		return errors.New("unexpected trailing content")
+	}
+	return nil
 }
 
 var _ domain.Advisor = (*ModelAdvisor)(nil)
