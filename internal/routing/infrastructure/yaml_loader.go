@@ -42,26 +42,26 @@ func Parse(r io.Reader) (domain.File, error) {
 	dec := yaml.NewDecoder(r)
 	dec.KnownFields(true)
 	var wire struct {
-		Digest   *digestConfigWire                    `yaml:"digest"`
-		Mappings map[string]map[string]repoConfigWire `yaml:"mappings"`
+		Digest   yaml.Node `yaml:"digest"`
+		Mappings yaml.Node `yaml:"mappings"`
 	}
 	if err := dec.Decode(&wire); err != nil {
 		return domain.File{}, fmt.Errorf("mappings: parse: %w", err)
 	}
 	out := domain.File{}
-	if wire.Digest != nil {
-		d := wire.Digest.toDomain()
-		out.Digest = &d
-	}
-	if wire.Mappings != nil {
-		out.Mappings = make(map[string]domain.Org, len(wire.Mappings))
-		for org, repos := range wire.Mappings {
-			o := make(domain.Org, len(repos))
-			for name, rc := range repos {
-				o[name] = rc.toDomain()
-			}
-			out.Mappings[org] = o
+	if !wire.Digest.IsZero() {
+		digest, err := DecodeDigest(&wire.Digest)
+		if err != nil {
+			return domain.File{}, fmt.Errorf("mappings: parse: %w", err)
 		}
+		out.Digest = digest
+	}
+	if !wire.Mappings.IsZero() {
+		mappings, err := DecodeMappings(&wire.Mappings)
+		if err != nil {
+			return domain.File{}, fmt.Errorf("mappings: parse: %w", err)
+		}
+		out.Mappings = mappings
 	}
 	if err := application.ValidateMappings(out.Mappings); err != nil {
 		return domain.File{}, err
