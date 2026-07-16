@@ -106,3 +106,17 @@ mappings:
 		t.Fatal("Load() succeeded with an unknown tier key; want error")
 	}
 }
+
+func TestLoad_MentionsNullRejected(t *testing.T) {
+	writeWireConfig(t, `
+git_provider: github
+mappings:
+  acme:
+    api:
+      channel: C0123456789
+      mentions: null
+`)
+	if _, err := config.Load(); err == nil {
+		t.Fatal("Load() succeeded with mentions: null; want error (omit the key or use [])")
+	}
+}

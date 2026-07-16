@@ -390,8 +390,12 @@ func (rc repoConfigWire) toDomain() domain.RepoConfig {
 // preserving the tri-state mentions semantics, per-tier behavioral blocks
 // (reactions/reviews/digest/paths), unknown-key rejection, and duplicate-key
 // detection. platform/config routes config.yaml's mappings section here so
-// the file and the domain types stay decoupled.
+// the file and the domain types stay decoupled. A null node (bare key) decodes
+// as absent.
 func DecodeMappings(node *yaml.Node) (map[string]domain.Org, error) {
+	if node.Tag == "!!null" {
+		return nil, nil
+	}
 	var wire map[string]map[string]repoConfigWire
 	if err := node.Decode(&wire); err != nil {
 		return nil, fmt.Errorf("mappings: %w", err)
@@ -408,11 +412,15 @@ func DecodeMappings(node *yaml.Node) (map[string]domain.Org, error) {
 }
 
 // DecodeDigest decodes a raw global `digest:` YAML node through the wire
-// codec, defaulting enabled to true when the key is absent.
+// codec, defaulting enabled to true when the key is absent. A null node (bare
+// key) decodes as absent.
 func DecodeDigest(node *yaml.Node) (*domain.DigestConfig, error) {
+	if node.Tag == "!!null" {
+		return nil, nil
+	}
 	var wire digestConfigWire
 	if err := node.Decode(&wire); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("digest: %w", err)
 	}
 	out := wire.toDomain()
 	return &out, nil
