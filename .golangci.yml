@@ -113,21 +113,42 @@ linters:
             - github.com/mptooling/notifycat/internal/kernel
             - github.com/mptooling/notifycat/internal/digest/domain
             - github.com/mptooling/notifycat/internal/routing/domain
+            - github.com/mptooling/notifycat/internal/salience/domain
           deny:
             - pkg: github.com/mptooling/notifycat/internal
-              desc: digest/domain imports only the shared kernel, the routing domain, and the standard library — never application, infrastructure, store, slack, or github
+              desc: digest/domain imports only the shared kernel, the routing and salience domains, and the standard library — never application, infrastructure, store, slack, or github
+        # digest/application production may reference the salience domain (the
+        # Advisor port), but only tests may import salience/application — the
+        # fakes delegate to the deterministic advisor; production advisor
+        # construction belongs to the composition root.
         digest-application:
           list-mode: lax
           files:
             - "**/internal/digest/application/**"
+            - "!**/internal/digest/application/**_test.go"
           allow:
             - github.com/mptooling/notifycat/internal/kernel
             - github.com/mptooling/notifycat/internal/digest/domain
             - github.com/mptooling/notifycat/internal/digest/application
             - github.com/mptooling/notifycat/internal/routing/domain
+            - github.com/mptooling/notifycat/internal/salience/domain
           deny:
             - pkg: github.com/mptooling/notifycat/internal
-              desc: digest/application imports only its own domain layer, the routing domain, and the shared kernel — never infrastructure, store, slack, or github
+              desc: digest/application imports only its own domain layer, the routing and salience domains, and the shared kernel — never infrastructure, store, slack, or github
+        digest-application-tests:
+          list-mode: lax
+          files:
+            - "**/internal/digest/application/**_test.go"
+          allow:
+            - github.com/mptooling/notifycat/internal/kernel
+            - github.com/mptooling/notifycat/internal/digest/domain
+            - github.com/mptooling/notifycat/internal/digest/application
+            - github.com/mptooling/notifycat/internal/routing/domain
+            - github.com/mptooling/notifycat/internal/salience/domain
+            - github.com/mptooling/notifycat/internal/salience/application
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: digest/application tests may additionally use salience/application for the deterministic-advisor fakes
         notification-domain:
           list-mode: lax
           files:
@@ -136,21 +157,40 @@ linters:
             - github.com/mptooling/notifycat/internal/kernel
             - github.com/mptooling/notifycat/internal/notification/domain
             - github.com/mptooling/notifycat/internal/routing/domain
+            - github.com/mptooling/notifycat/internal/salience/domain
           deny:
             - pkg: github.com/mptooling/notifycat/internal
-              desc: notification/domain imports only the shared kernel, the routing domain, and the standard library — never application, infrastructure, store, slack, or github
+              desc: notification/domain imports only the shared kernel, the routing and salience domains, and the standard library — never application, infrastructure, store, slack, or github
+        # Same test carve-out as digest-application: only tests may import
+        # salience/application (deterministic-advisor fakes).
         notification-application:
           list-mode: lax
           files:
             - "**/internal/notification/application/**"
+            - "!**/internal/notification/application/**_test.go"
           allow:
             - github.com/mptooling/notifycat/internal/kernel
             - github.com/mptooling/notifycat/internal/notification/domain
             - github.com/mptooling/notifycat/internal/notification/application
             - github.com/mptooling/notifycat/internal/routing/domain
+            - github.com/mptooling/notifycat/internal/salience/domain
           deny:
             - pkg: github.com/mptooling/notifycat/internal
-              desc: notification/application imports only its own domain layer, the routing domain, and the shared kernel — never infrastructure, store, slack, or github
+              desc: notification/application imports only its own domain layer, the routing and salience domains, and the shared kernel — never infrastructure, store, slack, or github
+        notification-application-tests:
+          list-mode: lax
+          files:
+            - "**/internal/notification/application/**_test.go"
+          allow:
+            - github.com/mptooling/notifycat/internal/kernel
+            - github.com/mptooling/notifycat/internal/notification/domain
+            - github.com/mptooling/notifycat/internal/notification/application
+            - github.com/mptooling/notifycat/internal/routing/domain
+            - github.com/mptooling/notifycat/internal/salience/domain
+            - github.com/mptooling/notifycat/internal/salience/application
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: notification/application tests may additionally use salience/application for the deterministic-advisor fakes
         review-domain:
           list-mode: lax
           files:
@@ -198,6 +238,49 @@ linters:
           deny:
             - pkg: github.com/mptooling/notifycat/internal
               desc: diagnostics/application imports its own domain, the validation domain/application, and the routing domain — never infrastructure, config, store, slack, http, or security
+        salience-domain:
+          list-mode: lax
+          files:
+            - "**/internal/salience/domain/**"
+          allow:
+            - github.com/mptooling/notifycat/internal/kernel
+            - github.com/mptooling/notifycat/internal/salience/domain
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: salience/domain imports only the shared kernel and the standard library — never application, infrastructure, store, slack, or a provider client
+        salience-application:
+          list-mode: lax
+          files:
+            - "**/internal/salience/application/**"
+          allow:
+            - github.com/mptooling/notifycat/internal/kernel
+            - github.com/mptooling/notifycat/internal/salience/domain
+            - github.com/mptooling/notifycat/internal/salience/application
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: salience/application imports only its own domain layer and the shared kernel — never infrastructure, a provider SDK, or the network
+        # Provider sibling independence is a spec guarantee: gemini and
+        # openaicompat must not share code, so neither may import the other.
+        salience-infrastructure-gemini:
+          list-mode: lax
+          files:
+            - "**/internal/salience/infrastructure/gemini/**"
+          allow:
+            - github.com/mptooling/notifycat/internal/salience/domain
+            - github.com/mptooling/notifycat/internal/salience/infrastructure/gemini
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: the gemini provider imports only the salience domain and the standard library — never its openaicompat sibling or another domain
+        salience-infrastructure-openaicompat:
+          list-mode: lax
+          files:
+            - "**/internal/salience/infrastructure/openaicompat/**"
+          allow:
+            - github.com/mptooling/notifycat/internal/salience/domain
+            - github.com/mptooling/notifycat/internal/salience/infrastructure/openaicompat
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: the openaicompat provider imports only the salience domain and the standard library — never its gemini sibling or another domain
     errcheck:
       exclude-functions:
         - fmt.Fprint
@@ -231,6 +314,15 @@ linters:
         linters:
           - gosec
           - unparam
+      # The composition-root package is deliberately named "runtime"
+      # (referenced as runtime.Module); it is never imported alongside the
+      # stdlib runtime package. Excluded here rather than via //nolint because
+      # revive attributes the package-name finding to an arbitrary file in the
+      # package, so a per-file directive breaks when files are added.
+      - path: internal/runtime/
+        linters:
+          - revive
+        text: "avoid package names that conflict"
 
 formatters:
   enable:

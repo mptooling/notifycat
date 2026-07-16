@@ -9,7 +9,7 @@
 // composition root it is exempt from the inward-only layering rule and may
 // import config, persistence, slack, github, and every domain's application and
 // infrastructure packages.
-package runtime //nolint:revive // the composition-root package is deliberately named "runtime" (referenced as runtime.Module); it is never imported alongside the stdlib runtime package
+package runtime
 
 import (
 	"context"
