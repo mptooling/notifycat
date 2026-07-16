@@ -12,6 +12,7 @@ import (
 	"github.com/mptooling/notifycat/internal/notification/application"
 	"github.com/mptooling/notifycat/internal/notification/domain"
 	"github.com/mptooling/notifycat/internal/notification/infrastructure"
+	saliencedomain "github.com/mptooling/notifycat/internal/salience/domain"
 )
 
 // Module binds the notification ports to their adapters and use cases, and
@@ -24,7 +25,7 @@ var Module = fx.Module("notification",
 	fx.Provide(
 		fx.Annotate(infrastructure.NewMessageRepo, fx.As(new(domain.MessageStore))),
 		fx.Annotate(infrastructure.NewSlackMessenger, fx.As(new(domain.Messenger))),
-		fx.Annotate(application.NewOpenHandler, fx.As(new(domain.Handler)), fx.ResultTags(`group:"handlers"`)),
+		fx.Annotate(provideOpenHandler, fx.As(new(domain.Handler)), fx.ResultTags(`group:"handlers"`)),
 		fx.Annotate(application.NewCloseHandler, fx.As(new(domain.Handler)), fx.ResultTags(`group:"handlers"`)),
 		fx.Annotate(application.NewDraftHandler, fx.As(new(domain.Handler)), fx.ResultTags(`group:"handlers"`)),
 		fx.Annotate(application.NewApproveHandler, fx.As(new(domain.Handler)), fx.ResultTags(`group:"handlers"`)),
@@ -43,4 +44,11 @@ type dispatcherParams struct {
 // provideDispatcher builds the dispatcher from the assembled handler group.
 func provideDispatcher(logger *slog.Logger, params dispatcherParams) *application.Dispatcher {
 	return application.NewDispatcher(logger, params.Handlers)
+}
+
+// provideOpenHandler assembles the open handler's params DTO from the fx graph.
+func provideOpenHandler(store domain.MessageStore, resolver domain.TargetResolver, messenger domain.Messenger, advisor saliencedomain.Advisor, logger *slog.Logger) *application.OpenHandler {
+	return application.NewOpenHandler(domain.OpenHandlerParams{
+		Store: store, Resolver: resolver, Messenger: messenger, Advisor: advisor, Logger: logger,
+	})
 }

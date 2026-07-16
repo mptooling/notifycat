@@ -16,6 +16,7 @@ type Messenger interface {
 	UpdateClosed(ctx context.Context, channel, messageID string, req ClosedRequest) error
 	UpdateReviewFinished(ctx context.Context, channel, messageID string, req ReviewFinishedRequest) error
 	AddReaction(ctx context.Context, channel, messageID, emoji string) error
+	PostThreadReply(ctx context.Context, channel, messageID string, req ThreadNoteRequest) error
 	Delete(ctx context.Context, channel, messageID string) error
 }
 

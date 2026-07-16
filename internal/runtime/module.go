@@ -43,6 +43,7 @@ import (
 	reviewdomain "github.com/mptooling/notifycat/internal/review/domain"
 	reviewinfra "github.com/mptooling/notifycat/internal/review/infrastructure"
 	routingapp "github.com/mptooling/notifycat/internal/routing/application"
+	salienceapp "github.com/mptooling/notifycat/internal/salience/application"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 	routinginfra "github.com/mptooling/notifycat/internal/routing/infrastructure"
 	validationapp "github.com/mptooling/notifycat/internal/validation/application"
@@ -226,8 +227,11 @@ func buildDispatcher(pullRequests *persistence.PullRequests, codeReviews *persis
 	messageStore := notificationinfra.NewMessageRepo(pullRequests)
 	messenger := notificationinfra.NewSlackMessenger(slackClient, composer)
 	reviews := reviewinfra.NewCodeReviewsRepo(codeReviews)
+	advisor := salienceapp.NewDeterministicAdvisor() // replaced by buildAdvisor in the runtime-wiring task
 	handlers := []notificationdomain.Handler{
-		notificationapp.NewOpenHandler(messageStore, router, messenger, logger),
+		notificationapp.NewOpenHandler(notificationdomain.OpenHandlerParams{
+			Store: messageStore, Resolver: router, Messenger: messenger, Advisor: advisor, Logger: logger,
+		}),
 		notificationapp.NewCloseHandler(messageStore, provider, messenger, logger, reviews),
 		notificationapp.NewDraftHandler(messageStore, messenger, logger),
 		notificationapp.NewApproveHandler(messageStore, provider, messenger, logger, reviews),

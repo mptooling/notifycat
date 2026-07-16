@@ -9,6 +9,8 @@ import (
 
 	"github.com/mptooling/notifycat/internal/notification/domain"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
+	salienceapp "github.com/mptooling/notifycat/internal/salience/application"
+	saliencedomain "github.com/mptooling/notifycat/internal/salience/domain"
 )
 
 func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
@@ -45,6 +47,11 @@ type deleteCall struct {
 	channel   string
 	messageID string
 }
+type threadNoteCall struct {
+	channel   string
+	messageID string
+	req       domain.ThreadNoteRequest
+}
 
 type fakeMessenger struct {
 	opens          []openCall
@@ -52,11 +59,13 @@ type fakeMessenger struct {
 	reviewFinished []reviewFinishedCall
 	reactions      []reactionCall
 	deletes        []deleteCall
+	threadNotes    []threadNoteCall
 
-	postErr   error
-	updateErr error
-	reactErr  error
-	deleteErr error
+	postErr       error
+	updateErr     error
+	reactErr      error
+	deleteErr     error
+	threadNoteErr error
 
 	postedTS int
 }
@@ -84,6 +93,10 @@ func (f *fakeMessenger) AddReaction(_ context.Context, channel, messageID, emoji
 func (f *fakeMessenger) Delete(_ context.Context, channel, messageID string) error {
 	f.deletes = append(f.deletes, deleteCall{channel: channel, messageID: messageID})
 	return f.deleteErr
+}
+func (f *fakeMessenger) PostThreadReply(_ context.Context, channel, messageID string, req domain.ThreadNoteRequest) error {
+	f.threadNotes = append(f.threadNotes, threadNoteCall{channel: channel, messageID: messageID, req: req})
+	return f.threadNoteErr
 }
 
 // reactionEmojis returns the emoji of every AddReaction call, in order.
@@ -194,4 +207,41 @@ func (f *fakeReviewSessions) Finish(_ context.Context, _ string, _ int) error {
 }
 func (f *fakeReviewSessions) Reviewers(_ context.Context, _ string, _ int) ([]domain.ReviewSession, error) {
 	return f.reviewers, f.reviewersErr
+}
+
+// fakeAdvisor records requests and returns canned decisions; any nil canned
+// decision delegates to the real deterministic advisor so handler tests get
+// today's behavior by default.
+type fakeAdvisor struct {
+	deterministic *salienceapp.DeterministicAdvisor
+
+	openRequests    []saliencedomain.OpenDecisionRequest
+	updatedRequests []saliencedomain.UpdatedDecisionRequest
+
+	openDecision    *saliencedomain.OpenDecision
+	updatedDecision *saliencedomain.UpdatedDecision
+}
+
+func newFakeAdvisor() *fakeAdvisor {
+	return &fakeAdvisor{deterministic: salienceapp.NewDeterministicAdvisor()}
+}
+
+func (f *fakeAdvisor) DecideOpen(ctx context.Context, request saliencedomain.OpenDecisionRequest) saliencedomain.OpenDecision {
+	f.openRequests = append(f.openRequests, request)
+	if f.openDecision != nil {
+		return *f.openDecision
+	}
+	return f.deterministic.DecideOpen(ctx, request)
+}
+
+func (f *fakeAdvisor) DecideUpdated(ctx context.Context, request saliencedomain.UpdatedDecisionRequest) saliencedomain.UpdatedDecision {
+	f.updatedRequests = append(f.updatedRequests, request)
+	if f.updatedDecision != nil {
+		return *f.updatedDecision
+	}
+	return f.deterministic.DecideUpdated(ctx, request)
+}
+
+func (f *fakeAdvisor) DecideDigest(ctx context.Context, request saliencedomain.DigestDecisionRequest) saliencedomain.DigestDecision {
+	return f.deterministic.DecideDigest(ctx, request)
 }

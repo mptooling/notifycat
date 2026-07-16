@@ -17,10 +17,16 @@ func newOpenHandler(
 	resolver *fakeTargetResolver,
 	messenger *fakeMessenger,
 ) *application.OpenHandler {
-	return application.NewOpenHandler(store, resolver, messenger, discardLogger())
+	return application.NewOpenHandler(domain.OpenHandlerParams{
+		Store:     store,
+		Resolver:  resolver,
+		Messenger: messenger,
+		Advisor:   newFakeAdvisor(),
+		Logger:    discardLogger(),
+	})
 }
 
-func openedEvent(repo string, prNumber int) kernel.Event {
+func openedEventOldStyle(repo string, prNumber int) kernel.Event {
 	return kernel.Event{
 		Kind:       kernel.KindOpened,
 		Repository: repo,
@@ -436,9 +442,15 @@ func TestOpenHandler_FansOutToEachTarget(t *testing.T) {
 		},
 	}
 	messenger := &fakeMessenger{}
-	h := application.NewOpenHandler(store, resolver, messenger, discardLogger())
+	h := application.NewOpenHandler(domain.OpenHandlerParams{
+		Store:     store,
+		Resolver:  resolver,
+		Messenger: messenger,
+		Advisor:   newFakeAdvisor(),
+		Logger:    discardLogger(),
+	})
 
-	if err := h.Handle(context.Background(), openedEvent("acme/web", 7)); err != nil {
+	if err := h.Handle(context.Background(), openedEventOldStyle("acme/web", 7)); err != nil {
 		t.Fatalf("handle: %v", err)
 	}
 	if len(messenger.opens) != 2 {
