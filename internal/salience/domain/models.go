@@ -176,9 +176,10 @@ type RateLimitInfo struct {
 }
 
 // GatewayConfig is the constructor input for a provider client. APIKey is the
-// revealed AI_API_KEY (empty for keyless openai_compatible endpoints).
+// revealed AI_API_KEY (empty for keyless openai_compatible endpoints); it is
+// excluded from marshaling so the key cannot leave the process by accident.
 type GatewayConfig struct {
-	APIKey  string
+	APIKey  string `json:"-"`
 	Model   string
 	BaseURL string
 }
