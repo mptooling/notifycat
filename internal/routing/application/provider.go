@@ -68,14 +68,16 @@ func (p *Provider) Get(_ context.Context, repository string) (domain.RepoMapping
 		return domain.RepoMapping{}, domain.ErrNotFound
 	}
 	res := resolveRouting(starPtr, repoPtr)
-	rx, ignoreAI, dependabot := resolveBehavior(p.defaults, starPtr, repoPtr)
+	behavior := resolveBehavior(p.defaults, starPtr, repoPtr)
 	return domain.RepoMapping{
 		Repository:       repository,
 		SlackChannel:     res.Channel,
 		Mentions:         res.Mentions,
-		Reactions:        rx,
-		IgnoreAIReviews:  ignoreAI,
-		DependabotFormat: dependabot,
+		Reactions:        behavior.reactions,
+		IgnoreAIReviews:  behavior.ignoreAIReviews,
+		DependabotFormat: behavior.dependabotFormat,
+		AIEnabled:        behavior.aiEnabled,
+		AIInstructions:   behavior.aiInstructions,
 	}, nil
 }
 

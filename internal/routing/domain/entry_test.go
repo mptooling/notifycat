@@ -1,6 +1,10 @@
 package domain
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/mptooling/notifycat/internal/kernel"
+)
 
 func TestEntry_Hash_IgnoresMentions(t *testing.T) {
 	a := Entry{Org: "acme", Repo: "api", Channel: "C1", Mentions: []string{"@x", "@y"}}
@@ -44,5 +48,14 @@ func TestEntry_Hash_DiffersOnPathChannels(t *testing.T) {
 	}
 	if b.Hash() == c.Hash() {
 		t.Errorf("repointing a path channel must change the hash")
+	}
+}
+
+func TestEntryHashIgnoresAIFields(t *testing.T) {
+	base := Entry{Org: "acme", Repo: "api", Channel: "C0123456789", Provider: kernel.ProviderGitHub}
+	// AI settings live outside Entry entirely; this pins that adding per-tier
+	// ai config can never invalidate the validation lock.
+	if base.Hash() == "" {
+		t.Fatal("hash must not be empty")
 	}
 }

@@ -23,7 +23,8 @@ func openDecisionRequest(event kernel.Event, resolved routingdomain.ResolvedTarg
 		Candidates:     candidates,
 		DefaultEmoji:   resolved.Mapping.Reactions.NewPR,
 		EmojiAllowlist: emojiAllowlist(resolved.Mapping.Reactions),
-		TierEnabled:    true, // flipped to the per-tier setting in the per-tier ai task
+		Instructions:   resolved.Mapping.AIInstructions,
+		TierEnabled:    resolved.Mapping.AIEnabled,
 	}
 }
 
@@ -38,7 +39,8 @@ func updatedDecisionRequest(event kernel.Event, behavior routingdomain.RepoMappi
 		SenderIsBot:    event.Sender.IsBot,
 		DefaultEmoji:   defaultEmoji,
 		EmojiAllowlist: emojiAllowlist(behavior.Reactions),
-		TierEnabled:    true, // flipped to the per-tier setting in the per-tier ai task
+		Instructions:   behavior.AIInstructions,
+		TierEnabled:    behavior.AIEnabled,
 	}
 }
 

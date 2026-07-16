@@ -132,6 +132,7 @@ type repoConfigWire struct {
 	IgnoreAIReviews  *bool
 	DependabotFormat *bool
 	Digest           *digestConfigWire
+	AI               *aiOverrideWire
 	Paths            []domain.PathRule
 }
 
@@ -197,6 +198,10 @@ func (rc *repoConfigWire) UnmarshalYAML(node *yaml.Node) error {
 				return err
 			}
 			rc.Paths = paths
+		case "ai":
+			if err := decodeAI(rc, valNode); err != nil {
+				return err
+			}
 		default:
 			return fmt.Errorf("unknown field %q", keyNode.Value)
 		}
@@ -234,6 +239,47 @@ func decodeReviews(rc *repoConfigWire, node *yaml.Node) error {
 			return fmt.Errorf("reviews.%s: %w", key.Value, err)
 		}
 	}
+	return nil
+}
+
+// aiOverrideWire is the YAML wire type for a tier's `ai:` block.
+type aiOverrideWire struct {
+	Enabled      *bool
+	Instructions string
+}
+
+// decodeAI parses a tier's `ai:` block (enabled, instructions), each
+// optional, rejecting unknown keys — per-tier provider/model/key are
+// deliberately not accepted.
+func decodeAI(rc *repoConfigWire, node *yaml.Node) error {
+	if node.Kind != yaml.MappingNode {
+		return fmt.Errorf("ai: expected mapping; got node kind %d", node.Kind)
+	}
+	if len(node.Content)%2 != 0 {
+		return fmt.Errorf("ai: malformed mapping")
+	}
+	wire := &aiOverrideWire{}
+	seen := map[string]bool{}
+	for i := 0; i < len(node.Content); i += 2 {
+		key, val := node.Content[i], node.Content[i+1]
+		if err := markSeen(seen, key.Value); err != nil {
+			return fmt.Errorf("ai: %w", err)
+		}
+		switch key.Value {
+		case "enabled":
+			wire.Enabled = new(bool)
+			if err := val.Decode(wire.Enabled); err != nil {
+				return fmt.Errorf("ai.enabled: %w", err)
+			}
+		case "instructions":
+			if err := val.Decode(&wire.Instructions); err != nil {
+				return fmt.Errorf("ai.instructions: %w", err)
+			}
+		default:
+			return fmt.Errorf("ai: unknown field %q", key.Value)
+		}
+	}
+	rc.AI = wire
 	return nil
 }
 
@@ -382,6 +428,9 @@ func (rc repoConfigWire) toDomain() domain.RepoConfig {
 	if rc.Digest != nil {
 		v := rc.Digest.toDomain()
 		out.Digest = &v
+	}
+	if rc.AI != nil {
+		out.AI = &domain.AIOverride{Enabled: rc.AI.Enabled, Instructions: rc.AI.Instructions}
 	}
 	return out
 }

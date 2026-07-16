@@ -42,6 +42,7 @@ type RepoConfig struct {
 	IgnoreAIReviews  *bool
 	DependabotFormat *bool
 	Digest           *DigestConfig
+	AI               *AIOverride
 
 	// Paths is the optional per-directory routing for a monorepo, in
 	// declaration order (order is significant for tie-breaking). Only valid on
@@ -87,6 +88,15 @@ type Reactions struct {
 	BotReview     string
 }
 
+// AIOverride is a tier's optional `ai:` block. Enabled is tri-state (nil =
+// inherit); Instructions concatenates onto the less-specific tiers' guidance
+// rather than replacing it. Provider, model, and key are deliberately not
+// per-tier — one provider per deployment, mirroring git_provider.
+type AIOverride struct {
+	Enabled      *bool
+	Instructions string
+}
+
 // Target is one fan-out destination resolved for a PR: a channel and the
 // mentions to ping there. Produced by the mappings resolver, consumed by the
 // open handler.
@@ -111,6 +121,11 @@ type RepoMapping struct {
 	Reactions        Reactions
 	IgnoreAIReviews  bool
 	DependabotFormat bool
+	// AIEnabled and AIInstructions are the resolved per-tier ai settings:
+	// enabled tri-state merged across tiers, instructions concatenated
+	// global → org/* → org/repo. Not part of validation or the lock.
+	AIEnabled      bool
+	AIInstructions string
 }
 
 // Resolved is the effective routing config for one repository after merging
@@ -126,6 +141,9 @@ type Defaults struct {
 	Reactions        Reactions
 	IgnoreAIReviews  bool
 	DependabotFormat bool
+	AIEnabled        bool
+	AIInstructions   string
+	// AIEnabled/AIInstructions mirror the global ai: config block (filled by the composition root).
 	// GitProvider is the deployment's single git_provider; the Provider stamps it
 	// on every entry so it hashes into the lock (see Entry.Provider).
 	GitProvider kernel.Provider
