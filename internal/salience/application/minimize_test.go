@@ -65,3 +65,18 @@ func TestMinimizeFilesCapsWithMarker(t *testing.T) {
 		t.Errorf("marker = %q", got[domain.MaxFilePaths])
 	}
 }
+
+func TestMinimizeTitle(t *testing.T) {
+	got := minimizeTitle("  token ghp_abcdefghijklmnopqrstuvwxyz123456 pushed  ")
+	if strings.Contains(got, "ghp_") || !strings.Contains(got, "[REDACTED]") {
+		t.Errorf("minimizeTitle did not redact: %q", got)
+	}
+	if !strings.HasPrefix(got, "token") {
+		t.Errorf("surrounding whitespace not trimmed: %q", got)
+	}
+
+	long := minimizeTitle(strings.Repeat("é", domain.MaxTitleChars+50))
+	if runeCount := len([]rune(long)); runeCount > domain.MaxTitleChars {
+		t.Errorf("title length = %d runes; cap is %d", runeCount, domain.MaxTitleChars)
+	}
+}
