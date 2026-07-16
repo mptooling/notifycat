@@ -181,3 +181,15 @@ func TestNewAdvisorBindings(t *testing.T) {
 		t.Errorf("enabled without a gateway must bind deterministic; got %T", nilGateway)
 	}
 }
+
+func TestResilientAdvisorNilLoggerIsSafe(t *testing.T) {
+	gateway := &countingGateway{response: domain.ModelResponse{Text: validOpenText()}}
+	params := resilientParams(gateway, time.Now)
+	params.Logger = nil
+
+	decision := NewResilientAdvisor(params).DecideOpen(context.Background(), modelOpenRequest())
+
+	if len(decision.Targets) == 0 {
+		t.Errorf("nil-logger advisor must still decide: %+v", decision)
+	}
+}

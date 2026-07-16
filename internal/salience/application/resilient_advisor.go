@@ -27,11 +27,15 @@ type ResilientAdvisor struct {
 }
 
 // NewResilientAdvisor builds the resilient advisor from its params. Now
-// defaults to time.Now when nil.
+// defaults to time.Now and Logger to slog.Default when nil.
 func NewResilientAdvisor(params domain.AdvisorParams) *ResilientAdvisor {
 	now := params.Now
 	if now == nil {
 		now = time.Now
+	}
+	logger := params.Logger
+	if logger == nil {
+		logger = slog.Default()
 	}
 	deterministic := NewDeterministicAdvisor()
 	return &ResilientAdvisor{
@@ -40,7 +44,7 @@ func NewResilientAdvisor(params domain.AdvisorParams) *ResilientAdvisor {
 		deterministic: deterministic,
 		cache:         newDecisionCache(domain.CacheSize, domain.CacheTTL),
 		circuit:       newCircuitBreaker(domain.CircuitFailureThreshold, domain.CircuitOpenDuration),
-		logger:        params.Logger,
+		logger:        logger,
 		now:           now,
 	}
 }
