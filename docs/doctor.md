@@ -24,11 +24,12 @@ Exit code is `0` when every check passes (`SKIP` does not count as a failure) an
 | `config` | `database.url` | Non-empty; actual reachability is the next section's job. |
 | `config` | `server.domain` | Derives the public webhook URL (`https://$domain/webhook/<provider>`) the operator pastes into the git host. `OK` prints that URL; a scheme/path or malformed host is a `FAIL` with a hint; unset is a `SKIP` (expected for local dev / tunnels). |
 | `database` | `open` | Opens the SQLite database and pings the underlying connection. Reports the DSN that was used. |
-| `mappings` | `file` | Loads the YAML via the same parser the server uses. Surfaces schema errors and missing files. |
 | `mappings` | `entries` | Number of parsed entries (`0` is allowed — the server boots and routes nothing). |
 | `mappings` | `path routing` | Only when some tier uses [per-path routing](monorepo.md). `OK` when the read token (`GITHUB_TOKEN` / `BITBUCKET_TOKEN`) is set (path rules active); `SKIP` when it is unset (rules inert — PRs route to the repository tier). |
 | `owner/repo` | `mapping` / `channel-format` / `slack-auth` / `slack-channel` / `webhook` | Only when a positional argument is given. Delegates to `internal/validation` — same checks `notifycat-config validate owner/repo` runs. A per-path channel adds its own `slack-channel <id>` membership check. |
 | `ai` | `ai.enabled` / `ai.provider` / `ai.model` / `AI_API_KEY` / `ai.base_url` / `probe` / `rate limits` | Runs whenever the doctor runs. Shape checks validate the config values; `AI_API_KEY` is reported as `set` or `missing` — never printed. When `ai.enabled: true` and a prober is wired, the doctor sends a live one-token structured-output request and reports the latency in milliseconds. A best-effort rate-limit line follows when the provider exposes headroom via response headers (OpenAI-compatible `x-ratelimit-*` headers; Gemini exposes quota via provider-enforced limits — a probe 429 surfaces the provider's own detail). When `ai.enabled: false`, the section reports that AI is disabled and exits immediately. |
+
+> **YAML parse errors are startup errors, not doctor sections.** If `config.yaml` cannot be parsed, `config.Load()` fails before the doctor runs and the error appears on stderr. The `[mappings]` section only runs when the file loaded successfully.
 
 ## Output format
 
@@ -38,11 +39,19 @@ Exit code is `0` when every check passes (`SKIP` does not count as a failure) an
   OK    SLACK_BOT_TOKEN — set
   OK    cleanup.message_ttl_days — 30 days
   OK    database.url — file:/data/notifycat.db
+  OK    config.yaml — /etc/notifycat/config.yaml
+  SKIP  server.domain — not set — skipping the public webhook URL check …
 [database]
   OK    open — file:/data/notifycat.db
 [mappings]
-  OK    config — /etc/notifycat/config.yaml
   OK    entries — 4 entries
+[ai]
+  OK    ai.enabled — true
+  OK    ai.provider — openai_compatible
+  OK    ai.model — gpt-4o-mini
+  SKIP  AI_API_KEY — not set — keyless mode (fine for local openai_compatible endpoints)
+  OK    ai.base_url — http://localhost:11434/v1
+  OK    probe — structured one-token response in 142 ms
 [octo/widget]
   OK    mapping
   OK    channel-format

@@ -26,10 +26,10 @@ func NewDoctor(snapshot diagnosticsdomain.ConfigSnapshot, validator validationdo
 	return &Doctor{snapshot: snapshot, validator: validator, aiProber: aiProber}
 }
 
-// Run produces the report. The first three sections (config, database,
-// mappings) always run, in that order. When target is non-empty and a
-// validator is configured, a fourth section named after target is appended
-// with the per-mapping check results.
+// Run produces the report. Four sections always run in order: config,
+// database, mappings, and ai. When target is non-empty and a validator is
+// configured, a fifth section named after target is appended with the
+// per-mapping check results from the validation domain.
 func (d *Doctor) Run(ctx context.Context, target string) []diagnosticsdomain.Section {
 	sections := []diagnosticsdomain.Section{
 		CheckConfig(d.snapshot),
