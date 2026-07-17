@@ -36,9 +36,28 @@ func systemPrompt(taskDescription, operatorInstructions string) string {
 	return builder.String()
 }
 
+// minimizedOpenEnvelope holds the attacker-influenced open content AFTER
+// minimization — the exact text placed in the untrusted envelope. The guard
+// must inspect these, not the raw fields: minimizeBody deletes HTML comments
+// and image tags, concatenating adjacent text, which can reassemble an
+// injection phrase that the raw text did not contain.
+type minimizedOpenEnvelope struct {
+	title string
+	body  string
+	files []string
+}
+
+func newMinimizedOpenEnvelope(request domain.OpenDecisionRequest) minimizedOpenEnvelope {
+	return minimizedOpenEnvelope{
+		title: minimizeTitle(request.PR.Title),
+		body:  minimizeBody(request.PR.Body),
+		files: minimizeFiles(request.ChangedFiles),
+	}
+}
+
 // openUserPrompt renders the open request: trusted facts first, then the
-// minimized attacker-influenced content inside the envelope.
-func openUserPrompt(request domain.OpenDecisionRequest) string {
+// already-minimized attacker-influenced content inside the envelope.
+func openUserPrompt(env minimizedOpenEnvelope, request domain.OpenDecisionRequest) string {
 	var builder strings.Builder
 	fmt.Fprintf(&builder, "Repository: %s\nPR number: %d\nAuthor: %s (known bot: %v)\n",
 		request.Repository, request.PR.Number, request.PR.Author, request.PR.AuthorIsBot)
@@ -49,7 +68,7 @@ func openUserPrompt(request domain.OpenDecisionRequest) string {
 		fmt.Fprintf(&builder, "Candidate channel %s, allowed mentions: [%s]\n", candidate.Channel, strings.Join(candidate.Mentions, ", "))
 	}
 	builder.WriteString(wrapUntrusted(fmt.Sprintf("Title: %s\n\nBody:\n%s\n\nChanged files:\n%s",
-		minimizeTitle(request.PR.Title), minimizeBody(request.PR.Body), strings.Join(minimizeFiles(request.ChangedFiles), "\n"))))
+		env.title, env.body, strings.Join(env.files, "\n"))))
 	return builder.String()
 }
 

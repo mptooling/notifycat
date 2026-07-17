@@ -56,13 +56,19 @@ type digestDecisionWire struct {
 // DecideOpen implements domain.Advisor.
 func (a *ModelAdvisor) DecideOpen(ctx context.Context, request domain.OpenDecisionRequest) domain.OpenDecision {
 	fallback := a.deterministic.DecideOpen(ctx, request)
-	if guardTripped(request.PR.Title, request.PR.Body, request.PR.Author) {
+	// Build the minimized envelope first: minimizeBody removes HTML comments by
+	// deleting them, which concatenates adjacent text and can reassemble injection
+	// phrases not present in the raw body. The guard must see the same text the
+	// model will see — minimized title, body, and files — plus the raw author
+	// (a login, not minimized).
+	envelope := newMinimizedOpenEnvelope(request)
+	if guardTripped(envelope.title, envelope.body, strings.Join(envelope.files, "\n"), request.PR.Author) {
 		fallback.FallbackReason = domain.FallbackGuardTripped
 		return fallback
 	}
 	response, failure := a.generate(ctx, domain.ModelRequest{
 		System:          systemPrompt(openTask, request.Instructions),
-		User:            openUserPrompt(request),
+		User:            openUserPrompt(envelope, request),
 		Schema:          openDecisionSchema(),
 		MaxOutputTokens: domain.MaxOutputTokens,
 	})
