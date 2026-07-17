@@ -91,6 +91,18 @@ chmod 600 .env        # fix if it is anything more permissive
 
 `.env` is gitignored — never commit it, and never paste its contents into an issue or PR. The same applies to `config.yaml` and anything under `data/`.
 
+## AI layer
+
+When the optional [AI layer](ai.md) is enabled, Notifycat sends a minimized representation of each PR to the configured model provider. This section describes exactly what leaves the process and what the security boundaries are.
+
+**What leaves the process.** The model receives PR title (capped at 200 characters), PR body (capped at 1,500 characters), changed file paths (up to 100 entries), and the PR author login. Nothing else — no tokens, no webhook secrets, no Slack channel IDs or mention handles, no full file contents. Secret-shaped strings (anything that looks like a token or credential) are redacted from title and body before the payload is constructed.
+
+**Untrusted-data envelope and zero-tools/one-turn stance.** PR content (title, body, file paths, author) is attacker-influenced and is separated from the trusted system prompt in the model request. The model is run with zero tools and a single turn — it cannot make outbound calls, loop, or accumulate state. The response must conform to a strict JSON schema; anything that does not parse to that schema is discarded and the fallback fires.
+
+**The clamp guarantee.** Every model output is validated and clamped before it is applied. A successfully injected response can at worst cause the model to pick a wrong-but-valid enum value (e.g. `quiet` instead of `ping`) or include a ≤200-character sanitized note — it cannot mint new mentions, introduce channel IDs, embed links, or hide a PR. The salience layer is a bounded adjuster: it modulates presentation, it never gates delivery.
+
+**`AI_API_KEY` is env-only and Secret-typed.** The key lives in environment variables (or `.env`) and is never written to `config.yaml`, logs, or the doctor's output. `notifycat-doctor` reports it as `set` or `missing` only. The key is excluded from the `GatewayConfig` JSON marshaling so it cannot leave the process by accident.
+
 ## Reporting a vulnerability
 
 Found a security issue? Do not open a public issue. Follow the private process in the

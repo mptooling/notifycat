@@ -50,11 +50,11 @@ A hexagonal Go app needs two pieces of connective tissue that are deliberately *
 
 Notifycat has **no user accounts, sessions, logins, roles, or permissions**, so there is no authentication or authorization *domain* — modelling them as domains would produce empty, ruleless folders. The only authentication that exists today is **inbound webhook message authentication**: proving, by HMAC signature, that a request genuinely came from GitHub or Slack. That is a cross-cutting security concern, so it lives in **`platform/security`** as an explicit `SignatureVerifier` port with one adapter per provider scheme — not inside a business domain. The inbound adapters in `notification` and `review` consume that port and only parse the verified body; they never re-implement verification. Outbound credentials (the Slack bot token, the GitHub token) are `Secret`s from `platform/config`, passed to the `platform/slack` / `platform/github` clients.
 
-**Authorization does not exist today** — single tenant, no access control beyond "is this webhook authentic." If the multi-tenant SaaS direction lands (see the productization plan), *then* authentication (tenant/user identity, GitHub-App OAuth installs, API keys) and authorization (tenant isolation, who may configure which mappings) become genuine bounded contexts — new `internal/identity` and `internal/access` domains alongside these seven, owning their ports in the domain layer and plugging into the same fx composition. That is deliberately out of scope for this refactor.
+**Authorization does not exist today** — single tenant, no access control beyond "is this webhook authentic." If the multi-tenant SaaS direction lands (see the productization plan), *then* authentication (tenant/user identity, GitHub-App OAuth installs, API keys) and authorization (tenant isolation, who may configure which mappings) become genuine bounded contexts — new `internal/identity` and `internal/access` domains alongside these eight, owning their ports in the domain layer and plugging into the same fx composition. That is deliberately out of scope for this refactor.
 
 ## Domain map
 
-Seven domains over the shared kernel and platform. The core domain is **notification**; everything else supports it.
+Eight domains over the shared kernel and platform. The core domain is **notification**; everything else supports it.
 
 ```mermaid
 flowchart TB
@@ -86,13 +86,14 @@ flowchart TB
 
 | Domain | Business capability | Absorbs today's packages |
 | --- | --- | --- |
-| **notification** | Receive a GitHub PR event and keep one Slack message per (PR, channel) in sync — post on open, update/react on state change, delete on draft. Includes bot-PR classification/formatting and AI-reviewer suppression. | `pullrequest` (dispatcher, open/close/draft + reaction handlers), `botpr`, `aireview`, `githubhook` parsing (verification → `platform/security`), the messages repository from `store` |
+| **notification** | Receive a GitHub PR event and keep one Slack message per (PR, channel) in sync — post on open, update/react on state change, delete on draft. Includes bot-PR classification/formatting and AI-reviewer suppression. OpenHandler, CloseHandler, and the reaction handlers (ApproveHandler, CommentedHandler, RequestChangeHandler) consult `saliencedomain.Advisor` when AI is enabled. | `pullrequest` (dispatcher, open/close/draft + reaction handlers), `botpr`, `aireview`, `githubhook` parsing (verification → `platform/security`), the messages repository from `store` |
 | **review** | The interactive "Start review" flow: a Slack button click records a reviewer and appends an in-review marker; a submitted GitHub review finishes sessions and clears the in-review state; reviewers are shown on close. | `startreview`, `slackhook` parsing (verification → `platform/security`), the `code_reviews` repository from `store`, the review-session logic in `pullrequest` |
 | **routing** | Resolve a repo (and optionally a PR's changed files) to the Slack channel(s) and behavioral config that apply, across global/org/repo tiers and monorepo path rules. | `mappings` (provider, parsing, tiers, defaults, lock), the per-PR `Router` from `pullrequest`, the changed-files reader over `platform/github` |
 | **validation** | Validate mapping entries against Slack (channel exists, bot present) and GitHub (repo exists); cache results in `config.lock`. Powers the startup gate, the doctor, and `notifycat-config validate`. | `validate` |
-| **digest** | Periodically post a digest of stuck (stale) PRs per the enabled cron schedules. | `digest` |
+| **digest** | Periodically post a digest of stuck (stale) PRs per the enabled cron schedules. The digest reporter consults `saliencedomain.Advisor` when AI is enabled. | `digest` |
 | **maintenance** | Background housekeeping: delete stale message rows past their TTL; reconcile closed PRs. | `cleanup`, `reconcile` |
 | **diagnostics** | Operator tooling: the preflight doctor, the `notifycat-config` CLI (list/validate), and the smoke-test delivery. | `doctor`, `mappingcli`, `smoke` |
+| **salience** | Optional AI decision layer: decides notification salience — per-channel loudness, mentions subset, emoji, format, emphasis, bounded notes, digest ordering — behind a no-error `Advisor` port with deterministic fallback; operator-facing name is "AI". Providers under `salience/infrastructure/{gemini,openaicompat}`. | `salience` (new) |
 
 `internal/app` (the old hand-written composition root) has been deleted: its wiring is per-domain fx modules, and its lifecycle orchestration is `fx.Lifecycle` hooks composed in `internal/runtime` and each `cmd/*/main.go`.
 

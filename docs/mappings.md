@@ -72,6 +72,35 @@ A repository tier (and the `"*"` tier) may override behavioral settings that oth
 
 Inheritance, most-specific wins: repository tier → org `"*"` tier → global section → built-in default. Not overridable per repository: `server.*`, `database.url`, `slack.base_url`, `github.base_url` / `bitbucket.base_url`, `cleanup.message_ttl_days`.
 
+<a id="ai-overrides"></a>
+
+## AI overrides
+
+When the global `ai.enabled: true` switch is on, individual repo tiers can opt out or supply additional instructions via an `ai:` block:
+
+```yaml
+mappings:
+  acme:
+    noisy-repo:
+      channel: C0123ABCDE
+      ai:
+        enabled: false      # opt this repo out of AI decisions
+    focused-repo:
+      channel: C0456FGHIJ
+      ai:
+        instructions: |
+          This repo owns the billing pipeline — treat latency and security PRs as high-priority.
+```
+
+| Key | Notes |
+| --- | --- |
+| `ai.enabled` | Tri-state: absent inherits from the `org/*` tier, which inherits from the global `ai.enabled`. Set `false` to opt a repo out even when the global switch is on. Set `true` to opt a repo back in when the `org/*` tier sets `false`. |
+| `ai.instructions` | Optional additional operator guidance for this tier. Concatenated in order: global `ai.instructions` → `org/*` tier instructions → repo tier instructions. The final string is embedded in every prompt for this repo. |
+
+Provider, model, and key (`ai.provider`, `ai.model`, `ai.base_url`, `AI_API_KEY`) are global-only and cannot be set per-tier.
+
+The per-tier `ai.enabled` flag governs the open and updated surfaces. The digest follows the global `ai.enabled` switch because digest reports span multiple repos and there is no single repo tier that owns them.
+
 ## Per-path routing (monorepos)
 
 A **named** repository tier may add a `paths:` block; how PRs select channels at runtime is covered in [Monorepos](monorepo.md). A path entry accepts exactly two optional keys:

@@ -91,6 +91,7 @@ nav:
       - Monorepos: monorepo.md
       - Reactions & bot reviews: bots-and-reactions.md
       - Stuck-PR digest: digest.md
+      - AI notifications: ai.md
   - Troubleshoot:
       - Start here: troubleshooting.md
       - Doctor: doctor.md

@@ -28,6 +28,7 @@ Exit code is `0` when every check passes (`SKIP` does not count as a failure) an
 | `mappings` | `entries` | Number of parsed entries (`0` is allowed — the server boots and routes nothing). |
 | `mappings` | `path routing` | Only when some tier uses [per-path routing](monorepo.md). `OK` when the read token (`GITHUB_TOKEN` / `BITBUCKET_TOKEN`) is set (path rules active); `SKIP` when it is unset (rules inert — PRs route to the repository tier). |
 | `owner/repo` | `mapping` / `channel-format` / `slack-auth` / `slack-channel` / `webhook` | Only when a positional argument is given. Delegates to `internal/validation` — same checks `notifycat-config validate owner/repo` runs. A per-path channel adds its own `slack-channel <id>` membership check. |
+| `ai` | `ai.enabled` / `ai.provider` / `ai.model` / `AI_API_KEY` / `ai.base_url` / `probe` / `rate limits` | Runs whenever the doctor runs. Shape checks validate the config values; `AI_API_KEY` is reported as `set` or `missing` — never printed. When `ai.enabled: true` and a prober is wired, the doctor sends a live one-token structured-output request and reports the latency in milliseconds. A best-effort rate-limit line follows when the provider exposes headroom via response headers (OpenAI-compatible `x-ratelimit-*` headers; Gemini exposes quota via provider-enforced limits — a probe 429 surfaces the provider's own detail). When `ai.enabled: false`, the section reports that AI is disabled and exits immediately. |
 
 ## Output format
 

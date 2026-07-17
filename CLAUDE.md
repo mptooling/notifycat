@@ -46,7 +46,7 @@ Notifycat is a single-process HTTP server with a SQLite sidecar. It receives Git
 
 ### Domain structure
 
-Seven domains live under `internal/<domain>/`, each with three layers (`domain/`, `application/`, `infrastructure/`) and a `module.go` exporting an `fx.Module`:
+Eight domains live under `internal/<domain>/`, each with three layers (`domain/`, `application/`, `infrastructure/`) and a `module.go` exporting an `fx.Module`:
 
 | Domain | Responsibility |
 | --- | --- |
@@ -57,6 +57,7 @@ Seven domains live under `internal/<domain>/`, each with three layers (`domain/`
 | `digest` | Periodic stuck-PR digest per cron schedule |
 | `maintenance` | Background housekeeping: delete stale message rows; reconcile closed PRs |
 | `diagnostics` | Operator tooling: `notifycat-doctor`, `notifycat-config`, smoke test |
+| `salience` | Optional AI decision layer: decides notification salience — per-channel loudness, mentions subset, emoji, format, emphasis, bounded notes, digest ordering — behind a no-error `Advisor` port with deterministic fallback; operator-facing name is "AI" |
 
 The shared kernel (`internal/kernel`) holds pure value objects (`PR`, `Event`, `Sender`, `Review`) and GitHub event/action/review-state enums — stdlib only. The shared platform (`internal/platform/`) holds domain-agnostic clients: `config`, `persistence` (GORM/SQLite), `slack`, `github`, `httpx`, and `security` (HMAC `SignatureVerifier` with `GitHubVerifier`/`SlackVerifier` adapters).
 
@@ -84,6 +85,8 @@ POST /webhook/slack/interactions
   → review/infrastructure interactions receiver
   → review/application start-review use case
 ```
+
+When AI is enabled, OpenHandler, CloseHandler, and the reaction handlers (ApproveHandler, CommentedHandler, RequestChangeHandler) consult `saliencedomain.Advisor` before sending to the Messenger port; the digest reporter does the same.
 
 Every silent no-op logs `ignored webhook event` with a `reason` field (`no_handler`, `no_mapping`, `no_stored_message`, `already_sent`). The operations doc has the full reason table — that contract matters for debugging deliveries that return 200 but don't update Slack.
 

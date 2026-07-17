@@ -71,3 +71,7 @@ Once a day (9am UTC by default), each channel with stuck PRs gets a two-part rem
 ![Morning digest message with the stuck-PR list in its thread](assets/images/slack_digest.png)
 
 A PR counts as stuck when nothing happened on it since the previous day — no review, no comment, nothing. Suppressed bot reviews deliberately don't count as activity, so an AI-only pass never hides a PR that still needs a human. Schedule, timezone, per-repository overrides, and how to turn it off: [Stuck-PR digest](digest.md).
+
+## Adaptive loudness (optional AI)
+
+Everything above is deterministic. Notifycat can optionally route each of these presentation choices — how loud a message pings, which mentions it carries, the leading emoji, standard vs. compact format, and the order of the digest — through an AI salience layer that tunes them per channel from the PR's own signals. It never decides *whether* a message is sent, and with the layer off (the default) or on any failure the result is byte-identical to what this page describes. See [AI notifications](ai.md).
