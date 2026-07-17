@@ -35,10 +35,12 @@ func openHandlerUnderTest(store *fakeMessageStore, messenger *fakeMessenger, adv
 func standardResolver() *fakeTargetResolver {
 	return &fakeTargetResolver{
 		behavior: routingdomain.RepoMapping{
-			Repository:   "acme/api",
-			SlackChannel: "C1",
-			Mentions:     []string{"<@U1>"},
-			Reactions:    routingdomain.Reactions{Enabled: true, NewPR: "eyes"},
+			Repository:     "acme/api",
+			SlackChannel:   "C1",
+			Mentions:       []string{"<@U1>"},
+			Reactions:      routingdomain.Reactions{Enabled: true, NewPR: "eyes"},
+			AIEnabled:      true,
+			AIInstructions: "be concise",
 		},
 		targets:      []routingdomain.Target{{Channel: "C1", Mentions: []string{"<@U1>"}}},
 		changedFiles: []string{"services/payments/main.go"},
@@ -68,6 +70,28 @@ func TestOpenHandlerBuildsAdvisorRequest(t *testing.T) {
 	}
 	if request.DefaultEmoji != "eyes" {
 		t.Errorf("DefaultEmoji = %q", request.DefaultEmoji)
+	}
+	// Per-tier opt-out fields: a resolver that supplies TierEnabled=false must
+	// propagate to the request so the advisor short-circuits for that tier.
+	if !request.TierEnabled {
+		t.Errorf("TierEnabled = false; want true from standardResolver")
+	}
+	if request.Instructions != "be concise" {
+		t.Errorf("Instructions = %q; want %q", request.Instructions, "be concise")
+	}
+	// EmojiAllowlist is the resolved reactions plus curated extras; at minimum
+	// the configured NewPR emoji and the curated set must be present.
+	emojiSet := make(map[string]bool, len(request.EmojiAllowlist))
+	for _, e := range request.EmojiAllowlist {
+		emojiSet[e] = true
+	}
+	if !emojiSet["eyes"] {
+		t.Errorf("EmojiAllowlist missing the configured NewPR emoji %q: %v", "eyes", request.EmojiAllowlist)
+	}
+	for _, curated := range saliencedomain.CuratedEmojis {
+		if !emojiSet[curated] {
+			t.Errorf("EmojiAllowlist missing curated emoji %q: %v", curated, request.EmojiAllowlist)
+		}
 	}
 }
 
