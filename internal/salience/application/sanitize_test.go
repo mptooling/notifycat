@@ -14,6 +14,7 @@ func TestSanitizeLine(t *testing.T) {
 		{"strips user mention", "ping <@U123> now", "ping now"},
 		{"strips channel bang", "hey <!channel> look", "hey look"},
 		{"strips at keywords", "cc @here and @channel please", "cc and please"},
+		{"strips reassembled at keyword", "@he@herere", ""},
 		{"strips slack links", "see <https://evil.example|click me>", "see"},
 		{"strips bare urls", "go to https://evil.example/path now", "go to now"},
 		{"escapes mrkdwn control chars", "a & b < c > d", "a &amp; b &lt; c &gt; d"},

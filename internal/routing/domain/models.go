@@ -141,9 +141,9 @@ type Defaults struct {
 	Reactions        Reactions
 	IgnoreAIReviews  bool
 	DependabotFormat bool
-	AIEnabled        bool
-	AIInstructions   string
 	// AIEnabled/AIInstructions mirror the global ai: config block (filled by the composition root).
+	AIEnabled      bool
+	AIInstructions string
 	// GitProvider is the deployment's single git_provider; the Provider stamps it
 	// on every entry so it hashes into the lock (see Entry.Provider).
 	GitProvider kernel.Provider
