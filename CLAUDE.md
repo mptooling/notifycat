@@ -29,13 +29,13 @@ underlying `go ...` invocations work without `just` if needed.
 | Single test | `go test -race ./internal/notification/... -run TestApproveHandler` |
 | Single package | `go test -race ./internal/notification/...` |
 | Lint only | `just lint` (requires `golangci-lint` locally) |
-| Vuln scan | `just vuln` (runs in Docker against the pinned `golang:1.25.10-alpine` — slower; CI also runs this) |
+| Vuln scan | `just vuln` (runs in Docker against the pinned `golang:1.25.12-alpine` — slower; CI also runs this) |
 | Build all binaries | `just build` |
 | Run server locally | `just serve` |
 | Apply migrations | `just migrate` (or `just docker-migrate` against `./data`) |
 | Build & run Docker image | `just docker-build` then `just docker-serve` |
 
-Go toolchain is pinned at **1.25.10**. CI runs all of the
+Go toolchain is pinned at **1.25.12**. CI runs all of the
 `just check` steps (`go vet`, `golangci-lint`, `govulncheck`,
 `go test -race`, `go build`). `just` is dev-only — it is not in the
 runtime image or Go modules.
