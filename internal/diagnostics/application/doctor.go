@@ -10,18 +10,20 @@ import (
 	validationdomain "github.com/mptooling/notifycat/internal/validation/domain"
 )
 
-// Doctor implements diagnosticsdomain.Doctor. It validates a ConfigSnapshot and
-// delegates per-repo checks to a RepoValidator. Construct via NewDoctor.
+// Doctor implements diagnosticsdomain.Doctor. It validates a ConfigSnapshot,
+// delegates per-repo checks to a RepoValidator, and probes the AI provider
+// via an AIProber. Construct via NewDoctor.
 type Doctor struct {
 	snapshot  diagnosticsdomain.ConfigSnapshot
 	validator validationdomain.RepoValidator
+	aiProber  diagnosticsdomain.AIProber
 }
 
-// NewDoctor returns a Doctor wired to snapshot and validator. validator may be
-// nil — Run then skips the per-repo Slack/GitHub checks even when a target
-// repository is given.
-func NewDoctor(snapshot diagnosticsdomain.ConfigSnapshot, validator validationdomain.RepoValidator) *Doctor {
-	return &Doctor{snapshot: snapshot, validator: validator}
+// NewDoctor returns a Doctor wired to snapshot, validator, and prober.
+// validator may be nil (per-repo checks skipped); prober may be nil (live AI
+// checks skipped, config-shape checks still run).
+func NewDoctor(snapshot diagnosticsdomain.ConfigSnapshot, validator validationdomain.RepoValidator, aiProber diagnosticsdomain.AIProber) *Doctor {
+	return &Doctor{snapshot: snapshot, validator: validator, aiProber: aiProber}
 }
 
 // Run produces the report. The first three sections (config, database,
@@ -33,6 +35,7 @@ func (d *Doctor) Run(ctx context.Context, target string) []diagnosticsdomain.Sec
 		CheckConfig(d.snapshot),
 		CheckDatabase(d.snapshot),
 		CheckMappings(d.snapshot),
+		d.checkAIWithProbe(ctx),
 	}
 	if target == "" || d.validator == nil {
 		return sections
@@ -160,4 +163,65 @@ func failResult(name, format string, args ...any) validationdomain.CheckResult {
 
 func skip(name, detail string) validationdomain.CheckResult {
 	return validationdomain.CheckResult{Name: name, Status: validationdomain.StatusSkip, Detail: detail}
+}
+
+// checkAIWithProbe runs the static AI shape checks and, when the feature is
+// enabled and a prober is wired, the live probe.
+func (d *Doctor) checkAIWithProbe(ctx context.Context) diagnosticsdomain.Section {
+	section := CheckAI(d.snapshot)
+	if !d.snapshot.AIEnabled || d.aiProber == nil {
+		return section
+	}
+	result := d.aiProber.Probe(ctx)
+	if result.OK {
+		section.Checks = append(section.Checks, okResult("probe", fmt.Sprintf("structured one-token response in %d ms", result.LatencyMS)))
+	} else {
+		section.Checks = append(section.Checks, failResult("probe", "%s", result.Detail))
+	}
+	if result.RateLimit != "" {
+		section.Checks = append(section.Checks, okResult("rate limits", result.RateLimit))
+	}
+	return section
+}
+
+// CheckAI reports the ai: config shape. Secret values are never written to
+// Detail — the key reports only "set" or "missing".
+func CheckAI(snapshot diagnosticsdomain.ConfigSnapshot) diagnosticsdomain.Section {
+	section := diagnosticsdomain.Section{Name: "ai"}
+	if !snapshot.AIEnabled {
+		section.Checks = append(section.Checks, okResult("ai.enabled", "false — AI is disabled; behavior is fully deterministic"))
+		return section
+	}
+	section.Checks = append(section.Checks, okResult("ai.enabled", "true"))
+
+	switch snapshot.AIProvider {
+	case "gemini", "openai_compatible":
+		section.Checks = append(section.Checks, okResult("ai.provider", snapshot.AIProvider))
+	default:
+		section.Checks = append(section.Checks, failResult("ai.provider", "unknown provider %q; use gemini or openai_compatible — see docs/ai.md", snapshot.AIProvider))
+	}
+
+	if snapshot.AIModel == "" {
+		section.Checks = append(section.Checks, failResult("ai.model", "missing; required when ai.enabled is true"))
+	} else {
+		section.Checks = append(section.Checks, okResult("ai.model", snapshot.AIModel))
+	}
+
+	switch {
+	case snapshot.AIKeySet:
+		section.Checks = append(section.Checks, okResult("AI_API_KEY", "set"))
+	case snapshot.AIProvider == "gemini":
+		section.Checks = append(section.Checks, failResult("AI_API_KEY", "missing; required for ai.provider gemini — set the environment variable"))
+	default:
+		section.Checks = append(section.Checks, skip("AI_API_KEY", "not set — keyless mode (fine for local openai_compatible endpoints)"))
+	}
+
+	if snapshot.AIProvider == "openai_compatible" {
+		if snapshot.AIBaseURL == "" {
+			section.Checks = append(section.Checks, failResult("ai.base_url", "missing; required for ai.provider openai_compatible"))
+		} else {
+			section.Checks = append(section.Checks, okResult("ai.base_url", snapshot.AIBaseURL))
+		}
+	}
+	return section
 }

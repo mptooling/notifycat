@@ -44,4 +44,22 @@ type ConfigSnapshot struct {
 	DatabaseDetail   string
 	Entries          []routingdomain.Entry
 	HasPathRules     bool
+
+	// AI mirrors the ai: config block for the doctor's shape checks. AIKeySet
+	// reports presence only — never the value.
+	AIEnabled  bool
+	AIProvider string
+	AIModel    string
+	AIBaseURL  string
+	AIKeySet   bool
+}
+
+// AIProbeResult is the outcome of one live provider probe: a one-token
+// structured-output call proving key validity and model availability.
+// RateLimit is a human-readable headroom summary (best-effort headers).
+type AIProbeResult struct {
+	OK        bool
+	Detail    string
+	LatencyMS int64
+	RateLimit string
 }

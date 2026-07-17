@@ -281,13 +281,13 @@ func findPathRoutingCheck(t *testing.T, sec diagnosticsdomain.Section) validatio
 
 func TestDoctorRun_AlwaysReturnsConfigDatabaseMappings(t *testing.T) {
 	snap := validSnapshot()
-	d := application.NewDoctor(snap, nil)
+	d := application.NewDoctor(snap, nil, nil)
 	sections := d.Run(context.Background(), "")
 
-	if len(sections) != 3 {
-		t.Fatalf("got %d sections; want 3 (config, database, mappings)", len(sections))
+	if len(sections) != 4 {
+		t.Fatalf("got %d sections; want 4 (config, database, mappings, ai)", len(sections))
 	}
-	wantOrder := []string{"config", "database", "mappings"}
+	wantOrder := []string{"config", "database", "mappings", "ai"}
 	for i, want := range wantOrder {
 		if sections[i].Name != want {
 			t.Errorf("sections[%d].Name = %q; want %q", i, sections[i].Name, want)
@@ -306,16 +306,16 @@ func TestDoctorRun_TargetRepositoryDelegatesToValidator(t *testing.T) {
 			},
 		},
 	}
-	d := application.NewDoctor(snap, fake)
+	d := application.NewDoctor(snap, fake, nil)
 	sections := d.Run(context.Background(), "octo/widget")
 
 	if fake.got != "octo/widget" {
 		t.Errorf("validator.Validate called with %q; want %q", fake.got, "octo/widget")
 	}
-	if len(sections) != 4 {
-		t.Fatalf("got %d sections; want 4 (config, database, mappings, octo/widget)", len(sections))
+	if len(sections) != 5 {
+		t.Fatalf("got %d sections; want 5 (config, database, mappings, ai, octo/widget)", len(sections))
 	}
-	repoSection := sections[3]
+	repoSection := sections[4]
 	if repoSection.Name != "octo/widget" {
 		t.Errorf("repo section name = %q; want %q", repoSection.Name, "octo/widget")
 	}
@@ -326,9 +326,9 @@ func TestDoctorRun_TargetRepositoryDelegatesToValidator(t *testing.T) {
 
 func TestDoctorRun_TargetRepositoryWithoutValidatorIsNoop(t *testing.T) {
 	snap := validSnapshot()
-	d := application.NewDoctor(snap, nil)
+	d := application.NewDoctor(snap, nil, nil)
 	sections := d.Run(context.Background(), "octo/widget")
-	if len(sections) != 3 {
-		t.Fatalf("got %d sections; want 3 (no validator available, repo target ignored)", len(sections))
+	if len(sections) != 4 {
+		t.Fatalf("got %d sections; want 4 (no validator available, repo target ignored)", len(sections))
 	}
 }
