@@ -9,6 +9,21 @@ import (
 	"github.com/mptooling/notifycat/internal/salience/domain"
 )
 
+// TestDigestUserPromptIncludesMentions checks that digestUserPrompt renders
+// the channel's configured mentions so the model can reason about whether
+// dropping them (quiet) is appropriate.
+func TestDigestUserPromptIncludesMentions(t *testing.T) {
+	request := domain.DigestDecisionRequest{
+		Channel:  "C0123",
+		Mentions: []string{"<!here>", "<@U1>"},
+		PRs:      []domain.DigestPRSummary{{Repository: "acme/api", Number: 1, IdleDays: 5}},
+	}
+	prompt := digestUserPrompt(request, 1)
+	if !strings.Contains(prompt, "<!here>") || !strings.Contains(prompt, "<@U1>") {
+		t.Errorf("digest prompt must include channel mentions; got:\n%s", prompt)
+	}
+}
+
 // fakeGateway returns a canned response or error and records requests.
 type fakeGateway struct {
 	response domain.ModelResponse

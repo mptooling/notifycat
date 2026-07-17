@@ -85,6 +85,8 @@ func updatedUserPrompt(request domain.UpdatedDecisionRequest) string {
 
 // digestUserPrompt renders one channel report. The summaries contain no
 // attacker-authored text (the store keeps no titles), and the list is capped.
+// Channel mentions are included so the model can make an informed
+// parent_loudness decision (quiet drops the reminder's mentions).
 func digestUserPrompt(request domain.DigestDecisionRequest, decidedCount int) string {
 	var builder strings.Builder
 	fmt.Fprintf(&builder, "Channel: %s\nStuck PRs (%d):\n", request.Channel, decidedCount)
@@ -92,6 +94,7 @@ func digestUserPrompt(request domain.DigestDecisionRequest, decidedCount int) st
 		summary := request.PRs[i]
 		fmt.Fprintf(&builder, "%d. %s #%d — idle %d days\n", i, summary.Repository, summary.Number, summary.IdleDays)
 	}
+	fmt.Fprintf(&builder, "Channel mentions: [%s]\n", strings.Join(request.Mentions, ", "))
 	builder.WriteString("Return order/highlights/notes over exactly these indices.")
 	return builder.String()
 }
