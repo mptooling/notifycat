@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.22.3](https://github.com/mptooling/notifycat/compare/v0.22.2...v0.22.3) (2026-07-18)
+
+
+### 🐛 Bug fixes
+
+* bump go toolchain to 1.25.12 for the crypto/tls advisory ([#176](https://github.com/mptooling/notifycat/issues/176)) ([b04d23e](https://github.com/mptooling/notifycat/commit/b04d23e91c581be042ea10e4b03757501839e58e))
+
+
+### 🧹 Maintenance
+
+* **deps:** bump golang from 1.26.4-alpine to 1.26.5-alpine in the docker group ([#171](https://github.com/mptooling/notifycat/issues/171)) ([6728f9d](https://github.com/mptooling/notifycat/commit/6728f9d4be3136a6e689354ef0f0dd79a634eed5))
+
 ## [0.22.2](https://github.com/mptooling/notifycat/compare/v0.22.1...v0.22.2) (2026-07-07)
 
 
