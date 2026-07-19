@@ -47,11 +47,6 @@ type deleteCall struct {
 	channel   string
 	messageID string
 }
-type threadNoteCall struct {
-	channel   string
-	messageID string
-	req       domain.ThreadNoteRequest
-}
 
 type fakeMessenger struct {
 	opens          []openCall
@@ -59,13 +54,11 @@ type fakeMessenger struct {
 	reviewFinished []reviewFinishedCall
 	reactions      []reactionCall
 	deletes        []deleteCall
-	threadNotes    []threadNoteCall
 
-	postErr       error
-	updateErr     error
-	reactErr      error
-	deleteErr     error
-	threadNoteErr error
+	postErr   error
+	updateErr error
+	reactErr  error
+	deleteErr error
 
 	postedTS int
 }
@@ -93,10 +86,6 @@ func (f *fakeMessenger) AddReaction(_ context.Context, channel, messageID, emoji
 func (f *fakeMessenger) Delete(_ context.Context, channel, messageID string) error {
 	f.deletes = append(f.deletes, deleteCall{channel: channel, messageID: messageID})
 	return f.deleteErr
-}
-func (f *fakeMessenger) PostThreadReply(_ context.Context, channel, messageID string, req domain.ThreadNoteRequest) error {
-	f.threadNotes = append(f.threadNotes, threadNoteCall{channel: channel, messageID: messageID, req: req})
-	return f.threadNoteErr
 }
 
 // reactionEmojis returns the emoji of every AddReaction call, in order.

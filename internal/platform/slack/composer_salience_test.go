@@ -2,7 +2,6 @@ package slack_test
 
 import (
 	"encoding/json"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -75,18 +74,6 @@ func TestOpenMessageContextBlockAppended(t *testing.T) {
 	}
 	if msg.Blocks[3].Type != "actions" {
 		t.Errorf("actions row must stay last; got %q", msg.Blocks[3].Type)
-	}
-}
-
-func TestThreadNote(t *testing.T) {
-	composer := slack.NewComposer("eyes")
-	msg := composer.ThreadNote("second dependency bump today")
-	want := slack.Message{
-		Blocks:   []slack.Block{{Type: "context", Elements: []slack.TextObject{{Type: "mrkdwn", Text: "second dependency bump today"}}}},
-		Fallback: "second dependency bump today",
-	}
-	if !reflect.DeepEqual(msg, want) {
-		t.Errorf("ThreadNote = %+v\nwant %+v", msg, want)
 	}
 }
 

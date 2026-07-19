@@ -49,7 +49,7 @@ func modelOpenRequest() domain.OpenDecisionRequest {
 
 func TestModelAdvisorHappyPath(t *testing.T) {
 	gateway := &fakeGateway{response: domain.ModelResponse{
-		Text:      `{"targets":[{"channel":"C0000000001","loudness":"quiet","mentions":[],"leading_emoji":"rocket","format":"compact","emphasis":"none","context_block":"routine bump","thread_note":""}],"rationale":"low-risk dependency change"}`,
+		Text:      `{"targets":[{"channel":"C0000000001","loudness":"quiet","mentions":[],"leading_emoji":"rocket","format":"compact","emphasis":"none","context_block":"routine bump"}],"rationale":"low-risk dependency change"}`,
 		TokensIn:  180,
 		TokensOut: 40,
 	}}
@@ -128,7 +128,7 @@ func TestModelAdvisorGuardTrippedSkipsGateway(t *testing.T) {
 
 func TestModelAdvisorClampViolationKeepsRepairedDecision(t *testing.T) {
 	gateway := &fakeGateway{response: domain.ModelResponse{
-		Text: `{"targets":[{"channel":"C0000000001","loudness":"quiet","mentions":["<@UEVIL>"],"leading_emoji":"rocket","format":"standard","emphasis":"none","context_block":"","thread_note":""}],"rationale":"r"}`,
+		Text: `{"targets":[{"channel":"C0000000001","loudness":"quiet","mentions":["<@UEVIL>"],"leading_emoji":"rocket","format":"standard","emphasis":"none","context_block":""}],"rationale":"r"}`,
 	}}
 	advisor := NewModelAdvisor(gateway, NewDeterministicAdvisor())
 
@@ -192,7 +192,7 @@ func TestGuardInspectsMinimizedOpenContent(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Gateway would return a valid response if called — guard must prevent that.
 			gateway := &fakeGateway{response: domain.ModelResponse{
-				Text:      `{"targets":[{"channel":"C0000000001","loudness":"ping","mentions":[],"leading_emoji":"eyes","format":"standard","emphasis":"none","context_block":"","thread_note":""}],"rationale":"ok"}`,
+				Text:      `{"targets":[{"channel":"C0000000001","loudness":"ping","mentions":[],"leading_emoji":"eyes","format":"standard","emphasis":"none","context_block":""}],"rationale":"ok"}`,
 				TokensIn:  10,
 				TokensOut: 10,
 			}}

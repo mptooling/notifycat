@@ -77,7 +77,6 @@ func clampTarget(target domain.TargetDecision, candidate domain.CandidateTarget,
 		violated = true
 	}
 	clamped.ContextBlock = sanitizeLine(target.ContextBlock, domain.MaxContextBlockChars)
-	clamped.ThreadNote = sanitizeLine(target.ThreadNote, domain.MaxThreadNoteChars)
 	return clamped, violated
 }
 

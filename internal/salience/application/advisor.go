@@ -42,7 +42,6 @@ type targetDecisionWire struct {
 	Format       string   `json:"format"`
 	Emphasis     string   `json:"emphasis"`
 	ContextBlock string   `json:"context_block"`
-	ThreadNote   string   `json:"thread_note"`
 }
 
 type openDecisionWire struct {
@@ -102,7 +101,6 @@ func (a *ModelAdvisor) DecideOpen(ctx context.Context, request domain.OpenDecisi
 			Format:       domain.Format(target.Format),
 			Emphasis:     domain.Emphasis(target.Emphasis),
 			ContextBlock: target.ContextBlock,
-			ThreadNote:   target.ThreadNote,
 		}
 	}
 	clamped, violated := clampOpen(decision, request)

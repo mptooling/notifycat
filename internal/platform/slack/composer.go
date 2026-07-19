@@ -193,12 +193,6 @@ func openLabel(breaking bool) string {
 	return ""
 }
 
-// ThreadNote renders a short muted note posted as a thread reply under a PR
-// message. The text is advisor-sanitized before it reaches the composer.
-func (c *Composer) ThreadNote(text string) Message {
-	return Message{Blocks: []Block{contextBlock(text)}, Fallback: text}
-}
-
 // NewMessage renders the initial notification for a PR: a headline section with
 // the new-PR emoji, any mentions, and the linked title, plus a muted context
 // line carrying repo, author, and the localized open time. Mentions stay in the

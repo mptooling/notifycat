@@ -79,12 +79,6 @@ func (m *SlackMessenger) AddReaction(ctx context.Context, channel, messageID, em
 	return m.client.AddReaction(ctx, channel, messageID, emoji)
 }
 
-// PostThreadReply implements domain.Messenger.
-func (m *SlackMessenger) PostThreadReply(ctx context.Context, channel, messageID string, req domain.ThreadNoteRequest) error {
-	_, err := m.client.PostReply(ctx, channel, messageID, m.composer.ThreadNote(req.Note))
-	return err
-}
-
 // Delete implements domain.Messenger.
 func (m *SlackMessenger) Delete(ctx context.Context, channel, messageID string) error {
 	return m.client.DeleteMessage(ctx, channel, messageID)

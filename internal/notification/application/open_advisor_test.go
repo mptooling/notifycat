@@ -120,46 +120,6 @@ func TestOpenHandlerQuietDecisionDropsMentions(t *testing.T) {
 	}
 }
 
-func TestOpenHandlerPostsThreadNote(t *testing.T) {
-	store, messenger, advisor := newFakeMessageStore(), &fakeMessenger{}, newFakeAdvisor()
-	advisor.openDecision = &saliencedomain.OpenDecision{Targets: []saliencedomain.TargetDecision{{
-		Channel: "C1", Loudness: saliencedomain.LoudnessPing, LeadingEmoji: "eyes",
-		Format: saliencedomain.FormatStandard, Emphasis: saliencedomain.EmphasisNone,
-		ThreadNote: "third PR touching payments this week",
-	}}}
-	handler := openHandlerUnderTest(store, messenger, advisor, standardResolver())
-
-	if err := handler.Handle(context.Background(), openedEvent()); err != nil {
-		t.Fatal(err)
-	}
-
-	if len(messenger.threadNotes) != 1 {
-		t.Fatalf("threadNotes = %d; want 1", len(messenger.threadNotes))
-	}
-	note := messenger.threadNotes[0]
-	if note.channel != "C1" || note.messageID != "ts-1" || note.req.Note != "third PR touching payments this week" {
-		t.Errorf("thread note = %+v", note)
-	}
-}
-
-func TestOpenHandlerThreadNoteFailureIsSoft(t *testing.T) {
-	store, messenger, advisor := newFakeMessageStore(), &fakeMessenger{}, newFakeAdvisor()
-	messenger.threadNoteErr = context.DeadlineExceeded
-	advisor.openDecision = &saliencedomain.OpenDecision{Targets: []saliencedomain.TargetDecision{{
-		Channel: "C1", Loudness: saliencedomain.LoudnessPing, LeadingEmoji: "eyes",
-		Format: saliencedomain.FormatStandard, Emphasis: saliencedomain.EmphasisNone,
-		ThreadNote: "note",
-	}}}
-	handler := openHandlerUnderTest(store, messenger, advisor, standardResolver())
-
-	if err := handler.Handle(context.Background(), openedEvent()); err != nil {
-		t.Fatalf("a failed thread note must not fail the delivery; got %v", err)
-	}
-	if len(messenger.opens) != 1 {
-		t.Errorf("message must still post; opens = %d", len(messenger.opens))
-	}
-}
-
 func TestOpenHandlerBotCompactPolicySkipsAdvisor(t *testing.T) {
 	store, messenger, advisor := newFakeMessageStore(), &fakeMessenger{}, newFakeAdvisor()
 	resolver := standardResolver()

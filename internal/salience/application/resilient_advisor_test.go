@@ -38,7 +38,7 @@ func (g *countingGateway) callCount() int {
 }
 
 func validOpenText() string {
-	return `{"targets":[{"channel":"C0000000001","loudness":"ping","mentions":["<@U1>"],"leading_emoji":"eyes","format":"standard","emphasis":"none","context_block":"","thread_note":""}],"rationale":"fine"}`
+	return `{"targets":[{"channel":"C0000000001","loudness":"ping","mentions":["<@U1>"],"leading_emoji":"eyes","format":"standard","emphasis":"none","context_block":""}],"rationale":"fine"}`
 }
 
 func resilientParams(gateway domain.ModelGateway, now func() time.Time) domain.AdvisorParams {

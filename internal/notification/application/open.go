@@ -113,9 +113,7 @@ func (h *OpenHandler) postBotFormat(ctx context.Context, event kernel.Event, res
 	return nil
 }
 
-// postDecision posts one notification per decided target and records each. A
-// failed thread note is logged and dropped — a note is decoration and must
-// never fail the delivery.
+// postDecision posts one notification per decided target and records each.
 func (h *OpenHandler) postDecision(ctx context.Context, event kernel.Event, decision saliencedomain.OpenDecision, already map[string]bool) error {
 	for _, target := range decision.Targets {
 		if already[target.Channel] {
@@ -140,16 +138,6 @@ func (h *OpenHandler) postDecision(ctx context.Context, event kernel.Event, deci
 		}
 		if err := h.store.AddMessage(ctx, event.Repository, event.PR.Number, target.Channel, messageID); err != nil {
 			return err
-		}
-		if target.ThreadNote == "" {
-			continue
-		}
-		if err := h.messenger.PostThreadReply(ctx, target.Channel, messageID, domain.ThreadNoteRequest{Note: target.ThreadNote}); err != nil {
-			h.logger.Warn("thread note post failed",
-				slog.String("channel", target.Channel),
-				slog.String("repository", event.Repository),
-				slog.Int("pr", event.PR.Number),
-				slog.Any("err", err))
 		}
 	}
 	return nil

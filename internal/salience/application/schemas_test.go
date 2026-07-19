@@ -35,10 +35,9 @@ const wantOpenSchema = `{
           "leading_emoji": {"type": "string"},
           "format": {"type": "string", "enum": ["standard", "compact"]},
           "emphasis": {"type": "string", "enum": ["none", "breaking"]},
-          "context_block": {"type": "string"},
-          "thread_note": {"type": "string"}
+          "context_block": {"type": "string"}
         },
-        "required": ["channel", "loudness", "mentions", "leading_emoji", "format", "emphasis", "context_block", "thread_note"],
+        "required": ["channel", "loudness", "mentions", "leading_emoji", "format", "emphasis", "context_block"],
         "additionalProperties": false
       }
     },

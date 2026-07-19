@@ -67,13 +67,6 @@ type ReviewSession struct {
 	SlackUserName string
 }
 
-// ThreadNoteRequest is the intent to post a short muted note as a thread
-// reply under a PR message. The note is advisor-clamped and sanitized before
-// it reaches the port.
-type ThreadNoteRequest struct {
-	Note string
-}
-
 // OpenHandlerParams bundles the open handler's dependencies.
 type OpenHandlerParams struct {
 	Store     MessageStore

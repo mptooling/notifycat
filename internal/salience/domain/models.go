@@ -72,7 +72,6 @@ type TargetDecision struct {
 	Format       Format
 	Emphasis     Emphasis
 	ContextBlock string
-	ThreadNote   string
 }
 
 // DecisionTrace carries the observability fields every decision records for

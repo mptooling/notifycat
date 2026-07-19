@@ -23,7 +23,6 @@ const (
 	MaxFilePaths         = 100
 	MaxDigestPRs         = 30
 	MaxContextBlockChars = 120
-	MaxThreadNoteChars   = 200
 	MaxDigestNoteChars   = 120
 	MaxRationaleChars    = 200
 	MaxOutputTokens      = 1024

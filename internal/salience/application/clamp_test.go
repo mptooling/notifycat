@@ -56,7 +56,6 @@ func TestClampOpenRepairsInvalidFieldsPerChannel(t *testing.T) {
 		Format:       domain.FormatCompact,          // valid — must survive
 		Emphasis:     "sirens",                      // invalid enum
 		ContextBlock: "ping <@U9> https://evil.example now " + strings.Repeat("x", 300),
-		ThreadNote:   "@channel " + strings.Repeat("y", 300),
 	}}}
 	clamped, violated := clampOpen(decision, clampOpenRequest())
 	if !violated {
@@ -77,9 +76,6 @@ func TestClampOpenRepairsInvalidFieldsPerChannel(t *testing.T) {
 	}
 	if len([]rune(target.ContextBlock)) > domain.MaxContextBlockChars || strings.Contains(target.ContextBlock, "<@") || strings.Contains(target.ContextBlock, "https://") {
 		t.Errorf("ContextBlock unsafe: %q", target.ContextBlock)
-	}
-	if len([]rune(target.ThreadNote)) > domain.MaxThreadNoteChars || strings.Contains(target.ThreadNote, "@channel") {
-		t.Errorf("ThreadNote unsafe: %q", target.ThreadNote)
 	}
 }
 

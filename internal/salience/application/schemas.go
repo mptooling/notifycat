@@ -36,10 +36,9 @@ var openSchemaJSON = fmt.Sprintf(`{
           "leading_emoji": {"type": "string"},
           "format": {"type": "string", "enum": %s},
           "emphasis": {"type": "string", "enum": %s},
-          "context_block": {"type": "string"},
-          "thread_note": {"type": "string"}
+          "context_block": {"type": "string"}
         },
-        "required": ["channel", "loudness", "mentions", "leading_emoji", "format", "emphasis", "context_block", "thread_note"],
+        "required": ["channel", "loudness", "mentions", "leading_emoji", "format", "emphasis", "context_block"],
         "additionalProperties": false
       }
     },
