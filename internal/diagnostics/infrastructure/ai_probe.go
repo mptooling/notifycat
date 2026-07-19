@@ -46,14 +46,14 @@ func (p *AIProbe) Probe(ctx context.Context) diagnosticsdomain.AIProbeResult {
 	latency := p.now().Sub(started).Milliseconds()
 
 	var rateLimited *saliencedomain.RateLimitedError
-	switch {
-	case errors.As(err, &rateLimited):
+	if errors.As(err, &rateLimited) {
 		detail := fmt.Sprintf("provider rate limited: %s", rateLimited.Detail)
 		if rateLimited.RetryAfter != "" {
 			detail += fmt.Sprintf(" (retry after %s)", rateLimited.RetryAfter)
 		}
 		return diagnosticsdomain.AIProbeResult{Detail: detail + " — check the provider's quota console", LatencyMS: latency}
-	case err != nil:
+	}
+	if err != nil {
 		return diagnosticsdomain.AIProbeResult{Detail: fmt.Sprintf("provider unreachable: %v", err), LatencyMS: latency}
 	}
 
