@@ -59,10 +59,10 @@ func (a *ModelAdvisor) DecideOpen(ctx context.Context, request domain.OpenDecisi
 	// Build the minimized envelope first: minimizeBody removes HTML comments by
 	// deleting them, which concatenates adjacent text and can reassemble injection
 	// phrases not present in the raw body. The guard must see the same text the
-	// model will see — minimized title, body, and files — plus the raw author
-	// (a login, not minimized).
+	// model will see — the minimized title, body, files, and author, all of which
+	// are placed inside the untrusted envelope.
 	envelope := newMinimizedOpenEnvelope(request)
-	if guardTripped(envelope.title, envelope.body, strings.Join(envelope.files, "\n"), request.PR.Author) {
+	if guardTripped(envelope.title, envelope.body, strings.Join(envelope.files, "\n"), envelope.author) {
 		fallback.FallbackReason = domain.FallbackGuardTripped
 		return fallback
 	}

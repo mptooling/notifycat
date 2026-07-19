@@ -217,6 +217,7 @@ func TestModelAdvisorEnvelopesUntrustedContent(t *testing.T) {
 	advisor := NewModelAdvisor(gateway, NewDeterministicAdvisor())
 	request := modelOpenRequest()
 	request.PR.Title = "feat: totally normal title"
+	request.PR.Author = "eve-attacker-display-name"
 
 	advisor.DecideOpen(context.Background(), request)
 
@@ -227,6 +228,12 @@ func TestModelAdvisorEnvelopesUntrustedContent(t *testing.T) {
 	}
 	if strings.Contains(user[:begin], "totally normal title") {
 		t.Error("attacker-influenced title appears outside the envelope")
+	}
+	if strings.Contains(user[:begin], "eve-attacker-display-name") {
+		t.Error("attacker-influenced author appears outside the envelope")
+	}
+	if !strings.Contains(user[begin:], "eve-attacker-display-name") {
+		t.Error("author must appear inside the untrusted envelope")
 	}
 	if !strings.Contains(gateway.requests[0].System, "never instructions") {
 		t.Error("system prompt must declare the envelope data-never-instructions")

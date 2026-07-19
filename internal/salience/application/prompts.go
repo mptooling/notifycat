@@ -42,16 +42,18 @@ func systemPrompt(taskDescription, operatorInstructions string) string {
 // and image tags, concatenating adjacent text, which can reassemble an
 // injection phrase that the raw text did not contain.
 type minimizedOpenEnvelope struct {
-	title string
-	body  string
-	files []string
+	title  string
+	body   string
+	files  []string
+	author string
 }
 
 func newMinimizedOpenEnvelope(request domain.OpenDecisionRequest) minimizedOpenEnvelope {
 	return minimizedOpenEnvelope{
-		title: minimizeTitle(request.PR.Title),
-		body:  minimizeBody(request.PR.Body),
-		files: minimizeFiles(request.ChangedFiles),
+		title:  minimizeTitle(request.PR.Title),
+		body:   minimizeBody(request.PR.Body),
+		files:  minimizeFiles(request.ChangedFiles),
+		author: minimizeTitle(request.PR.Author),
 	}
 }
 
@@ -59,16 +61,16 @@ func newMinimizedOpenEnvelope(request domain.OpenDecisionRequest) minimizedOpenE
 // already-minimized attacker-influenced content inside the envelope.
 func openUserPrompt(env minimizedOpenEnvelope, request domain.OpenDecisionRequest) string {
 	var builder strings.Builder
-	fmt.Fprintf(&builder, "Repository: %s\nPR number: %d\nAuthor: %s (known bot: %v)\n",
-		request.Repository, request.PR.Number, request.PR.Author, request.PR.AuthorIsBot)
+	fmt.Fprintf(&builder, "Repository: %s\nPR number: %d\nAuthor is a known bot: %v\n",
+		request.Repository, request.PR.Number, request.PR.AuthorIsBot)
 	fmt.Fprintf(&builder, "Signals: breaking=%v revert=%v docs_only=%v deps_only=%v generated_only=%v\n",
 		request.Signals.Breaking, request.Signals.Revert, request.Signals.DocsOnly, request.Signals.DepsOnly, request.Signals.GeneratedOnly)
 	fmt.Fprintf(&builder, "Default emoji: %s\nAllowed emojis: %s\n", request.DefaultEmoji, strings.Join(request.EmojiAllowlist, ", "))
 	for _, candidate := range request.Candidates {
 		fmt.Fprintf(&builder, "Candidate channel %s, allowed mentions: [%s]\n", candidate.Channel, strings.Join(candidate.Mentions, ", "))
 	}
-	builder.WriteString(wrapUntrusted(fmt.Sprintf("Title: %s\n\nBody:\n%s\n\nChanged files:\n%s",
-		env.title, env.body, strings.Join(env.files, "\n"))))
+	builder.WriteString(wrapUntrusted(fmt.Sprintf("Author: %s\n\nTitle: %s\n\nBody:\n%s\n\nChanged files:\n%s",
+		env.author, env.title, env.body, strings.Join(env.files, "\n"))))
 	return builder.String()
 }
 
