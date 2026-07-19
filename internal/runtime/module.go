@@ -9,7 +9,7 @@
 // composition root it is exempt from the inward-only layering rule and may
 // import config, persistence, slack, github, and every domain's application and
 // infrastructure packages.
-package runtime //nolint:revive // the composition-root package is deliberately named "runtime" (referenced as runtime.Module); it is never imported alongside the stdlib runtime package
+package runtime
 
 import (
 	"context"
@@ -45,6 +45,10 @@ import (
 	routingapp "github.com/mptooling/notifycat/internal/routing/application"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 	routinginfra "github.com/mptooling/notifycat/internal/routing/infrastructure"
+	salienceapp "github.com/mptooling/notifycat/internal/salience/application"
+	saliencedomain "github.com/mptooling/notifycat/internal/salience/domain"
+	"github.com/mptooling/notifycat/internal/salience/infrastructure/gemini"
+	"github.com/mptooling/notifycat/internal/salience/infrastructure/openaicompat"
 	validationapp "github.com/mptooling/notifycat/internal/validation/application"
 	validationdomain "github.com/mptooling/notifycat/internal/validation/domain"
 	validationinfra "github.com/mptooling/notifycat/internal/validation/infrastructure"
@@ -67,6 +71,7 @@ var Module = fx.Module("runtime",
 		persistence.NewCodeReviews,
 		buildProvider,
 		buildRouter,
+		buildAdvisor,
 		buildDispatcher,
 		buildStartReviewSink,
 		buildCleanupScheduler,
@@ -109,6 +114,8 @@ func buildProvider(cfg config.Config, logger *slog.Logger) *routingapp.Provider 
 		},
 		IgnoreAIReviews:  cfg.IgnoreAIReviews,
 		DependabotFormat: cfg.DependabotFormat,
+		AIEnabled:        cfg.AI.Enabled,
+		AIInstructions:   cfg.AI.Instructions,
 		GitProvider:      cfg.GitProvider,
 	}
 	provider := routingapp.NewProvider(defaults, cfg.Mappings, cfg.Digest)
@@ -168,7 +175,7 @@ func buildCleanupScheduler(cfg config.Config, pullRequests *persistence.PullRequ
 // scheduler (and nil error) when no mapping enables a digest; a bad cron spec
 // fails startup here rather than silently never firing. Because this provider
 // returns an error, fx fails App.Start on a bad spec.
-func buildDigestScheduler(cfg config.Config, provider *routingapp.Provider, pullRequests *persistence.PullRequests, slackClient *slack.Client, composer *slack.Composer, logger *slog.Logger) (*digestapp.Scheduler, error) {
+func buildDigestScheduler(cfg config.Config, provider *routingapp.Provider, pullRequests *persistence.PullRequests, slackClient *slack.Client, composer *slack.Composer, advisor saliencedomain.Advisor, logger *slog.Logger) (*digestapp.Scheduler, error) {
 	specs := provider.Schedules()
 	if len(specs) == 0 {
 		return nil, nil
@@ -179,6 +186,7 @@ func buildDigestScheduler(cfg config.Config, provider *routingapp.Provider, pull
 		Poster:   digestinfra.NewSlackPoster(slackClient),
 		Composer: digestinfra.NewSlackComposer(composer),
 		Digests:  provider,
+		Advisor:  advisor,
 		Logger:   logger,
 		TZ:       cfg.DigestTimezone,
 		Now:      time.Now,
@@ -221,18 +229,56 @@ func providerFilesFetcher(httpClient *http.Client, cfg config.Config) routingdom
 	}
 }
 
+// buildAdvisor binds the salience Advisor for the deployment: deterministic
+// when ai is disabled, resilient + the selected provider gateway when
+// enabled. Handlers and the digest reporter never know which they got.
+func buildAdvisor(httpClient *http.Client, cfg config.Config, logger *slog.Logger) saliencedomain.Advisor {
+	return salienceapp.NewAdvisor(saliencedomain.AdvisorParams{
+		Config:  cfg.AI,
+		Gateway: salienceGateway(httpClient, cfg),
+		Logger:  logger,
+		Now:     time.Now,
+	})
+}
+
+// salienceGateway builds the configured provider's model gateway, or nil when
+// the feature is disabled — no gateway constructed, no AI code path active
+// (the providerFilesFetcher idiom).
+func salienceGateway(httpClient *http.Client, cfg config.Config) saliencedomain.ModelGateway {
+	if !cfg.AI.Enabled {
+		return nil
+	}
+	gatewayConfig := saliencedomain.GatewayConfig{
+		APIKey:  cfg.AIAPIKey.Reveal(),
+		Model:   cfg.AI.Model,
+		BaseURL: cfg.AI.BaseURL,
+	}
+	switch cfg.AI.Provider {
+	case saliencedomain.ProviderOpenAICompatible:
+		return openaicompat.NewClient(httpClient, gatewayConfig)
+	default:
+		return gemini.NewClient(httpClient, gatewayConfig)
+	}
+}
+
 // buildDispatcher wires the PR-event handlers behind the dispatcher.
-func buildDispatcher(pullRequests *persistence.PullRequests, codeReviews *persistence.CodeReviews, provider *routingapp.Provider, router *routingapp.Router, slackClient *slack.Client, composer *slack.Composer, logger *slog.Logger) *notificationapp.Dispatcher {
+func buildDispatcher(pullRequests *persistence.PullRequests, codeReviews *persistence.CodeReviews, provider *routingapp.Provider, router *routingapp.Router, slackClient *slack.Client, composer *slack.Composer, advisor saliencedomain.Advisor, logger *slog.Logger) *notificationapp.Dispatcher {
 	messageStore := notificationinfra.NewMessageRepo(pullRequests)
 	messenger := notificationinfra.NewSlackMessenger(slackClient, composer)
 	reviews := reviewinfra.NewCodeReviewsRepo(codeReviews)
+	lifecycleParams := notificationdomain.LifecycleHandlerParams{
+		Store: messageStore, Behavior: provider, Messenger: messenger,
+		Advisor: advisor, Logger: logger, Reviews: reviews,
+	}
 	handlers := []notificationdomain.Handler{
-		notificationapp.NewOpenHandler(messageStore, router, messenger, logger),
-		notificationapp.NewCloseHandler(messageStore, provider, messenger, logger, reviews),
+		notificationapp.NewOpenHandler(notificationdomain.OpenHandlerParams{
+			Store: messageStore, Resolver: router, Messenger: messenger, Advisor: advisor, Logger: logger,
+		}),
+		notificationapp.NewCloseHandler(lifecycleParams),
 		notificationapp.NewDraftHandler(messageStore, messenger, logger),
-		notificationapp.NewApproveHandler(messageStore, provider, messenger, logger, reviews),
-		notificationapp.NewCommentedHandler(messageStore, provider, messenger, logger, reviews),
-		notificationapp.NewRequestChangeHandler(messageStore, provider, messenger, logger, reviews),
+		notificationapp.NewApproveHandler(lifecycleParams),
+		notificationapp.NewCommentedHandler(lifecycleParams),
+		notificationapp.NewRequestChangeHandler(lifecycleParams),
 	}
 	return notificationapp.NewDispatcher(logger, handlers)
 }

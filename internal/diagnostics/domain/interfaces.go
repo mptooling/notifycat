@@ -7,3 +7,10 @@ import "context"
 type Doctor interface {
 	Run(ctx context.Context, target string) []Section
 }
+
+// AIProber performs the live AI provider probe. Nil-able dependency: doctor
+// skips the live checks (reporting config shape only) when no prober is
+// wired or the feature is disabled.
+type AIProber interface {
+	Probe(ctx context.Context) AIProbeResult
+}

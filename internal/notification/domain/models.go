@@ -1,6 +1,11 @@
 package domain
 
-import "github.com/mptooling/notifycat/internal/kernel"
+import (
+	"log/slog"
+
+	"github.com/mptooling/notifycat/internal/kernel"
+	saliencedomain "github.com/mptooling/notifycat/internal/salience/domain"
+)
 
 // Message is one posted chat message for a PR: the channel it lives in and the
 // platform's id for the post. Mapped from the store's persistence model at the
@@ -11,14 +16,20 @@ type Message struct {
 }
 
 // OpenRequest is the intent to post an opened-PR notification. Bot, when
-// non-nil, selects the compact dependency-bot template; otherwise the standard
-// template is rendered with NewPREmoji.
+// non-nil, selects the compact dependency-bot template (a policy decision the
+// advisor never sees); otherwise the salience decision fields select the
+// template: Compact picks the one-line format, Breaking prepends the breaking
+// label, ContextBlock appends one muted line. Zero decision fields render the
+// standard template byte-identically to pre-salience notifycat.
 type OpenRequest struct {
-	Repository string
-	PR         kernel.PR
-	Mentions   []string
-	NewPREmoji string
-	Bot        *BotFormat
+	Repository   string
+	PR           kernel.PR
+	Mentions     []string
+	NewPREmoji   string
+	Bot          *BotFormat
+	Compact      bool
+	Breaking     bool
+	ContextBlock string
 }
 
 // BotFormat carries the dependency-bot template inputs: the bot's display name
@@ -54,4 +65,24 @@ type ReviewFinishedRequest struct {
 type ReviewSession struct {
 	SlackUserID   string
 	SlackUserName string
+}
+
+// OpenHandlerParams bundles the open handler's dependencies.
+type OpenHandlerParams struct {
+	Store     MessageStore
+	Resolver  TargetResolver
+	Messenger Messenger
+	Advisor   saliencedomain.Advisor
+	Logger    *slog.Logger
+}
+
+// LifecycleHandlerParams bundles the dependencies shared by the close and
+// review-reaction handlers.
+type LifecycleHandlerParams struct {
+	Store     MessageStore
+	Behavior  RepoBehavior
+	Messenger Messenger
+	Advisor   saliencedomain.Advisor
+	Logger    *slog.Logger
+	Reviews   ReviewSessions
 }

@@ -28,6 +28,12 @@ func NewConfigSnapshot(cfg config.Config, entries []routingdomain.Entry, hasPath
 
 		Entries:      entries,
 		HasPathRules: hasPathRules,
+
+		AIEnabled:  cfg.AI.Enabled,
+		AIProvider: string(cfg.AI.Provider),
+		AIModel:    cfg.AI.Model,
+		AIBaseURL:  cfg.AI.BaseURL,
+		AIKeySet:   cfg.AIAPIKey.Reveal() != "",
 	}
 
 	snap.DatabaseOpenable, snap.DatabaseDetail = probeDatabase(cfg.DatabaseURL)

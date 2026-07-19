@@ -1,6 +1,8 @@
 package application
 
 import (
+	"strings"
+
 	domain "github.com/mptooling/notifycat/internal/routing/domain"
 )
 
@@ -26,40 +28,73 @@ func resolveRouting(star, repo *domain.RepoConfig) domain.Resolved {
 	return r
 }
 
-// resolveBehavior merges the global, org/*, and org/repo tiers for the
-// behavioral keys. For each key the most specific tier that set it wins; the
-// global value is the base. star/repo may be nil.
-func resolveBehavior(global domain.Defaults, star, repo *domain.RepoConfig) (domain.Reactions, bool, bool) {
-	rx := global.Reactions
-	ignoreAI := global.IgnoreAIReviews
-	dependabot := global.DependabotFormat
+// behaviorResolution is the merged behavioral config across the global,
+// org/*, and org/repo tiers.
+type behaviorResolution struct {
+	reactions        domain.Reactions
+	ignoreAIReviews  bool
+	dependabotFormat bool
+	aiEnabled        bool
+	aiInstructions   string
+}
 
-	apply := func(rc *domain.RepoConfig) {
-		if rc == nil {
+// resolveBehavior merges the global, org/*, and org/repo tiers for the
+// behavioral keys. For each key the most specific tier that set it wins,
+// except ai instructions, which concatenate so guidance narrows rather than
+// replaces. star/repo may be nil.
+func resolveBehavior(global domain.Defaults, star, repo *domain.RepoConfig) behaviorResolution {
+	resolution := behaviorResolution{
+		reactions:        global.Reactions,
+		ignoreAIReviews:  global.IgnoreAIReviews,
+		dependabotFormat: global.DependabotFormat,
+		aiEnabled:        global.AIEnabled,
+		aiInstructions:   global.AIInstructions,
+	}
+	apply := func(repoConfig *domain.RepoConfig) {
+		if repoConfig == nil {
 			return
 		}
-		if o := rc.Reactions; o != nil {
+		if o := repoConfig.Reactions; o != nil {
 			if o.Enabled != nil {
-				rx.Enabled = *o.Enabled
+				resolution.reactions.Enabled = *o.Enabled
 			}
-			setStr(&rx.NewPR, o.NewPR)
-			setStr(&rx.MergedPR, o.MergedPR)
-			setStr(&rx.ClosedPR, o.ClosedPR)
-			setStr(&rx.Approved, o.Approved)
-			setStr(&rx.Commented, o.Commented)
-			setStr(&rx.RequestChange, o.RequestChange)
-			setStr(&rx.BotReview, o.BotReview)
+			setStr(&resolution.reactions.NewPR, o.NewPR)
+			setStr(&resolution.reactions.MergedPR, o.MergedPR)
+			setStr(&resolution.reactions.ClosedPR, o.ClosedPR)
+			setStr(&resolution.reactions.Approved, o.Approved)
+			setStr(&resolution.reactions.Commented, o.Commented)
+			setStr(&resolution.reactions.RequestChange, o.RequestChange)
+			setStr(&resolution.reactions.BotReview, o.BotReview)
 		}
-		if rc.IgnoreAIReviews != nil {
-			ignoreAI = *rc.IgnoreAIReviews
+		if repoConfig.IgnoreAIReviews != nil {
+			resolution.ignoreAIReviews = *repoConfig.IgnoreAIReviews
 		}
-		if rc.DependabotFormat != nil {
-			dependabot = *rc.DependabotFormat
+		if repoConfig.DependabotFormat != nil {
+			resolution.dependabotFormat = *repoConfig.DependabotFormat
+		}
+		if repoConfig.AI != nil {
+			if repoConfig.AI.Enabled != nil {
+				resolution.aiEnabled = *repoConfig.AI.Enabled
+			}
+			resolution.aiInstructions = joinInstructions(resolution.aiInstructions, repoConfig.AI.Instructions)
 		}
 	}
 	apply(star)
 	apply(repo)
-	return rx, ignoreAI, dependabot
+	return resolution
+}
+
+// joinInstructions concatenates tier guidance blank-line separated, skipping
+// empties.
+func joinInstructions(base, extra string) string {
+	extra = strings.TrimSpace(extra)
+	if extra == "" {
+		return base
+	}
+	if base == "" {
+		return extra
+	}
+	return base + "\n\n" + extra
 }
 
 func setStr(dst *string, v *string) {

@@ -24,7 +24,8 @@ type ChangedFilesReader interface {
 
 // TargetResolver resolves the per-PR fan-out: the repository's behaviour plus
 // the per-channel targets, layering path rules over the base tier when a
-// changed-files reader is available.
+// changed-files reader is available. The result carries the changed files it
+// fetched so downstream consumers reuse them.
 type TargetResolver interface {
-	ResolveTargets(ctx context.Context, repository string, prNumber int) (RepoMapping, []Target, error)
+	ResolveTargets(ctx context.Context, repository string, prNumber int) (ResolvedTargets, error)
 }

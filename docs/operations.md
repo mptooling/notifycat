@@ -40,6 +40,24 @@ Set `server.log_format: json` in `config.yaml` for production log aggregation, a
 
 The one log contract worth knowing by heart: every intentionally-ignored delivery logs `ignored webhook event` with a `reason` field. That line is how you answer "the webhook returned 200 — why didn't Slack change?" from logs alone. The reason table lives in [Troubleshooting](troubleshooting.md#200-ok-no-slack-change).
 
+## AI decisions
+
+When the optional [AI layer](ai.md) is enabled, every advisor consultation emits an `ai decision` log line at `INFO` level. See [AI → The `ai decision` log line](ai.md#the-ai-decision-log-line) for the full field reference. The most operator-relevant field is `fallback_reason`: when non-empty, the model decision was not applied and the deterministic behavior ran instead.
+
+| `fallback_reason` | Meaning | Operator action |
+| --- | --- | --- |
+| _(empty)_ | Model decision applied | none |
+| `timeout` | Provider exceeded the 2.5 s decision deadline (10 s for digest) | check provider latency; consider a faster model |
+| `transport_error` | Network/HTTP failure reaching the provider | check connectivity, `ai.base_url`, provider status |
+| `rate_limited` | Provider returned 429/quota exhausted | check the provider quota console; `notifycat-doctor` shows headroom where exposed |
+| `malformed_output` | Response was not valid schema JSON | usually transient; persistent → try another model |
+| `guard_tripped` | PR content matched an injection heuristic | expected defense; inspect the PR if frequent |
+| `clamp_violation` | Model chose out-of-bounds values; invalid fields were repaired | harmless; persistent → the model may be too weak for structured output |
+| `circuit_open` | 5 consecutive provider failures; skipping calls for 10 min | provider outage; deliveries continue deterministically |
+| `disabled` | The repo's tier opts out via `ai.enabled: false` | expected |
+
+A non-empty `fallback_reason` is never an error in the operational sense — every fallback produces the same output as if AI were off. Use the reason to diagnose provider issues or to confirm that per-tier opt-outs are working.
+
 ## Release images
 
 Each release publishes multi-arch images to `ghcr.io/mptooling/notifycat`; tags — including the per-PR beta images — are covered in [Supported tags](docker.md#supported-tags). To move a running Compose deployment to a new release: `docker compose pull && ./notifycat up`. Release-specific operator actions are collected in [Upgrading](upgrading.md).

@@ -36,9 +36,10 @@ type RepoBehavior interface {
 }
 
 // TargetResolver resolves the open fan-out: per-repo behavior plus the
-// per-channel targets a newly opened PR is announced to.
+// per-channel targets a newly opened PR is announced to, and the changed
+// files fetched along the way.
 type TargetResolver interface {
-	ResolveTargets(ctx context.Context, repository string, prNumber int) (routingdomain.RepoMapping, []routingdomain.Target, error)
+	ResolveTargets(ctx context.Context, repository string, prNumber int) (routingdomain.ResolvedTargets, error)
 }
 
 // ReviewSessions is the review-session view the reaction and close handlers use.

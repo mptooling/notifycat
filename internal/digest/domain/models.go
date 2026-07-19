@@ -3,6 +3,8 @@ package domain
 import (
 	"log/slog"
 	"time"
+
+	saliencedomain "github.com/mptooling/notifycat/internal/salience/domain"
 )
 
 // PullRequest is the digest's view of one tracked PR: the fields the reporter
@@ -22,13 +24,15 @@ type MessageRef struct {
 	MessageID string
 }
 
-// StuckPR is one line of a channel's digest list: the PR, its web URL, and how
-// many whole days it has sat idle.
+// StuckPR is one line of a channel's digest list: the PR, its web URL, how
+// many whole days it has sat idle, and the salience decision's decoration.
 type StuckPR struct {
 	Repository string
 	Number     int
 	URL        string
 	IdleDays   int
+	Attention  bool
+	Note       string
 }
 
 // Message is a presentation-neutral rendered message that crosses the composer
@@ -63,6 +67,7 @@ type ReporterParams struct {
 	Poster   DigestPoster
 	Composer DigestComposer
 	Digests  DigestResolver
+	Advisor  saliencedomain.Advisor
 	Logger   *slog.Logger
 	TZ       *time.Location
 	Now      func() time.Time

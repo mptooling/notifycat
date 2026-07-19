@@ -20,6 +20,7 @@ Which webhook secret and read token apply depends on [`git_provider`](#git_provi
 | `BITBUCKET_WEBHOOK_SECRET` | Required for `git_provider: bitbucket` | The secret configured on the Bitbucket repository/workspace webhook. Bitbucket signs deliveries with `X-Hub-Signature: sha256=<hmac>`; an unsigned delivery (no secret configured) is rejected. |
 | `BITBUCKET_TOKEN` | Optional (bitbucket) | Access token (Bearer) used by validate/doctor to read webhook config and by path routing to read changed files — exact `GITHUB_TOKEN` degradation parity. Least-privilege scopes: `repository` + `pullrequest` + `webhook`. |
 | `BITBUCKET_AUTH_EMAIL` | Optional (bitbucket) | Pair with `BITBUCKET_TOKEN` to switch to HTTP Basic with a scoped Atlassian API token (the Free-plan path for workspace-wildcard listing). Unset ⇒ Bearer. |
+| `AI_API_KEY` | Required for `ai.provider: gemini` | Model-provider API key for the optional [AI layer](ai.md). Optional for `openai_compatible` (keyless local endpoints). |
 
 The server and CLIs fail fast when `SLACK_BOT_TOKEN` is missing, or when the webhook secret required by the selected [`git_provider`](#git_provider) is missing (`GITHUB_WEBHOOK_SECRET` for `git_provider: github`, `BITBUCKET_WEBHOOK_SECRET` for `git_provider: bitbucket`).
 
@@ -116,6 +117,20 @@ Use Slack emoji names without surrounding colons. For example, set `approved: sh
 | `digest.enabled` | `true` | Turns the stuck-PR digest on or off. The feature is on by default: omitting this section entirely keeps the digest running. |
 | `digest.schedule` | `0 9 * * *` | Standard 5-field cron expression, evaluated in `digest.timezone`. An invalid expression fails server startup. |
 | `digest.timezone` | `UTC` | IANA timezone name (e.g. `Europe/Kyiv`) the schedule and the "stuck since before today" cutoff are evaluated in. Absent/empty means UTC. An unrecognized zone fails server startup. Global only — a per-repository `digest:` override may not set it. |
+
+### ai
+
+The optional AI salience layer modulates notification loudness, routing emphasis, and digest ordering. It is off by default and its absence never affects delivery. See [AI](ai.md) for a full guide including provider setup and cost expectations.
+
+| Key | Default | Notes |
+| --- | --- | --- |
+| `ai.enabled` | `false` | Turns the AI layer on or off. When `false` (the default), every decision is deterministic and no model calls are made. The server and all CLIs start normally regardless of this setting. |
+| `ai.provider` | _(required when enabled)_ | Model provider: `gemini` or `openai_compatible`. An absent or unknown value fails startup when `ai.enabled: true`. |
+| `ai.model` | _(required when enabled)_ | Model name passed to the provider (e.g. `gemini-2.0-flash`, `llama3.1`). Never defaulted — an absent value fails startup when `ai.enabled: true`. |
+| `ai.base_url` | _(provider default)_ | Provider base URL. Optional for `gemini` (uses the public Gemini endpoint). Required for `openai_compatible` — an absent value fails startup when that provider is selected. |
+| `ai.instructions` | _(empty)_ | Optional operator guidance text embedded in every prompt. Use it to steer the model toward your team's norms (e.g. "prioritize security-tagged PRs"). Concatenated with any per-tier instructions from `mappings:`. |
+
+`AI_API_KEY` is the model-provider API key. It is env-only (never in `config.yaml`) and required when `ai.provider: gemini`. For `openai_compatible` it is optional — keyless local endpoints such as Ollama work without it.
 
 ### mappings
 

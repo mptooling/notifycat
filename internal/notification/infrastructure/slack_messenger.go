@@ -28,13 +28,20 @@ func (m *SlackMessenger) PostOpen(ctx context.Context, channel string, req domai
 }
 
 // composeOpen renders an opened-PR notification: the compact dependency-bot
-// template when Bot is set, otherwise the standard template.
+// template when Bot is set, otherwise the open template driven by the
+// salience decision fields (zero fields = the standard template).
 func (m *SlackMessenger) composeOpen(req domain.OpenRequest) slack.Message {
 	details := prDetails(req.Repository, req.PR)
 	if req.Bot != nil {
 		return m.composer.BotMessage(details, req.Mentions, req.Bot.Name, req.Bot.Security)
 	}
-	return m.composer.NewMessage(details, req.Mentions, req.NewPREmoji)
+	return m.composer.OpenMessage(details, slack.OpenOptions{
+		Mentions:     req.Mentions,
+		NewPREmoji:   req.NewPREmoji,
+		Compact:      req.Compact,
+		Breaking:     req.Breaking,
+		ContextBlock: req.ContextBlock,
+	})
 }
 
 // UpdateClosed implements domain.Messenger.

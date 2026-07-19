@@ -115,6 +115,84 @@ func NewComposer(newPREmoji string) *Composer {
 	return &Composer{newPREmoji: newPREmoji}
 }
 
+// OpenOptions parameterizes the opened-PR templates with the salience
+// decision fields. The zero value (plus mentions/emoji) renders exactly the
+// legacy NewMessage output — the deterministic advisor's regression anchor.
+type OpenOptions struct {
+	Mentions     []string
+	NewPREmoji   string
+	Compact      bool
+	Breaking     bool
+	ContextBlock string
+}
+
+// breakingLabel is the deterministic rendering of the breaking emphasis; the
+// model only picks the enum, never the wording.
+const breakingLabel = ":rotating_light: *breaking* — "
+
+// OpenMessage renders the opened-PR notification for a decision: standard or
+// compact template, optional breaking label, optional extra muted context
+// line. Mentions and empty-emoji fallback behave exactly as NewMessage.
+func (c *Composer) OpenMessage(pr PRDetails, opts OpenOptions) Message {
+	emoji := opts.NewPREmoji
+	if emoji == "" {
+		emoji = c.newPREmoji
+	}
+	if opts.Compact {
+		return c.compactOpenMessage(pr, opts, emoji)
+	}
+	headline := fmt.Sprintf(
+		":%s: %s%splease review <%s|PR #%d: %s>",
+		emoji, mentionsPrefix(opts.Mentions), openLabel(opts.Breaking), pr.URL, pr.Number, pr.Title,
+	)
+	fallbackLabel := ""
+	if opts.Breaking {
+		fallbackLabel = "breaking — "
+	}
+	fallback := fmt.Sprintf(
+		"%s%splease review PR #%d: %s by %s",
+		mentionsPrefix(opts.Mentions), fallbackLabel, pr.Number, pr.Title, pr.Author,
+	)
+	blocks := []Block{section(headline), contextBlock(contextLine(pr))}
+	if opts.ContextBlock != "" {
+		blocks = append(blocks, contextBlock(opts.ContextBlock))
+	}
+	blocks = append(blocks, startReviewActions(pr))
+	return Message{Blocks: blocks, Fallback: fallback}
+}
+
+// compactOpenMessage renders the one-line open template ("alice opened …"),
+// the human counterpart of the dependency-bot message: a single section plus,
+// when decided, one muted context line.
+func (c *Composer) compactOpenMessage(pr PRDetails, opts OpenOptions, emoji string) Message {
+	headline := fmt.Sprintf(
+		":%s: %s%s%s opened <%s|PR #%d: %s>",
+		emoji, mentionsPrefix(opts.Mentions), openLabel(opts.Breaking), pr.Author, pr.URL, pr.Number, pr.Title,
+	)
+	fallbackLabel := ""
+	if opts.Breaking {
+		fallbackLabel = "breaking — "
+	}
+	fallback := fmt.Sprintf(
+		"%s%s%s opened PR #%d: %s",
+		mentionsPrefix(opts.Mentions), fallbackLabel, pr.Author, pr.Number, pr.Title,
+	)
+	blocks := []Block{section(headline)}
+	if opts.ContextBlock != "" {
+		blocks = append(blocks, contextBlock(opts.ContextBlock))
+	}
+	return Message{Blocks: blocks, Fallback: fallback}
+}
+
+// openLabel renders the breaking emphasis prefix ("" when not breaking, so
+// the non-breaking rendering stays byte-identical to the legacy template).
+func openLabel(breaking bool) string {
+	if breaking {
+		return breakingLabel
+	}
+	return ""
+}
+
 // NewMessage renders the initial notification for a PR: a headline section with
 // the new-PR emoji, any mentions, and the linked title, plus a muted context
 // line carrying repo, author, and the localized open time. Mentions stay in the
@@ -125,25 +203,7 @@ func NewComposer(newPREmoji string) *Composer {
 // newPREmoji is the per-repo reaction emoji name (without colons). If empty,
 // falls back to the composer's default emoji.
 func (c *Composer) NewMessage(pr PRDetails, mentions []string, newPREmoji string) Message {
-	if newPREmoji == "" {
-		newPREmoji = c.newPREmoji
-	}
-	headline := fmt.Sprintf(
-		":%s: %splease review <%s|PR #%d: %s>",
-		newPREmoji, mentionsPrefix(mentions), pr.URL, pr.Number, pr.Title,
-	)
-	fallback := fmt.Sprintf(
-		"%splease review PR #%d: %s by %s",
-		mentionsPrefix(mentions), pr.Number, pr.Title, pr.Author,
-	)
-	return Message{
-		Blocks: []Block{
-			section(headline),
-			contextBlock(contextLine(pr)),
-			startReviewActions(pr),
-		},
-		Fallback: fallback,
-	}
+	return c.OpenMessage(pr, OpenOptions{Mentions: mentions, NewPREmoji: newPREmoji})
 }
 
 // ReviewingMarker renders the small context line appended to a PR message when
@@ -219,12 +279,16 @@ const maxSectionChars = 2900
 
 // StuckPR is one entry in a stuck-PR digest: a PR that has seen no activity
 // since before today. The PR title is intentionally absent — the store does
-// not keep it — so the digest links by repository and number.
+// not keep it — so the digest links by repository and number. Attention and
+// Note carry the salience decision's per-PR decoration; both zero values
+// render the legacy line byte-identically.
 type StuckPR struct {
 	Repository string
 	Number     int
 	URL        string
 	IdleDays   int
+	Attention  bool
+	Note       string
 }
 
 // StuckDigestParent renders the static parent of a channel's stuck-PR digest: a
@@ -253,7 +317,10 @@ func (c *Composer) StuckDigestList(prs []StuckPR) Message {
 	var blocks []Block
 	var b strings.Builder
 	for _, pr := range prs {
-		line := fmt.Sprintf("• <%s|%s #%d> · idle %s", pr.URL, pr.Repository, pr.Number, idlePhrase(pr.IdleDays))
+		line := fmt.Sprintf("• %s<%s|%s #%d> · idle %s", attentionPrefix(pr.Attention), pr.URL, pr.Repository, pr.Number, idlePhrase(pr.IdleDays))
+		if pr.Note != "" {
+			line += fmt.Sprintf(" — _%s_", pr.Note)
+		}
 		if b.Len() > 0 && b.Len()+len("\n")+len(line) > maxSectionChars {
 			blocks = append(blocks, section(b.String()))
 			b.Reset()
@@ -275,6 +342,14 @@ func idlePhrase(days int) string {
 		return "1 day"
 	}
 	return fmt.Sprintf("%d days", days)
+}
+
+// attentionPrefix marks an attention-highlighted digest line.
+func attentionPrefix(attention bool) string {
+	if attention {
+		return ":warning: "
+	}
+	return ""
 }
 
 // pluralSuffix returns "" for one and "s" otherwise.

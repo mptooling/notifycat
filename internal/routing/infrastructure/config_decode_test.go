@@ -125,3 +125,53 @@ func TestRepoConfig_UnknownReactionKeyRejected(t *testing.T) {
 		t.Fatal("expected error for unknown reactions key")
 	}
 }
+
+func TestDecodeDigest_NullNodeIsAbsent(t *testing.T) {
+	var doc struct {
+		Digest yaml.Node `yaml:"digest"`
+	}
+	if err := yaml.Unmarshal([]byte("digest:\n"), &doc); err != nil {
+		t.Fatal(err)
+	}
+	digest, err := DecodeDigest(&doc.Digest)
+	if err != nil || digest != nil {
+		t.Fatalf("DecodeDigest(null) = %v, %v; want nil, nil (bare key counts as absent)", digest, err)
+	}
+}
+
+func TestRepoConfig_AIOverride(t *testing.T) {
+	o := decodeOrg(t, `
+api:
+  channel: C0API
+  ai:
+    enabled: false
+    instructions: "payments PRs are hot"
+`)
+	api := o["api"]
+	if api.AI == nil || api.AI.Enabled == nil || *api.AI.Enabled {
+		t.Fatalf("ai override lost: %+v", api.AI)
+	}
+	if api.AI.Instructions != "payments PRs are hot" {
+		t.Errorf("Instructions = %q", api.AI.Instructions)
+	}
+	tier := api.toDomain()
+	if tier.AI == nil || tier.AI.Enabled == nil || *tier.AI.Enabled || tier.AI.Instructions != "payments PRs are hot" {
+		t.Errorf("toDomain lost the ai override: %+v", tier.AI)
+	}
+}
+
+func TestRepoConfig_AIAbsentMeansNil(t *testing.T) {
+	o := decodeOrg(t, "api:\n  channel: C0API\n")
+	if o["api"].AI != nil {
+		t.Errorf("absent ai block must stay nil; got %+v", o["api"].AI)
+	}
+}
+
+func TestRepoConfig_AIUnknownKeyRejected(t *testing.T) {
+	var o map[string]repoConfigWire
+	dec := yaml.NewDecoder(strings.NewReader("api:\n  channel: C0API\n  ai:\n    model: gpt-4o\n"))
+	dec.KnownFields(true)
+	if err := dec.Decode(&o); err == nil {
+		t.Fatal("expected error for a per-tier ai.model (provider/model/key are global-only)")
+	}
+}

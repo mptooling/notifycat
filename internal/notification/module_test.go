@@ -15,6 +15,8 @@ import (
 	"github.com/mptooling/notifycat/internal/platform/persistence"
 	"github.com/mptooling/notifycat/internal/platform/slack"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
+	salienceapp "github.com/mptooling/notifycat/internal/salience/application"
+	saliencedomain "github.com/mptooling/notifycat/internal/salience/domain"
 )
 
 type stubReviewSessions struct{}
@@ -35,8 +37,8 @@ func (stubBehavior) Get(context.Context, string) (routingdomain.RepoMapping, err
 
 type stubResolver struct{}
 
-func (stubResolver) ResolveTargets(context.Context, string, int) (routingdomain.RepoMapping, []routingdomain.Target, error) {
-	return routingdomain.RepoMapping{}, nil, nil
+func (stubResolver) ResolveTargets(context.Context, string, int) (routingdomain.ResolvedTargets, error) {
+	return routingdomain.ResolvedTargets{}, nil
 }
 
 // TestModule_GraphResolves asserts that notification.Module, given only the
@@ -56,6 +58,7 @@ func TestModule_GraphResolves(t *testing.T) {
 			func() domain.RepoBehavior { return stubBehavior{} },
 			func() domain.TargetResolver { return stubResolver{} },
 			func() domain.ReviewSessions { return stubReviewSessions{} },
+			func() saliencedomain.Advisor { return salienceapp.NewDeterministicAdvisor() },
 		),
 		fx.Invoke(func(domain.EventDispatcher) {}),
 	)

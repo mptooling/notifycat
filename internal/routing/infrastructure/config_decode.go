@@ -132,6 +132,7 @@ type repoConfigWire struct {
 	IgnoreAIReviews  *bool
 	DependabotFormat *bool
 	Digest           *digestConfigWire
+	AI               *aiOverrideWire
 	Paths            []domain.PathRule
 }
 
@@ -197,6 +198,10 @@ func (rc *repoConfigWire) UnmarshalYAML(node *yaml.Node) error {
 				return err
 			}
 			rc.Paths = paths
+		case "ai":
+			if err := decodeAI(rc, valNode); err != nil {
+				return err
+			}
 		default:
 			return fmt.Errorf("unknown field %q", keyNode.Value)
 		}
@@ -234,6 +239,47 @@ func decodeReviews(rc *repoConfigWire, node *yaml.Node) error {
 			return fmt.Errorf("reviews.%s: %w", key.Value, err)
 		}
 	}
+	return nil
+}
+
+// aiOverrideWire is the YAML wire type for a tier's `ai:` block.
+type aiOverrideWire struct {
+	Enabled      *bool
+	Instructions string
+}
+
+// decodeAI parses a tier's `ai:` block (enabled, instructions), each
+// optional, rejecting unknown keys — per-tier provider/model/key are
+// deliberately not accepted.
+func decodeAI(rc *repoConfigWire, node *yaml.Node) error {
+	if node.Kind != yaml.MappingNode {
+		return fmt.Errorf("ai: expected mapping; got node kind %d", node.Kind)
+	}
+	if len(node.Content)%2 != 0 {
+		return fmt.Errorf("ai: malformed mapping")
+	}
+	wire := &aiOverrideWire{}
+	seen := map[string]bool{}
+	for i := 0; i < len(node.Content); i += 2 {
+		key, val := node.Content[i], node.Content[i+1]
+		if err := markSeen(seen, key.Value); err != nil {
+			return fmt.Errorf("ai: %w", err)
+		}
+		switch key.Value {
+		case "enabled":
+			wire.Enabled = new(bool)
+			if err := val.Decode(wire.Enabled); err != nil {
+				return fmt.Errorf("ai.enabled: %w", err)
+			}
+		case "instructions":
+			if err := val.Decode(&wire.Instructions); err != nil {
+				return fmt.Errorf("ai.instructions: %w", err)
+			}
+		default:
+			return fmt.Errorf("ai: unknown field %q", key.Value)
+		}
+	}
+	rc.AI = wire
 	return nil
 }
 
@@ -383,5 +429,48 @@ func (rc repoConfigWire) toDomain() domain.RepoConfig {
 		v := rc.Digest.toDomain()
 		out.Digest = &v
 	}
+	if rc.AI != nil {
+		out.AI = &domain.AIOverride{Enabled: rc.AI.Enabled, Instructions: rc.AI.Instructions}
+	}
 	return out
+}
+
+// DecodeMappings decodes a raw `mappings:` YAML node through the wire codec,
+// preserving the tri-state mentions semantics, per-tier behavioral blocks
+// (reactions/reviews/digest/paths), unknown-key rejection, and duplicate-key
+// detection. platform/config routes config.yaml's mappings section here so
+// the file and the domain types stay decoupled. A null node (bare key) decodes
+// as absent.
+func DecodeMappings(node *yaml.Node) (map[string]domain.Org, error) {
+	if node.Tag == "!!null" {
+		return nil, nil
+	}
+	var wire map[string]map[string]repoConfigWire
+	if err := node.Decode(&wire); err != nil {
+		return nil, fmt.Errorf("mappings: %w", err)
+	}
+	out := make(map[string]domain.Org, len(wire))
+	for org, repos := range wire {
+		tiers := make(domain.Org, len(repos))
+		for name, repoConfig := range repos {
+			tiers[name] = repoConfig.toDomain()
+		}
+		out[org] = tiers
+	}
+	return out, nil
+}
+
+// DecodeDigest decodes a raw global `digest:` YAML node through the wire
+// codec, defaulting enabled to true when the key is absent. A null node (bare
+// key) decodes as absent.
+func DecodeDigest(node *yaml.Node) (*domain.DigestConfig, error) {
+	if node.Tag == "!!null" {
+		return nil, nil
+	}
+	var wire digestConfigWire
+	if err := node.Decode(&wire); err != nil {
+		return nil, fmt.Errorf("digest: %w", err)
+	}
+	out := wire.toDomain()
+	return &out, nil
 }

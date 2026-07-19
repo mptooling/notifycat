@@ -9,6 +9,8 @@ import (
 
 	"github.com/mptooling/notifycat/internal/notification/domain"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
+	salienceapp "github.com/mptooling/notifycat/internal/salience/application"
+	saliencedomain "github.com/mptooling/notifycat/internal/salience/domain"
 )
 
 func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
@@ -153,13 +155,17 @@ func (f *fakeMessageStore) Delete(_ context.Context, repository string, prNumber
 
 // fakeTargetResolver is a domain.TargetResolver.
 type fakeTargetResolver struct {
-	behavior routingdomain.RepoMapping
-	targets  []routingdomain.Target
-	err      error
+	behavior     routingdomain.RepoMapping
+	targets      []routingdomain.Target
+	changedFiles []string
+	err          error
 }
 
-func (f *fakeTargetResolver) ResolveTargets(_ context.Context, _ string, _ int) (routingdomain.RepoMapping, []routingdomain.Target, error) {
-	return f.behavior, f.targets, f.err
+func (f *fakeTargetResolver) ResolveTargets(_ context.Context, _ string, _ int) (routingdomain.ResolvedTargets, error) {
+	if f.err != nil {
+		return routingdomain.ResolvedTargets{}, f.err
+	}
+	return routingdomain.ResolvedTargets{Mapping: f.behavior, Targets: f.targets, ChangedFiles: f.changedFiles}, nil
 }
 
 // fakeBehavior is a domain.RepoBehavior.
@@ -190,4 +196,41 @@ func (f *fakeReviewSessions) Finish(_ context.Context, _ string, _ int) error {
 }
 func (f *fakeReviewSessions) Reviewers(_ context.Context, _ string, _ int) ([]domain.ReviewSession, error) {
 	return f.reviewers, f.reviewersErr
+}
+
+// fakeAdvisor records requests and returns canned decisions; any nil canned
+// decision delegates to the real deterministic advisor so handler tests get
+// today's behavior by default.
+type fakeAdvisor struct {
+	deterministic *salienceapp.DeterministicAdvisor
+
+	openRequests    []saliencedomain.OpenDecisionRequest
+	updatedRequests []saliencedomain.UpdatedDecisionRequest
+
+	openDecision    *saliencedomain.OpenDecision
+	updatedDecision *saliencedomain.UpdatedDecision
+}
+
+func newFakeAdvisor() *fakeAdvisor {
+	return &fakeAdvisor{deterministic: salienceapp.NewDeterministicAdvisor()}
+}
+
+func (f *fakeAdvisor) DecideOpen(ctx context.Context, request saliencedomain.OpenDecisionRequest) saliencedomain.OpenDecision {
+	f.openRequests = append(f.openRequests, request)
+	if f.openDecision != nil {
+		return *f.openDecision
+	}
+	return f.deterministic.DecideOpen(ctx, request)
+}
+
+func (f *fakeAdvisor) DecideUpdated(ctx context.Context, request saliencedomain.UpdatedDecisionRequest) saliencedomain.UpdatedDecision {
+	f.updatedRequests = append(f.updatedRequests, request)
+	if f.updatedDecision != nil {
+		return *f.updatedDecision
+	}
+	return f.deterministic.DecideUpdated(ctx, request)
+}
+
+func (f *fakeAdvisor) DecideDigest(ctx context.Context, request saliencedomain.DigestDecisionRequest) saliencedomain.DigestDecision {
+	return f.deterministic.DecideDigest(ctx, request)
 }

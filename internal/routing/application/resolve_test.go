@@ -67,29 +67,29 @@ func TestResolveBehavior_RepoOverridesStarOverridesGlobal(t *testing.T) {
 		Reactions:       &domain.ReactionsOverride{Enabled: &disabled},
 		IgnoreAIReviews: boolPtr(true),
 	}
-	rx, ignoreAI, dependabot := resolveBehavior(global, star, repo)
-	if rx.Approved != "shipit" {
-		t.Errorf("approved = %q; want star's shipit", rx.Approved)
+	resolution := resolveBehavior(global, star, repo)
+	if resolution.reactions.Approved != "shipit" {
+		t.Errorf("approved = %q; want star's shipit", resolution.reactions.Approved)
 	}
-	if rx.NewPR != "eyes" {
-		t.Errorf("new_pr = %q; want global eyes", rx.NewPR)
+	if resolution.reactions.NewPR != "eyes" {
+		t.Errorf("new_pr = %q; want global eyes", resolution.reactions.NewPR)
 	}
-	if rx.Enabled != false {
-		t.Errorf("enabled = %v; want repo's false", rx.Enabled)
+	if resolution.reactions.Enabled != false {
+		t.Errorf("enabled = %v; want repo's false", resolution.reactions.Enabled)
 	}
-	if ignoreAI != true {
-		t.Errorf("ignoreAI = %v; want repo's true", ignoreAI)
+	if resolution.ignoreAIReviews != true {
+		t.Errorf("ignoreAIReviews = %v; want repo's true", resolution.ignoreAIReviews)
 	}
-	if dependabot != true {
-		t.Errorf("dependabot = %v; want global true (nobody overrode)", dependabot)
+	if resolution.dependabotFormat != true {
+		t.Errorf("dependabotFormat = %v; want global true (nobody overrode)", resolution.dependabotFormat)
 	}
 }
 
 func TestResolveBehavior_AllGlobalWhenNoTiers(t *testing.T) {
 	global := domain.Defaults{Reactions: domain.Reactions{Enabled: true, NewPR: "eyes"}, DependabotFormat: true}
-	rx, ignoreAI, dependabot := resolveBehavior(global, nil, nil)
-	if rx.NewPR != "eyes" || !rx.Enabled || ignoreAI != false || dependabot != true {
-		t.Errorf("got %+v ignoreAI=%v dependabot=%v; want all global", rx, ignoreAI, dependabot)
+	resolution := resolveBehavior(global, nil, nil)
+	if resolution.reactions.NewPR != "eyes" || !resolution.reactions.Enabled || resolution.ignoreAIReviews != false || resolution.dependabotFormat != true {
+		t.Errorf("got reactions=%+v ignoreAIReviews=%v dependabotFormat=%v; want all global", resolution.reactions, resolution.ignoreAIReviews, resolution.dependabotFormat)
 	}
 }
 

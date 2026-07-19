@@ -8,8 +8,9 @@
 #   notifycat-config validate <owner/repo>   # check just one repo
 #   notifycat-config validate --force        # ignore the lock cache and revalidate everything
 #
-# Secrets (GITHUB_WEBHOOK_SECRET, SLACK_BOT_TOKEN, GITHUB_TOKEN) and infra-interpolation values
+# Secrets (GITHUB_WEBHOOK_SECRET, SLACK_BOT_TOKEN, GITHUB_TOKEN, AI_API_KEY) and infra-interpolation values
 # (DOMAIN, ACME_EMAIL) are NOT in this file — they live in .env. See .env.example.
+# AI_API_KEY=   # Model-provider API key; required for ai.provider: gemini; optional for openai_compatible.
 #
 # The config file path defaults to ./config.yaml. Override with NOTIFYCAT_CONFIG_FILE.
 # Docker image default: /app/config.yaml.
@@ -84,6 +85,20 @@ digest:
   timezone: "UTC"                     # IANA zone (e.g. Europe/Kyiv); default UTC. Both the firing time and
                                       # the "since before today" cutoff use this zone. An invalid zone fails
                                       # startup. Global only — a per-repo digest may not set it.
+
+# ── AI salience layer (optional) ─────────────────────────────────────────────────────────────────
+# Off by default. When enabled, the AI layer modulates notification loudness, routing emphasis, and
+# digest ordering. Every failure falls back silently to the deterministic behavior. Provider, model,
+# and key are global-only (no per-tier override). AI_API_KEY lives in .env, never here.
+# See docs/ai.md for a full guide including cost expectations and security boundaries.
+#
+# ai:
+#   enabled: false                    # default false; set true to activate
+#   provider: gemini                  # gemini | openai_compatible
+#   model: gemini-2.0-flash           # required when enabled; never defaulted (e.g. llama3.1 for Ollama)
+#   base_url: ""                      # optional for gemini (uses public endpoint); required for openai_compatible
+#   instructions: |                   # optional operator guidance embedded in every prompt
+#     Focus on security-tagged PRs.
 
 # ── Mappings ──────────────────────────────────────────────────────────────────────────────────────
 # Repository → Slack-channel routing. Per-repo tier schema (0.18+): each org contains zero or more

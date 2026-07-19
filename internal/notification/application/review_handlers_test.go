@@ -45,7 +45,7 @@ func noActiveSession() *fakeReviewSessions {
 // ----- Approve -----
 
 func TestApproveHandler_Applicable(t *testing.T) {
-	h := application.NewApproveHandler(nil, nil, nil, discardLogger(), noActiveSession())
+	h := application.NewApproveHandler(domain.LifecycleHandlerParams{Store: nil, Behavior: nil, Messenger: nil, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: noActiveSession()})
 
 	if !h.Applicable(kernel.Event{Kind: kernel.KindApproved}) {
 		t.Error("KindApproved should be applicable")
@@ -60,7 +60,7 @@ func TestApproveHandler_Applicable(t *testing.T) {
 
 func TestApproveHandler_Handle_AddsReaction(t *testing.T) {
 	store, behavior, messenger := setupReviewFixture(t)
-	h := application.NewApproveHandler(store, behavior, messenger, discardLogger(), noActiveSession())
+	h := application.NewApproveHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: noActiveSession()})
 
 	e := kernel.Event{
 		Kind:       kernel.KindApproved,
@@ -81,7 +81,7 @@ func TestApproveHandler_Handle_AddsReaction(t *testing.T) {
 
 func TestApproveHandler_Handle_TouchesActivity(t *testing.T) {
 	store, behavior, messenger := setupReviewFixture(t)
-	h := application.NewApproveHandler(store, behavior, messenger, discardLogger(), noActiveSession())
+	h := application.NewApproveHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: noActiveSession()})
 
 	e := kernel.Event{
 		Kind:       kernel.KindApproved,
@@ -101,7 +101,7 @@ func TestApproveHandler_IgnoreAIReviews_BotSenderDoesNotTouch(t *testing.T) {
 	store.seed("octo/widget", 42, domain.Message{Channel: "C123", MessageID: "ts1"})
 	behavior := reviewBehavior(true, "")
 	messenger := &fakeMessenger{}
-	h := application.NewApproveHandler(store, behavior, messenger, discardLogger(), noActiveSession())
+	h := application.NewApproveHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: noActiveSession()})
 
 	e := kernel.Event{
 		Kind:       kernel.KindApproved,
@@ -123,7 +123,7 @@ func TestApproveHandler_IgnoreAIReviews_BotSenderDoesNotTouch(t *testing.T) {
 // ----- Commented -----
 
 func TestCommentedHandler_Applicable(t *testing.T) {
-	h := application.NewCommentedHandler(nil, nil, nil, discardLogger(), noActiveSession())
+	h := application.NewCommentedHandler(domain.LifecycleHandlerParams{Store: nil, Behavior: nil, Messenger: nil, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: noActiveSession()})
 
 	cases := []struct {
 		name string
@@ -147,7 +147,7 @@ func TestCommentedHandler_Applicable(t *testing.T) {
 
 func TestCommentedHandler_Handle_AddsReaction(t *testing.T) {
 	store, behavior, messenger := setupReviewFixture(t)
-	h := application.NewCommentedHandler(store, behavior, messenger, discardLogger(), noActiveSession())
+	h := application.NewCommentedHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: noActiveSession()})
 
 	e := kernel.Event{
 		Kind:       kernel.KindReviewCommented,
@@ -165,7 +165,7 @@ func TestCommentedHandler_Handle_AddsReaction(t *testing.T) {
 
 func TestCommentedHandler_Handle_LineCommentAddsReaction(t *testing.T) {
 	store, behavior, messenger := setupReviewFixture(t)
-	h := application.NewCommentedHandler(store, behavior, messenger, discardLogger(), noActiveSession())
+	h := application.NewCommentedHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: noActiveSession()})
 
 	e := kernel.Event{
 		Kind:       kernel.KindCommented,
@@ -184,7 +184,7 @@ func TestCommentedHandler_Handle_LineCommentAddsReaction(t *testing.T) {
 // ----- RequestChange -----
 
 func TestRequestChangeHandler_Applicable(t *testing.T) {
-	h := application.NewRequestChangeHandler(nil, nil, nil, discardLogger(), noActiveSession())
+	h := application.NewRequestChangeHandler(domain.LifecycleHandlerParams{Store: nil, Behavior: nil, Messenger: nil, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: noActiveSession()})
 
 	if !h.Applicable(kernel.Event{Kind: kernel.KindChangesRequested}) {
 		t.Error("KindChangesRequested should be applicable")
@@ -199,7 +199,7 @@ func TestRequestChangeHandler_Applicable(t *testing.T) {
 
 func TestRequestChangeHandler_Handle_AddsReaction(t *testing.T) {
 	store, behavior, messenger := setupReviewFixture(t)
-	h := application.NewRequestChangeHandler(store, behavior, messenger, discardLogger(), noActiveSession())
+	h := application.NewRequestChangeHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: noActiveSession()})
 
 	e := kernel.Event{
 		Kind:       kernel.KindChangesRequested,
@@ -223,7 +223,7 @@ func TestReactionHandler_ReactsOnEveryMessage(t *testing.T) {
 	store.seed("octo/widget", 42, domain.Message{Channel: "C0B", MessageID: "ts-b"})
 	behavior := reviewBehavior(false, "")
 	messenger := &fakeMessenger{}
-	h := application.NewApproveHandler(store, behavior, messenger, discardLogger(), noActiveSession())
+	h := application.NewApproveHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: noActiveSession()})
 
 	e := kernel.Event{
 		Kind:       kernel.KindApproved,
@@ -248,7 +248,7 @@ func TestApproveHandler_IgnoreAIReviews_BotSenderSuppressesReaction(t *testing.T
 	store.seed("octo/widget", 42, domain.Message{Channel: "C123", MessageID: "ts1"})
 	behavior := reviewBehavior(true, "")
 	messenger := &fakeMessenger{}
-	h := application.NewApproveHandler(store, behavior, messenger, discardLogger(), noActiveSession())
+	h := application.NewApproveHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: noActiveSession()})
 
 	e := kernel.Event{
 		Kind:       kernel.KindApproved,
@@ -269,7 +269,7 @@ func TestApproveHandler_IgnoreAIReviews_HumanSenderReacts(t *testing.T) {
 	store.seed("octo/widget", 42, domain.Message{Channel: "C123", MessageID: "ts1"})
 	behavior := reviewBehavior(true, "")
 	messenger := &fakeMessenger{}
-	h := application.NewApproveHandler(store, behavior, messenger, discardLogger(), noActiveSession())
+	h := application.NewApproveHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: noActiveSession()})
 
 	e := kernel.Event{
 		Kind:       kernel.KindApproved,
@@ -290,7 +290,7 @@ func TestApproveHandler_IgnoreAIReviewsFalse_BotSenderStillReacts(t *testing.T) 
 	store.seed("octo/widget", 42, domain.Message{Channel: "C123", MessageID: "ts1"})
 	behavior := reviewBehavior(false, "")
 	messenger := &fakeMessenger{}
-	h := application.NewApproveHandler(store, behavior, messenger, discardLogger(), noActiveSession())
+	h := application.NewApproveHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: noActiveSession()})
 
 	e := kernel.Event{
 		Kind:       kernel.KindApproved,
@@ -311,7 +311,7 @@ func TestCommentedHandler_IgnoreAIReviews_BotSenderSuppressesReaction(t *testing
 	store.seed("octo/widget", 42, domain.Message{Channel: "C123", MessageID: "ts1"})
 	behavior := reviewBehavior(true, "")
 	messenger := &fakeMessenger{}
-	h := application.NewCommentedHandler(store, behavior, messenger, discardLogger(), noActiveSession())
+	h := application.NewCommentedHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: noActiveSession()})
 
 	e := kernel.Event{
 		Kind:       kernel.KindReviewCommented,
@@ -332,7 +332,7 @@ func TestCommentedHandler_IgnoreAIReviews_BotLineCommentSuppressed(t *testing.T)
 	store.seed("octo/widget", 42, domain.Message{Channel: "C123", MessageID: "ts1"})
 	behavior := reviewBehavior(true, "")
 	messenger := &fakeMessenger{}
-	h := application.NewCommentedHandler(store, behavior, messenger, discardLogger(), noActiveSession())
+	h := application.NewCommentedHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: noActiveSession()})
 
 	e := kernel.Event{
 		Kind:       kernel.KindCommented,
@@ -353,7 +353,7 @@ func TestRequestChangeHandler_IgnoreAIReviews_BotSenderSuppressesReaction(t *tes
 	store.seed("octo/widget", 42, domain.Message{Channel: "C123", MessageID: "ts1"})
 	behavior := reviewBehavior(true, "")
 	messenger := &fakeMessenger{}
-	h := application.NewRequestChangeHandler(store, behavior, messenger, discardLogger(), noActiveSession())
+	h := application.NewRequestChangeHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: noActiveSession()})
 
 	e := kernel.Event{
 		Kind:       kernel.KindChangesRequested,
@@ -376,7 +376,7 @@ func TestReactionHandler_SuppressedReactionLogsAtDebug(t *testing.T) {
 	messenger := &fakeMessenger{}
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	h := application.NewApproveHandler(store, behavior, messenger, logger, noActiveSession())
+	h := application.NewApproveHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: logger, Reviews: noActiveSession()})
 
 	e := kernel.Event{
 		Kind:       kernel.KindApproved,
@@ -403,7 +403,7 @@ func TestCommentedHandler_BotMarker_AddsMarkerAlongsideStateReaction(t *testing.
 	store.seed("octo/widget", 42, domain.Message{Channel: "C123", MessageID: "ts1"})
 	behavior := reviewBehavior(false, "robot_face")
 	messenger := &fakeMessenger{}
-	h := application.NewCommentedHandler(store, behavior, messenger, discardLogger(), noActiveSession())
+	h := application.NewCommentedHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: noActiveSession()})
 
 	e := kernel.Event{
 		Kind:       kernel.KindReviewCommented,
@@ -428,7 +428,7 @@ func TestApproveHandler_BotMarker_AddsMarkerAlongsideStateReaction(t *testing.T)
 	store.seed("octo/widget", 42, domain.Message{Channel: "C123", MessageID: "ts1"})
 	behavior := reviewBehavior(false, "robot_face")
 	messenger := &fakeMessenger{}
-	h := application.NewApproveHandler(store, behavior, messenger, discardLogger(), noActiveSession())
+	h := application.NewApproveHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: noActiveSession()})
 
 	e := kernel.Event{
 		Kind:       kernel.KindApproved,
@@ -450,7 +450,7 @@ func TestCommentedHandler_BotMarker_LineCommentBotGetsMarker(t *testing.T) {
 	store.seed("octo/widget", 42, domain.Message{Channel: "C123", MessageID: "ts1"})
 	behavior := reviewBehavior(false, "robot_face")
 	messenger := &fakeMessenger{}
-	h := application.NewCommentedHandler(store, behavior, messenger, discardLogger(), noActiveSession())
+	h := application.NewCommentedHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: noActiveSession()})
 
 	e := kernel.Event{
 		Kind:       kernel.KindCommented,
@@ -472,7 +472,7 @@ func TestCommentedHandler_BotMarker_HumanGetsOnlyStateReaction(t *testing.T) {
 	store.seed("octo/widget", 42, domain.Message{Channel: "C123", MessageID: "ts1"})
 	behavior := reviewBehavior(false, "robot_face")
 	messenger := &fakeMessenger{}
-	h := application.NewCommentedHandler(store, behavior, messenger, discardLogger(), noActiveSession())
+	h := application.NewCommentedHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: noActiveSession()})
 
 	e := kernel.Event{
 		Kind:       kernel.KindReviewCommented,
@@ -496,7 +496,7 @@ func TestCommentedHandler_BotMarker_SuppressedBotGetsNothing(t *testing.T) {
 	store.seed("octo/widget", 42, domain.Message{Channel: "C123", MessageID: "ts1"})
 	behavior := reviewBehavior(true, "robot_face")
 	messenger := &fakeMessenger{}
-	h := application.NewCommentedHandler(store, behavior, messenger, discardLogger(), noActiveSession())
+	h := application.NewCommentedHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: noActiveSession()})
 
 	e := kernel.Event{
 		Kind:       kernel.KindReviewCommented,
@@ -517,7 +517,7 @@ func TestCommentedHandler_BotMarker_SuppressedBotGetsNothing(t *testing.T) {
 func TestApproveHandler_SubmittedReview_FinishesSession(t *testing.T) {
 	store, behavior, messenger := setupReviewFixture(t)
 	reviews := noActiveSession()
-	h := application.NewApproveHandler(store, behavior, messenger, discardLogger(), reviews)
+	h := application.NewApproveHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: reviews})
 
 	e := kernel.Event{
 		Kind:       kernel.KindApproved,
@@ -541,7 +541,7 @@ func TestApproveHandler_SubmittedReview_FinishesSession(t *testing.T) {
 func TestRequestChangeHandler_SubmittedReview_FinishesSession(t *testing.T) {
 	store, behavior, messenger := setupReviewFixture(t)
 	reviews := noActiveSession()
-	h := application.NewRequestChangeHandler(store, behavior, messenger, discardLogger(), reviews)
+	h := application.NewRequestChangeHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: reviews})
 
 	e := kernel.Event{
 		Kind:       kernel.KindChangesRequested,
@@ -559,7 +559,7 @@ func TestRequestChangeHandler_SubmittedReview_FinishesSession(t *testing.T) {
 func TestCommentedHandler_LineComment_DoesNotFinishSession(t *testing.T) {
 	store, behavior, messenger := setupReviewFixture(t)
 	reviews := noActiveSession()
-	h := application.NewCommentedHandler(store, behavior, messenger, discardLogger(), reviews)
+	h := application.NewCommentedHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: reviews})
 
 	e := kernel.Event{
 		Kind:       kernel.KindCommented,
@@ -577,7 +577,7 @@ func TestCommentedHandler_LineComment_DoesNotFinishSession(t *testing.T) {
 func TestCommentedHandler_IssueComment_DoesNotFinishSession(t *testing.T) {
 	store, behavior, messenger := setupReviewFixture(t)
 	reviews := noActiveSession()
-	h := application.NewCommentedHandler(store, behavior, messenger, discardLogger(), reviews)
+	h := application.NewCommentedHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: reviews})
 
 	// A conversation comment on a PR also maps to KindCommented and must not
 	// finish the review session.
@@ -597,7 +597,7 @@ func TestCommentedHandler_IssueComment_DoesNotFinishSession(t *testing.T) {
 func TestCommentedHandler_SubmittedCommentReview_FinishesSession(t *testing.T) {
 	store, behavior, messenger := setupReviewFixture(t)
 	reviews := noActiveSession()
-	h := application.NewCommentedHandler(store, behavior, messenger, discardLogger(), reviews)
+	h := application.NewCommentedHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: reviews})
 
 	e := kernel.Event{
 		Kind:       kernel.KindReviewCommented,
@@ -635,7 +635,7 @@ func TestApproveHandler_SubmittedReview_ActiveSession_ClearsInReviewState(t *tes
 		active:    domain.ReviewSession{SlackUserID: "U1"},
 		reviewers: []domain.ReviewSession{{SlackUserID: "U1"}},
 	}
-	h := application.NewApproveHandler(store, behavior, messenger, discardLogger(), reviews)
+	h := application.NewApproveHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: reviews})
 
 	if err := h.Handle(context.Background(), submittedReviewEvent()); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -658,7 +658,7 @@ func TestApproveHandler_SubmittedReview_ActiveSession_ClearsInReviewState(t *tes
 func TestApproveHandler_SubmittedReview_NoActiveSession_LeavesMessageUntouched(t *testing.T) {
 	store, behavior, messenger := setupReviewFixture(t)
 	reviews := noActiveSession() // nobody started a review
-	h := application.NewApproveHandler(store, behavior, messenger, discardLogger(), reviews)
+	h := application.NewApproveHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: reviews})
 
 	if err := h.Handle(context.Background(), submittedReviewEvent()); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -687,7 +687,7 @@ func TestReactionHandler_SubmittedReview_ActiveSession_UpdatesEveryStoredMessage
 			{SlackUserID: "U2"},
 		},
 	}
-	h := application.NewApproveHandler(store, behavior, messenger, discardLogger(), reviews)
+	h := application.NewApproveHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: reviews})
 
 	if err := h.Handle(context.Background(), submittedReviewEvent()); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -708,7 +708,7 @@ func TestApproveHandler_SubmittedReview_ReviewersLoadError_StillClearsInReviewSt
 		reviewers:    []domain.ReviewSession{{SlackUserID: "U1"}},
 		reviewersErr: errInjected,
 	}
-	h := application.NewApproveHandler(store, behavior, messenger, discardLogger(), reviews)
+	h := application.NewApproveHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: reviews})
 
 	if err := h.Handle(context.Background(), submittedReviewEvent()); err != nil {
 		t.Fatalf("a reviewers-load error should soft-degrade, not fail Handle: %v", err)
@@ -725,7 +725,7 @@ func TestApproveHandler_SubmittedReview_ReviewersLoadError_StillClearsInReviewSt
 func TestApproveHandler_SubmittedReview_GetActiveError_Fails(t *testing.T) {
 	store, behavior, messenger := setupReviewFixture(t)
 	reviews := &fakeReviewSessions{activeErr: errInjected}
-	h := application.NewApproveHandler(store, behavior, messenger, discardLogger(), reviews)
+	h := application.NewApproveHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: reviews})
 
 	if err := h.Handle(context.Background(), submittedReviewEvent()); err == nil {
 		t.Fatal("a non-NotFound GetActive error should surface, not be swallowed")
@@ -759,11 +759,11 @@ func TestReviewHandlers_NoStoredMessageIsNoop(t *testing.T) {
 			var h domain.Handler
 			switch c.name {
 			case "approve":
-				h = application.NewApproveHandler(store, behavior, messenger, discardLogger(), noActiveSession())
+				h = application.NewApproveHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: noActiveSession()})
 			case "commented":
-				h = application.NewCommentedHandler(store, behavior, messenger, discardLogger(), noActiveSession())
+				h = application.NewCommentedHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: noActiveSession()})
 			case "request_change":
-				h = application.NewRequestChangeHandler(store, behavior, messenger, discardLogger(), noActiveSession())
+				h = application.NewRequestChangeHandler(domain.LifecycleHandlerParams{Store: store, Behavior: behavior, Messenger: messenger, Advisor: newFakeAdvisor(), Logger: discardLogger(), Reviews: noActiveSession()})
 			}
 			if err := h.Handle(context.Background(), c.e); err != nil {
 				t.Fatalf("Handle: %v", err)

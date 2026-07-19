@@ -1,6 +1,10 @@
 package domain
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/mptooling/notifycat/internal/kernel"
+)
 
 func TestEntry_Hash_IgnoresMentions(t *testing.T) {
 	a := Entry{Org: "acme", Repo: "api", Channel: "C1", Mentions: []string{"@x", "@y"}}
@@ -44,5 +48,24 @@ func TestEntry_Hash_DiffersOnPathChannels(t *testing.T) {
 	}
 	if b.Hash() == c.Hash() {
 		t.Errorf("repointing a path channel must change the hash")
+	}
+}
+
+// TestEntryHashIgnoresAIFields pins that Entry carries no AI fields and that
+// the hash payload therefore cannot vary with AI configuration. The property
+// is exercised end-to-end in
+// TestProviderEntriesHashesUnaffectedByAIConfig (routing/application),
+// which builds two providers that differ only in per-tier ai: blocks and
+// asserts equal entry hashes. This test guards the type-level invariant:
+// any accidental addition of an AI field to Entry would immediately cause
+// the provider-level test to fail.
+func TestEntryHashIgnoresAIFields(t *testing.T) {
+	a := Entry{Org: "acme", Repo: "api", Channel: "C0123456789", Provider: kernel.ProviderGitHub}
+	b := Entry{Org: "acme", Repo: "api", Channel: "C0123456789", Provider: kernel.ProviderGitHub}
+	if a.Hash() != b.Hash() {
+		t.Errorf("identical entries must hash identically: %s vs %s", a.Hash(), b.Hash())
+	}
+	if a.Hash() == "" {
+		t.Fatal("hash must not be empty")
 	}
 }

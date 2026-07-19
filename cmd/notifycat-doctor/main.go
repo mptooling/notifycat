@@ -15,6 +15,7 @@ import (
 	"time"
 
 	diagnosticsapp "github.com/mptooling/notifycat/internal/diagnostics/application"
+	diagnosticsdomain "github.com/mptooling/notifycat/internal/diagnostics/domain"
 	diagnosticsinfra "github.com/mptooling/notifycat/internal/diagnostics/infrastructure"
 	"github.com/mptooling/notifycat/internal/kernel"
 	"github.com/mptooling/notifycat/internal/platform/bitbucket"
@@ -23,6 +24,9 @@ import (
 	"github.com/mptooling/notifycat/internal/platform/slack"
 	routingapp "github.com/mptooling/notifycat/internal/routing/application"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
+	saliencedomain "github.com/mptooling/notifycat/internal/salience/domain"
+	"github.com/mptooling/notifycat/internal/salience/infrastructure/gemini"
+	"github.com/mptooling/notifycat/internal/salience/infrastructure/openaicompat"
 	validationapp "github.com/mptooling/notifycat/internal/validation/application"
 	validationdomain "github.com/mptooling/notifycat/internal/validation/domain"
 	validationinfra "github.com/mptooling/notifycat/internal/validation/infrastructure"
@@ -52,7 +56,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	snapshot := diagnosticsinfra.NewConfigSnapshot(cfg, entries, hasPathRules)
 	validator := buildValidator(cfg, provider)
 
-	doctor := diagnosticsapp.NewDoctor(snapshot, validator)
+	doctor := diagnosticsapp.NewDoctor(snapshot, validator, buildAIProber(cfg))
 	sections := doctor.Run(context.Background(), target)
 	if !diagnosticsinfra.WriteReport(stdout, sections) {
 		return 1
@@ -114,4 +118,27 @@ usage:
   notifycat-doctor                # preflight (config + database + mappings)
   notifycat-doctor owner/repo     # preflight + Slack + GitHub webhook checks for one repo
 `)
+}
+
+// buildAIProber constructs the live AI probe when the feature is enabled;
+// nil otherwise (doctor then reports config shape only). CLIs construct
+// their dependencies in main, mirroring the runtime's provider switch.
+func buildAIProber(cfg config.Config) diagnosticsdomain.AIProber {
+	if !cfg.AI.Enabled {
+		return nil
+	}
+	httpClient := &http.Client{Timeout: 20 * time.Second}
+	gatewayConfig := saliencedomain.GatewayConfig{
+		APIKey:  cfg.AIAPIKey.Reveal(),
+		Model:   cfg.AI.Model,
+		BaseURL: cfg.AI.BaseURL,
+	}
+	var gateway saliencedomain.ModelGateway
+	switch cfg.AI.Provider {
+	case saliencedomain.ProviderOpenAICompatible:
+		gateway = openaicompat.NewClient(httpClient, gatewayConfig)
+	default:
+		gateway = gemini.NewClient(httpClient, gatewayConfig)
+	}
+	return diagnosticsinfra.NewAIProbe(gateway, time.Now)
 }

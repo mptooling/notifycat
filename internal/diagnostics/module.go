@@ -74,7 +74,7 @@ func provideLockGateway(cfg Config) *diagnosticsinfra.LockGateway {
 }
 
 func provideDoctor(cfg Config, validator validationdomain.RepoValidator) *application.Doctor {
-	return application.NewDoctor(cfg.ConfigSnapshot, validator)
+	return application.NewDoctor(cfg.ConfigSnapshot, validator, nil)
 }
 
 func provideSmokeUseCase(
