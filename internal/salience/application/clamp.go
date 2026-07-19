@@ -2,38 +2,45 @@ package application
 
 import "github.com/mptooling/notifycat/internal/salience/domain"
 
-// clampOpen repairs a model open decision field by field against the request.
-// Unknown or duplicate channels are dropped; an empty or fully-invalid target
-// list falls back to every candidate deterministically — salience can never
-// drop a PR. Any repair reports violated=true (logged as clamp_violation)
-// while surviving valid fields keep the model's choice.
+// clampOpen repairs a model open decision against the request. Every candidate
+// channel is present in the result — the model tunes each channel's loudness,
+// mentions, emoji, format, and emphasis, but never drops a channel (never-skip
+// is structural; quiet, not omission, is the noise lever). Unknown or duplicate
+// channels the model returns are ignored; a candidate the model omitted, and any
+// invalid field, is repaired to its deterministic default. Any repair reports
+// violated=true (logged as clamp_violation); surviving valid fields keep the
+// model's choice.
 func clampOpen(decision domain.OpenDecision, request domain.OpenDecisionRequest) (domain.OpenDecision, bool) {
+	candidateChannels := make(map[string]bool, len(request.Candidates))
 	candidatesByChannel := make(map[string]domain.CandidateTarget, len(request.Candidates))
 	for _, candidate := range request.Candidates {
+		candidateChannels[candidate.Channel] = true
 		candidatesByChannel[candidate.Channel] = candidate
 	}
 	violated := false
-	clampedTargets := make([]domain.TargetDecision, 0, len(decision.Targets))
-	seen := map[string]bool{}
+	modelByChannel := make(map[string]domain.TargetDecision, len(decision.Targets))
 	for _, target := range decision.Targets {
-		candidate, known := candidatesByChannel[target.Channel]
-		if !known || seen[target.Channel] {
+		_, alreadySeen := modelByChannel[target.Channel]
+		if !candidateChannels[target.Channel] || alreadySeen {
+			violated = true // unknown or duplicate channel — ignored
+			continue
+		}
+		modelByChannel[target.Channel] = target
+	}
+	clampedTargets := make([]domain.TargetDecision, 0, len(request.Candidates))
+	for _, candidate := range request.Candidates {
+		target, decided := modelByChannel[candidate.Channel]
+		if !decided {
+			// never skip a channel: the model omitted it, so post it deterministically
+			clampedTargets = append(clampedTargets, deterministicTarget(candidate, request.DefaultEmoji))
 			violated = true
 			continue
 		}
-		seen[target.Channel] = true
-		clampedTarget, targetViolated := clampTarget(target, candidate, request)
+		clampedTarget, targetViolated := clampTarget(target, candidatesByChannel[candidate.Channel], request)
 		if targetViolated {
 			violated = true
 		}
 		clampedTargets = append(clampedTargets, clampedTarget)
-	}
-	if len(clampedTargets) == 0 {
-		for _, candidate := range request.Candidates {
-			clampedTargets = append(clampedTargets, deterministicTarget(candidate, request.DefaultEmoji))
-		}
-		decision.Targets = clampedTargets
-		return decision, true
 	}
 	decision.Targets = clampedTargets
 	return decision, violated

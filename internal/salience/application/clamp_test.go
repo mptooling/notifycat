@@ -21,6 +21,9 @@ func clampOpenRequest() domain.OpenDecisionRequest {
 }
 
 func TestClampOpenDropsUnknownChannels(t *testing.T) {
+	// Model returns C0000000001 (valid, rocket emoji) + unknown C9999999999.
+	// Unknown is dropped; C0000000002 (not returned by model) is padded
+	// deterministically with "eyes". Result must have exactly 2 targets.
 	decision := domain.OpenDecision{Targets: []domain.TargetDecision{
 		{Channel: "C0000000001", Loudness: domain.LoudnessPing, Mentions: []string{"<@U1>"}, LeadingEmoji: "rocket", Format: domain.FormatStandard, Emphasis: domain.EmphasisNone},
 		{Channel: "C9999999999", Loudness: domain.LoudnessPing, LeadingEmoji: "eyes", Format: domain.FormatStandard, Emphasis: domain.EmphasisNone},
@@ -29,8 +32,22 @@ func TestClampOpenDropsUnknownChannels(t *testing.T) {
 	if !violated {
 		t.Error("unknown channel must flag a violation")
 	}
-	if len(clamped.Targets) != 1 || clamped.Targets[0].Channel != "C0000000001" {
-		t.Errorf("Targets = %+v; want only the known channel", clamped.Targets)
+	if len(clamped.Targets) != 2 {
+		t.Fatalf("Targets = %d; want 2 (unknown dropped, omitted candidate padded)", len(clamped.Targets))
+	}
+	// C0000000001 is first candidate — keeps the model's rocket emoji.
+	if clamped.Targets[0].Channel != "C0000000001" || clamped.Targets[0].LeadingEmoji != "rocket" {
+		t.Errorf("Targets[0] = %+v; want C0000000001 with rocket emoji", clamped.Targets[0])
+	}
+	// C0000000002 was omitted by model — padded deterministically with "eyes".
+	if clamped.Targets[1].Channel != "C0000000002" || clamped.Targets[1].LeadingEmoji != "eyes" || clamped.Targets[1].Loudness != domain.LoudnessPing {
+		t.Errorf("Targets[1] = %+v; want C0000000002 padded deterministically (eyes, ping)", clamped.Targets[1])
+	}
+	// The unknown channel must not appear anywhere.
+	for _, target := range clamped.Targets {
+		if target.Channel == "C9999999999" {
+			t.Error("unknown channel C9999999999 must not appear in result")
+		}
 	}
 }
 
@@ -79,18 +96,75 @@ func TestClampOpenRepairsInvalidFieldsPerChannel(t *testing.T) {
 	}
 }
 
-func TestClampOpenValidSubsetPasses(t *testing.T) {
+func TestClampOpenOmittedChannelIsPaddedDeterministically(t *testing.T) {
+	// Model returns ONLY C0000000002 (quiet, warning, breaking, context note).
+	// C0000000001 is omitted — must be padded deterministically at index 0.
+	// Result: violated=true, len==2, Targets[0] is C0000000001 padded (ping/eyes),
+	// Targets[1] is C0000000002 with the model's values preserved.
 	decision := domain.OpenDecision{Targets: []domain.TargetDecision{{
 		Channel: "C0000000002", Loudness: domain.LoudnessQuiet, Mentions: []string{},
 		LeadingEmoji: "warning", Format: domain.FormatStandard, Emphasis: domain.EmphasisBreaking,
 		ContextBlock: "touches shared billing types",
 	}}}
 	clamped, violated := clampOpen(decision, clampOpenRequest())
-	if violated {
-		t.Error("a fully valid decision must not flag a violation")
+	if !violated {
+		t.Error("an omitted candidate channel must flag a violation")
 	}
-	if !reflect.DeepEqual(clamped.Targets, decision.Targets) {
-		t.Errorf("valid decision mutated: %+v", clamped.Targets)
+	if len(clamped.Targets) != 2 {
+		t.Fatalf("Targets = %d; want 2 (all candidates must be present)", len(clamped.Targets))
+	}
+	// Targets[0] is C0000000001 — omitted by model, padded deterministically.
+	padded := clamped.Targets[0]
+	if padded.Channel != "C0000000001" {
+		t.Errorf("Targets[0].Channel = %q; want C0000000001 (padded)", padded.Channel)
+	}
+	if padded.LeadingEmoji != "eyes" || padded.Loudness != domain.LoudnessPing {
+		t.Errorf("Targets[0] not deterministic: LeadingEmoji=%q Loudness=%q; want eyes/ping", padded.LeadingEmoji, padded.Loudness)
+	}
+	// Targets[1] is C0000000002 — model's values must be preserved.
+	kept := clamped.Targets[1]
+	if kept.Channel != "C0000000002" {
+		t.Errorf("Targets[1].Channel = %q; want C0000000002", kept.Channel)
+	}
+	if kept.Loudness != domain.LoudnessQuiet || kept.LeadingEmoji != "warning" || kept.Emphasis != domain.EmphasisBreaking {
+		t.Errorf("Targets[1] model values not preserved: %+v", kept)
+	}
+	if kept.ContextBlock != "touches shared billing types" {
+		t.Errorf("Targets[1].ContextBlock = %q; want model's value", kept.ContextBlock)
+	}
+}
+
+func TestClampOpenAllCandidatesPresentPasses(t *testing.T) {
+	// Happy path: model returns valid decisions for both candidates.
+	// No violation, both model emojis preserved.
+	decision := domain.OpenDecision{Targets: []domain.TargetDecision{
+		{
+			Channel: "C0000000001", Loudness: domain.LoudnessPing, Mentions: []string{"<@U1>"},
+			LeadingEmoji: "rocket", Format: domain.FormatStandard, Emphasis: domain.EmphasisNone,
+		},
+		{
+			Channel: "C0000000002", Loudness: domain.LoudnessQuiet, Mentions: []string{},
+			LeadingEmoji: "warning", Format: domain.FormatCompact, Emphasis: domain.EmphasisBreaking,
+		},
+	}}
+	clamped, violated := clampOpen(decision, clampOpenRequest())
+	if violated {
+		t.Error("fully valid decision covering all candidates must not flag a violation")
+	}
+	if len(clamped.Targets) != 2 {
+		t.Fatalf("Targets = %d; want 2", len(clamped.Targets))
+	}
+	if clamped.Targets[0].LeadingEmoji != "rocket" {
+		t.Errorf("Targets[0].LeadingEmoji = %q; want rocket (model's choice)", clamped.Targets[0].LeadingEmoji)
+	}
+	if clamped.Targets[1].LeadingEmoji != "warning" {
+		t.Errorf("Targets[1].LeadingEmoji = %q; want warning (model's choice)", clamped.Targets[1].LeadingEmoji)
+	}
+	if clamped.Targets[1].Format != domain.FormatCompact {
+		t.Errorf("Targets[1].Format = %q; want compact (model's choice)", clamped.Targets[1].Format)
+	}
+	if clamped.Targets[1].Emphasis != domain.EmphasisBreaking {
+		t.Errorf("Targets[1].Emphasis = %q; want breaking (model's choice)", clamped.Targets[1].Emphasis)
 	}
 }
 

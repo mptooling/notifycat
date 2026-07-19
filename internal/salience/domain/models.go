@@ -84,9 +84,10 @@ type DecisionTrace struct {
 	CacheHit       bool
 }
 
-// OpenDecision is the advisor's answer for an opened/ready PR: one decision
-// per selected candidate channel. Implementations never return an empty
-// Targets list for a non-empty Candidates list — salience can never drop a PR.
+// OpenDecision is the advisor's answer for an opened/ready PR: one decision per
+// candidate channel — every candidate is represented. The model tunes each
+// channel's loudness, mentions, emoji, format, and emphasis but never drops a
+// channel; the clamp pads any the model omits back deterministically.
 type OpenDecision struct {
 	Targets []TargetDecision
 	DecisionTrace
