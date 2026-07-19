@@ -16,11 +16,11 @@ import (
 // circuit breaker's job (resilient advisor).
 type ModelAdvisor struct {
 	gateway       domain.ModelGateway
-	deterministic *DeterministicAdvisor
+	deterministic domain.Advisor
 }
 
 // NewModelAdvisor builds a ModelAdvisor over a provider gateway.
-func NewModelAdvisor(gateway domain.ModelGateway, deterministic *DeterministicAdvisor) *ModelAdvisor {
+func NewModelAdvisor(gateway domain.ModelGateway, deterministic domain.Advisor) *ModelAdvisor {
 	return &ModelAdvisor{gateway: gateway, deterministic: deterministic}
 }
 
