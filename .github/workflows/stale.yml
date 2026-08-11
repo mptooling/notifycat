@@ -19,7 +19,7 @@ jobs:
 
     steps:
       - name: Mark stale
-        uses: actions/stale@v10
+        uses: actions/stale@v11
         with:
           days-before-stale: 60
           # -1 disables auto-closing: flag for triage, never close on our own.
