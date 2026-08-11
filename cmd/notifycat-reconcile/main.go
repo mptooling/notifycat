@@ -75,12 +75,13 @@ func run(args []string) error {
 	repo := maintenanceinfra.NewPRRepository(messages)
 	httpClient := &http.Client{Timeout: 10 * time.Second}
 	rec := maintenanceapp.NewReconciler(maintenancedomain.ReconcilerParams{
-		Lister:  repo,
-		Checker: providerChecker(cfg, httpClient),
-		Closer:  repo,
-		Deleter: repo,
-		Logger:  logger,
-		DryRun:  *dryRun,
+		Lister:   repo,
+		Checker:  providerChecker(cfg, httpClient),
+		Closer:   repo,
+		Deleter:  repo,
+		Logger:   logger,
+		DryRun:   *dryRun,
+		Provider: cfg.GitProvider,
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

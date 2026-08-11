@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"time"
 
 	"github.com/mptooling/notifycat/internal/digest/domain"
+	"github.com/mptooling/notifycat/internal/kernel"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 )
 
@@ -23,6 +23,7 @@ type Reporter struct {
 	digests  domain.DigestResolver
 	now      func() time.Time
 	tz       *time.Location
+	provider kernel.Provider
 	logger   *slog.Logger
 }
 
@@ -45,6 +46,7 @@ func NewReporter(params domain.ReporterParams) *Reporter {
 		digests:  params.Digests,
 		now:      now,
 		tz:       tz,
+		provider: params.Provider,
 		logger:   params.Logger,
 	}
 }
@@ -162,7 +164,7 @@ func (r *Reporter) groupByChannel(ctx context.Context, prs []domain.PullRequest,
 			group.prs = append(group.prs, domain.StuckPR{
 				Repository: pr.Repository,
 				Number:     pr.PRNumber,
-				URL:        prURL(pr.Repository, pr.PRNumber),
+				URL:        r.provider.PullRequestWebURL(pr.Repository, pr.PRNumber),
 				IdleDays:   idleDays(now, pr.UpdatedAt),
 			})
 		}
@@ -173,13 +175,6 @@ func (r *Reporter) groupByChannel(ctx context.Context, prs []domain.PullRequest,
 		out = append(out, *byChannel[channel])
 	}
 	return out
-}
-
-// prURL builds the github.com web URL for a PR. The store keeps no URL, so it is
-// reconstructed from repo + number; this assumes github.com (GitHub Enterprise
-// hosts are not handled here).
-func prURL(repository string, number int) string {
-	return domain.GitHubPRURLPrefix + repository + domain.PullPathSegment + strconv.Itoa(number)
 }
 
 // startOfDay returns local midnight for t's own location.

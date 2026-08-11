@@ -10,6 +10,7 @@ import (
 
 	"github.com/mptooling/notifycat/internal/digest/application"
 	"github.com/mptooling/notifycat/internal/digest/domain"
+	"github.com/mptooling/notifycat/internal/kernel"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 )
 
@@ -148,6 +149,48 @@ func newTestReporter(finder domain.StuckFinder, mappings domain.MappingLookup, p
 		TZ:       tz,
 		Now:      now,
 	})
+}
+
+func TestReporter_Report_BitbucketProviderBuildsBitbucketURLs(t *testing.T) {
+	now := time.Date(2026, 6, 8, 9, 0, 0, 0, time.Local)
+	twoDaysAgo := time.Date(2026, 6, 6, 12, 0, 0, 0, time.Local)
+
+	finder := fakeFinder{prs: []domain.PullRequest{
+		{PRNumber: 42, Repository: "acme/api", UpdatedAt: twoDaysAgo, Messages: []domain.MessageRef{{Channel: "C_ACME", MessageID: "t1"}}},
+	}}
+	mapp := fakeMappings{byRepo: map[string]routingdomain.RepoMapping{
+		"acme/api": {Repository: "acme/api", SlackChannel: "C_ACME"},
+	}}
+	digests := fakeDigestResolver{digests: map[string]routingdomain.DigestConfig{
+		"acme/api": {Enabled: true, Schedule: "0 9 * * *"},
+	}}
+	composer := &fakeComposer{}
+	poster := &fakePoster{}
+
+	r := application.NewReporter(domain.ReporterParams{
+		Finder:   finder,
+		Mappings: mapp,
+		Poster:   poster,
+		Composer: composer,
+		Digests:  digests,
+		Logger:   discardLogger(),
+		TZ:       time.Local,
+		Now:      func() time.Time { return now },
+		Provider: kernel.ProviderBitbucket,
+	})
+	if err := r.Report(context.Background()); err != nil {
+		t.Fatalf("Report: %v", err)
+	}
+
+	want := []domain.StuckPR{
+		{Repository: "acme/api", Number: 42, URL: "https://bitbucket.org/acme/api/pull-requests/42", IdleDays: 2},
+	}
+	if len(composer.lists) != 1 {
+		t.Fatalf("composed %d lists; want 1", len(composer.lists))
+	}
+	if !reflect.DeepEqual(composer.lists[0].prs, want) {
+		t.Errorf("bitbucket list = %+v; want %+v", composer.lists[0].prs, want)
+	}
 }
 
 func TestReporter_Report_PostsParentThenThreadedListPerChannel(t *testing.T) {
