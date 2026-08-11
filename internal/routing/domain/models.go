@@ -63,6 +63,10 @@ type PathRule struct {
 	Channel         string
 	Mentions        []string
 	MentionsPresent bool
+	// Channels is the path rule's `channels:` fan-out list. Mutually exclusive
+	// with Channel/Mentions (enforced at decode); nil means the single Channel
+	// form. List entries default absent mentions to ChannelMention.
+	Channels []ChannelSpec
 }
 
 // ChannelSpec is one entry in a tier's or path rule's `channels:` list: a Slack

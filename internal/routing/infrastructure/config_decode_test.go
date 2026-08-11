@@ -183,3 +183,29 @@ func TestRepoConfig_ChannelsRejectsEmptyList(t *testing.T) {
 		t.Fatal("want error: empty channels list")
 	}
 }
+
+func TestPathRule_ChannelsList(t *testing.T) {
+	o := decodeOrg(t, `
+monorepo:
+  channel: C0BASE
+  paths:
+    services/pay:
+      channels:
+        - channel: C0PAY1
+        - channel: C0PAY2
+          mentions: []
+`)
+	rule := o["monorepo"].Paths[0]
+	if rule.Dir != "services/pay" || len(rule.Channels) != 2 {
+		t.Fatalf("want 2 path channels under services/pay, got %+v", rule)
+	}
+	if rule.Channels[1].Channel != "C0PAY2" || !rule.Channels[1].MentionsPresent || len(rule.Channels[1].Mentions) != 0 {
+		t.Fatalf("entry 1 should be explicit-empty mentions: %+v", rule.Channels[1])
+	}
+}
+
+func TestPathRule_ChannelsRejectsMixWithChannel(t *testing.T) {
+	if decodeOrgErr("monorepo:\n  channel: C0BASE\n  paths:\n    services/pay:\n      channel: C0PAY\n      channels:\n        - channel: C0PAY1\n") == nil {
+		t.Fatal("want error mixing path channel and channels")
+	}
+}

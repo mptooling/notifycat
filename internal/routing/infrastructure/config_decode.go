@@ -408,6 +408,12 @@ func decodePathRule(rule *domain.PathRule, node *yaml.Node) error {
 			if err := valNode.Decode(&rule.Channel); err != nil {
 				return fmt.Errorf("channel: %w", err)
 			}
+		case "channels":
+			specs, err := decodeChannelsList(valNode)
+			if err != nil {
+				return err
+			}
+			rule.Channels = specs
 		case "mentions":
 			rule.MentionsPresent = true
 			if isNullNode(valNode) {
@@ -423,6 +429,14 @@ func decodePathRule(rule *domain.PathRule, node *yaml.Node) error {
 			rule.Mentions = ms
 		default:
 			return fmt.Errorf("unknown field %q", keyNode.Value)
+		}
+	}
+	if len(rule.Channels) > 0 {
+		if rule.Channel != "" {
+			return fmt.Errorf("set either channel: or channels:, not both")
+		}
+		if rule.MentionsPresent {
+			return fmt.Errorf("mentions: is not allowed alongside channels: (put mentions inside each entry)")
 		}
 	}
 	return nil
