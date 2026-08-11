@@ -123,6 +123,86 @@ func (r *reactionsOverrideWire) UnmarshalYAML(node *yaml.Node) error {
 	return nil
 }
 
+// channelSpecWire is the YAML wire type for one `channels:` list entry.
+type channelSpecWire struct {
+	Channel         string
+	Mentions        []string
+	MentionsPresent bool
+}
+
+func (c *channelSpecWire) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.MappingNode {
+		return fmt.Errorf("channels entry: expected mapping; got node kind %d", node.Kind)
+	}
+	if len(node.Content)%2 != 0 {
+		return fmt.Errorf("channels entry: malformed mapping")
+	}
+	seen := map[string]bool{}
+	for i := 0; i < len(node.Content); i += 2 {
+		keyNode, valNode := node.Content[i], node.Content[i+1]
+		if keyNode.Kind != yaml.ScalarNode {
+			return fmt.Errorf("channels entry: non-scalar key")
+		}
+		if err := markSeen(seen, keyNode.Value); err != nil {
+			return fmt.Errorf("channels entry: %w", err)
+		}
+		switch keyNode.Value {
+		case "channel":
+			if err := valNode.Decode(&c.Channel); err != nil {
+				return fmt.Errorf("channels entry: channel: %w", err)
+			}
+		case "mentions":
+			c.MentionsPresent = true
+			if isNullNode(valNode) {
+				return fmt.Errorf("channels entry: mentions: null is not allowed; omit the key for @channel or use [] for none")
+			}
+			if valNode.Kind != yaml.SequenceNode {
+				return fmt.Errorf("channels entry: mentions: must be a list (use [] for none, omit the key for @channel)")
+			}
+			ms := []string{}
+			if err := valNode.Decode(&ms); err != nil {
+				return fmt.Errorf("channels entry: mentions: %w", err)
+			}
+			c.Mentions = ms
+		default:
+			return fmt.Errorf("channels entry: unknown field %q", keyNode.Value)
+		}
+	}
+	if c.Channel == "" {
+		return fmt.Errorf("channels entry: channel is required")
+	}
+	return nil
+}
+
+func (c channelSpecWire) toDomain() domain.ChannelSpec {
+	return domain.ChannelSpec{Channel: c.Channel, Mentions: c.Mentions, MentionsPresent: c.MentionsPresent}
+}
+
+// decodeChannelsList decodes a `channels:` sequence node into specs, rejecting an
+// empty list and duplicate channel IDs (a config error, not a silent merge).
+func decodeChannelsList(node *yaml.Node) ([]domain.ChannelSpec, error) {
+	if node.Kind != yaml.SequenceNode {
+		return nil, fmt.Errorf("channels: must be a list of {channel, mentions} entries")
+	}
+	if len(node.Content) == 0 {
+		return nil, fmt.Errorf("channels: list is empty (use a single channel: instead, or add entries)")
+	}
+	out := make([]domain.ChannelSpec, 0, len(node.Content))
+	seen := map[string]bool{}
+	for _, entryNode := range node.Content {
+		wire := &channelSpecWire{}
+		if err := entryNode.Decode(wire); err != nil {
+			return nil, err
+		}
+		if seen[wire.Channel] {
+			return nil, fmt.Errorf("channels: duplicate channel %q", wire.Channel)
+		}
+		seen[wire.Channel] = true
+		out = append(out, wire.toDomain())
+	}
+	return out, nil
+}
+
 // repoConfigWire is the YAML wire type for one repo tier.
 type repoConfigWire struct {
 	Channel          string
@@ -133,6 +213,7 @@ type repoConfigWire struct {
 	DependabotFormat *bool
 	Digest           *digestConfigWire
 	Paths            []domain.PathRule
+	Channels         []domain.ChannelSpec
 }
 
 // UnmarshalYAML walks the mapping node by hand so we can keep the mentions
@@ -159,6 +240,12 @@ func (rc *repoConfigWire) UnmarshalYAML(node *yaml.Node) error {
 			if err := valNode.Decode(&rc.Channel); err != nil {
 				return fmt.Errorf("channel: %w", err)
 			}
+		case "channels":
+			specs, err := decodeChannelsList(valNode)
+			if err != nil {
+				return err
+			}
+			rc.Channels = specs
 		case "mentions":
 			rc.MentionsPresent = true
 			if isNullNode(valNode) {
@@ -199,6 +286,14 @@ func (rc *repoConfigWire) UnmarshalYAML(node *yaml.Node) error {
 			rc.Paths = paths
 		default:
 			return fmt.Errorf("unknown field %q", keyNode.Value)
+		}
+	}
+	if len(rc.Channels) > 0 {
+		if rc.Channel != "" {
+			return fmt.Errorf("set either channel: or channels:, not both")
+		}
+		if rc.MentionsPresent {
+			return fmt.Errorf("mentions: is not allowed alongside channels: (put mentions inside each entry)")
 		}
 	}
 	return nil
@@ -374,6 +469,7 @@ func (rc repoConfigWire) toDomain() domain.RepoConfig {
 		IgnoreAIReviews:  rc.IgnoreAIReviews,
 		DependabotFormat: rc.DependabotFormat,
 		Paths:            rc.Paths,
+		Channels:         rc.Channels,
 	}
 	if rc.Reactions != nil {
 		v := rc.Reactions.toDomain()

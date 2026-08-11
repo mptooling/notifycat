@@ -18,6 +18,13 @@ func decodeOrg(t *testing.T, body string) map[string]repoConfigWire {
 	return o
 }
 
+func decodeOrgErr(body string) error {
+	var o map[string]repoConfigWire
+	dec := yaml.NewDecoder(strings.NewReader(body))
+	dec.KnownFields(true)
+	return dec.Decode(&o)
+}
+
 func TestRepoConfig_ChannelAndMentionsPresent(t *testing.T) {
 	o := decodeOrg(t, `
 api:
@@ -123,5 +130,56 @@ func TestRepoConfig_UnknownReactionKeyRejected(t *testing.T) {
 	dec.KnownFields(true)
 	if err := dec.Decode(&o); err == nil {
 		t.Fatal("expected error for unknown reactions key")
+	}
+}
+
+func TestRepoConfig_ChannelsList(t *testing.T) {
+	o := decodeOrg(t, `
+api:
+  channels:
+    - channel: C0API1
+      mentions: ["<@U0ALICE>"]
+    - channel: C0API2
+`)
+	api := o["api"]
+	if len(api.Channels) != 2 {
+		t.Fatalf("want 2 channels, got %d", len(api.Channels))
+	}
+	if api.Channels[0].Channel != "C0API1" || !api.Channels[0].MentionsPresent ||
+		len(api.Channels[0].Mentions) != 1 || api.Channels[0].Mentions[0] != "<@U0ALICE>" {
+		t.Fatalf("entry 0 wrong: %+v", api.Channels[0])
+	}
+	if api.Channels[1].Channel != "C0API2" || api.Channels[1].MentionsPresent {
+		t.Fatalf("entry 1 should have absent mentions: %+v", api.Channels[1])
+	}
+}
+
+func TestRepoConfig_ChannelsRejectsMixWithChannel(t *testing.T) {
+	if decodeOrgErr("api:\n  channel: C0BASE\n  channels:\n    - channel: C0API1\n") == nil {
+		t.Fatal("want error mixing channel and channels")
+	}
+}
+
+func TestRepoConfig_ChannelsRejectsMentionsSibling(t *testing.T) {
+	if decodeOrgErr("api:\n  mentions: [\"<@U0ALICE>\"]\n  channels:\n    - channel: C0API1\n") == nil {
+		t.Fatal("want error: tier mentions alongside channels")
+	}
+}
+
+func TestRepoConfig_ChannelsRejectsDuplicate(t *testing.T) {
+	if decodeOrgErr("api:\n  channels:\n    - channel: C0DUP\n    - channel: C0DUP\n") == nil {
+		t.Fatal("want error: duplicate channel in list")
+	}
+}
+
+func TestChannelSpec_RejectsMissingChannel(t *testing.T) {
+	if decodeOrgErr("api:\n  channels:\n    - mentions: [\"<@U0ALICE>\"]\n") == nil {
+		t.Fatal("want error: entry missing channel")
+	}
+}
+
+func TestRepoConfig_ChannelsRejectsEmptyList(t *testing.T) {
+	if decodeOrgErr("api:\n  channels: []\n") == nil {
+		t.Fatal("want error: empty channels list")
 	}
 }
