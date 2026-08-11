@@ -196,7 +196,7 @@ monorepo:
           mentions: []
 `)
 	rule := o["monorepo"].Paths[0]
-	if rule.Dir != "services/pay" || len(rule.Channels) != 2 {
+	if rule.Dir != "services/pay" || len(rule.Channels) != 2 || rule.Channels[0].Channel != "C0PAY1" {
 		t.Fatalf("want 2 path channels under services/pay, got %+v", rule)
 	}
 	if rule.Channels[1].Channel != "C0PAY2" || !rule.Channels[1].MentionsPresent || len(rule.Channels[1].Mentions) != 0 {
@@ -207,5 +207,11 @@ monorepo:
 func TestPathRule_ChannelsRejectsMixWithChannel(t *testing.T) {
 	if decodeOrgErr("monorepo:\n  channel: C0BASE\n  paths:\n    services/pay:\n      channel: C0PAY\n      channels:\n        - channel: C0PAY1\n") == nil {
 		t.Fatal("want error mixing path channel and channels")
+	}
+}
+
+func TestPathRule_ChannelsRejectsMixWithMentions(t *testing.T) {
+	if decodeOrgErr("monorepo:\n  channel: C0BASE\n  paths:\n    services/pay:\n      mentions: [\"<@U0ALICE>\"]\n      channels:\n        - channel: C0PAY1\n") == nil {
+		t.Fatal("want error mixing path mentions and channels")
 	}
 }
