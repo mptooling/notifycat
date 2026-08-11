@@ -3,6 +3,8 @@ package domain
 import (
 	"log/slog"
 	"time"
+
+	"github.com/mptooling/notifycat/internal/kernel"
 )
 
 // PullRequest is the digest's view of one tracked PR: the fields the reporter
@@ -66,6 +68,9 @@ type ReporterParams struct {
 	Logger   *slog.Logger
 	TZ       *time.Location
 	Now      func() time.Time
+	// Provider is the deployment's git host; it selects the web-URL form each
+	// stuck PR's link is reconstructed in. The zero value builds github.com URLs.
+	Provider kernel.Provider
 }
 
 // SchedulerParams bundles everything the digest scheduler needs. Specs is a list

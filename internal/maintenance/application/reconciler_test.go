@@ -1,14 +1,42 @@
 package application_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"testing"
 
+	"github.com/mptooling/notifycat/internal/kernel"
 	"github.com/mptooling/notifycat/internal/maintenance/application"
 	"github.com/mptooling/notifycat/internal/maintenance/domain"
 )
+
+func TestReconciler_BitbucketProviderLogsBitbucketURL(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+	checker := fakeChecker{err: map[string]error{key("o/r", 7): domain.ErrPRDraft}}
+	closer := &fakeStore{}
+	prs := []domain.PRRow{{PRNumber: 7, Repository: "o/r"}}
+	r := application.NewReconciler(domain.ReconcilerParams{
+		Lister:   fakeLister{prs},
+		Checker:  checker,
+		Closer:   closer,
+		Deleter:  closer,
+		Logger:   logger,
+		Provider: kernel.ProviderBitbucket,
+	})
+
+	if _, err := r.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	want := "https://bitbucket.org/o/r/pull-requests/7"
+	if !strings.Contains(buf.String(), want) {
+		t.Errorf("reconcile log missing %q; got:\n%s", want, buf.String())
+	}
+}
 
 type fakeLister struct{ rows []domain.PRRow }
 

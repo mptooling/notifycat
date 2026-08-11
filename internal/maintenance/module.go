@@ -10,6 +10,7 @@ import (
 
 	"go.uber.org/fx"
 
+	"github.com/mptooling/notifycat/internal/kernel"
 	"github.com/mptooling/notifycat/internal/maintenance/application"
 	"github.com/mptooling/notifycat/internal/maintenance/domain"
 	"github.com/mptooling/notifycat/internal/maintenance/infrastructure"
@@ -20,8 +21,9 @@ import (
 // by the composition root (or a test), avoiding fx collisions between bare
 // scalars.
 type Config struct {
-	TTL    time.Duration
-	DryRun bool
+	TTL      time.Duration
+	DryRun   bool
+	Provider kernel.Provider
 }
 
 // Module binds the maintenance ports to their adapters and use cases. It
@@ -69,11 +71,12 @@ func provideCleanerParams(deleter domain.StaleMessageDeleter, logger *slog.Logge
 // provideReconcilerParams assembles the reconciler's domain params from the graph.
 func provideReconcilerParams(lister domain.OpenLister, checker domain.PRChecker, closer domain.Closer, deleter domain.Deleter, logger *slog.Logger, cfg Config) domain.ReconcilerParams {
 	return domain.ReconcilerParams{
-		Lister:  lister,
-		Checker: checker,
-		Closer:  closer,
-		Deleter: deleter,
-		Logger:  logger,
-		DryRun:  cfg.DryRun,
+		Lister:   lister,
+		Checker:  checker,
+		Closer:   closer,
+		Deleter:  deleter,
+		Logger:   logger,
+		DryRun:   cfg.DryRun,
+		Provider: cfg.Provider,
 	}
 }

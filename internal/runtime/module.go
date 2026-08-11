@@ -182,6 +182,7 @@ func buildDigestScheduler(cfg config.Config, provider *routingapp.Provider, pull
 		Logger:   logger,
 		TZ:       cfg.DigestTimezone,
 		Now:      time.Now,
+		Provider: cfg.GitProvider,
 	})
 	scheduler, err := digestapp.NewScheduler(digestdomain.SchedulerParams{
 		Specs:  specs,

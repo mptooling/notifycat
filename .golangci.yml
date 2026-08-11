@@ -26,8 +26,13 @@ linters:
         # Kernel purity: internal/kernel is the pure center of the hexagon and
         # must import nothing from any other internal/... package.
         kernel-purity:
+          list-mode: lax
           files:
             - "**/internal/kernel/**"
+          allow:
+            # Only an external `kernel_test` package can import this; production
+            # kernel files can't import themselves, so purity is still enforced.
+            - github.com/mptooling/notifycat/internal/kernel
           deny:
             - pkg: github.com/mptooling/notifycat/internal
               desc: internal/kernel must stay pure — it imports only the standard library, never another internal/... package
