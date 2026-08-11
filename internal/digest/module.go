@@ -12,14 +12,16 @@ import (
 	"github.com/mptooling/notifycat/internal/digest/application"
 	"github.com/mptooling/notifycat/internal/digest/domain"
 	"github.com/mptooling/notifycat/internal/digest/infrastructure"
+	"github.com/mptooling/notifycat/internal/kernel"
 )
 
 // Config carries the digest module's runtime configuration — the distinct
-// enabled cron specs and the digest timezone — supplied as a single value by
-// the composition root (or a test).
+// enabled cron specs, the digest timezone, and the deployment's git provider —
+// supplied as a single value by the composition root (or a test).
 type Config struct {
-	Specs []string
-	TZ    *time.Location
+	Specs    []string
+	TZ       *time.Location
+	Provider kernel.Provider
 }
 
 // Module binds the digest ports to their adapters and use cases. It expects the
@@ -51,6 +53,7 @@ func provideReporterParams(finder domain.StuckFinder, mappings domain.MappingLoo
 		Logger:   logger,
 		TZ:       cfg.TZ,
 		Now:      time.Now,
+		Provider: cfg.Provider,
 	}
 }
 

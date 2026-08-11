@@ -4,30 +4,32 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"strconv"
 
+	"github.com/mptooling/notifycat/internal/kernel"
 	"github.com/mptooling/notifycat/internal/maintenance/domain"
 )
 
 // Reconciler is the PR reconcile use case; see domain.Reconciler.
 type Reconciler struct {
-	lister  domain.OpenLister
-	checker domain.PRChecker
-	closer  domain.Closer
-	deleter domain.Deleter
-	logger  *slog.Logger
-	dryRun  bool
+	lister   domain.OpenLister
+	checker  domain.PRChecker
+	closer   domain.Closer
+	deleter  domain.Deleter
+	logger   *slog.Logger
+	provider kernel.Provider
+	dryRun   bool
 }
 
 // NewReconciler constructs the PR reconcile use case from its domain params.
 func NewReconciler(params domain.ReconcilerParams) *Reconciler {
 	return &Reconciler{
-		lister:  params.Lister,
-		checker: params.Checker,
-		closer:  params.Closer,
-		deleter: params.Deleter,
-		logger:  params.Logger,
-		dryRun:  params.DryRun,
+		lister:   params.Lister,
+		checker:  params.Checker,
+		closer:   params.Closer,
+		deleter:  params.Deleter,
+		logger:   params.Logger,
+		provider: params.Provider,
+		dryRun:   params.DryRun,
 	}
 }
 
@@ -41,7 +43,7 @@ func (r *Reconciler) Run(ctx context.Context) (domain.Summary, error) {
 	var s domain.Summary
 	for _, row := range rows {
 		s.Checked++
-		url := prURL(row.Repository, row.PRNumber)
+		url := r.provider.PullRequestWebURL(row.Repository, row.PRNumber)
 
 		open, err := r.checker.IsOpen(ctx, row.Repository, row.PRNumber)
 		switch {
@@ -152,11 +154,4 @@ func (r *Reconciler) removeDraft(ctx context.Context, row domain.PRRow, url stri
 		slog.String("repository", row.Repository),
 		slog.Int("pr", row.PRNumber),
 		slog.String("url", url))
-}
-
-// prURL reconstructs the github.com web URL for a PR from repo + number so the
-// per-PR log lines are navigable. Assumes github.com (GitHub Enterprise hosts
-// are not handled here); mirrors the digest's own URL construction.
-func prURL(repository string, number int) string {
-	return "https://github.com/" + repository + "/pull/" + strconv.Itoa(number)
 }
