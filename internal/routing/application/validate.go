@@ -26,7 +26,7 @@ func ValidateMappings(m map[string]domain.Org) error {
 			return fmt.Errorf("mappings: org %q: has no repo entries", org)
 		}
 		star, hasStar := o[domain.WildcardKey]
-		starHasChannel := hasStar && star.Channel != ""
+		starHasChannel := hasStar && tierHasChannel(&star)
 		for repo, rc := range o {
 			if repo != domain.WildcardKey && !repoPattern.MatchString(repo) {
 				return fmt.Errorf("mappings: org %q: invalid repo key %q (use a bare repo name or \"*\")", org, repo)
@@ -34,9 +34,14 @@ func ValidateMappings(m map[string]domain.Org) error {
 			if rc.Channel != "" && !channelPattern.MatchString(rc.Channel) {
 				return fmt.Errorf("mappings: org %q repo %q: invalid channel %q", org, repo, rc.Channel)
 			}
-			// Every resolvable path must yield a channel: this tier sets one,
-			// or org/* supplies it.
-			if rc.Channel == "" && !starHasChannel {
+			for _, spec := range rc.Channels {
+				if !channelPattern.MatchString(spec.Channel) {
+					return fmt.Errorf("mappings: org %q repo %q: invalid channel %q", org, repo, spec.Channel)
+				}
+			}
+			// Every resolvable path must yield a channel: this tier sets one
+			// (single or list), or org/* supplies it.
+			if !tierHasChannel(&rc) && !starHasChannel {
 				return fmt.Errorf("mappings: org %q repo %q: no channel (set channel here or in the org's \"*\" entry)", org, repo)
 			}
 			if err := validatePaths(org, repo, rc.Paths); err != nil {
@@ -63,6 +68,16 @@ func validatePaths(org, repo string, paths []domain.PathRule) error {
 		if p.Channel != "" && !channelPattern.MatchString(p.Channel) {
 			return fmt.Errorf("mappings: org %q repo %q path %q: invalid channel %q", org, repo, p.Dir, p.Channel)
 		}
+		for _, spec := range p.Channels {
+			if !channelPattern.MatchString(spec.Channel) {
+				return fmt.Errorf("mappings: org %q repo %q path %q: invalid channel %q", org, repo, p.Dir, spec.Channel)
+			}
+		}
 	}
 	return nil
+}
+
+// tierHasChannel reports whether a tier declares a channel in either form.
+func tierHasChannel(rc *domain.RepoConfig) bool {
+	return rc != nil && (rc.Channel != "" || len(rc.Channels) > 0)
 }
