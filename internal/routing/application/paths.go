@@ -30,16 +30,13 @@ func (p *Provider) RepoHasPathRules(repository string) bool {
 	return repoCfg != nil && len(repoCfg.Paths) > 0
 }
 
-// PathChannels returns the distinct channels explicitly set on the repository's
-// path rules (those that override the base channel), in sorted order. The base
-// channel is validated separately; these are the extra Slack channels path
-// routing can post to, so validation must confirm the bot is in each.
-func (p *Provider) PathChannels(repository string) []string {
-	_, repoCfg := p.lookup(repository)
-	if repoCfg == nil {
-		return nil
-	}
-	return pathChannels(repoCfg.Paths)
+// AdditionalChannels returns the channels the repository can post to beyond its
+// primary base channel (extra base-list channels plus per-path channels),
+// sorted and deduped. The validator checks bot membership for each; the doctor
+// and notifycat-config validate share this via the validation port.
+func (p *Provider) AdditionalChannels(repository string) []string {
+	starPtr, repoPtr := p.lookup(repository)
+	return additionalChannels(starPtr, repoPtr)
 }
 
 // pathChannels returns the distinct, sorted channels explicitly set on a set of

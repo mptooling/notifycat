@@ -113,12 +113,12 @@ func TestPathChannels_DistinctSorted(t *testing.T) {
 		"        \"/c\": {channel: C0AAA00000}\n" + // duplicate
 		"        \"/d\": {mentions: []}\n" // no channel → not listed
 	p := providerDoc(t, doc)
-	got := p.PathChannels("acme/mono")
+	got := p.AdditionalChannels("acme/mono")
 	if !slices.Equal(got, []string{"C0AAA00000", "C0ZZZ00000"}) {
-		t.Errorf("PathChannels = %v; want sorted distinct [C0AAA00000 C0ZZZ00000]", got)
+		t.Errorf("AdditionalChannels = %v; want sorted distinct [C0AAA00000 C0ZZZ00000]", got)
 	}
-	if p.PathChannels("acme/unmapped") != nil {
-		t.Error("PathChannels(unmapped) should be nil")
+	if p.AdditionalChannels("acme/unmapped") != nil {
+		t.Error("AdditionalChannels(unmapped) should be nil")
 	}
 }
 
