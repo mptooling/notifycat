@@ -108,17 +108,17 @@ func (p *Provider) Entries() []domain.Entry {
 			rc := o[r]
 			res := resolveRouting(starPtr, &rc)
 			out = append(out, domain.Entry{
-				Org:          org,
-				Repo:         r,
-				Channel:      res.Channel,
-				Mentions:     res.Mentions,
-				PathChannels: pathChannels(rc.Paths),
-				Provider:     p.defaults.GitProvider,
+				Org:           org,
+				Repo:          r,
+				Channel:       res.Channel,
+				Mentions:      res.Mentions,
+				ExtraChannels: additionalChannels(starPtr, &rc),
+				Provider:      p.defaults.GitProvider,
 			})
 		}
 		if starPtr != nil {
 			res := resolveRouting(starPtr, nil)
-			out = append(out, domain.Entry{Org: org, Wildcard: true, Channel: res.Channel, Mentions: res.Mentions, Provider: p.defaults.GitProvider})
+			out = append(out, domain.Entry{Org: org, Wildcard: true, Channel: res.Channel, Mentions: res.Mentions, ExtraChannels: additionalChannels(starPtr, nil), Provider: p.defaults.GitProvider})
 		}
 	}
 	return out

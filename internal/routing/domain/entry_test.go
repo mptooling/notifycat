@@ -1,6 +1,10 @@
 package domain
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/mptooling/notifycat/internal/kernel"
+)
 
 func TestEntry_Hash_IgnoresMentions(t *testing.T) {
 	a := Entry{Org: "acme", Repo: "api", Channel: "C1", Mentions: []string{"@x", "@y"}}
@@ -37,12 +41,28 @@ func TestEntry_Hash_DiffersOnProvider(t *testing.T) {
 
 func TestEntry_Hash_DiffersOnPathChannels(t *testing.T) {
 	a := Entry{Org: "acme", Repo: "api", Channel: "C1"}
-	b := Entry{Org: "acme", Repo: "api", Channel: "C1", PathChannels: []string{"C2"}}
-	c := Entry{Org: "acme", Repo: "api", Channel: "C1", PathChannels: []string{"C3"}}
+	b := Entry{Org: "acme", Repo: "api", Channel: "C1", ExtraChannels: []string{"C2"}}
+	c := Entry{Org: "acme", Repo: "api", Channel: "C1", ExtraChannels: []string{"C3"}}
 	if a.Hash() == b.Hash() {
 		t.Errorf("adding a path channel must change the hash (so validation re-runs)")
 	}
 	if b.Hash() == c.Hash() {
 		t.Errorf("repointing a path channel must change the hash")
+	}
+}
+
+func TestEntryHash_StableForSingleChannel(t *testing.T) {
+	a := Entry{Org: "acme", Repo: "api", Channel: "C0API", Provider: kernel.ProviderGitHub}
+	b := Entry{Org: "acme", Repo: "api", Channel: "C0API", Provider: kernel.ProviderGitHub}
+	if a.Hash() != b.Hash() {
+		t.Fatal("single-channel hash must be stable")
+	}
+}
+
+func TestEntryHash_ChangesWhenExtraChannelAdded(t *testing.T) {
+	before := Entry{Org: "acme", Repo: "api", Channel: "C0API", Provider: kernel.ProviderGitHub}
+	after := Entry{Org: "acme", Repo: "api", Channel: "C0API", ExtraChannels: []string{"C0API2"}, Provider: kernel.ProviderGitHub}
+	if before.Hash() == after.Hash() {
+		t.Fatal("adding a channels: list must change the entry hash")
 	}
 }
