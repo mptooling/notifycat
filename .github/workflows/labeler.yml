@@ -18,7 +18,7 @@ jobs:
 
     steps:
       - name: Apply path-based labels
-        uses: actions/labeler@v6
+        uses: actions/labeler@v7
         with:
           # Only add labels; never strip labels a human applied (enhancement,
           # bug, ...) just because no path rule matched them.
