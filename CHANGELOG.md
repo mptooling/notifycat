@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.22.4](https://github.com/mptooling/notifycat/compare/v0.22.3...v0.22.4) (2026-08-11)
+
+
+### 🧹 Maintenance
+
+* **deps:** bump actions/labeler from 6 to 7 ([#178](https://github.com/mptooling/notifycat/issues/178)) ([ad451ae](https://github.com/mptooling/notifycat/commit/ad451ae5e8a72f6e8ce543fe8e2bb7c4ba5d099f))
+* **deps:** bump actions/setup-go from 6 to 7 ([#179](https://github.com/mptooling/notifycat/issues/179)) ([742ab59](https://github.com/mptooling/notifycat/commit/742ab5916e441ec554788b1e8a24ee674d3b73f0))
+* **deps:** bump actions/setup-python from 6 to 7 ([#177](https://github.com/mptooling/notifycat/issues/177)) ([3888a18](https://github.com/mptooling/notifycat/commit/3888a189390d12f0e40b10dd722d6247b88dae87))
+* **deps:** bump actions/stale from 10 to 11 ([#181](https://github.com/mptooling/notifycat/issues/181)) ([463de05](https://github.com/mptooling/notifycat/commit/463de0520425972a27839e3dcfb627ab5d765b55))
+* **deps:** bump github.com/pressly/goose/v3 from 3.27.2 to 3.27.3 in the go-modules group across 1 directory ([#180](https://github.com/mptooling/notifycat/issues/180)) ([bf2ed2e](https://github.com/mptooling/notifycat/commit/bf2ed2e42acb7cf392f8d2b6c66ad6be99e26c0c))
+
 ## [0.22.3](https://github.com/mptooling/notifycat/compare/v0.22.2...v0.22.3) (2026-08-11)
 
 
