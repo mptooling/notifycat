@@ -55,7 +55,7 @@ func discardLogger() *slog.Logger {
 
 func TestRouter_NoFetcherReturnsBaseTarget(t *testing.T) {
 	m := &stubMappings{
-		base:         domain.RepoMapping{SlackChannel: "C0BASE", Mentions: []string{"<!here>"}},
+		base:         domain.RepoMapping{SlackChannel: "C0OLDUNUSED", Mentions: []string{"<!here>"}},
 		baseTargets:  []domain.Target{{Channel: "C0BASE", Mentions: []string{"<!here>"}}},
 		hasPathRules: true,
 	}
@@ -110,7 +110,7 @@ func TestResolveTargets_NoPathRulesReturnsFullBaseSet(t *testing.T) {
 		baseTargets:  []domain.Target{{Channel: "C0B1"}, {Channel: "C0B2"}},
 		hasPathRules: false,
 	}
-	router := application.NewRouter(stub, nil, slog.Default())
+	router := application.NewRouter(stub, nil, discardLogger())
 	_, targets, err := router.ResolveTargets(context.Background(), "acme/api", 7)
 	if err != nil {
 		t.Fatal(err)
