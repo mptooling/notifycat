@@ -26,21 +26,21 @@ func NewRouter(mappings domain.RoutingProvider, files domain.ChangedFilesReader,
 }
 
 // ResolveTargets returns the per-repo behavior plus the fan-out targets for a
-// PR. With no fetcher (no token) or no path rules it returns a single base
-// target. A files-API error is soft: it logs and returns the base target.
+// PR. With no fetcher (no token) or no path rules it returns the full base
+// target set. A files-API error is soft: it logs and returns the base targets.
 func (r *Router) ResolveTargets(ctx context.Context, repository string, prNumber int) (domain.RepoMapping, []domain.Target, error) {
 	behavior, err := r.mappings.Get(ctx, repository)
 	if err != nil {
 		return domain.RepoMapping{}, nil, err
 	}
-	baseTarget := []domain.Target{{Channel: behavior.SlackChannel, Mentions: behavior.Mentions}}
+	baseTargets := r.mappings.BaseTargets(repository)
 
 	if r.files == nil || !r.mappings.RepoHasPathRules(repository) {
-		return behavior, baseTarget, nil
+		return behavior, baseTargets, nil
 	}
 	owner, repo, ok := splitOwnerRepo(repository)
 	if !ok {
-		return behavior, baseTarget, nil
+		return behavior, baseTargets, nil
 	}
 	files, err := r.files.ListPullRequestFiles(ctx, owner, repo, prNumber)
 	if err != nil {
@@ -48,7 +48,7 @@ func (r *Router) ResolveTargets(ctx context.Context, repository string, prNumber
 			slog.String("repository", repository),
 			slog.Int("pr", prNumber),
 			slog.Any("err", err))
-		return behavior, baseTarget, nil
+		return behavior, baseTargets, nil
 	}
 	return behavior, r.mappings.TargetsForFiles(repository, files), nil
 }
