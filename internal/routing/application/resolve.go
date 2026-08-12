@@ -62,7 +62,7 @@ func resolveMentions(star, repo *domain.RepoConfig) []string {
 // (RepoMapping.SlackChannel, Entry.Channel) use this.
 func resolveRouting(star, repo *domain.RepoConfig) domain.Resolved {
 	primary := resolveBaseTargets(star, repo)[0]
-	return domain.Resolved{Channel: primary.Channel, Mentions: primary.Mentions}
+	return domain.Resolved(primary)
 }
 
 // resolveBehavior merges the global, org/*, and org/repo tiers for the

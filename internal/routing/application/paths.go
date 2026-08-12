@@ -208,4 +208,3 @@ func matchedRules(paths []domain.PathRule, files []string) []domain.PathRule {
 func fileUnder(file, dir string) bool {
 	return strings.HasPrefix(file, dir+"/")
 }
-
