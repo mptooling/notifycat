@@ -136,6 +136,9 @@ mappings:
 	if len(got) != 2 || got[0].Channel != "C0API1" || got[1].Channel != "C0API2" {
 		t.Fatalf("want both base channels, got %+v", got)
 	}
+	if len(got[0].Mentions) != 1 || got[0].Mentions[0] != "<@U0A>" {
+		t.Fatalf("first channel should carry its declared mention: %+v", got[0])
+	}
 	if got[1].Mentions[0] != domain.ChannelMention {
 		t.Fatalf("second channel should default to @channel: %+v", got[1])
 	}
@@ -194,7 +197,8 @@ mappings:
           mentions: ["<@U0PAY>"]
 `)
 	got := p.TargetsForFiles("acme/monorepo", []string{"services/pay/x.go"})
-	if len(got) != 1 || got[0].Channel != "C0PRIMARY" || got[0].Mentions[0] != "<@U0PAY>" {
+	if len(got) != 1 || got[0].Channel != "C0PRIMARY" ||
+		len(got[0].Mentions) != 1 || got[0].Mentions[0] != "<@U0PAY>" {
 		t.Fatalf("channel-less path should inherit primary base channel: %+v", got)
 	}
 }
