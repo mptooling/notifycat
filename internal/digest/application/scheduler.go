@@ -15,10 +15,12 @@ import (
 // tick with the matching spec. It mirrors the maintenance cleaner's Run(ctx)
 // shape so the composition root can start both the same way.
 type Scheduler struct {
-	specs  []string
-	job    domain.ScheduleJob
-	logger *slog.Logger
-	tz     *time.Location
+	specs    []string
+	job      domain.ScheduleJob
+	logger   *slog.Logger
+	tz       *time.Location
+	calendar domain.DigestCalendar
+	now      func() time.Time
 }
 
 // NewScheduler validates every cron spec up front so a malformed schedule fails
@@ -35,7 +37,48 @@ func NewScheduler(params domain.SchedulerParams) (*Scheduler, error) {
 	if tz == nil {
 		tz = time.UTC
 	}
-	return &Scheduler{specs: params.Specs, job: params.Job, logger: params.Logger, tz: tz}, nil
+	now := params.Now
+	if now == nil {
+		now = time.Now
+	}
+	return &Scheduler{
+		specs:    params.Specs,
+		job:      params.Job,
+		logger:   params.Logger,
+		tz:       tz,
+		calendar: params.Calendar,
+		now:      now,
+	}, nil
+}
+
+// runTick is one cron firing: consult the calendar, then run the job unless the
+// day is skipped. A skipped day makes no Slack call at all — the reporter is
+// never reached.
+func (s *Scheduler) runTick(ctx context.Context, spec string) {
+	now := s.now().In(s.tz)
+	if s.calendar != nil {
+		if reason, skip := s.calendar.SkipReason(now); skip {
+			fields := []any{
+				slog.String("schedule", spec),
+				slog.String("reason", reason),
+				slog.String("date", now.Format(time.DateOnly)),
+			}
+			switch reason {
+			case domain.SkipReasonWeekend:
+				fields = append(fields, slog.String("weekday", now.Weekday().String()))
+			case domain.SkipReasonHoliday:
+				fields = append(fields, slog.String("country", s.calendar.Country()))
+				if name, ok := s.calendar.HolidayName(now); ok {
+					fields = append(fields, slog.String("holiday", name))
+				}
+			}
+			s.logger.Info("skipped digest", fields...)
+			return
+		}
+	}
+	if err := s.job.ReportSchedule(ctx, spec); err != nil {
+		s.logger.Error("stuck-pr digest run failed", slog.String("schedule", spec), slog.Any("err", err))
+	}
 }
 
 // Run starts the cron loop with one entry per spec and blocks until ctx is
@@ -46,11 +89,7 @@ func (s *Scheduler) Run(ctx context.Context) error {
 	scheduler := cron.New(cron.WithLocation(s.tz))
 	for _, spec := range s.specs {
 		spec := spec
-		if _, err := scheduler.AddFunc(spec, func() {
-			if err := s.job.ReportSchedule(ctx, spec); err != nil {
-				s.logger.Error("stuck-pr digest run failed", slog.String("schedule", spec), slog.Any("err", err))
-			}
-		}); err != nil {
+		if _, err := scheduler.AddFunc(spec, func() { s.runTick(ctx, spec) }); err != nil {
 			return fmt.Errorf("digest: schedule %q: %w", spec, err)
 		}
 	}

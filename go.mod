@@ -1,6 +1,6 @@
 module github.com/mptooling/notifycat
 
-go 1.25.12
+go 1.25.14
 
 require (
 	github.com/glebarez/sqlite v1.11.0

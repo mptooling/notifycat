@@ -14,14 +14,17 @@ type File struct {
 // `{enabled: true}` with the default schedule. Per-repo tiers reuse this type
 // to override Enabled/Schedule.
 //
-// Timezone is global-only — the server runs a single cron clock, so the zone
-// belongs on the global section and is rejected on a per-repo tier. Empty means
-// the default (UTC); config.Load resolves it to a *time.Location and fails fast
-// on an invalid zone.
+// Timezone and Country are global-only — the server runs a single cron clock
+// and serves a single team calendar, so both belong on the global section and
+// are rejected on a per-repo tier. An empty Timezone means the default (UTC);
+// config.Load resolves it to a *time.Location and fails fast on an invalid
+// zone. An empty Country means no holiday table: weekends are still skipped,
+// but public holidays are not.
 type DigestConfig struct {
 	Enabled  bool
 	Schedule string
 	Timezone string
+	Country  string
 }
 
 // Org maps each repo name (or the literal "*") to its tier config. The "*"

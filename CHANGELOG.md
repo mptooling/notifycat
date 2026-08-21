@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.23.0](https://github.com/mptooling/notifycat/compare/v0.22.4...v0.23.0) (2026-08-21)
+
+
+### 🚀 Features
+
+* **digest:** skip weekends and public holidays ([#186](https://github.com/mptooling/notifycat/issues/186)) ([a6764e6](https://github.com/mptooling/notifycat/commit/a6764e63054bccf4d198ef02f683edc296396de7))
+
+
+### 🧹 Maintenance
+
+* **deps:** bump golang from 1.26.5-alpine to 1.26.6-alpine in the docker group ([#185](https://github.com/mptooling/notifycat/issues/185)) ([b5bbb0f](https://github.com/mptooling/notifycat/commit/b5bbb0ff86690dc7b0daa376a5e29dcf2c92e602))
+
 ## [0.22.4](https://github.com/mptooling/notifycat/compare/v0.22.3...v0.22.4) (2026-08-11)
 
 

@@ -86,3 +86,37 @@ func TestProvider_Digest_TimezoneAbsentIsEmpty(t *testing.T) {
 		t.Errorf("timezone = %q; want empty when absent (resolved to UTC by config)", got)
 	}
 }
+
+func TestProvider_Digest_Country(t *testing.T) {
+	body := "digest:\n  country: \"DE\"\n" + digestMappingsTail
+	p, err := infrastructure.Load(writeMappingsFile(t, body))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got := p.Digest().Country; got != "DE" {
+		t.Errorf("country = %q; want DE", got)
+	}
+}
+
+func TestProvider_Digest_CountryAbsentIsEmpty(t *testing.T) {
+	p, err := infrastructure.Load(writeMappingsFile(t, digestMappingsTail))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got := p.Digest().Country; got != "" {
+		t.Errorf("country = %q; want empty when absent (weekends-only)", got)
+	}
+}
+
+// A repo tier may override the schedule without inheriting or clobbering the
+// global country.
+func TestProvider_DigestFor_KeepsGlobalCountry(t *testing.T) {
+	body := "digest:\n  country: \"DE\"\n" + digestMappingsTail
+	p, err := infrastructure.Load(writeMappingsFile(t, body))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got := p.DigestFor("acme/api").Country; got != "DE" {
+		t.Errorf("DigestFor country = %q; want DE", got)
+	}
+}

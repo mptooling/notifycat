@@ -213,5 +213,13 @@ func TestPathRule_ChannelsRejectsMixWithChannel(t *testing.T) {
 func TestPathRule_ChannelsRejectsMixWithMentions(t *testing.T) {
 	if decodeOrgErr("monorepo:\n  channel: C0BASE\n  paths:\n    services/pay:\n      mentions: [\"<@U0ALICE>\"]\n      channels:\n        - channel: C0PAY1\n") == nil {
 		t.Fatal("want error mixing path mentions and channels")
+func TestRepoConfig_DigestCountryRejected(t *testing.T) {
+	// country is global-only for the same reason as timezone: one team calendar
+	// per server. Setting it on a tier must fail, not be silently ignored.
+	var o map[string]repoConfigWire
+	dec := yaml.NewDecoder(strings.NewReader("api:\n  channel: C0API\n  digest:\n    country: US\n"))
+	dec.KnownFields(true)
+	if err := dec.Decode(&o); err == nil {
+		t.Fatal("expected error for per-repo digest.country")
 	}
 }
