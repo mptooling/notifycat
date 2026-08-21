@@ -73,6 +73,14 @@ type ReporterParams struct {
 	Provider kernel.Provider
 }
 
+// CalendarParams bundles the calendar's inputs. Country is an ISO 3166-1
+// alpha-2 code, case-insensitive; empty means no holiday table (weekends only,
+// plus a warning at construction).
+type CalendarParams struct {
+	Country string
+	Logger  *slog.Logger
+}
+
 // SchedulerParams bundles everything the digest scheduler needs. Specs is a list
 // of standard 5-field cron expressions; TZ is the timezone every spec is
 // interpreted in (nil defaults to UTC).
@@ -81,4 +89,10 @@ type SchedulerParams struct {
 	Job    ScheduleJob
 	Logger *slog.Logger
 	TZ     *time.Location
+	// Calendar suppresses ticks on weekends and holidays. A nil Calendar runs
+	// every tick, which is what the tests that predate the calendar expect.
+	Calendar DigestCalendar
+	// Now supplies the tick's wall clock (time.Now in production, a fixed clock
+	// in tests). It is evaluated in TZ before reaching the calendar.
+	Now func() time.Time
 }

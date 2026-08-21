@@ -136,9 +136,25 @@ Mixing them — an access token with the email set, or an API token without it �
 
 ## Digest surprises
 
-**The digest never posts** — in order of likelihood: nothing was stuck (a channel with no stuck PRs gets no digest — working as intended); the schedule fired at 9am **UTC** while your team's morning is elsewhere ([set `digest.timezone`](digest.md#schedule-and-timezone)); `digest.enabled: false` at the global or tier level; or the PRs you expected predate Notifycat — the digest only tracks PRs it announced.
+**The digest never posts** — first check the day: **weekends are always skipped**, and so are public holidays when `digest.country` is set. Both log a line you can grep for, and neither makes a Slack call:
+
+```
+INFO skipped digest schedule="0 9 * * *" reason=weekend date=2026-07-04 weekday=Saturday
+INFO skipped digest schedule="0 9 * * *" reason=holiday date=2026-12-25 country=DE holiday="1. Weihnachtstag"
+```
+
+A schedule that deliberately targets a weekend (`0 9 * * 6`) will never fire — that is not configurable. See [Weekends and holidays](digest.md#weekends-and-holidays).
+
+Otherwise, in order of likelihood: nothing was stuck (a channel with no stuck PRs gets no digest — working as intended); the schedule fired at 9am **UTC** while your team's morning is elsewhere ([set `digest.timezone`](digest.md#schedule-and-timezone)); `digest.enabled: false` at the global or tier level; or the PRs you expected predate Notifycat — the digest only tracks PRs it announced.
 
 **The first digest lists long-merged PRs** — rows created before the digest feature carry no open/closed marker. Run the one-time [reconcile](digest.md#reconcile).
+
+**A digest posted on a public holiday** — check the boot log for one of two warnings:
+
+- `digest holidays not configured` — `digest.country` is unset, so only weekends are skipped. Set it: [supported set](digest.md#supported-countries).
+- `digest country not recognized` — the code is not supported (`Germany` instead of `DE`, `DE-BY` instead of `DE`). The server keeps running weekends-only rather than failing startup, and the warning lists every accepted code.
+
+If the country *is* set correctly and the day is a regional or company holiday rather than a national one, that is a [known limit](digest.md#supported-countries).
 
 **A digest showed up uninvited after an upgrade** — it's on by default. `digest: { enabled: false }` restores silence. See [Stuck-PR digest](digest.md#its-on-by-default).
 
