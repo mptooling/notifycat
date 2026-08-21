@@ -46,3 +46,6 @@ graphify-out/
 /site/
 .venv-docs/
 .superpowers/
+.cache/
+.claude/
+docs/superpowers/plans/
