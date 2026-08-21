@@ -80,7 +80,7 @@ reviews:
 # under it, pinging the channel's mentions. Channels with no stuck PRs get no message.
 digest:
   enabled: true                       # default true; set false to turn the digest off globally
-  schedule: "0 9 * * *"               # standard 5-field cron; evaluated in `timezone` below; default 9am daily
+  schedule: "0 9 * * 1-5"             # standard 5-field cron; evaluated in `timezone` below; default 9am daily
   timezone: "UTC"                     # IANA zone (e.g. Europe/Kyiv); default UTC. Both the firing time and
                                       # the "since before today" cutoff use this zone. An invalid zone fails
                                       # startup. Global only — a per-repo digest may not set it.
@@ -140,7 +140,7 @@ mappings:
         ignore_ai_reviews: true               # suppress bot reviews on this repo specifically
       # Optional: override digest schedule for this repo. digest.enabled and digest.schedule inherit from global "digest:" when omitted.
       digest:
-        schedule: "0 17 * * *"                # post this repo's digest at 5pm instead of the global 9am
+        schedule: "0 17 * * 1-5"                # post this repo's digest at 5pm instead of the global 9am
     standard:
       channel: C0STANDARD00
       # Omit all behavioral overrides to use global defaults.
