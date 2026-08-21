@@ -2,6 +2,25 @@
 
 Notifycat applies its database migrations automatically on server startup (see [Operations → Startup](operations.md#startup-and-shutdown)), so most upgrades are "pull the new image and restart" — for Compose, `docker compose pull && ./notifycat up`. This page calls out the releases that need an operator action beyond that.
 
+## Weekends and holidays are now skipped
+
+The stuck-PR digest no longer posts on Saturday or Sunday. This is a **deliberate behavior change with no opt-out** — there is no config key to restore weekend digests. Nobody acts on a Saturday reminder, and the same PRs are still stuck on Monday, when they get announced anyway.
+
+**What changes on upgrade:** a deployment on the default schedule (or any weekday-inclusive one) simply stops getting weekend digests. Nothing to do.
+
+**The one case that needs action:** a schedule that deliberately targets a weekend — `0 9 * * 6`, `0 9 * * 0` — will now never fire. Move it to a weekday.
+
+Public holidays are skipped too, but only once you name a country:
+
+```yaml
+digest:
+  country: DE     # ISO 3166-1 alpha-2
+```
+
+Without it, holidays are **not** skipped and the server warns once at boot (`digest holidays not configured`). There is no default country — holidays vary too much for a built-in guess to be right. An unrecognized code fails startup with the supported set in the error. See [Weekends and holidays](digest.md#weekends-and-holidays) for the 19 supported countries and their known limits (regional holidays are not covered).
+
+Skipped days make no Slack call and log one line with `reason=weekend` or `reason=holiday`, so `skipped digest` is the string to grep when a digest you expected is missing.
+
 ## `git_provider` is now required
 
 Notifycat now requires a top-level `git_provider:` key in `config.yaml` declaring which git host the deployment serves — `github` or `bitbucket`. `git_provider: github` reproduces exactly the previous behavior. A config without the key (or with an unknown value) fails startup with an error naming the key and pointing here.

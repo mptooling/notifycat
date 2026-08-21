@@ -22,6 +22,9 @@ type Config struct {
 	Specs    []string
 	TZ       *time.Location
 	Provider kernel.Provider
+	// Country is the ISO 3166-1 alpha-2 code selecting the holiday table.
+	// Empty means weekends only.
+	Country string
 }
 
 // Module binds the digest ports to their adapters and use cases. It expects the
@@ -36,6 +39,7 @@ var Module = fx.Module("digest",
 		fx.Annotate(infrastructure.NewSlackPoster, fx.As(new(domain.DigestPoster))),
 		provideReporterParams,
 		fx.Annotate(application.NewReporter, fx.As(new(domain.DigestReporter)), fx.As(new(domain.ScheduleJob))),
+		fx.Annotate(provideCalendar, fx.As(new(domain.DigestCalendar))),
 		provideSchedulerParams,
 		fx.Annotate(application.NewScheduler, fx.As(new(domain.DigestScheduler))),
 	),
@@ -57,12 +61,21 @@ func provideReporterParams(finder domain.StuckFinder, mappings domain.MappingLoo
 	}
 }
 
+// provideCalendar builds the weekend/holiday calendar. It returns an error for
+// an unknown country code, which fails fx startup rather than silently running
+// without holidays.
+func provideCalendar(logger *slog.Logger, cfg Config) (*application.Calendar, error) {
+	return application.NewCalendar(domain.CalendarParams{Country: cfg.Country, Logger: logger})
+}
+
 // provideSchedulerParams assembles the scheduler's domain params from the graph.
-func provideSchedulerParams(job domain.ScheduleJob, logger *slog.Logger, cfg Config) domain.SchedulerParams {
+func provideSchedulerParams(job domain.ScheduleJob, calendar domain.DigestCalendar, logger *slog.Logger, cfg Config) domain.SchedulerParams {
 	return domain.SchedulerParams{
-		Specs:  cfg.Specs,
-		Job:    job,
-		Logger: logger,
-		TZ:     cfg.TZ,
+		Specs:    cfg.Specs,
+		Job:      job,
+		Logger:   logger,
+		TZ:       cfg.TZ,
+		Calendar: calendar,
+		Now:      time.Now,
 	}
 }

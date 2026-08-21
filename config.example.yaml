@@ -74,16 +74,25 @@ reviews:
 
 # ── Stuck-PR digest ───────────────────────────────────────────────────────────────────────────────
 # A scheduled reminder listing open PRs nobody has touched since before today. ON BY DEFAULT — omit
-# this whole section and the server posts a digest at 9am daily (in the timezone below; default UTC).
+# this whole section and the server posts a digest at 9am on weekdays (in the timezone below; UTC).
 #
 # On each tick the server posts one parent message per Slack channel and threads the stuck-PR list
 # under it, pinging the channel's mentions. Channels with no stuck PRs get no message.
+#
+# WEEKENDS ARE ALWAYS SKIPPED and there is no key for it — Saturday and Sunday never get a digest,
+# whatever `schedule` says. A schedule deliberately aimed at a weekend ("0 9 * * 6") never fires.
 digest:
   enabled: true                       # default true; set false to turn the digest off globally
   schedule: "0 9 * * *"               # standard 5-field cron; evaluated in `timezone` below; default 9am daily
   timezone: "UTC"                     # IANA zone (e.g. Europe/Kyiv); default UTC. Both the firing time and
                                       # the "since before today" cutoff use this zone. An invalid zone fails
                                       # startup. Global only — a per-repo digest may not set it.
+  # country: DE                       # ISO 3166-1 alpha-2 code selecting the public-holiday calendar to skip,
+                                      # evaluated in `timezone`. Supported: AT BE CH DE DK ES FI FR GB IE IT
+                                      # LU NL NO PL PT SE UA US. OMITTED BY DEFAULT — with no country, public
+                                      # holidays are NOT skipped (weekends still are) and the server warns once
+                                      # at boot. An unrecognized code fails startup. National holidays only;
+                                      # regional ones (e.g. Bavarian Fronleichnam) are not covered. Global only.
 
 # ── Mappings ──────────────────────────────────────────────────────────────────────────────────────
 # Repository → Slack-channel routing. Per-repo tier schema (0.18+): each org contains zero or more
