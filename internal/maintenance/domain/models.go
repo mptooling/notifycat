@@ -3,6 +3,8 @@ package domain
 import (
 	"log/slog"
 	"time"
+
+	"github.com/mptooling/notifycat/internal/kernel"
 )
 
 // CleanerParams bundles everything the stale-message cleaner needs. TTL is the
@@ -44,4 +46,7 @@ type ReconcilerParams struct {
 	Deleter Deleter
 	Logger  *slog.Logger
 	DryRun  bool
+	// Provider is the deployment's git host; it selects the web-URL form the
+	// per-PR log lines are reconstructed in. The zero value builds github.com URLs.
+	Provider kernel.Provider
 }

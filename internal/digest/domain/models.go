@@ -3,6 +3,8 @@ package domain
 import (
 	"log/slog"
 	"time"
+
+	"github.com/mptooling/notifycat/internal/kernel"
 )
 
 // PullRequest is the digest's view of one tracked PR: the fields the reporter
@@ -66,6 +68,17 @@ type ReporterParams struct {
 	Logger   *slog.Logger
 	TZ       *time.Location
 	Now      func() time.Time
+	// Provider is the deployment's git host; it selects the web-URL form each
+	// stuck PR's link is reconstructed in. The zero value builds github.com URLs.
+	Provider kernel.Provider
+}
+
+// CalendarParams bundles the calendar's inputs. Country is an ISO 3166-1
+// alpha-2 code, case-insensitive; empty means no holiday table (weekends only,
+// plus a warning at construction).
+type CalendarParams struct {
+	Country string
+	Logger  *slog.Logger
 }
 
 // SchedulerParams bundles everything the digest scheduler needs. Specs is a list
@@ -76,4 +89,10 @@ type SchedulerParams struct {
 	Job    ScheduleJob
 	Logger *slog.Logger
 	TZ     *time.Location
+	// Calendar suppresses ticks on weekends and holidays. A nil Calendar runs
+	// every tick, which is what the tests that predate the calendar expect.
+	Calendar DigestCalendar
+	// Now supplies the tick's wall clock (time.Now in production, a fixed clock
+	// in tests). It is evaluated in TZ before reaching the calendar.
+	Now func() time.Time
 }

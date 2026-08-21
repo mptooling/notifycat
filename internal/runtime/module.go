@@ -182,17 +182,31 @@ func buildDigestScheduler(cfg config.Config, provider *routingapp.Provider, pull
 		Logger:   logger,
 		TZ:       cfg.DigestTimezone,
 		Now:      time.Now,
+		Provider: cfg.GitProvider,
+	})
+	calendar := digestapp.NewCalendar(digestdomain.CalendarParams{
+		Country: digestCountry(provider),
+		Logger:  logger,
 	})
 	scheduler, err := digestapp.NewScheduler(digestdomain.SchedulerParams{
-		Specs:  specs,
-		Job:    reporter,
-		Logger: logger,
-		TZ:     cfg.DigestTimezone,
+		Specs:    specs,
+		Job:      reporter,
+		Logger:   logger,
+		TZ:       cfg.DigestTimezone,
+		Calendar: calendar,
+		Now:      time.Now,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("app: digest scheduler: %w", err)
 	}
 	return scheduler, nil
+}
+
+// digestCountry is the global digest country. It is global-only by contract —
+// the decoder rejects it on a per-repo tier — so the provider's global section
+// is the only place it can come from.
+func digestCountry(provider *routingapp.Provider) string {
+	return provider.Digest().Country
 }
 
 // buildRouter builds the per-PR target router. Path routing needs a GitHub

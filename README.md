@@ -47,7 +47,7 @@ Most users want the one-command path above. Build from source if you're contribu
 
 **Requires:**
 
-- Go 1.25.10 or newer (`go version` to check).
+- Go 1.25.14 or newer (`go version` to check).
 - `git` to clone the repository.
 - `sh` and `curl` for the helper scripts under `scripts/`.
 - A public URL (ngrok or Cloudflare Tunnel) only if you want your git host to deliver real webhooks to your laptop. Local CLI commands (validate / doctor) don't need one.

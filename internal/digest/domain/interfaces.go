@@ -38,6 +38,23 @@ type DigestPoster interface {
 	PostReply(ctx context.Context, channel, threadTS string, msg Message) (string, error)
 }
 
+// DigestCalendar decides whether a digest tick on a given day should be
+// suppressed. The scheduler consults it before running the job, so a skipped
+// day makes no Slack call at all. The returned reason is the value of the
+// `reason` field on the "skipped digest" log line — SkipReasonWeekend or
+// SkipReasonHoliday.
+//
+// Weekends are always skipped, whatever the configured schedule. Holidays are
+// skipped only when a country is configured; with no country the calendar warns
+// once at construction and reports weekends only.
+type DigestCalendar interface {
+	SkipReason(now time.Time) (reason string, skip bool)
+	HolidayName(now time.Time) (string, bool)
+	// Country is the resolved ISO 3166-1 alpha-2 code, empty when none is
+	// configured. It is logged alongside a holiday skip.
+	Country() string
+}
+
 // ScheduleJob is the unit the scheduler fires on each cron tick; the reporter
 // satisfies it. spec is the cron expression that fired, so the job can include
 // only the repos scheduled at that spec.
