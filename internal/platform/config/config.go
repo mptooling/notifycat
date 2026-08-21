@@ -17,6 +17,7 @@ import (
 	"github.com/mptooling/notifycat/internal/kernel"
 	routingapp "github.com/mptooling/notifycat/internal/routing/application"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
+	routinginfra "github.com/mptooling/notifycat/internal/routing/infrastructure"
 )
 
 // Config is the parsed runtime configuration. Field names are flat so consumers
@@ -136,8 +137,8 @@ type fileSchema struct {
 		IgnoreAIReviews  *bool `yaml:"ignore_ai_reviews"`
 		DependabotFormat *bool `yaml:"dependabot_format"`
 	} `yaml:"reviews"`
-	Digest   *routingdomain.DigestConfig  `yaml:"digest"`
-	Mappings map[string]routingdomain.Org `yaml:"mappings"`
+	Digest   yaml.Node `yaml:"digest"`
+	Mappings yaml.Node `yaml:"mappings"`
 }
 
 // defaults returns a Config pre-filled with every default value. Decode then
@@ -211,6 +212,9 @@ func Load() (Config, error) {
 	cfg := defaults()
 	cfg.ConfigFile = path
 	applyFileSchema(&cfg, fs)
+	if err := decodeRoutingSections(&cfg, fs); err != nil {
+		return Config{}, fmt.Errorf("config: parse %s: %w", path, err)
+	}
 
 	if err := validateGitProvider(cfg.GitProvider); err != nil {
 		return Config{}, err
@@ -270,8 +274,35 @@ func applyFileSchema(cfg *Config, fs fileSchema) {
 	if fs.Reviews.DependabotFormat != nil {
 		cfg.DependabotFormat = *fs.Reviews.DependabotFormat
 	}
-	cfg.Digest = fs.Digest
-	cfg.Mappings = fs.Mappings
+}
+
+// decodeRoutingSections decodes the digest: and mappings: nodes through the
+// routing wire codec, which owns the tri-state mentions semantics, per-tier
+// behavioral blocks, digest enabled-by-default, and duplicate-key rejection.
+// A bare "digest:"/"mappings:" key (null value) counts as absent, matching
+// the pre-codec pointer behavior.
+func decodeRoutingSections(cfg *Config, fs fileSchema) error {
+	if presentNode(fs.Digest) {
+		digest, err := routinginfra.DecodeDigest(&fs.Digest)
+		if err != nil {
+			return err
+		}
+		cfg.Digest = digest
+	}
+	if presentNode(fs.Mappings) {
+		mappings, err := routinginfra.DecodeMappings(&fs.Mappings)
+		if err != nil {
+			return err
+		}
+		cfg.Mappings = mappings
+	}
+	return nil
+}
+
+// presentNode reports whether a captured YAML node carries a real value — the
+// key exists and is not null.
+func presentNode(node yaml.Node) bool {
+	return !node.IsZero() && node.Tag != "!!null"
 }
 
 // resolveDigestTimezone turns the optional digest.timezone into a *time.Location.

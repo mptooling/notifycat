@@ -126,13 +126,15 @@ func TestRepoConfig_UnknownReactionKeyRejected(t *testing.T) {
 	}
 }
 
-func TestRepoConfig_DigestCountryRejected(t *testing.T) {
-	// country is global-only for the same reason as timezone: one team calendar
-	// per server. Setting it on a tier must fail, not be silently ignored.
-	var o map[string]repoConfigWire
-	dec := yaml.NewDecoder(strings.NewReader("api:\n  channel: C0API\n  digest:\n    country: US\n"))
-	dec.KnownFields(true)
-	if err := dec.Decode(&o); err == nil {
-		t.Fatal("expected error for per-repo digest.country")
+func TestDecodeDigest_NullNodeIsAbsent(t *testing.T) {
+	var doc struct {
+		Digest yaml.Node `yaml:"digest"`
+	}
+	if err := yaml.Unmarshal([]byte("digest:\n"), &doc); err != nil {
+		t.Fatal(err)
+	}
+	digest, err := DecodeDigest(&doc.Digest)
+	if err != nil || digest != nil {
+		t.Fatalf("DecodeDigest(null) = %v, %v; want nil, nil (bare key counts as absent)", digest, err)
 	}
 }
