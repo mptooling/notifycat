@@ -20,7 +20,7 @@ func (stubMappingLookup) Get(_ context.Context, _ string) (routingdomain.RepoMap
 	return routingdomain.RepoMapping{}, routingdomain.ErrNotFound
 }
 
-func (stubMappingLookup) PathChannels(_ string) []string { return nil }
+func (stubMappingLookup) AdditionalChannels(_ string) []string { return nil }
 
 type stubHookChecker struct{}
 

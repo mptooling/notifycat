@@ -94,7 +94,7 @@ func TestValidate_MappingNotFound(t *testing.T) {
 
 func TestValidate_PathChannelsProbed(t *testing.T) {
 	m, s, gh := happy()
-	m.pathChannels = func(_ string) []string { return []string{"C0AUTH00000"} }
+	m.additionalChannels = func(_ string) []string { return []string{"C0AUTH00000"} }
 	var probed []string
 	s.conversationsInfo = func(_ context.Context, channel string) (domain.ChannelInfo, error) {
 		probed = append(probed, channel)
@@ -114,9 +114,33 @@ func TestValidate_PathChannelsProbed(t *testing.T) {
 	findCheck(t, r, "slack-channel C0AUTH00000")
 }
 
+func TestValidate_ChecksEveryBaseListChannel(t *testing.T) {
+	checked := map[string]bool{}
+	mappings := &mockMappingLookup{
+		get: func(_ context.Context, repository string) (routingdomain.RepoMapping, error) {
+			return routingdomain.RepoMapping{Repository: repository, SlackChannel: "C0B1"}, nil
+		},
+		additionalChannels: func(string) []string { return []string{"C0B2"} },
+	}
+	slack := &mockSlackChecker{
+		authTest: func(_ context.Context) (string, []string, error) {
+			return "UBOT", []string{"chat:write", "reactions:write", "channels:read"}, nil
+		},
+		conversationsInfo: func(_ context.Context, channel string) (domain.ChannelInfo, error) {
+			checked[channel] = true
+			return domain.ChannelInfo{IsMember: true}, nil
+		},
+	}
+	v := application.NewValidator(mappings, slack, domain.HookProbe{})
+	_ = v.Validate(context.Background(), "acme/api")
+	if !checked["C0B1"] || !checked["C0B2"] {
+		t.Fatalf("both base-list channels must be checked, got %v", checked)
+	}
+}
+
 func TestValidate_PathChannelBotNotMemberFails(t *testing.T) {
 	m, s, gh := happy()
-	m.pathChannels = func(_ string) []string { return []string{"C0AUTH00000"} }
+	m.additionalChannels = func(_ string) []string { return []string{"C0AUTH00000"} }
 	s.conversationsInfo = func(_ context.Context, channel string) (domain.ChannelInfo, error) {
 		member := channel == "C1234567" // bot is in the base channel but not the path channel
 		return domain.ChannelInfo{ID: channel, Name: channel, IsMember: member}, nil

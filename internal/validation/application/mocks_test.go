@@ -11,19 +11,19 @@ import (
 // Each method is wired through a function value so individual tests can install
 // behavior per-case without subclassing.
 type mockMappingLookup struct {
-	get          func(ctx context.Context, repository string) (routingdomain.RepoMapping, error)
-	pathChannels func(repository string) []string
+	get                func(ctx context.Context, repository string) (routingdomain.RepoMapping, error)
+	additionalChannels func(repository string) []string
 }
 
 func (m *mockMappingLookup) Get(ctx context.Context, repository string) (routingdomain.RepoMapping, error) {
 	return m.get(ctx, repository)
 }
 
-func (m *mockMappingLookup) PathChannels(repository string) []string {
-	if m.pathChannels == nil {
+func (m *mockMappingLookup) AdditionalChannels(repository string) []string {
+	if m.additionalChannels == nil {
 		return nil
 	}
-	return m.pathChannels(repository)
+	return m.additionalChannels(repository)
 }
 
 type mockSlackChecker struct {

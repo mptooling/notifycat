@@ -14,6 +14,9 @@ type RoutingProvider interface {
 	RepoHasPathRules(repository string) bool
 	// TargetsForFiles returns the fan-out destinations for a PR touching files.
 	TargetsForFiles(repository string, files []string) []Target
+	// BaseTargets returns the repository's unconditional base fan-out targets,
+	// used when the repo has no path rules or no changed-files reader.
+	BaseTargets(repository string) []Target
 }
 
 // ChangedFilesReader fetches the repo-relative paths a PR touches. The GitHub

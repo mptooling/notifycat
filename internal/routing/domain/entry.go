@@ -16,11 +16,12 @@ type Entry struct {
 	Wildcard bool
 	Channel  string
 	Mentions []string
-	// PathChannels are the distinct channels a repo's `paths:` rules add on top
-	// of Channel (sorted, deduped). They feed both validation (bot membership)
-	// and the entry hash, so adding or repointing a path channel re-triggers
-	// validation. Always empty for a wildcard entry (paths are named-tier only).
-	PathChannels []string
+	// ExtraChannels are the distinct channels a repo can post to beyond its
+	// primary Channel — extra base-list channels plus per-path channels (sorted,
+	// deduped). They feed both validation (bot membership) and the entry hash, so
+	// adding or repointing one re-triggers validation. Always empty for a wildcard
+	// entry unless the org/* tier itself uses a channels: list.
+	ExtraChannels []string
 	// Provider is the deployment's git_provider (e.g. "github"). It hashes into
 	// every entry so flipping the provider — under which the same org/repo names
 	// point at different remote objects — revalidates the whole lock.
@@ -51,7 +52,7 @@ func (e Entry) Hash() string {
 		Repo         string          `json:"repo"`
 		Channel      string          `json:"channel"`
 		PathChannels []string        `json:"path_channels,omitempty"`
-	}{e.Provider, e.Org, repo, e.Channel, e.PathChannels}
+	}{e.Provider, e.Org, repo, e.Channel, e.ExtraChannels}
 	// json.Marshal cannot fail for a fixed struct of supported types.
 	b, _ := json.Marshal(payload)
 	sum := sha256.Sum256(b)

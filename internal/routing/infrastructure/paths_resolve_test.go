@@ -113,12 +113,93 @@ func TestPathChannels_DistinctSorted(t *testing.T) {
 		"        \"/c\": {channel: C0AAA00000}\n" + // duplicate
 		"        \"/d\": {mentions: []}\n" // no channel → not listed
 	p := providerDoc(t, doc)
-	got := p.PathChannels("acme/mono")
+	got := p.AdditionalChannels("acme/mono")
 	if !slices.Equal(got, []string{"C0AAA00000", "C0ZZZ00000"}) {
-		t.Errorf("PathChannels = %v; want sorted distinct [C0AAA00000 C0ZZZ00000]", got)
+		t.Errorf("AdditionalChannels = %v; want sorted distinct [C0AAA00000 C0ZZZ00000]", got)
 	}
-	if p.PathChannels("acme/unmapped") != nil {
-		t.Error("PathChannels(unmapped) should be nil")
+	if p.AdditionalChannels("acme/unmapped") != nil {
+		t.Error("AdditionalChannels(unmapped) should be nil")
+	}
+}
+
+func TestBaseTargets_MultiChannelBaseNoPaths(t *testing.T) {
+	p := providerDoc(t, `
+mappings:
+  acme:
+    api:
+      channels:
+        - channel: C0API1
+          mentions: ["<@U0A>"]
+        - channel: C0API2
+`)
+	got := p.BaseTargets("acme/api")
+	if len(got) != 2 || got[0].Channel != "C0API1" || got[1].Channel != "C0API2" {
+		t.Fatalf("want both base channels, got %+v", got)
+	}
+	if len(got[0].Mentions) != 1 || got[0].Mentions[0] != "<@U0A>" {
+		t.Fatalf("first channel should carry its declared mention: %+v", got[0])
+	}
+	if got[1].Mentions[0] != domain.ChannelMention {
+		t.Fatalf("second channel should default to @channel: %+v", got[1])
+	}
+}
+
+func TestTargetsForFiles_PathChannelsListReplacesBase(t *testing.T) {
+	p := providerDoc(t, `
+mappings:
+  acme:
+    monorepo:
+      channel: C0BASE
+      paths:
+        services/pay:
+          channels:
+            - channel: C0PAY1
+            - channel: C0PAY2
+              mentions: []
+`)
+	got := p.TargetsForFiles("acme/monorepo", []string{"services/pay/x.go"})
+	if len(got) != 2 || got[0].Channel != "C0PAY1" || got[1].Channel != "C0PAY2" {
+		t.Fatalf("matched path list should replace base: %+v", got)
+	}
+	if len(got[1].Mentions) != 0 {
+		t.Fatalf("C0PAY2 explicit [] should ping nobody: %+v", got[1])
+	}
+}
+
+func TestTargetsForFiles_MultiBaseReturnedWhenNoPathMatch(t *testing.T) {
+	p := providerDoc(t, `
+mappings:
+  acme:
+    monorepo:
+      channels:
+        - channel: C0B1
+        - channel: C0B2
+      paths:
+        services/pay:
+          channel: C0PAY
+`)
+	got := p.TargetsForFiles("acme/monorepo", []string{"README.md"})
+	if len(got) != 2 || got[0].Channel != "C0B1" || got[1].Channel != "C0B2" {
+		t.Fatalf("no path match should return full base set: %+v", got)
+	}
+}
+
+func TestTargetsForFiles_ChannelLessPathInheritsPrimary(t *testing.T) {
+	p := providerDoc(t, `
+mappings:
+  acme:
+    monorepo:
+      channels:
+        - channel: C0PRIMARY
+        - channel: C0SECOND
+      paths:
+        services/pay:
+          mentions: ["<@U0PAY>"]
+`)
+	got := p.TargetsForFiles("acme/monorepo", []string{"services/pay/x.go"})
+	if len(got) != 1 || got[0].Channel != "C0PRIMARY" ||
+		len(got[0].Mentions) != 1 || got[0].Mentions[0] != "<@U0PAY>" {
+		t.Fatalf("channel-less path should inherit primary base channel: %+v", got)
 	}
 }
 

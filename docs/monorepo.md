@@ -18,12 +18,29 @@ mappings:
           mentions: []                     # matched, but pings nobody
 ```
 
+A path rule may also declare **multiple channels** using the `channels:` list form instead of a single `channel:` key. When a matched path rule uses `channels:`, those channels **replace** the repository's base channel set for that PR — the base channel is not included unless it appears in the list.
+
+```yaml
+mappings:
+  acme:
+    monorepo:
+      channel: C0BASE
+      paths:
+        services/pay:
+          channels:
+            - channel: C0PAY1              # mentions absent → @channel
+            - channel: C0PAY2
+              mentions: []                 # ping nobody in this channel
+```
+
+A path entry may use `channel:` (+ optional `mentions:`), `channels:` (per-entry mentions), or neither (channel inherited from the repo tier). `channel:` and `channels:` are mutually exclusive on the same entry, and `channels:` may not appear alongside a path-level `mentions:` key.
+
 ## How a PR picks its channels
 
 1. **Each changed file picks its most-specific rule.** A rule matches when the file lives under its directory, segment-aware — `modules/acme` matches `modules/acme/x.go` but not `modules/acmexyz/x.go`. When several rules match one file, the longest directory wins.
-2. **Matched rules group by channel.** A rule resolves to its own `channel`, or the repository's base channel if it sets none.
+2. **Matched rules resolve to a channel set.** A rule with a single `channel:` resolves to that channel (or the repository's base channel if omitted). A rule with `channels:` resolves to all channels in the list, replacing the base set.
 3. **One message per channel, mentions unioned.** Each channel gets a single message pinging the union of its rules' mentions, deduped.
-4. **No match → the base tier.** A PR whose files match nothing posts one message to the repository's base channel, exactly like a non-monorepo repository.
+4. **No match → the base tier.** A PR whose files match nothing posts one message to the repository's base channel set, exactly like a non-monorepo repository.
 
 Later events — reviews, close, merge, draft — act on **every** message the PR fanned out to. The set of messages is fixed at announcement time; files pushed later don't add channels.
 
