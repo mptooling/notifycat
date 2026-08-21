@@ -66,7 +66,13 @@ WARN digest holidays not configured detail="digest.country is unset; weekends ar
 | `ES` | Spain | `NL` | Netherlands | `US` | United States |
 | `FI` | Finland | | | | |
 
-An unrecognized code fails server startup and the error lists the supported set, so a typo can't silently disable holidays.
+An unrecognized code does **not** fail startup. The server warns once, lists the supported set, and runs weekends-only — the same state as no country at all:
+
+```
+WARN digest country not recognized country=Germany detail="digest.country is not a supported country code; weekends are skipped but public holidays are not" supported="AT, BE, CH, ..."
+```
+
+That is deliberate: `digest.schedule` and `digest.timezone` decide whether the server runs at all and so fail fast, but the country only enriches one feature. A typo in it must not take the deployment down.
 
 Each table carries that country's **national** public holidays. Two deliberate additions and several known limits:
 

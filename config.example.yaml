@@ -91,7 +91,8 @@ digest:
                                       # evaluated in `timezone`. Supported: AT BE CH DE DK ES FI FR GB IE IT
                                       # LU NL NO PL PT SE UA US. OMITTED BY DEFAULT — with no country, public
                                       # holidays are NOT skipped (weekends still are) and the server warns once
-                                      # at boot. An unrecognized code fails startup. National holidays only;
+                                      # at boot. An unrecognized code only warns (it does NOT fail startup) and
+                                      # falls back to weekends-only. National holidays only;
                                       # regional ones (e.g. Bavarian Fronleichnam) are not covered. Global only.
 
 # ── Mappings ──────────────────────────────────────────────────────────────────────────────────────

@@ -16,11 +16,7 @@ func calendarLogger(buf *bytes.Buffer) *slog.Logger {
 
 func newTestCalendar(t *testing.T, country string) *Calendar {
 	t.Helper()
-	calendar, err := NewCalendar(domain.CalendarParams{Country: country, Logger: calendarLogger(&bytes.Buffer{})})
-	if err != nil {
-		t.Fatalf("NewCalendar(%q): %v", country, err)
-	}
-	return calendar
+	return NewCalendar(domain.CalendarParams{Country: country, Logger: calendarLogger(&bytes.Buffer{})})
 }
 
 func date(t *testing.T, value string, tz *time.Location) time.Time {
@@ -32,9 +28,44 @@ func date(t *testing.T, value string, tz *time.Location) time.Time {
 	return parsed
 }
 
-func TestNewCalendar_RejectsUnknownCountry(t *testing.T) {
-	if _, err := NewCalendar(domain.CalendarParams{Country: "ZZ", Logger: calendarLogger(&bytes.Buffer{})}); err == nil {
-		t.Fatal("expected an error for an unknown country code, got nil")
+// An unrecognized country must degrade to weekends-only with a warning, never
+// abort startup: the digest is one feature and the code is a cosmetic setting,
+// so a typo must not take the whole server down.
+func TestNewCalendar_WarnsAndIgnoresUnknownCountry(t *testing.T) {
+	var buf bytes.Buffer
+	calendar := NewCalendar(domain.CalendarParams{Country: "ZZ", Logger: calendarLogger(&buf)})
+
+	logged := buf.String()
+	if !strings.Contains(logged, "digest country not recognized") {
+		t.Errorf("no warning for an unknown country: %q", logged)
+	}
+	if !strings.Contains(logged, "ZZ") {
+		t.Errorf("warning does not name the offending code: %q", logged)
+	}
+	if !strings.Contains(logged, "DE") {
+		t.Errorf("warning does not list the supported codes: %q", logged)
+	}
+
+	// Weekends still skipped...
+	if reason, skip := calendar.SkipReason(date(t, "2026-07-04", time.UTC)); !skip || reason != domain.SkipReasonWeekend {
+		t.Errorf("Saturday: reason=%q skip=%v; want %q true", reason, skip, domain.SkipReasonWeekend)
+	}
+	// ...but no holiday is, exactly as if no country were set.
+	if reason, skip := calendar.SkipReason(date(t, "2026-12-25", time.UTC)); skip {
+		t.Errorf("2026-12-25 skipped as %q; an unknown country must skip no holidays", reason)
+	}
+}
+
+func TestNewCalendar_UnknownCountryWarnsOnlyOnce(t *testing.T) {
+	var buf bytes.Buffer
+	calendar := NewCalendar(domain.CalendarParams{Country: "ZZ", Logger: calendarLogger(&buf)})
+	if got := strings.Count(buf.String(), "digest country not recognized"); got != 1 {
+		t.Fatalf("warning logged %d times at construction; want exactly 1", got)
+	}
+	buf.Reset()
+	calendar.SkipReason(date(t, "2026-12-25", time.UTC))
+	if buf.Len() != 0 {
+		t.Fatalf("SkipReason logged on a tick; want silence, got %q", buf.String())
 	}
 }
 
@@ -48,10 +79,7 @@ func TestNewCalendar_NormalizesCountryCase(t *testing.T) {
 
 func TestNewCalendar_WarnsOnceWhenCountryUnset(t *testing.T) {
 	var buf bytes.Buffer
-	calendar, err := NewCalendar(domain.CalendarParams{Logger: calendarLogger(&buf)})
-	if err != nil {
-		t.Fatalf("NewCalendar: %v", err)
-	}
+	calendar := NewCalendar(domain.CalendarParams{Logger: calendarLogger(&buf)})
 	if got := strings.Count(buf.String(), "digest holidays not configured"); got != 1 {
 		t.Fatalf("warning logged %d times at construction; want exactly 1", got)
 	}
@@ -65,9 +93,7 @@ func TestNewCalendar_WarnsOnceWhenCountryUnset(t *testing.T) {
 
 func TestNewCalendar_DoesNotWarnWhenCountrySet(t *testing.T) {
 	var buf bytes.Buffer
-	if _, err := NewCalendar(domain.CalendarParams{Country: "DE", Logger: calendarLogger(&buf)}); err != nil {
-		t.Fatalf("NewCalendar: %v", err)
-	}
+	NewCalendar(domain.CalendarParams{Country: "DE", Logger: calendarLogger(&buf)})
 	if strings.Contains(buf.String(), "digest holidays not configured") {
 		t.Fatalf("warned despite a configured country: %q", buf.String())
 	}

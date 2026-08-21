@@ -184,13 +184,10 @@ func buildDigestScheduler(cfg config.Config, provider *routingapp.Provider, pull
 		Now:      time.Now,
 		Provider: cfg.GitProvider,
 	})
-	calendar, err := digestapp.NewCalendar(digestdomain.CalendarParams{
+	calendar := digestapp.NewCalendar(digestdomain.CalendarParams{
 		Country: digestCountry(provider),
 		Logger:  logger,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("app: digest calendar: %w", err)
-	}
 	scheduler, err := digestapp.NewScheduler(digestdomain.SchedulerParams{
 		Specs:    specs,
 		Job:      reporter,

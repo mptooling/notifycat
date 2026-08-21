@@ -87,17 +87,28 @@ func TestModule_ResolvesCalendarForConfiguredCountry(t *testing.T) {
 	app.RequireStop()
 }
 
-// An unknown country code must abort startup rather than silently disable
-// holidays, matching the fail-fast contract for a bad cron spec or timezone.
-func TestModule_UnknownCountryFailsStartup(t *testing.T) {
-	app := fx.New(
-		fx.NopLogger,
+// An unknown country code must NOT abort startup. The digest is one feature and
+// the code is a cosmetic setting, so a typo degrades to weekends-only rather
+// than taking the whole deployment down.
+func TestModule_UnknownCountryStartsAndDegrades(t *testing.T) {
+	app := fxtest.New(t,
 		digest.Module,
 		digestGraphDeps(t),
 		fx.Supply(digest.Config{Specs: []string{"0 9 * * *"}, TZ: time.UTC, Country: "ZZ"}),
-		fx.Invoke(func(domain.DigestScheduler) {}),
+		fx.Invoke(func(calendar domain.DigestCalendar) {
+			if calendar.Country() != "" {
+				t.Errorf("Country() = %q; an unrecognized code must resolve to none", calendar.Country())
+			}
+			// 2026-12-25 is a Friday: no holiday table, so the digest still posts.
+			if reason, skip := calendar.SkipReason(time.Date(2026, time.December, 25, 9, 0, 0, 0, time.UTC)); skip {
+				t.Errorf("2026-12-25 skipped as %q; want no skip without a usable table", reason)
+			}
+			// Saturday is still skipped.
+			if reason, skip := calendar.SkipReason(time.Date(2026, time.July, 4, 9, 0, 0, 0, time.UTC)); !skip || reason != domain.SkipReasonWeekend {
+				t.Errorf("Saturday: reason=%q skip=%v; want %q true", reason, skip, domain.SkipReasonWeekend)
+			}
+		}),
 	)
-	if err := app.Err(); err == nil {
-		t.Fatal("expected the fx graph to fail for an unknown country code, got nil")
-	}
+	app.RequireStart()
+	app.RequireStop()
 }

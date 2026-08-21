@@ -17,7 +17,7 @@ digest:
   country: DE     # ISO 3166-1 alpha-2
 ```
 
-Without it, holidays are **not** skipped and the server warns once at boot (`digest holidays not configured`). There is no default country — holidays vary too much for a built-in guess to be right. An unrecognized code fails startup with the supported set in the error. See [Weekends and holidays](digest.md#weekends-and-holidays) for the 19 supported countries and their known limits (regional holidays are not covered).
+Without it, holidays are **not** skipped and the server warns once at boot (`digest holidays not configured`). There is no default country — holidays vary too much for a built-in guess to be right. An unrecognized code does not fail startup — the server warns, lists the supported codes, and runs weekends-only. See [Weekends and holidays](digest.md#weekends-and-holidays) for the 19 supported countries and their known limits (regional holidays are not covered).
 
 Skipped days make no Slack call and log one line with `reason=weekend` or `reason=holiday`, so `skipped digest` is the string to grep when a digest you expected is missing.
 

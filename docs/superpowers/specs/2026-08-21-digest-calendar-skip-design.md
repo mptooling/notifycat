@@ -19,6 +19,7 @@ Recorded so the reasoning survives the PR. Each was an explicit choice, not a de
 | Holiday scope | **Country only, no subdivisions** | `digest.country: DE` resolves to the federal set. Region support (`DE-BY` → Bayern) is additive later with no schema break. |
 | Dec 24 / Dec 31 | **In every table, including US** | Not legal public holidays in most of these countries, but de-facto shutdown days. Satisfies the issue's Dec 31 acceptance criterion. |
 | Country absent | **Weekends skipped, holidays posted, warning logged once at startup** | One behavior delta on upgrade instead of two. No silent default country. |
+| Country unrecognized | **Warn and degrade to weekends-only — never fail startup** | Reversed during review. `schedule` and `timezone` decide whether the server runs at all, so they fail fast; the country only enriches one feature. A typo must not take the deployment down. Mirrors the existing token degradation (absent `GITHUB_TOKEN` makes path rules inert, not fatal). |
 | Config scope | **Global only** | Mirrors `digest.timezone`, which is already rejected on a repo tier. One deployment, one team calendar. |
 | Ukraine | **Fixed dates only** | Orthodox Pascha needs a second Julian-based algorithm; both Pascha and Trinity fall on a Sunday, already skipped as a weekend, so only Easter Monday would ever have mattered. Documented as a known gap. |
 
@@ -125,7 +126,7 @@ Observance is applied while expanding, not at lookup time:
 
 Because substitution can depend on other rules in the same year, expansion runs in two passes: all non-observed dates first, then the observed ones resolve against that set.
 
-Constructor validates the country code and returns an error for an unknown one, so an fx `Provide` failure aborts the boot — same fail-fast contract as an invalid cron spec or IANA zone.
+The constructor never fails. An unset or unrecognized country degrades to weekends-only and warns once; it does not abort the boot. This is a deliberate departure from the fail-fast contract that `digest.schedule` and `digest.timezone` follow: those two decide whether and when the server runs, while the country only enriches one feature, so a typo in it must not take the deployment down. Two distinct warnings — `digest holidays not configured` (unset) and `digest country not recognized` (typo, with the supported set listed) — so an operator can tell which mistake they made.
 
 ### Wiring
 
@@ -559,7 +560,7 @@ TDD throughout — each country table lands with its assertions in the same comm
 
 **Scheduler.** A skipped tick calls the job zero times and logs `skipped digest` with the right reason; a normal tick calls it once and logs nothing extra.
 
-**Config.** `country: US` on a repo tier fails decoding with a message naming the global section; an unknown country code fails the `Calendar` constructor; `country: de` normalizes to `DE`.
+**Config.** `country: US` on a repo tier fails decoding with a message naming the global section; an unknown country code warns and degrades to weekends-only without failing the graph; `country: de` normalizes to `DE`.
 
 ## Documentation
 
@@ -588,7 +589,8 @@ Three things the design did not anticipate. All are fixed in the code and covere
 - `TestSupportedCountries_EveryWeekdayRuleIsAHoliday` runs the reframed invariant over 2026–2035.
 - `TestGregorianEaster` asserts 1900, 2000, 2026–2031, 2100, and 2200, and that every result is a Sunday.
 - `TestScheduler_SkipLogFields` pins the `skipped digest` line's fields, because `docs/troubleshooting.md` tells operators to grep for them.
-- `TestModule_UnknownCountryFailsStartup` proves a bad code aborts the fx graph rather than silently disabling holidays.
+- `TestModule_UnknownCountryStartsAndDegrades` proves a bad code still boots, resolves to no country, skips weekends, and skips no holidays.
+- `TestNewCalendar_WarnsAndIgnoresUnknownCountry` asserts the warning names the offending code and lists the supported set.
 
 ## Acceptance criteria
 
@@ -599,5 +601,9 @@ Mapped to the issue, including the one that changed:
 - [x] Skips logged with a reason; no Slack call is made — the check runs in the scheduler, before the job.
 - [x] Covered by tests, including timezone edge cases around midnight.
 - [x] Docs updated.
+
+### Contract changed after the first implementation
+
+An unrecognized `digest.country` originally failed startup, on the theory that a typo should not silently disable holidays. That was wrong: it converts a cosmetic misconfiguration into a total outage of a server whose main job — receiving webhooks and posting PR messages — has nothing to do with the digest calendar. It now warns and degrades to weekends-only. The fail-fast contract still holds for `digest.schedule` and `digest.timezone`, which govern whether the server runs at all.
 
 Not delivered, and why: `digest.skip_dates` for company-specific days (rejected in favour of country data only); regional subdivisions (`DE-BY`); per-repo `country`; a configurable weekend toggle.

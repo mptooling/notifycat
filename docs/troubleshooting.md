@@ -84,7 +84,6 @@ Notifycat fails fast on configuration it can't trust. `docker compose logs notif
 | `these env vars are no longer read` | Pre-0.17 environment variables still set. | Remove them; their values now live in `config.yaml`. See the [0.17 migration](0.17-config-migration.md). |
 | `required key git_provider is missing` / `git_provider … is invalid` | Config predates the provider switch. | Add `git_provider: github` (or `bitbucket`) — one line, see [Upgrading](upgrading.md#git_provider-is-now-required). |
 | an error naming `digest.schedule` or `digest.timezone` | Invalid cron expression or unrecognized IANA zone. | Fix the value — [digest config](digest.md#schedule-and-timezone). |
-| `digest: unknown country` | `digest.country` is not a supported ISO 3166-1 alpha-2 code. | Use a code from the [supported set](digest.md#supported-countries) the error lists, or remove the key. |
 | `SLACK_BOT_TOKEN` / webhook-secret missing | A required secret is unset for the selected `git_provider`. | Set it in `.env` — [secrets reference](configuration.md#secrets-environment-variables-only). |
 
 ## Certificate failures
@@ -150,7 +149,12 @@ Otherwise, in order of likelihood: nothing was stuck (a channel with no stuck PR
 
 **The first digest lists long-merged PRs** — rows created before the digest feature carry no open/closed marker. Run the one-time [reconcile](digest.md#reconcile).
 
-**A digest posted on a public holiday** — `digest.country` is unset, so only weekends are skipped. The server warns about this once at boot (`digest holidays not configured`). Set the country — [supported set](digest.md#supported-countries). If the country is set and the day is a regional or company holiday rather than a national one, that is a [known limit](digest.md#supported-countries).
+**A digest posted on a public holiday** — check the boot log for one of two warnings:
+
+- `digest holidays not configured` — `digest.country` is unset, so only weekends are skipped. Set it: [supported set](digest.md#supported-countries).
+- `digest country not recognized` — the code is not supported (`Germany` instead of `DE`, `DE-BY` instead of `DE`). The server keeps running weekends-only rather than failing startup, and the warning lists every accepted code.
+
+If the country *is* set correctly and the day is a regional or company holiday rather than a national one, that is a [known limit](digest.md#supported-countries).
 
 **A digest showed up uninvited after an upgrade** — it's on by default. `digest: { enabled: false }` restores silence. See [Stuck-PR digest](digest.md#its-on-by-default).
 

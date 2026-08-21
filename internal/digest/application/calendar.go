@@ -1,7 +1,6 @@
 package application
 
 import (
-	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -37,30 +36,44 @@ func (d civilDate) time() time.Time {
 	return time.Date(d.year, d.month, d.day, 0, 0, 0, 0, time.UTC)
 }
 
-// NewCalendar resolves the country code to a holiday table. An unrecognized code
-// is an error so a typo fails startup rather than silently disabling holidays,
-// matching the fail-fast contract for an invalid cron spec or timezone. An empty
-// code is valid and means weekends only; it warns once here rather than on every
-// tick, because without a country there is no way to know that a given day was a
-// holiday.
-func NewCalendar(params domain.CalendarParams) (*Calendar, error) {
+// NewCalendar resolves the country code to a holiday table.
+//
+// It never fails. An unset or unrecognized code degrades to weekends-only and
+// warns; it does not abort startup the way an invalid cron spec or timezone
+// does. Those two decide *when* the server runs at all, whereas the country
+// only enriches one feature — so a typo in it must not take the deployment
+// down. This mirrors the token degradation elsewhere (an absent GITHUB_TOKEN
+// makes path rules inert rather than fatal).
+//
+// Both warnings fire once, here, rather than on every tick: with no usable
+// table there is no way to know that a given day was a holiday, so a per-tick
+// line would carry no information and would repeat daily forever.
+func NewCalendar(params domain.CalendarParams) *Calendar {
 	logger := params.Logger
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
+	calendar := &Calendar{logger: logger, expanded: map[int]map[civilDate]string{}}
 
 	code := domain.CountryCode(strings.ToUpper(strings.TrimSpace(params.Country)))
 	if code == "" {
 		logger.Warn("digest holidays not configured",
 			slog.String("detail", "digest.country is unset; weekends are skipped but public holidays are not"))
-		return &Calendar{logger: logger, expanded: map[int]map[civilDate]string{}}, nil
+		return calendar
 	}
 
 	rules, ok := domain.HolidayTable(code)
 	if !ok {
-		return nil, fmt.Errorf("digest: unknown country %q; supported: %s", params.Country, joinCountries(domain.SupportedCountries()))
+		logger.Warn("digest country not recognized",
+			slog.String("country", params.Country),
+			slog.String("detail", "digest.country is not a supported country code; weekends are skipped but public holidays are not"),
+			slog.String("supported", joinCountries(domain.SupportedCountries())))
+		return calendar
 	}
-	return &Calendar{country: code, rules: rules, logger: logger, expanded: map[int]map[civilDate]string{}}, nil
+
+	calendar.country = code
+	calendar.rules = rules
+	return calendar
 }
 
 // SkipReason reports whether the digest should be suppressed for now's calendar

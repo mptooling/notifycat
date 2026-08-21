@@ -61,10 +61,10 @@ func provideReporterParams(finder domain.StuckFinder, mappings domain.MappingLoo
 	}
 }
 
-// provideCalendar builds the weekend/holiday calendar. It returns an error for
-// an unknown country code, which fails fx startup rather than silently running
-// without holidays.
-func provideCalendar(logger *slog.Logger, cfg Config) (*application.Calendar, error) {
+// provideCalendar builds the weekend/holiday calendar. An unset or unrecognized
+// country degrades to weekends-only with a warning rather than failing the
+// graph — see application.NewCalendar.
+func provideCalendar(logger *slog.Logger, cfg Config) *application.Calendar {
 	return application.NewCalendar(domain.CalendarParams{Country: cfg.Country, Logger: logger})
 }
 
