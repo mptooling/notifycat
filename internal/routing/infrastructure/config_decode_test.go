@@ -125,3 +125,14 @@ func TestRepoConfig_UnknownReactionKeyRejected(t *testing.T) {
 		t.Fatal("expected error for unknown reactions key")
 	}
 }
+
+func TestRepoConfig_DigestCountryRejected(t *testing.T) {
+	// country is global-only for the same reason as timezone: one team calendar
+	// per server. Setting it on a tier must fail, not be silently ignored.
+	var o map[string]repoConfigWire
+	dec := yaml.NewDecoder(strings.NewReader("api:\n  channel: C0API\n  digest:\n    country: US\n"))
+	dec.KnownFields(true)
+	if err := dec.Decode(&o); err == nil {
+		t.Fatal("expected error for per-repo digest.country")
+	}
+}

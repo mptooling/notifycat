@@ -4,7 +4,7 @@ Build and run Notifycat from a clone, with a local SQLite database — the path 
 
 ## Requirements
 
-- Go 1.25.10 or newer.
+- Go 1.25.14 or newer.
 - `sh` and `curl` for the setup helper scripts.
 - Permission to create a Slack app in your workspace — see [Slack app setup](slack-app.md).
 - A repository where you can create webhooks — see [GitHub webhook setup](github-webhook.md).

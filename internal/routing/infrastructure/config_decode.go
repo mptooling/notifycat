@@ -17,6 +17,7 @@ type digestConfigWire struct {
 	Enabled  bool
 	Schedule string
 	Timezone string
+	Country  string
 }
 
 // UnmarshalYAML walks the mapping node by hand (like Org) so we can default
@@ -52,6 +53,10 @@ func (d *digestConfigWire) UnmarshalYAML(node *yaml.Node) error {
 		case "timezone":
 			if err := valNode.Decode(&d.Timezone); err != nil {
 				return fmt.Errorf("digest: timezone: %w", err)
+			}
+		case "country":
+			if err := valNode.Decode(&d.Country); err != nil {
+				return fmt.Errorf("digest: country: %w", err)
 			}
 		default:
 			return fmt.Errorf("digest: unknown field %q", keyNode.Value)
@@ -189,6 +194,9 @@ func (rc *repoConfigWire) UnmarshalYAML(node *yaml.Node) error {
 			}
 			if d.Timezone != "" {
 				return fmt.Errorf("digest: timezone is only valid in the global digest section, not per-repo")
+			}
+			if d.Country != "" {
+				return fmt.Errorf("digest: country is only valid in the global digest section, not per-repo")
 			}
 			rc.Digest = d
 		case "paths":
@@ -350,7 +358,7 @@ func isNullNode(n *yaml.Node) bool {
 }
 
 func (d digestConfigWire) toDomain() domain.DigestConfig {
-	return domain.DigestConfig{Enabled: d.Enabled, Schedule: d.Schedule, Timezone: d.Timezone}
+	return domain.DigestConfig{Enabled: d.Enabled, Schedule: d.Schedule, Timezone: d.Timezone, Country: d.Country}
 }
 
 func (r reactionsOverrideWire) toDomain() domain.ReactionsOverride {

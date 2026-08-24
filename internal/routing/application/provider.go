@@ -34,6 +34,7 @@ func (p *Provider) Digest() domain.DigestConfig {
 			cfg.Schedule = s
 		}
 		cfg.Timezone = p.file.Digest.Timezone
+		cfg.Country = p.file.Digest.Country
 	}
 	return cfg
 }

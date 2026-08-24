@@ -15,7 +15,7 @@ so the best contributions are focused, tested, and easy to review.
 ## Local Setup
 
 Install Go and the optional `just` task runner. The CI workflow currently uses
-Go 1.25.10.
+Go 1.25.14.
 
 ```sh
 cp .env.example .env
