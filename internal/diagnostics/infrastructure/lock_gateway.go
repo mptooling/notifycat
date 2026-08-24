@@ -40,7 +40,7 @@ func (g *LockGateway) Plan(entries []routingdomain.Entry, force bool) (diagnosti
 	return diagnosticsdomain.LockPlan{ToValidate: diff.Needs, Stale: diff.Stale}, err
 }
 
-// Commit writes the merged lock: the existing lock is read, successful
+// Commit writes the merged lock: the existing lock is read, cacheable
 // validation results are merged in (keyed by entry hash + current time), and
 // stale keys are dropped.
 func (g *LockGateway) Commit(successes []validationdomain.EntryResult, stale []string) error {
@@ -61,11 +61,10 @@ func (g *LockGateway) CommitTargeted(entry routingdomain.Entry) error {
 	return routinginfra.WriteLock(g.lockPath, merged)
 }
 
-// successMap builds the map of key → LockEntry for results that passed validation.
 func successMap(results []validationdomain.EntryResult, clock func() time.Time) map[string]routinginfra.LockEntry {
 	out := map[string]routinginfra.LockEntry{}
 	for _, result := range results {
-		if result.OK() {
+		if result.Cacheable() {
 			out[result.Entry.Key()] = routinginfra.LockEntry{
 				SHA256:      result.Entry.Hash(),
 				ValidatedAt: clock(),
@@ -75,9 +74,6 @@ func successMap(results []validationdomain.EntryResult, clock func() time.Time) 
 	return out
 }
 
-// WriteLockWarning formats the warning message emitted when Plan returns a
-// non-nil error (malformed lock). It writes to stderr and returns the formatted
-// string so callers do not need to know the exact phrasing.
 func WriteLockWarning(stderr io.Writer, err error) {
 	fmt.Fprintln(stderr, "validate: warning:", err, "(rebuilding lock)")
 }

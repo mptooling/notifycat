@@ -8,12 +8,7 @@ import (
 	"github.com/mptooling/notifycat/internal/validation/domain"
 )
 
-// RunForEntries validates a slice of mapping entries, expanding wildcard
-// entries against lister. It never short-circuits: per-repo failures and lister
-// errors surface as the entry's reports so the operator sees every mapping's
-// outcome in one run.
-//
-// lister may be nil; wildcard entries then produce a single Skip report.
+// RunForEntries validates a slice of mapping entries, expanding wildcard entries against lister.
 func RunForEntries(
 	ctx context.Context,
 	entries []routingdomain.Entry,
@@ -44,7 +39,7 @@ func expandWildcard(ctx context.Context, e routingdomain.Entry, lister domain.Re
 	}
 	repos, err := lister.ListOrgRepos(ctx, e.Org)
 	if err != nil {
-		return []domain.Report{singleCheckReport(key, domain.StatusFail,
+		return []domain.Report{singleCheckReport(key, domain.StatusWarn,
 			fmt.Sprintf("list repos in %s: %v", e.Org, err))}
 	}
 	out := make([]domain.Report, 0, len(repos))

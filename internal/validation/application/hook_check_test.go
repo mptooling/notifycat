@@ -2,9 +2,11 @@ package application_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
+	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 	"github.com/mptooling/notifycat/internal/validation/application"
 	"github.com/mptooling/notifycat/internal/validation/domain"
 )
@@ -42,11 +44,14 @@ func TestValidate_WebhookMissingEvents(t *testing.T) {
 
 	r := v.Validate(context.Background(), "acme/widgets")
 	c := findCheck(t, r, "webhook")
-	if c.Status != domain.StatusFail {
+	if c.Status != domain.StatusWarn {
 		t.Fatalf("webhook = %+v", c)
 	}
 	if !strings.Contains(c.Detail, "pull_request_review") || !strings.Contains(c.Detail, "pull_request_review_comment") {
 		t.Fatalf("detail should name both missing events, got %q", c.Detail)
+	}
+	if !r.OK() {
+		t.Error("an incomplete webhook must not fail the report; it is advisory")
 	}
 }
 
@@ -59,8 +64,56 @@ func TestValidate_NoWebhookConfigured(t *testing.T) {
 
 	r := v.Validate(context.Background(), "acme/widgets")
 	c := findCheck(t, r, "webhook")
-	if c.Status != domain.StatusFail || !strings.Contains(c.Detail, "no active webhook") {
+	if c.Status != domain.StatusWarn || !strings.Contains(c.Detail, "no active webhook") {
 		t.Fatalf("webhook = %+v", c)
+	}
+	if !r.OK() {
+		t.Error("a missing webhook must not fail the report; it is advisory")
+	}
+}
+
+// TestValidate_WebhookListError_Warns covers the token identity that may read
+// the repository but not list its hooks (Bitbucket answers 403). Coverage is
+// unconfirmed, which is advisory — notifycat itself still works.
+func TestValidate_WebhookListError_Warns(t *testing.T) {
+	m, s, gh := happy()
+	gh.listHookEvents = func(_ context.Context, _, _, _ string) ([]string, error) {
+		return nil, errors.New("bitbucket: list-hooks: 403 Access denied. You must have write or admin access.")
+	}
+	v := application.NewValidator(m, s, githubProbe(gh))
+
+	r := v.Validate(context.Background(), "acme/widgets")
+	c := findCheck(t, r, "webhook")
+	if c.Status != domain.StatusWarn {
+		t.Fatalf("webhook = %+v", c)
+	}
+	if !strings.Contains(c.Detail, "403") {
+		t.Errorf("detail should carry the underlying error, got %q", c.Detail)
+	}
+	if !r.OK() || !r.HasWarnings() {
+		t.Errorf("report should warn but pass; OK=%v HasWarnings=%v", r.OK(), r.HasWarnings())
+	}
+}
+
+// TestValidate_WebhookMalformedRepository_Fails proves the one hook outcome
+// that stays fatal: a repository that is not owner/repo is a config-shape
+// error, not external state.
+func TestValidate_WebhookMalformedRepository_Fails(t *testing.T) {
+	_, s, gh := happy()
+	m := &mockMappingLookup{
+		get: func(_ context.Context, _ string) (routingdomain.RepoMapping, error) {
+			return routingdomain.RepoMapping{Repository: "acme", SlackChannel: "C1234567"}, nil
+		},
+	}
+	v := application.NewValidator(m, s, githubProbe(gh))
+
+	r := v.Validate(context.Background(), "acme")
+	c := findCheck(t, r, "webhook")
+	if c.Status != domain.StatusFail || !strings.Contains(c.Detail, "owner/repo form") {
+		t.Fatalf("webhook = %+v", c)
+	}
+	if r.OK() {
+		t.Error("a malformed repository must fail the report")
 	}
 }
 
@@ -97,7 +150,7 @@ func TestValidate_BitbucketWebhookMissingEvent(t *testing.T) {
 
 	r := v.Validate(context.Background(), "acme/widgets")
 	c := findCheck(t, r, "webhook")
-	if c.Status != domain.StatusFail {
+	if c.Status != domain.StatusWarn {
 		t.Fatalf("webhook = %+v", c)
 	}
 	if !strings.Contains(c.Detail, "pullrequest:approved") {

@@ -26,9 +26,16 @@ func (r Report) OK() bool {
 	return true
 }
 
-// EntryResult bundles every report produced for a single mapping entry, so
-// callers can update the lock per-entry: an entry is "validated" only when
-// every report it produced is OK.
+// HasWarnings reports whether any check warned.
+func (r Report) HasWarnings() bool {
+	for _, c := range r.Checks {
+		if c.Status == StatusWarn {
+			return true
+		}
+	}
+	return false
+}
+
 type EntryResult struct {
 	Entry   routingdomain.Entry
 	Reports []Report
@@ -44,11 +51,20 @@ func (r EntryResult) OK() bool {
 	return true
 }
 
-// ChannelInfo is the subset of a Slack channel's metadata the validator needs
-// to confirm the bot can post: the channel's identity, whether the bot is a
-// member, and whether it is archived. It mirrors the platform Slack client's
-// own ChannelInfo; the validation infrastructure layer maps between the two so
-// the domain stays free of the Slack SDK.
+// HasWarnings reports whether any contributed report warned.
+func (r EntryResult) HasWarnings() bool {
+	for _, rep := range r.Reports {
+		if rep.HasWarnings() {
+			return true
+		}
+	}
+	return false
+}
+
+func (r EntryResult) Cacheable() bool {
+	return r.OK() && !r.HasWarnings()
+}
+
 type ChannelInfo struct {
 	ID         string
 	Name       string
