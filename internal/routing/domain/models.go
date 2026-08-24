@@ -50,6 +50,11 @@ type RepoConfig struct {
 	// declaration order (order is significant for tie-breaking). Only valid on
 	// a named repo tier — ValidateMappings rejects it on the "*" tier.
 	Paths []PathRule
+
+	// Channels is the tier's `channels:` fan-out list (unconditional multi-channel
+	// base). Mutually exclusive with Channel/Mentions — exactly one form is
+	// populated per tier, enforced at decode. Nil means the single Channel form.
+	Channels []ChannelSpec
 }
 
 // PathRule is one entry in a repo tier's `paths:` block: a normalized
@@ -58,6 +63,20 @@ type RepoConfig struct {
 // MentionsPresent distinguishes absent from an explicit empty list).
 type PathRule struct {
 	Dir             string
+	Channel         string
+	Mentions        []string
+	MentionsPresent bool
+	// Channels is the path rule's `channels:` fan-out list. Mutually exclusive
+	// with Channel/Mentions (enforced at decode); nil means the single Channel
+	// form. List entries default absent mentions to ChannelMention.
+	Channels []ChannelSpec
+}
+
+// ChannelSpec is one entry in a tier's or path rule's `channels:` list: a Slack
+// channel and the mentions to ping there. Mentions carry the same tri-state as a
+// single tier (MentionsPresent distinguishes an absent key — which defaults to
+// ChannelMention — from an explicit empty list that pings nobody).
+type ChannelSpec struct {
 	Channel         string
 	Mentions        []string
 	MentionsPresent bool

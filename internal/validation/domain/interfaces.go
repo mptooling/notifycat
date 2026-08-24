@@ -8,12 +8,12 @@ import (
 
 // MappingLookup reads a single repository → channel mapping. The runner
 // iterates entries explicitly, so no bulk-list method is needed here.
-// PathChannels returns the extra channels a repo's per-path routing can post
-// to, so the validator can confirm bot membership in each (empty for repos
-// without `paths:`).
+// AdditionalChannels returns channels beyond the primary base channel (extra
+// base-list channels plus per-path channels), so the validator confirms bot
+// membership for every one.
 type MappingLookup interface {
 	Get(ctx context.Context, repository string) (routingdomain.RepoMapping, error)
-	PathChannels(repository string) []string
+	AdditionalChannels(repository string) []string
 }
 
 // SlackChecker exposes the Slack endpoints the validator needs. ConversationsInfo

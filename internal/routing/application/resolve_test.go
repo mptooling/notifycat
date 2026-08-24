@@ -94,3 +94,47 @@ func TestResolveBehavior_AllGlobalWhenNoTiers(t *testing.T) {
 }
 
 func boolPtr(b bool) *bool { return &b }
+
+func TestResolveBaseTargets_SingleForm(t *testing.T) {
+	repo := &domain.RepoConfig{Channel: "C0WEB", Mentions: []string{"<@U0A>"}, MentionsPresent: true}
+	got := resolveBaseTargets(nil, repo)
+	if len(got) != 1 || got[0].Channel != "C0WEB" || got[0].Mentions[0] != "<@U0A>" {
+		t.Fatalf("single form wrong: %+v", got)
+	}
+}
+
+func TestResolveBaseTargets_ListForm(t *testing.T) {
+	repo := &domain.RepoConfig{Channels: []domain.ChannelSpec{
+		{Channel: "C0API1", Mentions: []string{"<@U0A>"}, MentionsPresent: true},
+		{Channel: "C0API2"}, // absent mentions → ChannelMention
+	}}
+	got := resolveBaseTargets(nil, repo)
+	if len(got) != 2 {
+		t.Fatalf("want 2 targets, got %d", len(got))
+	}
+	if got[0].Channel != "C0API1" || got[0].Mentions[0] != "<@U0A>" {
+		t.Fatalf("target 0 wrong: %+v", got[0])
+	}
+	if got[1].Channel != "C0API2" || len(got[1].Mentions) != 1 || got[1].Mentions[0] != domain.ChannelMention {
+		t.Fatalf("target 1 should default to @channel: %+v", got[1])
+	}
+}
+
+func TestResolveBaseTargets_RepoListReplacesStarSingle(t *testing.T) {
+	star := &domain.RepoConfig{Channel: "C0STAR"}
+	repo := &domain.RepoConfig{Channels: []domain.ChannelSpec{{Channel: "C0R1"}, {Channel: "C0R2"}}}
+	got := resolveBaseTargets(star, repo)
+	if len(got) != 2 || got[0].Channel != "C0R1" || got[1].Channel != "C0R2" {
+		t.Fatalf("repo list should wholly replace star single: %+v", got)
+	}
+}
+
+func TestResolveBaseTargets_ExplicitEmptyMentionsListForm(t *testing.T) {
+	repo := &domain.RepoConfig{Channels: []domain.ChannelSpec{
+		{Channel: "C0API2", Mentions: []string{}, MentionsPresent: true},
+	}}
+	got := resolveBaseTargets(nil, repo)
+	if len(got[0].Mentions) != 0 {
+		t.Fatalf("explicit [] should ping nobody: %+v", got[0])
+	}
+}

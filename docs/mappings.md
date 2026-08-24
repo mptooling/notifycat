@@ -21,6 +21,29 @@ mappings:
       mentions: [<string>, ...]
 ```
 
+A repository tier (and the `"*"` tier) may declare **multiple Slack channels** using the `channels:` list form instead of the single `channel:` key. Each entry in the list is a `{ channel, mentions }` object. The two forms are mutually exclusive — a tier may not set both `channel:` and `channels:`.
+
+```yaml
+mappings:
+  <org>:
+    <repo>:
+      channels:
+        - channel: <slack-channel-id>
+          mentions: [<string>, ...]   # per-entry tri-state; key absent → <!channel>
+        - channel: <slack-channel-id>
+          mentions: []                # empty → ping nobody in this channel
+```
+
+The `channels:` form may not appear alongside a tier-level `mentions:` key — each entry carries its own mentions. The list must be non-empty and must not contain duplicate channel IDs.
+
+Per-entry mention states for `channels:` entries:
+
+| Entry `mentions` value | Slack message prefix | Meaning |
+| --- | --- | --- |
+| key absent | `<!channel>` | Broadcast to this channel |
+| `mentions: []` | *(none)* | Post silently to this channel |
+| `mentions: [...]` | the handles, comma-joined | Ping exactly those in this channel |
+
 <a id="bitbucket-workspace-and-repository-slug"></a>
 
 Under `git_provider: bitbucket` the org key is the Bitbucket **workspace slug** and the repository key is the **repository slug** — the lowercase hyphenated URL identifier, not the display name. Both appear in any repository URL: `bitbucket.org/<workspace>/<repo_slug>`. The schema is identical across providers; only the key semantics differ.
@@ -31,8 +54,9 @@ Under `git_provider: bitbucket` the org key is the Bitbucket **workspace slug** 
 | --- | --- |
 | `mappings` | Map keyed by org / workspace slug. Keys match `^[A-Za-z0-9_.-]+$`. |
 | `<org>.<repo>` | Repository names / slugs matching `^[A-Za-z0-9_.-]+$`, or the literal `"*"`. |
-| `channel` | Slack channel ID matching `^[CGD][A-Z0-9]{2,}$` — the ID, never `#display-name`. Omitted on a repository tier → inherited from `"*"`. Every resolvable org/repository pair must yield a channel. |
-| `mentions` | Optional tri-state (below). `null` is rejected. Omitted on a repository tier → inherited from `"*"`. |
+| `channel` | Slack channel ID matching `^[CGD][A-Z0-9]{2,}$` — the ID, never `#display-name`. Omitted on a repository tier → inherited from `"*"`. Every resolvable org/repository pair must yield a channel. Mutually exclusive with `channels:` on the same tier. |
+| `channels` | List form: declares multiple channels, each as `{ channel, mentions }`. Mutually exclusive with `channel:` and with a tier-level `mentions:` key. Must be non-empty; duplicate channel IDs within the list are rejected. Every channel ID must match `^[CGD][A-Z0-9]{2,}$`. |
+| `mentions` | Optional tri-state (below). `null` is rejected. Omitted on a repository tier → inherited from `"*"`. Not allowed alongside a `channels:` list (each list entry carries its own `mentions`). |
 | `"*"` tier | Optional. Supplies channel/mentions defaults for repository tiers, and catches any webhook for an unlisted repository in the org. An org may be defined by `"*"` alone. |
 | Duplicate repository within an org | Rejected at parse time. |
 | Unknown keys anywhere | Rejected at parse time — typos surface immediately. |
@@ -74,12 +98,13 @@ Inheritance, most-specific wins: repository tier → org `"*"` tier → global s
 
 ## Per-path routing (monorepos)
 
-A **named** repository tier may add a `paths:` block; how PRs select channels at runtime is covered in [Monorepos](monorepo.md). A path entry accepts exactly two optional keys:
+A **named** repository tier may add a `paths:` block; how PRs select channels at runtime is covered in [Monorepos](monorepo.md). A path entry accepts the following optional keys:
 
 | Key | Rule |
 | --- | --- |
-| `channel` | Optional. Omitted → inherits the repository tier's channel. If set, matches `^[CGD][A-Z0-9]{2,}$`. |
-| `mentions` | Optional. Same tri-state as a repository tier; `null` rejected. |
+| `channel` | Optional. Omitted → inherits the repository tier's primary channel. If set, matches `^[CGD][A-Z0-9]{2,}$`. Mutually exclusive with `channels:` on the same path entry. |
+| `channels` | Optional. List form: `{ channel, mentions }` entries, same schema and rules as at the tier level. Mutually exclusive with `channel:` and `mentions:` on the same path entry. When a matched path rule declares `channels:`, those channels **replace the repository's base channel set** for that PR (replace-on-match). |
+| `mentions` | Optional. Same tri-state as a repository tier; `null` rejected. Not allowed alongside `channels:`. |
 
 Parse-time validation — the server fails fast on any violation:
 

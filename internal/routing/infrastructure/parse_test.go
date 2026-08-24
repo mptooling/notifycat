@@ -68,3 +68,21 @@ func TestParse_EmptyOrgRejected(t *testing.T) {
 		t.Fatal("expected error for org with no tiers")
 	}
 }
+
+func TestParse_ListChannelInvalidID(t *testing.T) {
+	if _, err := infrastructure.Parse(strings.NewReader("mappings:\n  acme:\n    api:\n      channels:\n        - channel: not-a-channel\n")); err == nil {
+		t.Fatal("want error: invalid channel id in channels list")
+	}
+}
+
+func TestParse_ListSatisfiesChannelRequirement(t *testing.T) {
+	if _, err := infrastructure.Parse(strings.NewReader("mappings:\n  acme:\n    api:\n      channels:\n        - channel: C0API1\n")); err != nil {
+		t.Fatalf("a channels: list should satisfy the channel requirement: %v", err)
+	}
+}
+
+func TestParse_PathListChannelInvalidID(t *testing.T) {
+	if _, err := infrastructure.Parse(strings.NewReader("mappings:\n  acme:\n    monorepo:\n      channel: C0BASE\n      paths:\n        services/pay:\n          channels:\n            - channel: bad\n")); err == nil {
+		t.Fatal("want error: invalid path channel id in channels list")
+	}
+}

@@ -16,6 +16,7 @@ type stubMappings struct {
 	base         domain.RepoMapping
 	baseErr      error
 	targets      []domain.Target
+	baseTargets  []domain.Target
 	hasPathRules bool
 }
 
@@ -31,6 +32,8 @@ func (s *stubMappings) Get(_ context.Context, repository string) (domain.RepoMap
 func (s *stubMappings) RepoHasPathRules(string) bool { return s.hasPathRules }
 
 func (s *stubMappings) TargetsForFiles(string, []string) []domain.Target { return s.targets }
+
+func (s *stubMappings) BaseTargets(string) []domain.Target { return s.baseTargets }
 
 type stubFiles struct {
 	files []string
@@ -51,7 +54,11 @@ func discardLogger() *slog.Logger {
 }
 
 func TestRouter_NoFetcherReturnsBaseTarget(t *testing.T) {
-	m := &stubMappings{base: domain.RepoMapping{SlackChannel: "C0BASE", Mentions: []string{"<!here>"}}, hasPathRules: true}
+	m := &stubMappings{
+		base:         domain.RepoMapping{SlackChannel: "C0OLDUNUSED", Mentions: []string{"<!here>"}},
+		baseTargets:  []domain.Target{{Channel: "C0BASE", Mentions: []string{"<!here>"}}},
+		hasPathRules: true,
+	}
 	r := application.NewRouter(m, nil, discardLogger())
 	_, targets, err := r.ResolveTargets(context.Background(), "acme/mono", 7)
 	if err != nil {
@@ -80,7 +87,12 @@ func TestRouter_FanOutTargets(t *testing.T) {
 }
 
 func TestRouter_FetchErrorFallsBackToBase(t *testing.T) {
-	m := &stubMappings{base: domain.RepoMapping{SlackChannel: "C0BASE"}, hasPathRules: true, targets: []domain.Target{{Channel: "C0A"}}}
+	m := &stubMappings{
+		base:         domain.RepoMapping{SlackChannel: "C0BASE"},
+		baseTargets:  []domain.Target{{Channel: "C0BASE"}},
+		hasPathRules: true,
+		targets:      []domain.Target{{Channel: "C0A"}},
+	}
 	files := &stubFiles{err: errors.New("github down")}
 	r := application.NewRouter(m, files, discardLogger())
 	_, targets, err := r.ResolveTargets(context.Background(), "acme/mono", 7)
@@ -89,5 +101,21 @@ func TestRouter_FetchErrorFallsBackToBase(t *testing.T) {
 	}
 	if len(targets) != 1 || targets[0].Channel != "C0BASE" {
 		t.Fatalf("fetch error should fall back to base; got %+v", targets)
+	}
+}
+
+func TestResolveTargets_NoPathRulesReturnsFullBaseSet(t *testing.T) {
+	stub := &stubMappings{
+		base:         domain.RepoMapping{SlackChannel: "C0B1"},
+		baseTargets:  []domain.Target{{Channel: "C0B1"}, {Channel: "C0B2"}},
+		hasPathRules: false,
+	}
+	router := application.NewRouter(stub, nil, discardLogger())
+	_, targets, err := router.ResolveTargets(context.Background(), "acme/api", 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(targets) != 2 || targets[0].Channel != "C0B1" || targets[1].Channel != "C0B2" {
+		t.Fatalf("router should return full base set when no path rules: %+v", targets)
 	}
 }
