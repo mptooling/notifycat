@@ -9,7 +9,7 @@
 // composition root it is exempt from the inward-only layering rule and may
 // import config, persistence, slack, github, and every domain's application and
 // infrastructure packages.
-package runtime //nolint:revive // the composition-root package is deliberately named "runtime" (referenced as runtime.Module); it is never imported alongside the stdlib runtime package
+package runtime
 
 import (
 	"context"
@@ -390,8 +390,11 @@ func registerSchedulers(lc fx.Lifecycle, runCtx *runContext, cleaner *maintenanc
 
 // startupValidate runs the cache-aware validation pipeline before the
 // server begins serving. It validates only entries whose hash differs
-// from the lock, writes the lock on success (failures keep their old
-// hashes), and refuses to start if any entry fails.
+// from the lock, writes the lock on success (failures and warnings keep
+// their old hashes), and refuses to start only if an entry fails. Warnings
+// are logged and tolerated: they report external state — a missing webhook,
+// a hook listing the token may not read — that limits one entry while
+// notifycat itself stays operational.
 func startupValidate(
 	provider *routingapp.Provider,
 	cfg config.Config,
@@ -416,9 +419,14 @@ func startupValidate(
 
 	checker, lister := newValidationDeps(provider, cfg, slackClient, httpClient)
 	results := validationapp.RunForEntries(context.Background(), diff.Needs, lister, checker)
-	successes, failed := splitResults(results, time.Now)
+	successes, warned, failed := splitResults(results, time.Now)
 	_ = persistLock(lockPath, lock, successes, diff.Stale, logger)
+	logWarnings(results, logger)
 	if len(failed) == 0 {
+		if len(warned) > 0 {
+			logger.Warn("startup validation completed with warnings",
+				slog.String("entries", strings.Join(warned, ", ")))
+		}
 		return nil
 	}
 	logFailures(results, logger)
@@ -455,17 +463,23 @@ func providerValidationDeps(httpClient *http.Client, cfg config.Config) (validat
 	}
 }
 
-func splitResults(results []validationdomain.EntryResult, clock func() time.Time) (map[string]routinginfra.LockEntry, []string) {
+// splitResults buckets each entry: cacheable entries become lock records,
+// warned entries are dropped from the lock so the next boot re-probes them, and
+// failed entries are named in the startup error.
+func splitResults(results []validationdomain.EntryResult, clock func() time.Time) (map[string]routinginfra.LockEntry, []string, []string) {
 	successes := map[string]routinginfra.LockEntry{}
-	var failed []string
+	var warned, failed []string
 	for _, r := range results {
-		if r.OK() {
+		switch {
+		case !r.OK():
+			failed = append(failed, r.Entry.Key())
+		case r.HasWarnings():
+			warned = append(warned, r.Entry.Key())
+		default:
 			successes[r.Entry.Key()] = routinginfra.LockEntry{SHA256: r.Entry.Hash(), ValidatedAt: clock()}
-			continue
 		}
-		failed = append(failed, r.Entry.Key())
 	}
-	return successes, failed
+	return successes, warned, failed
 }
 
 func persistLock(lockPath string, lock routinginfra.Lock, ok map[string]routinginfra.LockEntry, stale []string, logger *slog.Logger) error {
@@ -475,6 +489,23 @@ func persistLock(lockPath string, lock routinginfra.Lock, ok map[string]routingi
 		return nil
 	}
 	return nil
+}
+
+func logWarnings(results []validationdomain.EntryResult, logger *slog.Logger) {
+	for _, r := range results {
+		for _, rep := range r.Reports {
+			for _, c := range rep.Checks {
+				if c.Status != validationdomain.StatusWarn {
+					continue
+				}
+				logger.Warn("startup validate warning",
+					slog.String("entry", r.Entry.Key()),
+					slog.String("repository", rep.Repository),
+					slog.String("check", c.Name),
+					slog.String("detail", c.Detail))
+			}
+		}
+	}
 }
 
 func logFailures(results []validationdomain.EntryResult, logger *slog.Logger) {

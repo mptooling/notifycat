@@ -12,7 +12,7 @@ notifycat-doctor
 notifycat-doctor owner/repo
 ```
 
-Exit code is `0` when every check passes (`SKIP` does not count as a failure) and `1` otherwise.
+Exit code is `0` when every check passes (neither `SKIP` nor `WARN` counts as a failure) and `1` otherwise.
 
 ## What it checks
 
@@ -27,7 +27,7 @@ Exit code is `0` when every check passes (`SKIP` does not count as a failure) an
 | `mappings` | `file` | Loads the YAML via the same parser the server uses. Surfaces schema errors and missing files. |
 | `mappings` | `entries` | Number of parsed entries (`0` is allowed — the server boots and routes nothing). |
 | `mappings` | `path routing` | Only when some tier uses [per-path routing](monorepo.md). `OK` when the read token (`GITHUB_TOKEN` / `BITBUCKET_TOKEN`) is set (path rules active); `SKIP` when it is unset (rules inert — PRs route to the repository tier). |
-| `owner/repo` | `mapping` / `channel-format` / `slack-auth` / `slack-channel` / `webhook` | Only when a positional argument is given. Delegates to `internal/validation` — same checks `notifycat-config validate owner/repo` runs. A per-path channel adds its own `slack-channel <id>` membership check. |
+| `owner/repo` | `mapping` / `channel-format` / `slack-auth` / `slack-channel` / `webhook` | Only when a positional argument is given. Delegates to `internal/validation` — same checks `notifycat-config validate owner/repo` runs. A per-path channel adds its own `slack-channel <id>` membership check. `webhook` is advisory: it reports `WARN`, not `FAIL`. |
 
 ## Output format
 
@@ -50,7 +50,7 @@ Exit code is `0` when every check passes (`SKIP` does not count as a failure) an
   OK    webhook
 ```
 
-`FAIL` lines include a remediation hint in the `— detail` suffix.
+`FAIL` and `WARN` lines include a remediation hint in the `— detail` suffix. A `WARN` means functionality is limited for that repository (its PR events won't arrive, or webhook coverage couldn't be confirmed) while the server itself is healthy — it does not affect the exit code.
 
 ## Production-safe usage
 

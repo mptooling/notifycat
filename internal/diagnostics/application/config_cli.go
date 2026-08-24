@@ -63,11 +63,15 @@ func (v *MappingsValidator) runTargeted(ctx context.Context, target string, stdo
 	if code := renderReports([]validationdomain.Report{report}, stdout); code != 0 {
 		return code
 	}
+	if report.HasWarnings() {
+		return 0
+	}
 	return v.lockExplicitEntry(target, stderr)
 }
 
 // lockExplicitEntry updates the lock for target only when an explicit entry
-// exists. Wildcard-resolved hits don't get a per-repo lock entry because the
+// exists and the run produced no warning — a warned entry stays uncached so it
+// is re-probed on the next boot. Wildcard-resolved hits don't get a per-repo lock entry because the
 // wildcard org's lock atomicity would be violated.
 func (v *MappingsValidator) lockExplicitEntry(target string, stderr io.Writer) int {
 	entry, ok := v.findExplicitEntry(target)

@@ -68,6 +68,8 @@ Create a repository access token or a workspace access token in Bitbucket with t
 | `pullrequest` | Read PR details and file lists. |
 | `webhook` | Read webhook configuration (for `notifycat-config validate`). |
 
+Listing a repository's hooks is privileged beyond the scope: Bitbucket also requires the token's **identity** to have write or admin access on that repository. A read-only identity gets `403 Access denied. You must have write or admin access.` — the `webhook` check then reports `WARN` rather than failing, with the `403` carried in its detail, so neither `validate` nor startup is blocked by it. Either grant the identity write access on the repository or accept the warning; every other check still runs.
+
 Set the token value in `.env`:
 
 ```sh
@@ -95,6 +97,8 @@ BITBUCKET_AUTH_EMAIL=you@example.com
 
 When `BITBUCKET_AUTH_EMAIL` is set, the client sends HTTP Basic `email:token` instead of Bearer.
 
+> **Getting `403` on the hooks listing?** That is a permission problem on the repository, not the scheme — see the identity note above. It surfaces as a `WARN`, and the server boots.
+>
 > **Getting `401` on validation or reconcile?** A `401` (as opposed to `403`) means the auth *scheme* doesn't match the token *type* — not a scope problem. The two token types use different schemes, and mixing them is the most common cause:
 >
 > | Token type | Auth scheme | `BITBUCKET_AUTH_EMAIL` |

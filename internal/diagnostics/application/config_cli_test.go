@@ -81,6 +81,16 @@ func failingReport(repository string) validationdomain.Report {
 	}
 }
 
+func warningReport(repository string) validationdomain.Report {
+	return validationdomain.Report{
+		Repository: repository,
+		Checks: []validationdomain.CheckResult{
+			{Name: "x", Status: validationdomain.StatusOK, Detail: "ok"},
+			{Name: "webhook", Status: validationdomain.StatusWarn, Detail: "no active webhook on " + repository},
+		},
+	}
+}
+
 func explicitEntries() []routingdomain.Entry {
 	return []routingdomain.Entry{
 		{Org: "acme", Repo: "api", Channel: "C0123ABCDE", Mentions: []string{"@a"}},
@@ -138,6 +148,29 @@ func TestMappingsValidator_Targeted_Failure_DoesNotCommit(t *testing.T) {
 	}
 }
 
+// TestMappingsValidator_Targeted_Warning_DoesNotCommit: a warning is not a
+// failure (exit 0), but it must not be cached either — otherwise the next boot
+// skips the re-probe and the warning silently disappears.
+func TestMappingsValidator_Targeted_Warning_DoesNotCommit(t *testing.T) {
+	gateway := &fakeLockGateway{}
+	checker := &stubChecker{fn: func(_ context.Context, r string) validationdomain.Report { return warningReport(r) }}
+	source := &stubEntrySource{entries: explicitEntries()}
+	validator := application.NewMappingsValidator(source, checker, nil, gateway)
+	var out, errOut bytes.Buffer
+
+	code := validator.Validate(context.Background(), "acme/api", false, &out, &errOut)
+
+	if code != 0 {
+		t.Fatalf("exit = %d; want 0; stderr=%s", code, errOut.String())
+	}
+	if !strings.Contains(out.String(), "WARN") {
+		t.Errorf("output should carry a WARN row: %q", out.String())
+	}
+	if len(gateway.commitTargetedCalls) != 0 {
+		t.Errorf("CommitTargeted must not be called for a warned entry; got %v", gateway.commitTargetedCalls)
+	}
+}
+
 func TestMappingsValidator_Targeted_WildcardOrg_SkipsLockUpdate(t *testing.T) {
 	gateway := &fakeLockGateway{}
 	checker := &stubChecker{}
@@ -152,6 +185,34 @@ func TestMappingsValidator_Targeted_WildcardOrg_SkipsLockUpdate(t *testing.T) {
 	}
 	if len(gateway.commitTargetedCalls) != 0 {
 		t.Errorf("wildcard-resolved targeted run must not call CommitTargeted; got %v", gateway.commitTargetedCalls)
+	}
+}
+
+// TestMappingsValidator_Full_WarningOnly_ExitsZero proves warnings never change
+// the exit code; the lock gateway decides on its own what may be cached.
+func TestMappingsValidator_Full_WarningOnly_ExitsZero(t *testing.T) {
+	entries := explicitEntries()
+	gateway := &fakeLockGateway{planResult: diagnosticsdomain.LockPlan{ToValidate: entries}}
+	checker := &stubChecker{fn: func(_ context.Context, r string) validationdomain.Report { return warningReport(r) }}
+	source := &stubEntrySource{entries: entries}
+	validator := application.NewMappingsValidator(source, checker, nil, gateway)
+	var out, errOut bytes.Buffer
+
+	code := validator.Validate(context.Background(), "", false, &out, &errOut)
+
+	if code != 0 {
+		t.Fatalf("exit = %d; want 0; stderr=%s", code, errOut.String())
+	}
+	if !strings.Contains(out.String(), "WARN") {
+		t.Errorf("output should carry WARN rows: %q", out.String())
+	}
+	if gateway.commitCalls != 1 {
+		t.Errorf("Commit calls = %d; want 1", gateway.commitCalls)
+	}
+	for _, result := range gateway.lastCommitSuccesses {
+		if result.Cacheable() {
+			t.Errorf("%s warned; it must not be cacheable", result.Entry.Key())
+		}
 	}
 }
 

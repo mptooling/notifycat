@@ -23,6 +23,15 @@ func failResult(name, format string, args ...any) domain.CheckResult {
 	}
 }
 
+// warnResult wraps a Sprintf-formatted warning in a CheckResult.
+func warnResult(name, format string, args ...any) domain.CheckResult {
+	return domain.CheckResult{
+		Name:   name,
+		Status: domain.StatusWarn,
+		Detail: fmt.Sprintf(format, args...),
+	}
+}
+
 // missingScopes returns required entries absent from have, preserving the
 // required-list order so error messages are deterministic.
 func missingScopes(have, required []string) []string {
