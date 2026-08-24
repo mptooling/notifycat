@@ -61,6 +61,9 @@ func (g *LockGateway) CommitTargeted(entry routingdomain.Entry) error {
 	return routinginfra.WriteLock(g.lockPath, merged)
 }
 
+// successMap builds the map of key → LockEntry for results that may be cached.
+// Warned entries are excluded, so the CLI and the server agree on re-probing
+// them.
 func successMap(results []validationdomain.EntryResult, clock func() time.Time) map[string]routinginfra.LockEntry {
 	out := map[string]routinginfra.LockEntry{}
 	for _, result := range results {
@@ -74,6 +77,9 @@ func successMap(results []validationdomain.EntryResult, clock func() time.Time) 
 	return out
 }
 
+// WriteLockWarning formats the warning message emitted when Plan returns a
+// non-nil error (malformed lock). It writes to stderr and returns the formatted
+// string so callers do not need to know the exact phrasing.
 func WriteLockWarning(stderr io.Writer, err error) {
 	fmt.Fprintln(stderr, "validate: warning:", err, "(rebuilding lock)")
 }

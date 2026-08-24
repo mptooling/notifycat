@@ -1,4 +1,4 @@
-package runtime
+package runtime //nolint:revive // internal test for the composition root's unexported splitResults/logWarnings; the package name mirrors module.go
 
 import (
 	"bytes"
