@@ -103,7 +103,7 @@ The creation script only handles repository webhooks; create an organization web
 Deliveries from an organization webhook are identical in payload shape and signature to repository-webhook deliveries — the server needs no extra configuration.
 
 !!! warning "Preflight caveat"
-    `notifycat-config validate` and `notifycat-doctor` verify webhook coverage by listing each **repository's own** hooks, and an organization webhook doesn't appear there. With `GITHUB_TOKEN` set, the `webhook` check reports `FAIL` ("no active webhook … points at notifycat") for repositories covered only by the organization webhook — delivery still works; the check is a false negative in this topology. Until the check learns about org hooks, treat that `FAIL` as expected in an org-webhook setup (or leave `GITHUB_TOKEN` unset so the check is skipped).
+    `notifycat-config validate` and `notifycat-doctor` verify webhook coverage by listing each **repository's own** hooks, and an organization webhook doesn't appear there. With `GITHUB_TOKEN` set, the `webhook` check reports `WARN` ("no active webhook … points at notifycat") for repositories covered only by the organization webhook — delivery still works; the check is a false negative in this topology. The warning is advisory: it never fails `validate`/`doctor` and never blocks startup, though it is re-logged on every boot. Treat it as expected in an org-webhook setup (or leave `GITHUB_TOKEN` unset so the check is skipped).
 
 ## Security notes
 

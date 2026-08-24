@@ -9,6 +9,7 @@ Start from the symptom. Each row links to a runbook on this page or to the page 
 | Delivery returns **200** but Slack didn't change | [200 OK, no Slack change](#200-ok-no-slack-change) |
 | A review happened but **no reaction** appeared | [No reaction on a review](#no-reaction-on-a-review) |
 | Server **exits immediately** on startup | [Server exits at startup](#server-exits-at-startup) |
+| Server **boots** but logs `startup validate warning` | [Startup validate warnings](#startup-validate-warnings) |
 | HTTPS / **certificate** not issued | [Certificate failures](#certificate-failures) |
 | **Database** errors, or the DB "disappeared" after an upgrade | [Database issues](#database-issues) |
 | `validate` / `reconcile` gets **401 from the Bitbucket API** | [Bitbucket API 401](#bitbucket-api-401) |
@@ -27,7 +28,7 @@ Neither applies? Open the webhook's **delivery history** on the git host (GitHub
 
 | Delivery history shows | Meaning | Runbook |
 | --- | --- | --- |
-| No delivery at all | The git host never sent it — no webhook covers this repository, or the PR events aren't subscribed. | Register or fix the webhook: [GitHub](github-webhook.md) · [Bitbucket](bitbucket-webhook.md) |
+| No delivery at all | The git host never sent it — no webhook covers this repository, or the PR events aren't subscribed. Boot logs `startup validate warning` for exactly this case when a read token is set. | Register or fix the webhook: [GitHub](github-webhook.md) · [Bitbucket](bitbucket-webhook.md) |
 | Delivery failed — timeout or connection error | The request never reached the server: DNS, ingress, or TLS. | `curl -i https://your-domain/healthz`, then [Certificate failures](#certificate-failures) |
 | `401` | The signature check failed. | [Webhook returns 401](#webhook-returns-401) |
 | `200`, but still no message | The server received it and deliberately ignored it — usually `no_mapping`. | [200 OK, no Slack change](#200-ok-no-slack-change) |
@@ -80,11 +81,31 @@ Notifycat fails fast on configuration it can't trust. `docker compose logs notif
 
 | Log says | Cause | Fix |
 | --- | --- | --- |
-| `startup validation failed for N entries` | A mapping failed its Slack or git-host checks at boot. | Run `notifycat-config validate` for per-entry detail; fix the entries in `config.yaml`. The remediation table is under [CLI → validate](cli.md#notifycat-config). |
+| `startup validation failed for N entries` | A mapping failed its `mapping`, `channel-format`, `slack-auth`, or `slack-channel` check at boot. Webhook problems never appear here — they warn instead (see [Startup validate warnings](#startup-validate-warnings)). | Run `notifycat-config validate` for per-entry detail; fix the entries in `config.yaml`. The remediation table is under [CLI → validate](cli.md#notifycat-config). |
 | `these env vars are no longer read` | Pre-0.17 environment variables still set. | Remove them; their values now live in `config.yaml`. See the [0.17 migration](0.17-config-migration.md). |
 | `required key git_provider is missing` / `git_provider … is invalid` | Config predates the provider switch. | Add `git_provider: github` (or `bitbucket`) — one line, see [Upgrading](upgrading.md#git_provider-is-now-required). |
 | an error naming `digest.schedule` or `digest.timezone` | Invalid cron expression or unrecognized IANA zone. | Fix the value — [digest config](digest.md#schedule-and-timezone). |
 | `SLACK_BOT_TOKEN` / webhook-secret missing | A required secret is unset for the selected `git_provider`. | Set it in `.env` — [secrets reference](configuration.md#secrets-environment-variables-only). |
+
+## Startup validate warnings
+
+The server is up and healthy, but the log carries lines like:
+
+```
+level=WARN msg="startup validate warning" entry=acme/api check=webhook detail="no active webhook on acme/api points at notifycat; create one so PR events reach it"
+level=WARN msg="startup validation completed with warnings" entries=acme/api
+```
+
+A warning means functionality is limited **for that entry only** — every other repository keeps posting normally. The webhook coverage check and wildcard org expansion probe state that lives on the git host, so they never abort startup.
+
+| `detail` says | Meaning | Fix |
+| --- | --- | --- |
+| `no active webhook on … points at notifycat` | No hook on that repository targets `/webhook/<provider>`, so its PR events never arrive. On GitHub, an organization-level webhook also looks like this — delivery works anyway ([caveat](github-webhook.md)). | Create the webhook: [GitHub](github-webhook.md) · [Bitbucket](bitbucket-webhook.md) |
+| `webhook on … is missing event(s) …` | The hook exists but doesn't subscribe to every event the dispatcher consumes, so some transitions are silent. | Edit the webhook and add the named events. |
+| `listing … hooks failed: … 403 …` | Coverage is unconfirmed: the read token's identity may read the repository but not list its hooks. Delivery is unaffected. | Grant the identity write/admin on the repository ([Bitbucket](bitbucket-webhook.md#access-token--scopes)), or accept the warning. |
+| `list repos in <org>: …` | A `"*"` tier could not be expanded, so **none** of that org's repositories were validated this boot. Routing still works from `config.yaml`. | Grant the read token access to the org's repositories, or retry if it was a rate limit. |
+
+Warned entries are excluded from `config.lock` on purpose, so the same warning reappears on every boot until it turns `OK` — an unfixed warning is never silently cached away.
 
 ## Certificate failures
 

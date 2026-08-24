@@ -70,6 +70,28 @@ func TestWriteReport_SkipDoesNotFailOverall(t *testing.T) {
 	}
 }
 
+// TestWriteReport_WarnDoesNotFailOverall pins the doctor's exit code: an
+// advisory webhook problem prints WARN with its hint and still exits 0.
+func TestWriteReport_WarnDoesNotFailOverall(t *testing.T) {
+	sections := []diagnosticsdomain.Section{
+		{Name: "acme/widgets", Checks: []validationdomain.CheckResult{
+			{Name: "webhook", Status: validationdomain.StatusWarn, Detail: "no active webhook on acme/widgets points at notifycat"},
+		}},
+	}
+	var buf bytes.Buffer
+	ok := infrastructure.WriteReport(&buf, sections)
+	if !ok {
+		t.Fatalf("WriteReport returned false for a WARN-only section")
+	}
+	out := buf.String()
+	if !strings.Contains(out, "WARN") {
+		t.Errorf("output missing WARN status: %q", out)
+	}
+	if !strings.Contains(out, "no active webhook on acme/widgets points at notifycat") {
+		t.Errorf("output missing WARN detail: %q", out)
+	}
+}
+
 func TestWriteReport_EmptySections(t *testing.T) {
 	var buf bytes.Buffer
 	if !infrastructure.WriteReport(&buf, nil) {

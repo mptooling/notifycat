@@ -47,6 +47,15 @@ func failingResult(entry routingdomain.Entry) validationdomain.EntryResult {
 	}
 }
 
+func warningResult(entry routingdomain.Entry) validationdomain.EntryResult {
+	return validationdomain.EntryResult{
+		Entry: entry,
+		Reports: []validationdomain.Report{
+			{Repository: entry.Key(), Checks: []validationdomain.CheckResult{{Name: "webhook", Status: validationdomain.StatusWarn, Detail: "no active webhook"}}},
+		},
+	}
+}
+
 // TestLockGateway_Plan_NoLock_ReturnsAllEntries verifies that Plan with a
 // missing lock file returns every entry for validation.
 func TestLockGateway_Plan_NoLock_ReturnsAllEntries(t *testing.T) {
@@ -173,6 +182,34 @@ func TestLockGateway_Commit_PartialFailure_OnlySuccessesEnterLock(t *testing.T) 
 	}
 	if _, ok := lock.Entries["acme/api"]; ok {
 		t.Errorf("acme/api failed; should not be in lock: %+v", lock.Entries)
+	}
+	if _, ok := lock.Entries["acme/web"]; !ok {
+		t.Errorf("acme/web passed; should be in lock: %+v", lock.Entries)
+	}
+}
+
+// TestLockGateway_Commit_WarnedEntryStaysOutOfLock keeps the CLI and the server
+// in agreement: a warned entry is never cached, so both re-probe it and
+// re-surface the warning until the operator fixes it.
+func TestLockGateway_Commit_WarnedEntryStaysOutOfLock(t *testing.T) {
+	lockPath := tempLockPath(t)
+	gateway := NewLockGateway(lockPath, fixedClock())
+	entries := explicitEntries()
+	results := []validationdomain.EntryResult{
+		warningResult(entries[0]), // acme/api warns
+		passingResult(entries[1]), // acme/web passes
+	}
+
+	if err := gateway.Commit(results, nil); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	lock, err := routinginfra.ReadLock(lockPath)
+	if err != nil {
+		t.Fatalf("read lock: %v", err)
+	}
+	if _, ok := lock.Entries["acme/api"]; ok {
+		t.Errorf("acme/api warned; should not be in lock: %+v", lock.Entries)
 	}
 	if _, ok := lock.Entries["acme/web"]; !ok {
 		t.Errorf("acme/web passed; should be in lock: %+v", lock.Entries)

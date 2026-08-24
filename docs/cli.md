@@ -28,18 +28,18 @@ notifycat-config validate owner/repo     # validate one entry, ignoring its cach
 notifycat-config validate --force        # revalidate everything, ignore the lock
 ```
 
-`list` prints a tab-aligned table of every parsed entry — the quick sanity check after an edit. `validate` runs the real checks, one line per check in greppable `OK`/`FAIL`/`SKIP` form:
+`list` prints a tab-aligned table of every parsed entry — the quick sanity check after an edit. `validate` runs the real checks, one line per check in greppable `OK`/`WARN`/`FAIL`/`SKIP` form. Only `FAIL` sets exit code `1`; `WARN` reports an actionable problem in external state and still exits `0`:
 
-| Check | Verifies | On `FAIL` |
+| Check | Verifies | Remediation |
 | --- | --- | --- |
 | `mapping` | An entry covers `owner/repo` (explicit tier or `"*"`). | Add a tier — see [routing](routing.md). |
 | `channel-format` | The channel ID matches `[CGD][A-Z0-9]{2,}`. | Use the Slack channel ID, not the display name. |
 | `slack-auth` | `auth.test` passes and the token carries `chat:write` + `reactions:write`. | Rotate `SLACK_BOT_TOKEN` or reinstall the app with the right [scopes](slack-app.md#bot-scopes). |
 | `slack-channel` | The channel exists, isn't archived, and the bot is a member. | `/invite @notifycat`; fix the ID; unarchive. |
-| `webhook` | With a read token set: an active webhook targets `/webhook/<provider>` and subscribes to the PR events Notifycat needs. Skipped without a token. | Create it — [GitHub](github-webhook.md) / [Bitbucket](bitbucket-webhook.md) — or add the missing events. |
-| `org-repos` | For an org with a `"*"` tier and a read token set: lists the org's repositories and validates each one. Skipped without a token. | Usually a token-scope problem — grant the token read access to the org's repositories. |
+| `webhook` | With a read token set: an active webhook targets `/webhook/<provider>` and subscribes to the PR events Notifycat needs. Skipped without a token. | `WARN`, never `FAIL`: create it — [GitHub](github-webhook.md) / [Bitbucket](bitbucket-webhook.md) — or add the missing events. A `403` on the hooks listing means the token's identity lacks write/admin on the repository. |
+| `org-repos` | For an org with a `"*"` tier and a read token set: lists the org's repositories and validates each one. Skipped without a token. | `WARN`, never `FAIL`: usually a token-scope problem — grant the token read access to the org's repositories. |
 
-Successful results are hashed into the sibling `config.lock`, so steady-state boots and re-runs only revalidate what changed. Commit the lock next to `config.yaml` in the repository that owns your deployment; the [operator workflow](routing.md#validate-and-deploy-a-change) is edit → validate → commit both → deploy. The server runs this same validation at boot and refuses to start on failure.
+Successful results are hashed into the sibling `config.lock`, so steady-state boots and re-runs only revalidate what changed. Entries that warned are left out of the lock — including on `validate owner/repo` — so they are re-probed until they pass. Commit the lock next to `config.yaml` in the repository that owns your deployment; the [operator workflow](routing.md#validate-and-deploy-a-change) is edit → validate → commit both → deploy. The server runs this same validation at boot and refuses to start on a `FAIL`; a `WARN` is logged and tolerated ([operations](operations.md#startup-and-shutdown)).
 
 ## notifycat-doctor
 

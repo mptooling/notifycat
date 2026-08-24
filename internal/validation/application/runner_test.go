@@ -84,7 +84,10 @@ func TestRunForEntries_WildcardWithoutLister_SkipsButReports(t *testing.T) {
 	}
 }
 
-func TestRunForEntries_ListerError_BecomesFailingEntryAndContinues(t *testing.T) {
+// TestRunForEntries_ListerError_WarnsAndContinues: failing to list an org's
+// repositories is external state (token scope, rate limit), so it warns rather
+// than failing the entry — but the entry stays out of the lock via Cacheable.
+func TestRunForEntries_ListerError_WarnsAndContinues(t *testing.T) {
 	entries := []routingdomain.Entry{
 		{Org: "beta", Wildcard: true, Channel: "C2", Mentions: []string{}},
 		{Org: "acme", Repo: "api", Channel: "C1", Mentions: []string{}},
@@ -95,8 +98,11 @@ func TestRunForEntries_ListerError_BecomesFailingEntryAndContinues(t *testing.T)
 	if len(results) != 2 {
 		t.Fatalf("results = %d; want 2", len(results))
 	}
-	if results[0].OK() || results[0].Reports[0].Repository != "beta/*" {
-		t.Errorf("first result should be failing beta/*; got %+v", results[0])
+	if !results[0].OK() || !results[0].HasWarnings() || results[0].Cacheable() {
+		t.Errorf("first result should be a warned, uncacheable beta/*; got %+v", results[0])
+	}
+	if c := results[0].Reports[0].Checks[0]; c.Name != "org-repos" || c.Status != domain.StatusWarn {
+		t.Errorf("org-repos check = %+v; want WARN", c)
 	}
 	if !results[1].OK() || results[1].Reports[0].Repository != "acme/api" {
 		t.Errorf("second result should be OK acme/api; got %+v", results[1])

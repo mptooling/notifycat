@@ -40,7 +40,7 @@ func (g *LockGateway) Plan(entries []routingdomain.Entry, force bool) (diagnosti
 	return diagnosticsdomain.LockPlan{ToValidate: diff.Needs, Stale: diff.Stale}, err
 }
 
-// Commit writes the merged lock: the existing lock is read, successful
+// Commit writes the merged lock: the existing lock is read, cacheable
 // validation results are merged in (keyed by entry hash + current time), and
 // stale keys are dropped.
 func (g *LockGateway) Commit(successes []validationdomain.EntryResult, stale []string) error {
@@ -61,11 +61,13 @@ func (g *LockGateway) CommitTargeted(entry routingdomain.Entry) error {
 	return routinginfra.WriteLock(g.lockPath, merged)
 }
 
-// successMap builds the map of key → LockEntry for results that passed validation.
+// successMap builds the map of key → LockEntry for results that may be cached.
+// Warned entries are excluded, so the CLI and the server agree on re-probing
+// them.
 func successMap(results []validationdomain.EntryResult, clock func() time.Time) map[string]routinginfra.LockEntry {
 	out := map[string]routinginfra.LockEntry{}
 	for _, result := range results {
-		if result.OK() {
+		if result.Cacheable() {
 			out[result.Entry.Key()] = routinginfra.LockEntry{
 				SHA256:      result.Entry.Hash(),
 				ValidatedAt: clock(),

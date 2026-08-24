@@ -8,6 +8,11 @@ import (
 	"github.com/mptooling/notifycat/internal/validation/domain"
 )
 
+// hookCheck probes external state: whether a webhook pointing at notifycat
+// exists on the repository and covers the events the dispatcher consumes. Every
+// bad answer here limits functionality for this repository alone, so it warns —
+// only a repository name that is not owner/repo is a config-shape error and
+// fails.
 func (v *Validator) hookCheck(ctx context.Context, repository string) domain.CheckResult {
 	if v.hook.Checker == nil {
 		return skip("webhook", "no API token configured; webhook coverage check skipped")
@@ -18,19 +23,19 @@ func (v *Validator) hookCheck(ctx context.Context, repository string) domain.Che
 	}
 	events, err := v.hook.Checker.ListHookEvents(ctx, owner, repo, v.hook.URLSuffix)
 	if err != nil {
-		return failResult("webhook", "listing %s/%s hooks failed: %v", owner, repo, err)
+		return warnResult("webhook", "listing %s/%s hooks failed: %v", owner, repo, err)
 	}
 	return interpretHookEvents(owner, repo, events, v.hook.RequiredEvents)
 }
 
 func interpretHookEvents(owner, repo string, events, required []string) domain.CheckResult {
 	if len(events) == 0 {
-		return failResult("webhook",
+		return warnResult("webhook",
 			"no active webhook on %s/%s points at notifycat; create one so PR events reach it",
 			owner, repo)
 	}
 	if missing := missingScopes(events, required); len(missing) > 0 {
-		return failResult("webhook",
+		return warnResult("webhook",
 			"webhook on %s/%s is missing event(s) %s; edit the webhook to include them",
 			owner, repo, quoteJoin(missing))
 	}
