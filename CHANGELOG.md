@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.1](https://github.com/mptooling/notifycat/compare/v0.23.0...v0.23.1) (2026-08-24)
+
+
+### 🐛 Bug fixes
+
+* **validation:** webhook coverage check warns instead of aborting startup ([#188](https://github.com/mptooling/notifycat/issues/188)) ([b4ab7a1](https://github.com/mptooling/notifycat/commit/b4ab7a19de706f1ba94fc32da863cb99f8a53faf))
+
 ## [0.23.0](https://github.com/mptooling/notifycat/compare/v0.22.4...v0.23.0) (2026-08-21)
 
 
