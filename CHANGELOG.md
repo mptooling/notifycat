@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.24.0](https://github.com/mptooling/notifycat/compare/v0.23.1...v0.24.0) (2026-08-27)
+
+
+### 🚀 Features
+
+* multi-channel notifications via channels: list ([#184](https://github.com/mptooling/notifycat/issues/184)) ([b1c5daf](https://github.com/mptooling/notifycat/commit/b1c5daf545416673421963f538c1c1228f71b7f1))
+
+
+### 🐛 Bug fixes
+
+* **config:** honor mentions: [] instead of pinging [@channel](https://github.com/channel) ([#192](https://github.com/mptooling/notifycat/issues/192)) ([eab9fa0](https://github.com/mptooling/notifycat/commit/eab9fa0a77948999516d8ee217cd43a2de8b7fb3))
+
 ## [0.23.1](https://github.com/mptooling/notifycat/compare/v0.23.0...v0.23.1) (2026-08-24)
 
 
