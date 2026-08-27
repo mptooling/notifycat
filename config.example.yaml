@@ -73,8 +73,9 @@ reviews:
   dependabot_format: true             # when true, dependabot[bot] / renovate[bot] PRs use a compact message format
 
 # ── Stuck-PR digest ───────────────────────────────────────────────────────────────────────────────
-# A scheduled reminder listing open PRs nobody has touched since before today. ON BY DEFAULT — omit
-# this whole section and the server posts a digest at 9am on weekdays (in the timezone below; UTC).
+# A scheduled reminder listing open PRs nobody has touched since before today. OFF BY DEFAULT — the
+# digest is opt-in. Omit this section (or set only schedule/timezone) and nothing is posted; add
+# `enabled: true` to turn it on, and it posts at 9am on weekdays (in the timezone below; UTC).
 #
 # On each tick the server posts one parent message per Slack channel and threads the stuck-PR list
 # under it, pinging the channel's mentions. Channels with no stuck PRs get no message.
@@ -82,7 +83,7 @@ reviews:
 # WEEKENDS ARE ALWAYS SKIPPED and there is no key for it — Saturday and Sunday never get a digest,
 # whatever `schedule` says. A schedule deliberately aimed at a weekend ("0 9 * * 6") never fires.
 digest:
-  enabled: true                       # default true; set false to turn the digest off globally
+  enabled: true                       # off by default; this turns it on (omit the section to keep it off)
   schedule: "0 9 * * *"               # standard 5-field cron; evaluated in `timezone` below; default 9am daily
   timezone: "UTC"                     # IANA zone (e.g. Europe/Kyiv); default UTC. Both the firing time and
                                       # the "since before today" cutoff use this zone. An invalid zone fails
@@ -148,8 +149,10 @@ mappings:
       # Optional: override review behavior (ignore_ai_reviews and dependabot_format) for this repo.
       reviews:
         ignore_ai_reviews: true               # suppress bot reviews on this repo specifically
-      # Optional: override digest schedule for this repo. digest.enabled and digest.schedule inherit from global "digest:" when omitted.
+      # Optional: turn the digest on for this repo and override its schedule. The digest is opt-in per
+      # tier: `enabled: true` is required here — a bare `schedule:` leaves this repo off.
       digest:
+        enabled: true                         # opt this repo in (a per-repo digest needs this to post)
         schedule: "0 17 * * *"                # post this repo's digest at 5pm instead of the global 9am
     standard:
       channel: C0STANDARD00

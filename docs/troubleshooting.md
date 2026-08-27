@@ -177,7 +177,7 @@ Otherwise, in order of likelihood: nothing was stuck (a channel with no stuck PR
 
 If the country *is* set correctly and the day is a regional or company holiday rather than a national one, that is a [known limit](digest.md#supported-countries).
 
-**A digest showed up uninvited after an upgrade** — it's on by default. `digest: { enabled: false }` restores silence. See [Stuck-PR digest](digest.md#its-on-by-default).
+**You expected a digest but nothing posts** — the digest is off by default. Add `digest: { enabled: true }`; a block with only `schedule:` or `timezone:` stays off, and per-repository tiers need `enabled: true` too. See [Stuck-PR digest](digest.md#its-off-by-default).
 
 **The same channel gets several digests a day** — two repository tiers with different `digest.schedule` values post to that channel; each schedule runs independently. Align the schedules or move one repository.
 

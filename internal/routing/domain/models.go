@@ -10,9 +10,9 @@ type File struct {
 
 // DigestConfig is the `digest:` section: a scheduled reminder that lists open
 // PRs nobody has touched since the previous day. The global section is optional
-// and the feature is on by default, so an absent section behaves like
-// `{enabled: true}` with the default schedule. Per-repo tiers reuse this type
-// to override Enabled/Schedule.
+// and the feature is opt-in, so an absent section (or one without `enabled:
+// true`) behaves like `{enabled: false}` with the default schedule. Per-repo
+// tiers reuse this type to override Enabled/Schedule.
 //
 // Timezone and Country are global-only — the server runs a single cron clock
 // and serves a single team calendar, so both belong on the global section and
