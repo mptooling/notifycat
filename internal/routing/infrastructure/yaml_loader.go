@@ -48,25 +48,31 @@ func Parse(r io.Reader) (domain.File, error) {
 	if err := dec.Decode(&wire); err != nil {
 		return domain.File{}, fmt.Errorf("mappings: parse: %w", err)
 	}
-	out := domain.File{}
+	out := domain.File{Mappings: mappingsToDomain(wire.Mappings)}
 	if wire.Digest != nil {
 		d := wire.Digest.toDomain()
 		out.Digest = &d
-	}
-	if wire.Mappings != nil {
-		out.Mappings = make(map[string]domain.Org, len(wire.Mappings))
-		for org, repos := range wire.Mappings {
-			o := make(domain.Org, len(repos))
-			for name, rc := range repos {
-				o[name] = rc.toDomain()
-			}
-			out.Mappings[org] = o
-		}
 	}
 	if err := application.ValidateMappings(out.Mappings); err != nil {
 		return domain.File{}, err
 	}
 	return out, nil
+}
+
+// DecodeMappings decodes the `mappings:` section — captured by the caller as a
+// raw YAML node — into the tri-state routing model. Decoding through the wire
+// types preserves the mentions absent/[]/value distinction that a plain struct
+// decode collapses (absent and [] would otherwise both read as "no key"). An
+// absent (zero) node yields no mappings.
+func DecodeMappings(node *yaml.Node) (map[string]domain.Org, error) {
+	if node == nil || node.Kind == 0 {
+		return nil, nil
+	}
+	var wire map[string]map[string]repoConfigWire
+	if err := node.Decode(&wire); err != nil {
+		return nil, fmt.Errorf("mappings: parse: %w", err)
+	}
+	return mappingsToDomain(wire), nil
 }
 
 // Load reads and validates the file at path.

@@ -483,6 +483,21 @@ func (r reactionsOverrideWire) toDomain() domain.ReactionsOverride {
 	}
 }
 
+func mappingsToDomain(wire map[string]map[string]repoConfigWire) map[string]domain.Org {
+	if wire == nil {
+		return nil
+	}
+	out := make(map[string]domain.Org, len(wire))
+	for org, repos := range wire {
+		tier := make(domain.Org, len(repos))
+		for name, rc := range repos {
+			tier[name] = rc.toDomain()
+		}
+		out[org] = tier
+	}
+	return out
+}
+
 func (rc repoConfigWire) toDomain() domain.RepoConfig {
 	out := domain.RepoConfig{
 		Channel:          rc.Channel,
