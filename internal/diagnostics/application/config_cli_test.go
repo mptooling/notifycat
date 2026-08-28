@@ -294,3 +294,29 @@ func TestMappingsValidator_Full_PartialFailure_OnlySuccessesInCommit(t *testing.
 		t.Errorf("acme/web passed; should appear as success in Commit")
 	}
 }
+
+func TestList_ShowsPathChannels(t *testing.T) {
+	entries := &stubEntrySource{entries: []routingdomain.Entry{
+		{Org: "zeta", Repo: "monorepo", Channel: "C0ZMONO0000",
+			PathChannels: []string{"C0ZPAY0001", "C0ZPAY0002"}},
+		{Org: "acme", Repo: "api", Channel: "C0AAA0001", Mentions: []string{"<@U0A>"}},
+	}}
+	var out bytes.Buffer
+
+	if code := application.List(entries, &out); code != 0 {
+		t.Fatalf("List() = %d; want 0", code)
+	}
+
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("got %d lines; want header + 2 entries:\n%s", len(lines), out.String())
+	}
+	for _, channel := range []string{"C0ZMONO0000", "C0ZPAY0001", "C0ZPAY0002"} {
+		if !strings.Contains(lines[1], channel) {
+			t.Errorf("monorepo row %q is missing %s", lines[1], channel)
+		}
+	}
+	if !strings.Contains(lines[2], "C0AAA0001") || strings.Contains(lines[2], ",") {
+		t.Errorf("single-channel row = %q; want just C0AAA0001", lines[2])
+	}
+}

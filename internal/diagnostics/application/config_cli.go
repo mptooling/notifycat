@@ -23,8 +23,9 @@ func List(entries diagnosticsdomain.EntrySource, stdout io.Writer) int {
 		if entry.Wildcard {
 			repo = "*"
 		}
+		channels := strings.Join(append([]string{entry.Channel}, entry.PathChannels...), ",")
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
-			entry.Org, repo, entry.Channel, strings.Join(entry.Mentions, ","))
+			entry.Org, repo, channels, strings.Join(entry.Mentions, ","))
 	}
 	_ = tw.Flush()
 	return 0

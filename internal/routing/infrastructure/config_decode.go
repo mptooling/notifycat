@@ -11,6 +11,41 @@ import (
 	domain "github.com/mptooling/notifycat/internal/routing/domain"
 )
 
+// DecodeMappings decodes a `mappings:` node into per-org tiers. An absent node
+// yields nil.
+func DecodeMappings(node *yaml.Node) (map[string]domain.Org, error) {
+	if node == nil || node.Kind == 0 {
+		return nil, nil
+	}
+	var wire map[string]map[string]repoConfigWire
+	if err := node.Decode(&wire); err != nil {
+		return nil, fmt.Errorf("mappings: %w", err)
+	}
+	orgs := make(map[string]domain.Org, len(wire))
+	for orgName, repos := range wire {
+		tiers := make(domain.Org, len(repos))
+		for repoName, repoTier := range repos {
+			tiers[repoName] = repoTier.toDomain()
+		}
+		orgs[orgName] = tiers
+	}
+	return orgs, nil
+}
+
+// DecodeDigest decodes a global `digest:` node. An absent node yields nil; a
+// section without `enabled:` is enabled.
+func DecodeDigest(node *yaml.Node) (*domain.DigestConfig, error) {
+	if node == nil || node.Kind == 0 {
+		return nil, nil
+	}
+	wire := &digestConfigWire{}
+	if err := node.Decode(wire); err != nil {
+		return nil, err
+	}
+	digest := wire.toDomain()
+	return &digest, nil
+}
+
 // digestConfigWire is the YAML wire type for the `digest:` section. It is
 // decoded by hand so Enabled defaults to true when the key is absent.
 type digestConfigWire struct {

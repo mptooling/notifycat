@@ -17,6 +17,7 @@ import (
 	"github.com/mptooling/notifycat/internal/kernel"
 	routingapp "github.com/mptooling/notifycat/internal/routing/application"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
+	routinginfra "github.com/mptooling/notifycat/internal/routing/infrastructure"
 )
 
 // Config is the parsed runtime configuration. Field names are flat so consumers
@@ -136,8 +137,9 @@ type fileSchema struct {
 		IgnoreAIReviews  *bool `yaml:"ignore_ai_reviews"`
 		DependabotFormat *bool `yaml:"dependabot_format"`
 	} `yaml:"reviews"`
-	Digest   *routingdomain.DigestConfig  `yaml:"digest"`
-	Mappings map[string]routingdomain.Org `yaml:"mappings"`
+	// Raw nodes: the routing layer owns their schema (see applyRoutingSchema).
+	Digest   yaml.Node `yaml:"digest"`
+	Mappings yaml.Node `yaml:"mappings"`
 }
 
 // defaults returns a Config pre-filled with every default value. Decode then
@@ -211,6 +213,9 @@ func Load() (Config, error) {
 	cfg := defaults()
 	cfg.ConfigFile = path
 	applyFileSchema(&cfg, fs)
+	if err := applyRoutingSchema(&cfg, fs); err != nil {
+		return Config{}, err
+	}
 
 	if err := validateGitProvider(cfg.GitProvider); err != nil {
 		return Config{}, err
@@ -270,8 +275,21 @@ func applyFileSchema(cfg *Config, fs fileSchema) {
 	if fs.Reviews.DependabotFormat != nil {
 		cfg.DependabotFormat = *fs.Reviews.DependabotFormat
 	}
-	cfg.Digest = fs.Digest
-	cfg.Mappings = fs.Mappings
+}
+
+// applyRoutingSchema decodes the digest and mappings sections.
+func applyRoutingSchema(cfg *Config, fs fileSchema) error {
+	digest, err := routinginfra.DecodeDigest(&fs.Digest)
+	if err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
+	mappings, err := routinginfra.DecodeMappings(&fs.Mappings)
+	if err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
+	cfg.Digest = digest
+	cfg.Mappings = mappings
+	return nil
 }
 
 // resolveDigestTimezone turns the optional digest.timezone into a *time.Location.

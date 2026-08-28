@@ -28,7 +28,7 @@ notifycat-config validate owner/repo     # validate one entry, ignoring its cach
 notifycat-config validate --force        # revalidate everything, ignore the lock
 ```
 
-`list` prints a tab-aligned table of every parsed entry — the quick sanity check after an edit. `validate` runs the real checks, one line per check in greppable `OK`/`FAIL`/`SKIP` form:
+`list` prints a tab-aligned table of every parsed entry — the quick sanity check after an edit. A tier with [path rules](monorepo.md) shows every channel it can post to, comma-separated. `validate` runs the real checks, one line per check in greppable `OK`/`FAIL`/`SKIP` form:
 
 | Check | Verifies | On `FAIL` |
 | --- | --- | --- |

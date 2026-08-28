@@ -16,6 +16,17 @@ git_provider: github
 
 > ⚠️ **Switching `git_provider` later requires a fresh database.** The provider is *not* recorded per row. If you point an existing database at a different provider, stale rows keyed by the old provider's repository names and PR numbering can collide with the new provider's — silently suppressing posts until the cleanup TTL (`cleanup.message_ttl_days`) purges them. When you change `git_provider`, start from a fresh database (or, not recommended, disable the digest and wait out `message_ttl_days`).
 
+## `mappings:` and `digest:` are parsed by their own schema again
+
+`config.yaml` was decoded with a generic YAML pass that ignored the routing schema, so several documented rules did nothing. They apply again, which changes behavior for configs that relied on the broken parse:
+
+- **`paths:` works.** The documented [directory-keyed form](monorepo.md) failed to load at all (`cannot unmarshal !!map into []domain.PathRule`); the only shape that parsed was an undocumented list of `- dir:` entries, which is now rejected. Rewrite such blocks as directory keys.
+- **`mentions: []` pings nobody again.** It was treated as an absent key, so those channels got `<!channel>` on every post.
+- **A `digest:` section without `enabled:` is enabled.** It was read as disabled, silently turning the digest off for anyone who set only `schedule:`.
+- **Rejected at startup again:** `mentions: null`, colliding path keys (`/config` and `config/`), path keys containing `..`, and per-tier `digest.timezone`.
+
+Run `notifycat-config list` before deploying; every problem above is a fail-fast parse error.
+
 ## Ignored-event log fields renamed
 
 The internal git-provider-neutral event refactor renames two fields on the `ignored webhook event` log line: `github_event` becomes `provider` (currently always `github`) and `action` becomes `kind` (a provider-neutral event classification such as `opened`, `merged`, `review_commented`, or `unknown`). No operator action is required to upgrade, but any log dashboards or alerts that filter on `github_event`/`action` should be updated to `provider`/`kind`. See [Troubleshooting → 200 OK, no Slack change](troubleshooting.md#200-ok-no-slack-change) for the full field set.
