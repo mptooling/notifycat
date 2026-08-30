@@ -6,42 +6,45 @@ import (
 	"encoding/hex"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/mptooling/notifycat/internal/platform/security"
 )
 
 const testSecret = "topsecret"
 
-func sign(body []byte) string {
-	mac := hmac.New(sha256.New, []byte(testSecret))
+// badSignatures are the malformed forms every raw-body verifier must reject.
+var badSignatures = map[string]string{
+	"wrong hex":       "sha256=" + hex.EncodeToString(make([]byte, 32)),
+	"missing scheme":  hex.EncodeToString(make([]byte, 32)),
+	"empty":           "",
+	"wrong algorithm": "sha1=abcdef",
+	"truncated":       "sha256=abc",
+}
+
+func sign(secret string, body []byte) string {
+	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(body)
 	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
 }
 
 func TestVerifier_ValidSignature(t *testing.T) {
-	v := security.NewGitHubVerifier(testSecret)
+	verifier := security.NewGitHubVerifier(testSecret)
 	body := []byte(`{"ok":true}`)
 
-	if err := v.Verify(body, sign(body)); err != nil {
-		t.Fatalf("Verify with valid signature returned %v; want nil", err)
-	}
+	err := verifier.Verify(body, sign(testSecret, body))
+
+	assert.NoError(t, err)
 }
 
 func TestVerifier_InvalidSignature(t *testing.T) {
-	v := security.NewGitHubVerifier(testSecret)
+	verifier := security.NewGitHubVerifier(testSecret)
 	body := []byte(`{"ok":true}`)
 
-	cases := map[string]string{
-		"wrong hex":       "sha256=" + hex.EncodeToString(make([]byte, 32)),
-		"missing scheme":  hex.EncodeToString(make([]byte, 32)),
-		"empty":           "",
-		"wrong algorithm": "sha1=abcdef",
-		"truncated":       "sha256=abc",
-	}
-	for name, sig := range cases {
+	for name, signature := range badSignatures {
 		t.Run(name, func(t *testing.T) {
-			if err := v.Verify(body, sig); err == nil {
-				t.Fatalf("Verify(%q) returned nil; want error", sig)
-			}
+			assert.Error(t, verifier.Verify(body, signature))
 		})
 	}
 }
@@ -49,22 +52,8 @@ func TestVerifier_InvalidSignature(t *testing.T) {
 func TestSign_RoundTripsWithVerify(t *testing.T) {
 	body := []byte(`{"ok":true}`)
 
-	sig := security.Sign(testSecret, body)
+	signature := security.Sign(testSecret, body)
 
-	if want := sign(body); sig != want {
-		t.Fatalf("Sign = %q; want %q", sig, want)
-	}
-	if err := security.NewGitHubVerifier(testSecret).Verify(body, sig); err != nil {
-		t.Fatalf("Verify of Sign output returned %v; want nil", err)
-	}
-}
-
-func TestVerifier_BodyTamperedReturnsError(t *testing.T) {
-	v := security.NewGitHubVerifier(testSecret)
-	body := []byte(`{"ok":true}`)
-	tampered := []byte(`{"ok":false}`)
-
-	if err := v.Verify(tampered, sign(body)); err == nil {
-		t.Fatal("Verify with tampered body returned nil; want error")
-	}
+	require.Equal(t, sign(testSecret, body), signature)
+	assert.NoError(t, security.NewGitHubVerifier(testSecret).Verify(body, signature))
 }

@@ -3,389 +3,311 @@ package bitbucket_test
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"sort"
 	"strings"
 	"sync/atomic"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/mptooling/notifycat/internal/platform/bitbucket"
 )
 
-func TestGetRepository_HappyPath(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.URL.Path; got != "/repositories/acme/web" {
-			t.Errorf("path = %q", got)
-		}
-		if got := r.Header.Get("Accept"); got != "application/json" {
-			t.Errorf("accept = %q", got)
-		}
-		_, _ = io.WriteString(w, `{"full_name":"acme/web","slug":"web","is_private":true}`)
-	}))
-	defer srv.Close()
+// newTestClient serves handler over httptest and returns a client pointed at it.
+// Assertions inside a handler must use assert, never require: it runs on the
+// server goroutine, where FailNow is illegal.
+func newTestClient(t *testing.T, handler http.HandlerFunc) *bitbucket.Client {
+	t.Helper()
 
-	c := bitbucket.NewClient(srv.Client(), "tok", "", bitbucket.WithBaseURL(srv.URL))
-	repo, err := c.GetRepository(context.Background(), "acme", "web")
-	if err != nil {
-		t.Fatalf("GetRepository: %v", err)
+	return newTestClientAs(t, "", handler)
+}
+
+func newTestClientAs(t *testing.T, username string, handler http.HandlerFunc) *bitbucket.Client {
+	t.Helper()
+
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	return bitbucket.NewClient(server.Client(), "tok", username, bitbucket.WithBaseURL(server.URL))
+}
+
+// errorHandler replies with a Bitbucket-shaped error envelope.
+func errorHandler(status int, message string) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(status)
+		_, _ = io.WriteString(w, `{"type":"error","error":{"message":"`+message+`"}}`)
 	}
-	if repo.FullName != "acme/web" || repo.Slug != "web" || !repo.IsPrivate {
-		t.Fatalf("repo = %+v", repo)
-	}
+}
+
+func TestGetRepository_HappyPath(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/repositories/acme/web", r.URL.Path)
+		assert.Equal(t, "application/json", r.Header.Get("Accept"))
+		_, _ = io.WriteString(w, `{"full_name":"acme/web","slug":"web","is_private":true}`)
+	})
+
+	repo, err := client.GetRepository(context.Background(), "acme", "web")
+
+	require.NoError(t, err)
+	assert.Equal(t, "acme/web", repo.FullName)
+	assert.Equal(t, "web", repo.Slug)
+	assert.True(t, repo.IsPrivate)
 }
 
 func TestGetRepository_NotFoundIsAPIError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = io.WriteString(w, `{"type":"error","error":{"message":"No such repository"}}`)
-	}))
-	defer srv.Close()
+	client := newTestClient(t, errorHandler(http.StatusNotFound, "No such repository"))
 
-	c := bitbucket.NewClient(srv.Client(), "tok", "", bitbucket.WithBaseURL(srv.URL))
-	_, err := c.GetRepository(context.Background(), "acme", "web")
+	_, err := client.GetRepository(context.Background(), "acme", "web")
+
 	var apiErr *bitbucket.APIError
-	if !errors.As(err, &apiErr) {
-		t.Fatalf("err = %v; want *bitbucket.APIError", err)
-	}
-	if apiErr.Status != http.StatusNotFound || apiErr.Message != "No such repository" {
-		t.Fatalf("apiErr = %+v", apiErr)
-	}
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, http.StatusNotFound, apiErr.Status)
+	assert.Equal(t, "No such repository", apiErr.Message)
 }
 
 func TestGetRepository_BearerAuth(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("Authorization"); got != "Bearer tok" {
-			t.Errorf("auth = %q; want Bearer tok", got)
-		}
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "Bearer tok", r.Header.Get("Authorization"))
 		_, _ = io.WriteString(w, `{"full_name":"acme/web","slug":"web","is_private":false}`)
-	}))
-	defer srv.Close()
+	})
 
-	c := bitbucket.NewClient(srv.Client(), "tok", "", bitbucket.WithBaseURL(srv.URL))
-	if _, err := c.GetRepository(context.Background(), "acme", "web"); err != nil {
-		t.Fatalf("GetRepository: %v", err)
-	}
+	_, err := client.GetRepository(context.Background(), "acme", "web")
+
+	require.NoError(t, err)
 }
 
 func TestGetRepository_BasicAuth(t *testing.T) {
 	want := "Basic " + base64.StdEncoding.EncodeToString([]byte("user@example.com:tok"))
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("Authorization"); got != want {
-			t.Errorf("auth = %q; want %q", got, want)
-		}
+	client := newTestClientAs(t, "user@example.com", func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, want, r.Header.Get("Authorization"), "a username switches the scheme to basic auth")
 		_, _ = io.WriteString(w, `{"full_name":"acme/web","slug":"web","is_private":false}`)
-	}))
-	defer srv.Close()
+	})
 
-	c := bitbucket.NewClient(srv.Client(), "tok", "user@example.com", bitbucket.WithBaseURL(srv.URL))
-	if _, err := c.GetRepository(context.Background(), "acme", "web"); err != nil {
-		t.Fatalf("GetRepository: %v", err)
-	}
+	_, err := client.GetRepository(context.Background(), "acme", "web")
+
+	require.NoError(t, err)
+}
+
+func TestGetRepository_RateLimitIsAPIError(t *testing.T) {
+	client := newTestClient(t, errorHandler(http.StatusTooManyRequests, "rate limited"))
+
+	_, err := client.GetRepository(context.Background(), "acme", "web")
+
+	var apiErr *bitbucket.APIError
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, http.StatusTooManyRequests, apiErr.Status)
+}
+
+func TestGetRepository_ResponseCapTruncation(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		var body strings.Builder
+		body.WriteString(`{"full_name":"acme/web","slug":"web","is_private":false,"pad":"`)
+		body.WriteString(strings.Repeat("x", (1<<20)+1024))
+		body.WriteString(`"}`)
+		_, _ = io.WriteString(w, body.String())
+	})
+
+	_, err := client.GetRepository(context.Background(), "acme", "web")
+
+	require.Error(t, err, "an oversized body is truncated, so decoding must fail")
+	var apiErr *bitbucket.APIError
+	assert.NotErrorAs(t, err, &apiErr, "truncation is a decode error, not an API error")
 }
 
 func TestListWorkspaceRepos_SinglePage(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/repositories/acme" {
-			t.Errorf("path = %q", r.URL.Path)
-		}
-		if got := r.URL.Query().Get("pagelen"); got != "100" {
-			t.Errorf("pagelen = %q; want 100", got)
-		}
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/repositories/acme", r.URL.Path)
+		assert.Equal(t, "100", r.URL.Query().Get("pagelen"))
 		_, _ = io.WriteString(w, `{"values":[{"slug":"api"},{"slug":"web"}]}`)
-	}))
-	defer srv.Close()
+	})
 
-	c := bitbucket.NewClient(srv.Client(), "tok", "", bitbucket.WithBaseURL(srv.URL))
-	got, err := c.ListWorkspaceRepos(context.Background(), "acme")
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-	if len(got) != 2 || got[0] != "api" || got[1] != "web" {
-		t.Errorf("got %v; want [api web]", got)
-	}
+	got, err := client.ListWorkspaceRepos(context.Background(), "acme")
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"api", "web"}, got)
 }
 
 func TestListWorkspaceRepos_FollowsNext(t *testing.T) {
 	var page atomic.Int32
-	var base string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	var baseURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		switch page.Add(1) {
 		case 1:
-			_, _ = io.WriteString(w, `{"values":[{"slug":"api"}],"next":"`+base+`/repositories/acme?page=2"}`)
+			_, _ = io.WriteString(w, `{"values":[{"slug":"api"}],"next":"`+baseURL+`/repositories/acme?page=2"}`)
 		default:
 			_, _ = io.WriteString(w, `{"values":[{"slug":"web"}]}`)
 		}
 	}))
-	defer srv.Close()
-	base = srv.URL
+	defer server.Close()
+	baseURL = server.URL
+	client := bitbucket.NewClient(server.Client(), "tok", "", bitbucket.WithBaseURL(server.URL))
 
-	c := bitbucket.NewClient(srv.Client(), "tok", "", bitbucket.WithBaseURL(srv.URL))
-	got, err := c.ListWorkspaceRepos(context.Background(), "acme")
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-	if len(got) != 2 || got[0] != "api" || got[1] != "web" {
-		t.Errorf("got %v; want [api web]", got)
-	}
+	got, err := client.ListWorkspaceRepos(context.Background(), "acme")
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"api", "web"}, got)
 }
 
 func TestListWorkspaceRepos_EmptyIsNoError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, `{"values":[]}`)
-	}))
-	defer srv.Close()
+	})
 
-	c := bitbucket.NewClient(srv.Client(), "tok", "", bitbucket.WithBaseURL(srv.URL))
-	got, err := c.ListWorkspaceRepos(context.Background(), "acme")
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-	if len(got) != 0 {
-		t.Errorf("got %v; want empty", got)
-	}
+	got, err := client.ListWorkspaceRepos(context.Background(), "acme")
+
+	require.NoError(t, err)
+	assert.Empty(t, got)
 }
 
 func TestListHookEvents_FiltersBySuffixAndUnionsEvents(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.URL.Path; got != "/repositories/acme/web/hooks" {
-			t.Errorf("path = %q", got)
-		}
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/repositories/acme/web/hooks", r.URL.Path)
 		_, _ = io.WriteString(w, `{"values":[
 			{"uuid":"{1}","url":"https://notifycat.example/webhook/bitbucket","active":true,"events":["pullrequest:created","pullrequest:updated"]},
 			{"uuid":"{2}","url":"https://other.example/hook","active":true,"events":["repo:push"]},
 			{"uuid":"{3}","url":"https://notifycat.example/webhook/bitbucket","active":false,"events":["pullrequest:approved"]},
 			{"uuid":"{4}","url":"https://notifycat.example/webhook/bitbucket","active":true,"events":["pullrequest:approved"]}
 		]}`)
-	}))
-	defer srv.Close()
+	})
 
-	c := bitbucket.NewClient(srv.Client(), "tok", "", bitbucket.WithBaseURL(srv.URL))
-	got, err := c.ListHookEvents(context.Background(), "acme", "web", "/webhook/bitbucket")
-	if err != nil {
-		t.Fatalf("ListHookEvents: %v", err)
-	}
-	sort.Strings(got)
-	want := []string{"pullrequest:approved", "pullrequest:created", "pullrequest:updated"}
-	if len(got) != len(want) {
-		t.Fatalf("events = %v; want %v", got, want)
-	}
-	for i, ev := range want {
-		if got[i] != ev {
-			t.Fatalf("events[%d] = %q; want %q", i, got[i], ev)
-		}
-	}
+	got, err := client.ListHookEvents(context.Background(), "acme", "web", "/webhook/bitbucket")
+
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"pullrequest:approved", "pullrequest:created", "pullrequest:updated"}, got,
+		"only active hooks whose URL carries our suffix count, and their events union")
 }
 
 func TestListHookEvents_NoMatchingHook(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, `{"values":[{"uuid":"{1}","url":"https://other.example/hook","active":true,"events":["repo:push"]}]}`)
-	}))
-	defer srv.Close()
+	})
 
-	c := bitbucket.NewClient(srv.Client(), "tok", "", bitbucket.WithBaseURL(srv.URL))
-	got, err := c.ListHookEvents(context.Background(), "acme", "web", "/webhook/bitbucket")
-	if err != nil {
-		t.Fatalf("ListHookEvents: %v", err)
-	}
-	if got == nil {
-		t.Fatalf("events = nil; want empty non-nil slice")
-	}
-	if len(got) != 0 {
-		t.Fatalf("events = %v; want empty", got)
-	}
+	got, err := client.ListHookEvents(context.Background(), "acme", "web", "/webhook/bitbucket")
+
+	require.NoError(t, err)
+	assert.NotNil(t, got, "callers distinguish 'no hook' from nil, so the slice stays non-nil")
+	assert.Empty(t, got)
 }
 
 func TestGetPullRequest_OpenAndDraft(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/repositories/acme/web/pullrequests/42" {
-			t.Errorf("path = %q", r.URL.Path)
-		}
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/repositories/acme/web/pullrequests/42", r.URL.Path)
 		_, _ = io.WriteString(w, `{"state":"OPEN","draft":true,"title":"x"}`)
-	}))
-	defer srv.Close()
+	})
 
-	c := bitbucket.NewClient(srv.Client(), "tok", "", bitbucket.WithBaseURL(srv.URL))
-	pr, err := c.GetPullRequest(context.Background(), "acme", "web", 42)
-	if err != nil {
-		t.Fatalf("GetPullRequest: %v", err)
-	}
-	if pr.State != "OPEN" || !pr.Draft {
-		t.Fatalf("pr = %+v; want OPEN+draft", pr)
-	}
+	pullRequest, err := client.GetPullRequest(context.Background(), "acme", "web", 42)
+
+	require.NoError(t, err)
+	assert.Equal(t, "OPEN", pullRequest.State)
+	assert.True(t, pullRequest.Draft)
 }
 
 func TestGetPullRequest_NotFoundIsAPIError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = io.WriteString(w, `{"type":"error","error":{"message":"Not Found"}}`)
-	}))
-	defer srv.Close()
+	client := newTestClient(t, errorHandler(http.StatusNotFound, "Not Found"))
 
-	c := bitbucket.NewClient(srv.Client(), "tok", "", bitbucket.WithBaseURL(srv.URL))
-	_, err := c.GetPullRequest(context.Background(), "acme", "web", 99)
+	_, err := client.GetPullRequest(context.Background(), "acme", "web", 99)
+
 	var apiErr *bitbucket.APIError
-	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusNotFound {
-		t.Fatalf("want APIError 404; got %T %v", err, err)
-	}
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, http.StatusNotFound, apiErr.Status)
+}
+
+func TestGetPullRequest_ServerErrorIsAPIError(t *testing.T) {
+	client := newTestClient(t, errorHandler(http.StatusInternalServerError, "boom"))
+
+	_, err := client.GetPullRequest(context.Background(), "acme", "web", 42)
+
+	var apiErr *bitbucket.APIError
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, http.StatusInternalServerError, apiErr.Status)
 }
 
 func TestListPullRequestFiles_RedirectWithAuthReplay(t *testing.T) {
-	var base string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var baseURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/repositories/acme/web/pullrequests/42/diffstat":
 			http.Redirect(w, r,
-				base+"/repositories/acme/web/pullrequests/42/diffstat/abc123..def456?from_pullrequest_id=42",
+				baseURL+"/repositories/acme/web/pullrequests/42/diffstat/abc123..def456?from_pullrequest_id=42",
 				http.StatusFound)
 		case "/repositories/acme/web/pullrequests/42/diffstat/abc123..def456":
-			if r.Header.Get("Authorization") == "" {
-				t.Errorf("redirect target missing Authorization header (auth not replayed)")
-			}
+			assert.NotEmpty(t, r.Header.Get("Authorization"), "auth must be replayed on a same-host redirect")
 			_, _ = io.WriteString(w, `{"values":[
 				{"status":"modified","new":{"path":"src/a.go"},"old":{"path":"src/a.go"}},
 				{"status":"removed","new":null,"old":{"path":"src/gone.go"}},
 				{"status":"modified","new":{"path":"src/a.go"},"old":{"path":"src/a.go"}}
 			]}`)
 		default:
-			t.Errorf("unexpected path %q", r.URL.Path)
+			assert.Failf(t, "unexpected request", "path %q", r.URL.Path)
 		}
 	}))
-	defer srv.Close()
-	base = srv.URL
+	defer server.Close()
+	baseURL = server.URL
+	client := bitbucket.NewClient(server.Client(), "tok", "", bitbucket.WithBaseURL(server.URL))
 
-	c := bitbucket.NewClient(srv.Client(), "tok", "", bitbucket.WithBaseURL(srv.URL))
-	got, err := c.ListPullRequestFiles(context.Background(), "acme", "web", 42)
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-	if len(got) != 2 || got[0] != "src/a.go" || got[1] != "src/gone.go" {
-		t.Errorf("got %v; want [src/a.go src/gone.go]", got)
-	}
+	got, err := client.ListPullRequestFiles(context.Background(), "acme", "web", 42)
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"src/a.go", "src/gone.go"}, got, "a removed file keeps its old path and duplicates collapse")
 }
 
 func TestListPullRequestFiles_SpecNoneSoftFail(t *testing.T) {
-	var base string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var baseURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/repositories/acme/web/pullrequests/42/diffstat" {
 			http.Redirect(w, r,
-				base+"/repositories/acme/web/pullrequests/42/diffstat/None?from_pullrequest_id=42",
+				baseURL+"/repositories/acme/web/pullrequests/42/diffstat/None?from_pullrequest_id=42",
 				http.StatusFound)
 			return
 		}
-		t.Errorf("redirect to spec=None target should not be followed; got path %q", r.URL.Path)
+		assert.Failf(t, "redirect to a spec=None target must not be followed", "path %q", r.URL.Path)
 	}))
-	defer srv.Close()
-	base = srv.URL
+	defer server.Close()
+	baseURL = server.URL
+	client := bitbucket.NewClient(server.Client(), "tok", "", bitbucket.WithBaseURL(server.URL))
 
-	c := bitbucket.NewClient(srv.Client(), "tok", "", bitbucket.WithBaseURL(srv.URL))
-	_, err := c.ListPullRequestFiles(context.Background(), "acme", "web", 42)
-	if !errors.Is(err, bitbucket.ErrDiffstatUnavailable) {
-		t.Fatalf("err = %v; want ErrDiffstatUnavailable", err)
-	}
+	_, err := client.ListPullRequestFiles(context.Background(), "acme", "web", 42)
+
+	assert.ErrorIs(t, err, bitbucket.ErrDiffstatUnavailable)
 }
 
 func TestListPullRequestFiles_RefusesCrossHostRedirect(t *testing.T) {
-	var attacker atomic.Bool
-	evil := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		attacker.Store(true)
-		if r.Header.Get("Authorization") != "" {
-			t.Errorf("credential leaked to cross-host redirect target: %q", r.Header.Get("Authorization"))
-		}
+	var attackerReached atomic.Bool
+	attacker := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		attackerReached.Store(true)
+		assert.Empty(t, r.Header.Get("Authorization"), "the credential must never leave our host")
 	}))
-	defer evil.Close()
+	defer attacker.Close()
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, attacker.URL+"/steal?from_pullrequest_id=42", http.StatusFound)
+	})
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, evil.URL+"/steal?from_pullrequest_id=42", http.StatusFound)
-	}))
-	defer srv.Close()
+	_, err := client.ListPullRequestFiles(context.Background(), "acme", "web", 42)
 
-	c := bitbucket.NewClient(srv.Client(), "tok", "", bitbucket.WithBaseURL(srv.URL))
-	_, err := c.ListPullRequestFiles(context.Background(), "acme", "web", 42)
-	if err == nil {
-		t.Fatal("expected an error refusing the cross-host redirect, got nil")
-	}
-	if errors.Is(err, bitbucket.ErrDiffstatUnavailable) {
-		t.Fatalf("cross-host redirect should surface as a hard error, not the soft-fail: %v", err)
-	}
-	if attacker.Load() {
-		t.Fatal("cross-host redirect target was contacted; it must never be reached")
-	}
+	require.Error(t, err)
+	require.NotErrorIs(t, err, bitbucket.ErrDiffstatUnavailable, "a cross-host redirect is a hard error, not the soft-fail")
+	assert.False(t, attackerReached.Load(), "the cross-host target must never be contacted")
 }
 
 func TestListPullRequestFiles_FollowsNext(t *testing.T) {
 	var page atomic.Int32
-	var base string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	var baseURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		switch page.Add(1) {
 		case 1:
-			_, _ = io.WriteString(w, `{"values":[{"status":"added","new":{"path":"a.go"},"old":null}],"next":"`+base+`/repositories/acme/web/pullrequests/42/diffstat?page=2"}`)
+			_, _ = io.WriteString(w, `{"values":[{"status":"added","new":{"path":"a.go"},"old":null}],"next":"`+baseURL+`/repositories/acme/web/pullrequests/42/diffstat?page=2"}`)
 		default:
 			_, _ = io.WriteString(w, `{"values":[{"status":"modified","new":{"path":"b.go"},"old":{"path":"b.go"}}]}`)
 		}
 	}))
-	defer srv.Close()
-	base = srv.URL
+	defer server.Close()
+	baseURL = server.URL
+	client := bitbucket.NewClient(server.Client(), "tok", "", bitbucket.WithBaseURL(server.URL))
 
-	c := bitbucket.NewClient(srv.Client(), "tok", "", bitbucket.WithBaseURL(srv.URL))
-	got, err := c.ListPullRequestFiles(context.Background(), "acme", "web", 42)
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-	if len(got) != 2 || got[0] != "a.go" || got[1] != "b.go" {
-		t.Errorf("got %v; want [a.go b.go]", got)
-	}
-}
+	got, err := client.ListPullRequestFiles(context.Background(), "acme", "web", 42)
 
-func TestGetRepository_RateLimitIsAPIError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusTooManyRequests)
-		_, _ = io.WriteString(w, `{"type":"error","error":{"message":"rate limited"}}`)
-	}))
-	defer srv.Close()
-
-	c := bitbucket.NewClient(srv.Client(), "tok", "", bitbucket.WithBaseURL(srv.URL))
-	_, err := c.GetRepository(context.Background(), "acme", "web")
-	var apiErr *bitbucket.APIError
-	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusTooManyRequests {
-		t.Fatalf("want APIError 429; got %T %v", err, err)
-	}
-}
-
-func TestGetPullRequest_ServerErrorIsAPIError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = io.WriteString(w, `{"type":"error","error":{"message":"boom"}}`)
-	}))
-	defer srv.Close()
-
-	c := bitbucket.NewClient(srv.Client(), "tok", "", bitbucket.WithBaseURL(srv.URL))
-	_, err := c.GetPullRequest(context.Background(), "acme", "web", 42)
-	var apiErr *bitbucket.APIError
-	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusInternalServerError {
-		t.Fatalf("want APIError 500; got %T %v", err, err)
-	}
-}
-
-func TestGetRepository_ResponseCapTruncation(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		var b strings.Builder
-		b.WriteString(`{"full_name":"acme/web","slug":"web","is_private":false,"pad":"`)
-		b.WriteString(strings.Repeat("x", (1<<20)+1024))
-		b.WriteString(`"}`)
-		_, _ = io.WriteString(w, b.String())
-	}))
-	defer srv.Close()
-
-	c := bitbucket.NewClient(srv.Client(), "tok", "", bitbucket.WithBaseURL(srv.URL))
-	_, err := c.GetRepository(context.Background(), "acme", "web")
-	if err == nil {
-		t.Fatalf("expected decode error from truncated oversized body, got nil")
-	}
-	var apiErr *bitbucket.APIError
-	if errors.As(err, &apiErr) {
-		t.Fatalf("expected decode error, got APIError %+v", apiErr)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, []string{"a.go", "b.go"}, got)
 }

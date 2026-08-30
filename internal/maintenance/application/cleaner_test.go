@@ -10,6 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/mptooling/notifycat/internal/maintenance/application"
 	"github.com/mptooling/notifycat/internal/maintenance/domain"
 )
@@ -41,13 +44,40 @@ func (f *fakeDeleter) callCount() int {
 	return len(f.cutoffs)
 }
 
+func (f *fakeDeleter) firstCutoff() time.Time {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.cutoffs[0]
+}
+
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
 func bufferLogger() (*slog.Logger, *bytes.Buffer) {
-	var buf bytes.Buffer
-	return slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})), &buf
+	var logged bytes.Buffer
+	return slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{Level: slog.LevelDebug})), &logged
+}
+
+// runCleaner starts the cleaner and returns a stop function that cancels it and
+// waits for Run to return.
+func runCleaner(t *testing.T, cleaner *application.Cleaner) (stop func()) {
+	t.Helper()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		_ = cleaner.Run(ctx)
+		close(done)
+	}()
+	return func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			require.Fail(t, "Run did not return after context cancel")
+		}
+	}
 }
 
 // newCleaner builds a Cleaner with the default clock (time.Now).
@@ -62,132 +92,59 @@ func newCleaner(deleter domain.StaleMessageDeleter, ttl, interval time.Duration,
 }
 
 func TestCleaner_RunsOnceImmediately_ThenOnInterval(t *testing.T) {
-	d := &fakeDeleter{}
-	ttl := 30 * 24 * time.Hour
+	deleter := &fakeDeleter{}
 	interval := 20 * time.Millisecond
-	s := newCleaner(d, ttl, interval, discardLogger())
+	stop := runCleaner(t, newCleaner(deleter, 30*24*time.Hour, interval, discardLogger()))
+	defer stop()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	require.Eventually(t, func() bool { return deleter.callCount() > 0 }, interval/2, time.Millisecond,
+		"the first cleanup runs immediately, not after the first tick")
+	require.Eventually(t, func() bool { return deleter.callCount() >= 3 }, interval*10, time.Millisecond,
+		"the cleanup repeats on the interval")
 
-	done := make(chan struct{})
-	go func() {
-		_ = s.Run(ctx)
-		close(done)
-	}()
-
-	// Immediate tick should land well within the interval.
-	deadline := time.After(interval / 2)
-	for d.callCount() == 0 {
-		select {
-		case <-deadline:
-			t.Fatalf("first cleanup did not run within %v", interval/2)
-		case <-time.After(1 * time.Millisecond):
-		}
-	}
-
-	// Wait long enough for several more interval ticks.
-	time.Sleep(interval * 4)
-	cancel()
-	<-done
-
-	if got := d.callCount(); got < 3 {
-		t.Fatalf("DeleteStaleBefore called %d times; want >=3 (immediate + ticks)", got)
-	}
-	for i, c := range d.cutoffs {
-		if c.IsZero() {
-			t.Errorf("call %d: cutoff is zero", i)
-		}
-	}
+	stop()
+	assert.NotContains(t, deleter.cutoffs, time.Time{}, "every cutoff is a real instant")
 }
 
 func TestCleaner_LogsAndContinuesOnError(t *testing.T) {
-	d := &fakeDeleter{err: errors.New("boom"), errOnce: true}
-	logger, buf := bufferLogger()
+	deleter := &fakeDeleter{err: errors.New("boom"), errOnce: true}
+	logger, logged := bufferLogger()
 	interval := 20 * time.Millisecond
-	s := newCleaner(d, 24*time.Hour, interval, logger)
+	stop := runCleaner(t, newCleaner(deleter, 24*time.Hour, interval, logger))
+	defer stop()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// The first call errors; the loop must keep going and call again.
+	require.Eventually(t, func() bool { return deleter.callCount() >= 2 }, interval*10, 2*time.Millisecond)
 
-	done := make(chan struct{})
-	go func() {
-		_ = s.Run(ctx)
-		close(done)
-	}()
-
-	// Wait for at least two calls (the first errors, the second should succeed).
-	deadline := time.After(interval * 5)
-	for d.callCount() < 2 {
-		select {
-		case <-deadline:
-			t.Fatalf("expected at least 2 calls, got %d", d.callCount())
-		case <-time.After(2 * time.Millisecond):
-		}
-	}
-	cancel()
-	<-done
-
-	if !bytes.Contains(buf.Bytes(), []byte("boom")) {
-		t.Errorf("expected error to be logged; logs: %s", buf.String())
-	}
+	stop()
+	assert.Contains(t, logged.String(), "boom")
 }
 
 func TestCleaner_StopsOnContextCancel(t *testing.T) {
-	d := &fakeDeleter{}
-	s := newCleaner(d, 24*time.Hour, 1*time.Hour, discardLogger())
+	deleter := &fakeDeleter{}
+	stop := runCleaner(t, newCleaner(deleter, 24*time.Hour, time.Hour, discardLogger()))
 
-	ctx, cancel := context.WithCancel(context.Background())
+	require.Eventually(t, func() bool { return deleter.callCount() > 0 }, time.Second, time.Millisecond)
 
-	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
-
-	// Allow the immediate cleanup to fire, then cancel.
-	time.Sleep(20 * time.Millisecond)
-	cancel()
-
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("Run did not return after context cancel")
-	}
+	stop()
 }
 
 func TestCleaner_CutoffEqualsNowMinusTTL(t *testing.T) {
-	d := &fakeDeleter{}
+	deleter := &fakeDeleter{}
 	ttl := 48 * time.Hour
 	fixedNow := time.Date(2026, 5, 18, 12, 0, 0, 0, time.UTC)
-	s := application.NewCleaner(domain.CleanerParams{
-		Deleter:  d,
+	cleaner := application.NewCleaner(domain.CleanerParams{
+		Deleter:  deleter,
 		TTL:      ttl,
-		Interval: 1 * time.Hour,
+		Interval: time.Hour,
 		Logger:   discardLogger(),
 		Now:      func() time.Time { return fixedNow },
 	})
+	stop := runCleaner(t, cleaner)
+	defer stop()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() {
-		_ = s.Run(ctx)
-		close(done)
-	}()
+	require.Eventually(t, func() bool { return deleter.callCount() > 0 }, time.Second, time.Millisecond)
 
-	// Wait for the immediate tick.
-	deadline := time.After(500 * time.Millisecond)
-	for d.callCount() == 0 {
-		select {
-		case <-deadline:
-			cancel()
-			<-done
-			t.Fatal("immediate cleanup did not run")
-		case <-time.After(1 * time.Millisecond):
-		}
-	}
-	cancel()
-	<-done
-
-	wantCutoff := fixedNow.Add(-ttl)
-	if !d.cutoffs[0].Equal(wantCutoff) {
-		t.Errorf("cutoff = %v; want %v (now - ttl)", d.cutoffs[0], wantCutoff)
-	}
+	stop()
+	assert.Equal(t, fixedNow.Add(-ttl), deleter.firstCutoff())
 }

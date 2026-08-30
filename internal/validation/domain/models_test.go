@@ -3,48 +3,53 @@ package domain_test
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/mptooling/notifycat/internal/validation/domain"
 )
 
+func reportWith(statuses ...domain.Status) domain.Report {
+	report := domain.Report{Repository: "acme/widgets"}
+	for _, status := range statuses {
+		report.Checks = append(report.Checks, domain.CheckResult{Name: "check", Status: status})
+	}
+	return report
+}
+
 func TestStatus_String(t *testing.T) {
-	cases := map[domain.Status]string{
+	wantByStatus := map[domain.Status]string{
 		domain.StatusOK:   "OK",
 		domain.StatusFail: "FAIL",
 		domain.StatusWarn: "WARN",
 		domain.StatusSkip: "SKIP",
 		domain.Status(99): "UNKNOWN",
 	}
-	for status, want := range cases {
-		if got := status.String(); got != want {
-			t.Errorf("Status(%d).String() = %q; want %q", status, got, want)
-		}
+
+	for status, want := range wantByStatus {
+		t.Run(want, func(t *testing.T) {
+			assert.Equal(t, want, status.String())
+		})
 	}
 }
 
 func TestReport_WarningsDoNotFail(t *testing.T) {
 	report := reportWith(domain.StatusOK, domain.StatusWarn)
 
-	if !report.OK() {
-		t.Error("a warned report must still be OK; warnings never fail a report")
-	}
-	if !report.HasWarnings() {
-		t.Error("HasWarnings() should be true when a check warned")
-	}
+	assert.True(t, report.OK(), "a warning never fails a report")
+	assert.True(t, report.HasWarnings())
 }
 
 func TestReport_HasWarnings_FalseWithoutWarnings(t *testing.T) {
 	report := reportWith(domain.StatusOK, domain.StatusSkip, domain.StatusFail)
 
-	if report.HasWarnings() {
-		t.Error("HasWarnings() should be false when no check warned")
-	}
+	assert.False(t, report.HasWarnings())
 }
 
-// TestEntryResult_Cacheable pins the lock invariant: only an entry that passed
-// with no warnings may be written to config.lock, so warned entries re-probe on
-// every boot until the operator fixes them.
+// The lock invariant: only an entry that passed with no warnings may be written
+// to config.lock, so warned entries re-probe on every boot until the operator
+// fixes them.
 func TestEntryResult_Cacheable(t *testing.T) {
-	cases := []struct {
+	testCases := []struct {
 		name          string
 		reports       []domain.Report
 		wantOK        bool
@@ -71,26 +76,14 @@ func TestEntryResult_Cacheable(t *testing.T) {
 			wantCacheable: false,
 		},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			result := domain.EntryResult{Reports: tc.reports}
-			if got := result.OK(); got != tc.wantOK {
-				t.Errorf("OK() = %v; want %v", got, tc.wantOK)
-			}
-			if got := result.HasWarnings(); got != tc.wantWarnings {
-				t.Errorf("HasWarnings() = %v; want %v", got, tc.wantWarnings)
-			}
-			if got := result.Cacheable(); got != tc.wantCacheable {
-				t.Errorf("Cacheable() = %v; want %v", got, tc.wantCacheable)
-			}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			result := domain.EntryResult{Reports: testCase.reports}
+
+			assert.Equal(t, testCase.wantOK, result.OK())
+			assert.Equal(t, testCase.wantWarnings, result.HasWarnings())
+			assert.Equal(t, testCase.wantCacheable, result.Cacheable())
 		})
 	}
-}
-
-func reportWith(statuses ...domain.Status) domain.Report {
-	report := domain.Report{Repository: "acme/widgets"}
-	for _, status := range statuses {
-		report.Checks = append(report.Checks, domain.CheckResult{Name: "check", Status: status})
-	}
-	return report
 }

@@ -1,24 +1,25 @@
 package infrastructure_test
 
 import (
-	"slices"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/mptooling/notifycat/internal/routing/application"
 	domain "github.com/mptooling/notifycat/internal/routing/domain"
 	"github.com/mptooling/notifycat/internal/routing/infrastructure"
 )
 
-// providerDoc parses a mappings document and wraps it in a Provider so the
+// providerFromDoc parses a mappings document and wraps it in a Provider so the
 // resolution path can be exercised end to end.
-func providerDoc(t *testing.T, body string) *application.Provider {
+func providerFromDoc(t *testing.T, body string) *application.Provider {
 	t.Helper()
-	f, err := infrastructure.Parse(strings.NewReader(body))
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	return application.NewProvider(domain.Defaults{}, f.Mappings, nil)
+
+	file, err := infrastructure.Parse(strings.NewReader(body))
+	require.NoError(t, err)
+	return application.NewProvider(domain.Defaults{}, file.Mappings, nil)
 }
 
 // monorepoDoc is a six-path tier used by most resolution tests:
@@ -42,88 +43,67 @@ const monorepoDoc = "mappings:\n" +
 	"        \"/vendor\": {mentions: []}\n" +
 	"        \"/docs\": {}\n"
 
+const plainRepoDoc = "mappings:\n  acme:\n    plain:\n      channel: C0PLAIN0000\n"
+
 func TestTargetsForFiles_FanOutPerChannel(t *testing.T) {
-	p := providerDoc(t, monorepoDoc)
-	got := p.TargetsForFiles("acme/the-monorepo", []string{"modules/acme/x.go", "src/AuthBundle/y.go"})
-	// modules/acme inherits base channel C0BASE00000; src/AuthBundle has its own.
-	want := map[string][]string{
-		"C0BASE00000": {"<@U0A>"},
-		"C0AUTH00000": {"<@U0AUTH>"},
-	}
-	if len(got) != 2 {
-		t.Fatalf("got %d targets; want 2: %+v", len(got), got)
-	}
-	for _, tg := range got {
-		if !slices.Equal(tg.Mentions, want[tg.Channel]) {
-			t.Errorf("channel %s mentions = %v; want %v", tg.Channel, tg.Mentions, want[tg.Channel])
-		}
-	}
+	provider := providerFromDoc(t, monorepoDoc)
+
+	got := provider.TargetsForFiles("acme/the-monorepo", []string{"modules/acme/x.go", "src/AuthBundle/y.go"})
+
+	assert.ElementsMatch(t, []domain.Target{
+		{Channel: "C0BASE00000", Mentions: []string{"<@U0A>"}},
+		{Channel: "C0AUTH00000", Mentions: []string{"<@U0AUTH>"}},
+	}, got, "modules/acme inherits the base channel, src/AuthBundle brings its own")
 }
 
 func TestTargetsForFiles_MentionsUnionWithinChannel(t *testing.T) {
-	p := providerDoc(t, monorepoDoc)
-	// modules/acme (@U0A) + config (@U0A,@U0B) both inherit the base channel.
-	got := p.TargetsForFiles("acme/the-monorepo", []string{"modules/acme/x.go", "config/app.yaml"})
-	if len(got) != 1 || got[0].Channel != "C0BASE00000" {
-		t.Fatalf("want one base-channel target; got %+v", got)
-	}
-	if !slices.Equal(got[0].Mentions, []string{"<@U0A>", "<@U0B>"}) {
-		t.Errorf("mentions = %v; want deduped union [<@U0A> <@U0B>]", got[0].Mentions)
-	}
+	provider := providerFromDoc(t, monorepoDoc)
+
+	got := provider.TargetsForFiles("acme/the-monorepo", []string{"modules/acme/x.go", "config/app.yaml"})
+
+	require.Len(t, got, 1)
+	assert.Equal(t, "C0BASE00000", got[0].Channel)
+	assert.Equal(t, []string{"<@U0A>", "<@U0B>"}, got[0].Mentions, "two rules on one channel dedupe into a union")
 }
 
 func TestTargetsForFiles_NoMatchReturnsBase(t *testing.T) {
-	p := providerDoc(t, monorepoDoc)
-	got := p.TargetsForFiles("acme/the-monorepo", []string{"README.md"})
-	if len(got) != 1 || got[0].Channel != "C0BASE00000" ||
-		!slices.Equal(got[0].Mentions, []string{"<!subteam^S0ENG>"}) {
-		t.Fatalf("no match should yield single base target; got %+v", got)
-	}
+	provider := providerFromDoc(t, monorepoDoc)
+
+	got := provider.TargetsForFiles("acme/the-monorepo", []string{"README.md"})
+
+	require.Len(t, got, 1)
+	assert.Equal(t, "C0BASE00000", got[0].Channel)
+	assert.Equal(t, []string{"<!subteam^S0ENG>"}, got[0].Mentions)
 }
 
 func TestHasPathRules(t *testing.T) {
-	with := providerDoc(t, monorepoDoc)
-	if !with.HasPathRules() {
-		t.Error("HasPathRules() = false; want true")
-	}
-	without := providerDoc(t, "mappings:\n  acme:\n    plain:\n      channel: C0PLAIN0000\n")
-	if without.HasPathRules() {
-		t.Error("HasPathRules() = true; want false")
-	}
+	assert.True(t, providerFromDoc(t, monorepoDoc).HasPathRules())
+	assert.False(t, providerFromDoc(t, plainRepoDoc).HasPathRules())
 }
 
 func TestRepoHasPathRules(t *testing.T) {
-	p := providerDoc(t, monorepoDoc)
-	if !p.RepoHasPathRules("acme/the-monorepo") {
-		t.Error("RepoHasPathRules(acme/the-monorepo) = false; want true")
-	}
-	if p.RepoHasPathRules("acme/other") {
-		t.Error("RepoHasPathRules(acme/other) = true; want false (unmapped)")
-	}
-	plain := providerDoc(t, "mappings:\n  acme:\n    plain:\n      channel: C0PLAIN0000\n")
-	if plain.RepoHasPathRules("acme/plain") {
-		t.Error("RepoHasPathRules(acme/plain) = true; want false (no paths)")
-	}
+	provider := providerFromDoc(t, monorepoDoc)
+
+	assert.True(t, provider.RepoHasPathRules("acme/the-monorepo"))
+	assert.False(t, provider.RepoHasPathRules("acme/other"), "an unmapped repo has no rules")
+	assert.False(t, providerFromDoc(t, plainRepoDoc).RepoHasPathRules("acme/plain"))
 }
 
 func TestPathChannels_DistinctSorted(t *testing.T) {
-	doc := "mappings:\n  acme:\n    mono:\n      channel: C0BASE00000\n      paths:\n" +
-		"        \"/a\": {channel: C0ZZZ00000}\n" +
-		"        \"/b\": {channel: C0AAA00000}\n" +
-		"        \"/c\": {channel: C0AAA00000}\n" + // duplicate
-		"        \"/d\": {mentions: []}\n" // no channel → not listed
-	p := providerDoc(t, doc)
-	got := p.AdditionalChannels("acme/mono")
-	if !slices.Equal(got, []string{"C0AAA00000", "C0ZZZ00000"}) {
-		t.Errorf("AdditionalChannels = %v; want sorted distinct [C0AAA00000 C0ZZZ00000]", got)
-	}
-	if p.AdditionalChannels("acme/unmapped") != nil {
-		t.Error("AdditionalChannels(unmapped) should be nil")
-	}
+	provider := providerFromDoc(t, "mappings:\n  acme:\n    mono:\n      channel: C0BASE00000\n      paths:\n"+
+		"        \"/a\": {channel: C0ZZZ00000}\n"+
+		"        \"/b\": {channel: C0AAA00000}\n"+
+		"        \"/c\": {channel: C0AAA00000}\n"+
+		"        \"/d\": {mentions: []}\n")
+
+	got := provider.AdditionalChannels("acme/mono")
+
+	assert.Equal(t, []string{"C0AAA00000", "C0ZZZ00000"}, got, "duplicates collapse, channel-less rules drop out, order is sorted")
+	assert.Nil(t, provider.AdditionalChannels("acme/unmapped"))
 }
 
 func TestBaseTargets_MultiChannelBaseNoPaths(t *testing.T) {
-	p := providerDoc(t, `
+	provider := providerFromDoc(t, `
 mappings:
   acme:
     api:
@@ -132,20 +112,18 @@ mappings:
           mentions: ["<@U0A>"]
         - channel: C0API2
 `)
-	got := p.BaseTargets("acme/api")
-	if len(got) != 2 || got[0].Channel != "C0API1" || got[1].Channel != "C0API2" {
-		t.Fatalf("want both base channels, got %+v", got)
-	}
-	if len(got[0].Mentions) != 1 || got[0].Mentions[0] != "<@U0A>" {
-		t.Fatalf("first channel should carry its declared mention: %+v", got[0])
-	}
-	if got[1].Mentions[0] != domain.ChannelMention {
-		t.Fatalf("second channel should default to @channel: %+v", got[1])
-	}
+
+	got := provider.BaseTargets("acme/api")
+
+	require.Len(t, got, 2)
+	assert.Equal(t, "C0API1", got[0].Channel)
+	assert.Equal(t, []string{"<@U0A>"}, got[0].Mentions)
+	assert.Equal(t, "C0API2", got[1].Channel)
+	assert.Equal(t, []string{domain.ChannelMention}, got[1].Mentions)
 }
 
 func TestTargetsForFiles_PathChannelsListReplacesBase(t *testing.T) {
-	p := providerDoc(t, `
+	provider := providerFromDoc(t, `
 mappings:
   acme:
     monorepo:
@@ -157,17 +135,17 @@ mappings:
             - channel: C0PAY2
               mentions: []
 `)
-	got := p.TargetsForFiles("acme/monorepo", []string{"services/pay/x.go"})
-	if len(got) != 2 || got[0].Channel != "C0PAY1" || got[1].Channel != "C0PAY2" {
-		t.Fatalf("matched path list should replace base: %+v", got)
-	}
-	if len(got[1].Mentions) != 0 {
-		t.Fatalf("C0PAY2 explicit [] should ping nobody: %+v", got[1])
-	}
+
+	got := provider.TargetsForFiles("acme/monorepo", []string{"services/pay/x.go"})
+
+	require.Len(t, got, 2)
+	assert.Equal(t, "C0PAY1", got[0].Channel)
+	assert.Equal(t, "C0PAY2", got[1].Channel)
+	assert.Empty(t, got[1].Mentions, "explicit [] pings nobody")
 }
 
 func TestTargetsForFiles_MultiBaseReturnedWhenNoPathMatch(t *testing.T) {
-	p := providerDoc(t, `
+	provider := providerFromDoc(t, `
 mappings:
   acme:
     monorepo:
@@ -178,14 +156,16 @@ mappings:
         services/pay:
           channel: C0PAY
 `)
-	got := p.TargetsForFiles("acme/monorepo", []string{"README.md"})
-	if len(got) != 2 || got[0].Channel != "C0B1" || got[1].Channel != "C0B2" {
-		t.Fatalf("no path match should return full base set: %+v", got)
-	}
+
+	got := provider.TargetsForFiles("acme/monorepo", []string{"README.md"})
+
+	require.Len(t, got, 2)
+	assert.Equal(t, "C0B1", got[0].Channel)
+	assert.Equal(t, "C0B2", got[1].Channel)
 }
 
 func TestTargetsForFiles_ChannelLessPathInheritsPrimary(t *testing.T) {
-	p := providerDoc(t, `
+	provider := providerFromDoc(t, `
 mappings:
   acme:
     monorepo:
@@ -196,12 +176,10 @@ mappings:
         services/pay:
           mentions: ["<@U0PAY>"]
 `)
-	got := p.TargetsForFiles("acme/monorepo", []string{"services/pay/x.go"})
-	if len(got) != 1 || got[0].Channel != "C0PRIMARY" ||
-		len(got[0].Mentions) != 1 || got[0].Mentions[0] != "<@U0PAY>" {
-		t.Fatalf("channel-less path should inherit primary base channel: %+v", got)
-	}
-}
 
-// Ensure domain.Target is used by the package (compile-time check).
-var _ domain.Target
+	got := provider.TargetsForFiles("acme/monorepo", []string{"services/pay/x.go"})
+
+	require.Len(t, got, 1)
+	assert.Equal(t, "C0PRIMARY", got[0].Channel, "a channel-less path rule rides the primary base channel")
+	assert.Equal(t, []string{"<@U0PAY>"}, got[0].Mentions)
+}

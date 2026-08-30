@@ -1,16 +1,13 @@
 package runtime_test
 
 import (
-	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/mptooling/notifycat/internal/kernel"
 	"github.com/mptooling/notifycat/internal/platform/config"
@@ -25,6 +22,7 @@ import (
 // validation finds nothing to revalidate (the provider joins each entry's hash).
 func newBitbucketFixture(t *testing.T, seeds ...mappingSeed) *integrationFixture {
 	t.Helper()
+
 	slack := newSlackFake(t)
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.yaml")
@@ -55,11 +53,10 @@ func newBitbucketFixture(t *testing.T, seeds ...mappingSeed) *integrationFixture
 	primeLock(t, configPath, routingapp.NewProvider(
 		routingdomain.Defaults{GitProvider: kernel.ProviderBitbucket}, cfg.Mappings, cfg.Digest))
 
-	server := buildTestServer(t, cfg)
-	ts := httptest.NewServer(server.Handler)
-	t.Cleanup(ts.Close)
+	server := httptest.NewServer(buildTestServer(t, cfg).Handler)
+	t.Cleanup(server.Close)
 
-	return &integrationFixture{server: ts, cfg: cfg, slack: slack}
+	return &integrationFixture{server: server, cfg: cfg, slack: slack}
 }
 
 // postBitbucket sends a Bitbucket-signed delivery (X-Hub-Signature: sha256=<hmac>
@@ -67,32 +64,19 @@ func newBitbucketFixture(t *testing.T, seeds ...mappingSeed) *integrationFixture
 // HTTP status.
 func (f *integrationFixture) postBitbucket(t *testing.T, eventKey, payload string) int {
 	t.Helper()
-	body := []byte(payload)
-	mac := hmac.New(sha256.New, []byte("itsecret"))
-	mac.Write(body)
-	sig := "sha256=" + hex.EncodeToString(mac.Sum(nil))
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
-		f.server.URL+"/webhook/bitbucket", strings.NewReader(payload))
-	if err != nil {
-		t.Fatalf("NewRequest: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Hub-Signature", sig)
-	req.Header.Set("X-Event-Key", eventKey)
-	resp, err := f.server.Client().Do(req)
-	if err != nil {
-		t.Fatalf("Do: %v", err)
-	}
-	_, _ = io.Copy(io.Discard, resp.Body)
-	_ = resp.Body.Close()
-	return resp.StatusCode
+	status, _ := request(t, f.server, http.MethodPost, "/webhook/bitbucket", payload, map[string]string{
+		"Content-Type":    "application/json",
+		"X-Hub-Signature": githubSignature("itsecret", payload),
+		"X-Event-Key":     eventKey,
+	})
+	return status
 }
 
 func TestBitbucketIntegration_OpenedPR(t *testing.T) {
-	f := newBitbucketFixture(t, mappingSeed{repository: "acme/widget", channel: "C123ABCDE", mentions: []string{"@alice"}})
+	fixture := newBitbucketFixture(t, mappingSeed{repository: "acme/widget", channel: "C123ABCDE", mentions: []string{"@alice"}})
 
-	status := f.postBitbucket(t, "pullrequest:created", `{
+	status := fixture.postBitbucket(t, "pullrequest:created", `{
 		"actor": {"type": "user", "display_name": "Bob"},
 		"repository": {"full_name": "acme/widget"},
 		"pullrequest": {
@@ -103,145 +87,90 @@ func TestBitbucketIntegration_OpenedPR(t *testing.T) {
 		}
 	}`)
 
-	if status != http.StatusOK {
-		t.Fatalf("status = %d", status)
-	}
-	if !contains(f.slack.methods(), "/api/chat.postMessage") {
-		t.Errorf("chat.postMessage not called; calls = %v", f.slack.methods())
-	}
-	section := blockText(f.postedBody(t), "section")
-	if !strings.Contains(section, "@alice, please review") ||
-		!strings.Contains(section, "<https://bitbucket.org/acme/widget/pull-requests/42|PR #42: fix>") {
-		t.Errorf("headline section wrong: %q", section)
-	}
-	saved, err := f.loadMessage(t, "acme/widget", 42)
-	if err != nil || saved.MessageID == "" {
-		t.Fatalf("stored message missing after open: %v", err)
-	}
+	require.Equal(t, http.StatusOK, status)
+	assert.Contains(t, fixture.slack.paths(), "/api/chat.postMessage")
+
+	section := blockText(fixture.postedBody(t), "section")
+	assert.Contains(t, section, "@alice, please review")
+	assert.Contains(t, section, "<https://bitbucket.org/acme/widget/pull-requests/42|PR #42: fix>")
+
+	saved, err := fixture.loadMessage(t, "acme/widget", 42)
+	require.NoError(t, err)
+	assert.NotEmpty(t, saved.MessageID)
 }
 
 func TestBitbucketIntegration_Approved(t *testing.T) {
-	f := newBitbucketFixture(t, mappingSeed{repository: "acme/widget", channel: "C123ABCDE"})
-	f.seedMessage(t, "acme/widget", 42, "prev-ts")
+	fixture := newBitbucketFixture(t, mappingSeed{repository: "acme/widget", channel: "C123ABCDE"})
+	fixture.seedMessage(t, "acme/widget", 42, "prev-ts")
 
-	status := f.postBitbucket(t, "pullrequest:approved", `{
+	status := fixture.postBitbucket(t, "pullrequest:approved", `{
 		"actor": {"type": "user", "display_name": "Rev"},
 		"repository": {"full_name": "acme/widget"},
 		"pullrequest": {"id": 42, "title": "fix", "state": "OPEN",
 			"links": {"html": {"href": "u"}}, "author": {"display_name": "Bob", "type": "user"}}
 	}`)
 
-	if status != http.StatusOK {
-		t.Fatalf("status = %d", status)
-	}
-	call, ok := f.slack.findCall("/api/reactions.add")
-	if !ok {
-		t.Fatalf("reactions.add not called; methods = %v", f.slack.methods())
-	}
-	if call.Body["name"] != "white_check_mark" {
-		t.Errorf("reaction name = %v; want white_check_mark", call.Body["name"])
-	}
+	require.Equal(t, http.StatusOK, status)
+	assert.Equal(t, "white_check_mark", fixture.requireReaction(t))
 }
 
 func TestBitbucketIntegration_Merged(t *testing.T) {
-	f := newBitbucketFixture(t, mappingSeed{repository: "acme/widget", channel: "C123ABCDE"})
-	f.seedMessage(t, "acme/widget", 42, "prev-ts")
+	fixture := newBitbucketFixture(t, mappingSeed{repository: "acme/widget", channel: "C123ABCDE"})
+	fixture.seedMessage(t, "acme/widget", 42, "prev-ts")
 
-	status := f.postBitbucket(t, "pullrequest:fulfilled", `{
+	status := fixture.postBitbucket(t, "pullrequest:fulfilled", `{
 		"actor": {"type": "user", "display_name": "Bob"},
 		"repository": {"full_name": "acme/widget"},
 		"pullrequest": {"id": 42, "title": "fix", "state": "MERGED",
 			"links": {"html": {"href": "u"}}, "author": {"display_name": "Bob", "type": "user"}}
 	}`)
 
-	if status != http.StatusOK {
-		t.Fatalf("status = %d", status)
-	}
-	if !contains(f.slack.methods(), "/api/chat.update") {
-		t.Errorf("chat.update not called; calls = %v", f.slack.methods())
-	}
-	call, ok := f.slack.findCall("/api/reactions.add")
-	if !ok {
-		t.Fatalf("reactions.add not called; methods = %v", f.slack.methods())
-	}
-	if call.Body["name"] != "twisted_rightwards_arrows" {
-		t.Errorf("reaction name = %v; want twisted_rightwards_arrows", call.Body["name"])
-	}
+	require.Equal(t, http.StatusOK, status)
+	assert.Contains(t, fixture.slack.paths(), "/api/chat.update")
+	assert.Equal(t, "twisted_rightwards_arrows", fixture.requireReaction(t))
 }
 
 func TestBitbucketIntegration_ConvertedToDraftDeletes(t *testing.T) {
-	f := newBitbucketFixture(t, mappingSeed{repository: "acme/widget", channel: "C123ABCDE"})
-	f.seedMessage(t, "acme/widget", 42, "prev-ts")
+	fixture := newBitbucketFixture(t, mappingSeed{repository: "acme/widget", channel: "C123ABCDE"})
+	fixture.seedMessage(t, "acme/widget", 42, "prev-ts")
 
-	status := f.postBitbucket(t, "pullrequest:updated", `{
+	status := fixture.postBitbucket(t, "pullrequest:updated", `{
 		"actor": {"type": "user", "display_name": "Bob"},
 		"repository": {"full_name": "acme/widget"},
 		"pullrequest": {"id": 42, "title": "wip", "state": "OPEN", "draft": true,
 			"links": {"html": {"href": "u"}}, "author": {"display_name": "Bob", "type": "user"}}
 	}`)
 
-	if status != http.StatusOK {
-		t.Fatalf("status = %d", status)
-	}
-	if !contains(f.slack.methods(), "/api/chat.delete") {
-		t.Errorf("chat.delete not called; calls = %v", f.slack.methods())
-	}
-	if _, err := f.loadMessage(t, "acme/widget", 42); err == nil {
-		t.Errorf("stored message row should be deleted after convert-to-draft")
-	}
+	require.Equal(t, http.StatusOK, status)
+	assert.Contains(t, fixture.slack.paths(), "/api/chat.delete")
+	_, err := fixture.loadMessage(t, "acme/widget", 42)
+	assert.Error(t, err, "converting to draft removes the stored row")
 }
 
-// TestBitbucketIntegration_RejectsUnsigned confirms an unsigned Bitbucket
-// delivery (no X-Hub-Signature) is rejected 401 by the middleware.
 func TestBitbucketIntegration_RejectsUnsigned(t *testing.T) {
-	f := newBitbucketFixture(t, mappingSeed{repository: "acme/widget", channel: "C123ABCDE"})
+	fixture := newBitbucketFixture(t, mappingSeed{repository: "acme/widget", channel: "C123ABCDE"})
 
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost,
-		f.server.URL+"/webhook/bitbucket", strings.NewReader(`{"pullrequest":{"id":1}}`))
-	req.Header.Set("X-Event-Key", "pullrequest:created")
-	resp, err := f.server.Client().Do(req)
-	if err != nil {
-		t.Fatalf("Do: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Errorf("status = %d; want 401 for an unsigned delivery", resp.StatusCode)
-	}
+	status, _ := request(t, fixture.server, http.MethodPost, "/webhook/bitbucket", `{"pullrequest":{"id":1}}`,
+		map[string]string{"X-Event-Key": "pullrequest:created"})
+
+	assert.Equal(t, http.StatusUnauthorized, status)
 }
 
-// TestBitbucketIntegration_HasNoGitHubRoute confirms provider selection: a
-// bitbucket deployment serves /webhook/bitbucket and NOT /webhook/github.
+// Provider selection: a bitbucket deployment serves /webhook/bitbucket and NOT
+// /webhook/github.
 func TestBitbucketIntegration_HasNoGitHubRoute(t *testing.T) {
-	f := newBitbucketFixture(t, mappingSeed{repository: "acme/widget", channel: "C123ABCDE"})
+	fixture := newBitbucketFixture(t, mappingSeed{repository: "acme/widget", channel: "C123ABCDE"})
 
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost,
-		f.server.URL+"/webhook/github", strings.NewReader(`{}`))
-	resp, err := f.server.Client().Do(req)
-	if err != nil {
-		t.Fatalf("Do: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusNotFound {
-		t.Errorf("status = %d; want 404 (github route must be absent on a bitbucket deployment)", resp.StatusCode)
-	}
+	status, _ := request(t, fixture.server, http.MethodPost, "/webhook/github", `{}`, nil)
+
+	assert.Equal(t, http.StatusNotFound, status)
 }
 
-// TestWire_GitHubHasNoBitbucketRoute is the mirror: a github deployment serves
-// /webhook/github and NOT /webhook/bitbucket.
+// The mirror: a github deployment serves /webhook/github and NOT /webhook/bitbucket.
 func TestWire_GitHubHasNoBitbucketRoute(t *testing.T) {
-	cfg := newTestConfig(t) // github (default)
-	server := buildTestServer(t, cfg)
-	ts := httptest.NewServer(server.Handler)
-	defer ts.Close()
+	server := serve(t, newTestConfig(t))
 
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost,
-		ts.URL+"/webhook/bitbucket", strings.NewReader(`{}`))
-	resp, err := ts.Client().Do(req)
-	if err != nil {
-		t.Fatalf("Do: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusNotFound {
-		t.Errorf("status = %d; want 404 (bitbucket route must be absent on a github deployment)", resp.StatusCode)
-	}
+	status, _ := request(t, server, http.MethodPost, "/webhook/bitbucket", `{}`, nil)
+
+	assert.Equal(t, http.StatusNotFound, status)
 }

@@ -4,78 +4,72 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
 
 func decodeOrg(t *testing.T, body string) map[string]repoConfigWire {
 	t.Helper()
-	var o map[string]repoConfigWire
-	dec := yaml.NewDecoder(strings.NewReader(body))
-	dec.KnownFields(true)
-	if err := dec.Decode(&o); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	return o
+
+	org, err := decodeOrgWire(body)
+	require.NoError(t, err)
+	return org
 }
 
-func decodeOrgErr(body string) error {
-	var o map[string]repoConfigWire
-	dec := yaml.NewDecoder(strings.NewReader(body))
-	dec.KnownFields(true)
-	return dec.Decode(&o)
+func decodeOrgWire(body string) (map[string]repoConfigWire, error) {
+	var org map[string]repoConfigWire
+	decoder := yaml.NewDecoder(strings.NewReader(body))
+	decoder.KnownFields(true)
+	return org, decoder.Decode(&org)
+}
+
+func decodeOrgError(body string) error {
+	_, err := decodeOrgWire(body)
+	return err
 }
 
 func TestRepoConfig_ChannelAndMentionsPresent(t *testing.T) {
-	o := decodeOrg(t, `
+	org := decodeOrg(t, `
 api:
   channel: C0API
   mentions: ["<@U1>"]
 "*":
   channel: C0STAR
 `)
-	api, ok := o["api"]
-	if !ok {
-		t.Fatal("missing api tier")
-	}
-	if api.Channel != "C0API" {
-		t.Errorf("api.Channel = %q; want C0API", api.Channel)
-	}
-	if !api.MentionsPresent || len(api.Mentions) != 1 || api.Mentions[0] != "<@U1>" {
-		t.Errorf("api mentions = %+v present=%v", api.Mentions, api.MentionsPresent)
-	}
-	star := o["*"]
-	if star.Channel != "C0STAR" || star.MentionsPresent {
-		t.Errorf("star = %+v; want channel C0STAR, mentions absent", star)
-	}
+
+	api, ok := org["api"]
+	require.True(t, ok, "api tier decoded")
+	assert.Equal(t, "C0API", api.Channel)
+	assert.True(t, api.MentionsPresent)
+	assert.Equal(t, []string{"<@U1>"}, api.Mentions)
+
+	star := org["*"]
+	assert.Equal(t, "C0STAR", star.Channel)
+	assert.False(t, star.MentionsPresent, "star tier omits mentions")
 }
 
 func TestRepoConfig_EmptyMentionsIsPresent(t *testing.T) {
-	o := decodeOrg(t, "api:\n  channel: C0API\n  mentions: []\n")
-	if !o["api"].MentionsPresent || len(o["api"].Mentions) != 0 {
-		t.Errorf("mentions: [] should be present+empty; got %+v", o["api"])
-	}
+	org := decodeOrg(t, "api:\n  channel: C0API\n  mentions: []\n")
+
+	assert.True(t, org["api"].MentionsPresent)
+	assert.Empty(t, org["api"].Mentions)
 }
 
 func TestRepoConfig_NullMentionsRejected(t *testing.T) {
-	var o map[string]repoConfigWire
-	dec := yaml.NewDecoder(strings.NewReader("api:\n  channel: C0API\n  mentions: null\n"))
-	dec.KnownFields(true)
-	if err := dec.Decode(&o); err == nil {
-		t.Fatal("expected error for mentions: null")
-	}
+	err := decodeOrgError("api:\n  channel: C0API\n  mentions: null\n")
+
+	require.Error(t, err)
 }
 
 func TestRepoConfig_UnknownKeyRejected(t *testing.T) {
-	var o map[string]repoConfigWire
-	dec := yaml.NewDecoder(strings.NewReader("api:\n  channel: C0API\n  bogus: x\n"))
-	dec.KnownFields(true)
-	if err := dec.Decode(&o); err == nil {
-		t.Fatal("expected error for unknown tier key")
-	}
+	err := decodeOrgError("api:\n  channel: C0API\n  bogus: x\n")
+
+	require.Error(t, err)
 }
 
 func TestRepoConfig_BehavioralOverrides(t *testing.T) {
-	o := decodeOrg(t, `
+	org := decodeOrg(t, `
 api:
   channel: C0API
   reactions:
@@ -88,104 +82,95 @@ api:
     enabled: false
     schedule: "0 8 * * 1-5"
 `)
-	api := o["api"]
-	if api.Reactions == nil || api.Reactions.Approved == nil || *api.Reactions.Approved != "shipit" {
-		t.Fatalf("reactions.approved override missing: %+v", api.Reactions)
-	}
-	if api.Reactions.Enabled == nil || *api.Reactions.Enabled != false {
-		t.Errorf("reactions.enabled override missing")
-	}
-	if api.IgnoreAIReviews == nil || *api.IgnoreAIReviews != true {
-		t.Errorf("ignore_ai_reviews override missing")
-	}
-	if api.DependabotFormat == nil || *api.DependabotFormat != false {
-		t.Errorf("dependabot_format override missing")
-	}
-	if api.Digest == nil || api.Digest.Enabled != false || api.Digest.Schedule != "0 8 * * 1-5" {
-		t.Errorf("digest override missing: %+v", api.Digest)
-	}
+
+	api := org["api"]
+	require.NotNil(t, api.Reactions)
+	require.NotNil(t, api.Reactions.Approved)
+	assert.Equal(t, "shipit", *api.Reactions.Approved)
+	require.NotNil(t, api.Reactions.Enabled)
+	assert.False(t, *api.Reactions.Enabled)
+	require.NotNil(t, api.IgnoreAIReviews)
+	assert.True(t, *api.IgnoreAIReviews)
+	require.NotNil(t, api.DependabotFormat)
+	assert.False(t, *api.DependabotFormat)
+	require.NotNil(t, api.Digest)
+	assert.False(t, api.Digest.Enabled)
+	assert.Equal(t, "0 8 * * 1-5", api.Digest.Schedule)
 }
 
 func TestRepoConfig_BehavioralAbsentMeansNil(t *testing.T) {
 	api := decodeOrg(t, "api:\n  channel: C0API\n")["api"]
-	if api.Reactions != nil || api.IgnoreAIReviews != nil || api.DependabotFormat != nil || api.Digest != nil {
-		t.Errorf("absent behavioral keys should be nil (inherit): %+v", api)
-	}
+
+	assert.Nil(t, api.Reactions, "absent behavioral keys stay nil so the tier inherits")
+	assert.Nil(t, api.IgnoreAIReviews)
+	assert.Nil(t, api.DependabotFormat)
+	assert.Nil(t, api.Digest)
 }
 
 func TestRepoConfig_DigestTimezoneRejected(t *testing.T) {
 	// timezone is a global-only knob (one cron location for the whole server);
 	// setting it on a per-repo tier must fail rather than be silently ignored.
-	var o map[string]repoConfigWire
-	dec := yaml.NewDecoder(strings.NewReader("api:\n  channel: C0API\n  digest:\n    timezone: Europe/Kyiv\n"))
-	dec.KnownFields(true)
-	if err := dec.Decode(&o); err == nil {
-		t.Fatal("expected error for per-repo digest.timezone")
-	}
+	err := decodeOrgError("api:\n  channel: C0API\n  digest:\n    timezone: Europe/Kyiv\n")
+
+	require.Error(t, err)
 }
 
 func TestRepoConfig_UnknownReactionKeyRejected(t *testing.T) {
-	var o map[string]repoConfigWire
-	dec := yaml.NewDecoder(strings.NewReader("api:\n  channel: C0API\n  reactions:\n    bogus: x\n"))
-	dec.KnownFields(true)
-	if err := dec.Decode(&o); err == nil {
-		t.Fatal("expected error for unknown reactions key")
-	}
+	err := decodeOrgError("api:\n  channel: C0API\n  reactions:\n    bogus: x\n")
+
+	require.Error(t, err)
 }
 
 func TestRepoConfig_ChannelsList(t *testing.T) {
-	o := decodeOrg(t, `
+	org := decodeOrg(t, `
 api:
   channels:
     - channel: C0API1
       mentions: ["<@U0ALICE>"]
     - channel: C0API2
 `)
-	api := o["api"]
-	if len(api.Channels) != 2 {
-		t.Fatalf("want 2 channels, got %d", len(api.Channels))
-	}
-	if api.Channels[0].Channel != "C0API1" || !api.Channels[0].MentionsPresent ||
-		len(api.Channels[0].Mentions) != 1 || api.Channels[0].Mentions[0] != "<@U0ALICE>" {
-		t.Fatalf("entry 0 wrong: %+v", api.Channels[0])
-	}
-	if api.Channels[1].Channel != "C0API2" || api.Channels[1].MentionsPresent {
-		t.Fatalf("entry 1 should have absent mentions: %+v", api.Channels[1])
-	}
+
+	api := org["api"]
+	require.Len(t, api.Channels, 2)
+	assert.Equal(t, "C0API1", api.Channels[0].Channel)
+	assert.True(t, api.Channels[0].MentionsPresent)
+	assert.Equal(t, []string{"<@U0ALICE>"}, api.Channels[0].Mentions)
+	assert.Equal(t, "C0API2", api.Channels[1].Channel)
+	assert.False(t, api.Channels[1].MentionsPresent)
 }
 
 func TestRepoConfig_ChannelsRejectsMixWithChannel(t *testing.T) {
-	if decodeOrgErr("api:\n  channel: C0BASE\n  channels:\n    - channel: C0API1\n") == nil {
-		t.Fatal("want error mixing channel and channels")
-	}
+	err := decodeOrgError("api:\n  channel: C0BASE\n  channels:\n    - channel: C0API1\n")
+
+	require.Error(t, err)
 }
 
 func TestRepoConfig_ChannelsRejectsMentionsSibling(t *testing.T) {
-	if decodeOrgErr("api:\n  mentions: [\"<@U0ALICE>\"]\n  channels:\n    - channel: C0API1\n") == nil {
-		t.Fatal("want error: tier mentions alongside channels")
-	}
+	err := decodeOrgError("api:\n  mentions: [\"<@U0ALICE>\"]\n  channels:\n    - channel: C0API1\n")
+
+	require.Error(t, err)
 }
 
 func TestRepoConfig_ChannelsRejectsDuplicate(t *testing.T) {
-	if decodeOrgErr("api:\n  channels:\n    - channel: C0DUP\n    - channel: C0DUP\n") == nil {
-		t.Fatal("want error: duplicate channel in list")
-	}
+	err := decodeOrgError("api:\n  channels:\n    - channel: C0DUP\n    - channel: C0DUP\n")
+
+	require.Error(t, err)
 }
 
 func TestChannelSpec_RejectsMissingChannel(t *testing.T) {
-	if decodeOrgErr("api:\n  channels:\n    - mentions: [\"<@U0ALICE>\"]\n") == nil {
-		t.Fatal("want error: entry missing channel")
-	}
+	err := decodeOrgError("api:\n  channels:\n    - mentions: [\"<@U0ALICE>\"]\n")
+
+	require.Error(t, err)
 }
 
 func TestRepoConfig_ChannelsRejectsEmptyList(t *testing.T) {
-	if decodeOrgErr("api:\n  channels: []\n") == nil {
-		t.Fatal("want error: empty channels list")
-	}
+	err := decodeOrgError("api:\n  channels: []\n")
+
+	require.Error(t, err)
 }
 
 func TestPathRule_ChannelsList(t *testing.T) {
-	o := decodeOrg(t, `
+	org := decodeOrg(t, `
 monorepo:
   channel: C0BASE
   paths:
@@ -195,34 +180,32 @@ monorepo:
         - channel: C0PAY2
           mentions: []
 `)
-	rule := o["monorepo"].Paths[0]
-	if rule.Dir != "services/pay" || len(rule.Channels) != 2 || rule.Channels[0].Channel != "C0PAY1" {
-		t.Fatalf("want 2 path channels under services/pay, got %+v", rule)
-	}
-	if rule.Channels[1].Channel != "C0PAY2" || !rule.Channels[1].MentionsPresent || len(rule.Channels[1].Mentions) != 0 {
-		t.Fatalf("entry 1 should be explicit-empty mentions: %+v", rule.Channels[1])
-	}
+
+	rule := org["monorepo"].Paths[0]
+	assert.Equal(t, "services/pay", rule.Dir)
+	require.Len(t, rule.Channels, 2)
+	assert.Equal(t, "C0PAY1", rule.Channels[0].Channel)
+	assert.Equal(t, "C0PAY2", rule.Channels[1].Channel)
+	assert.True(t, rule.Channels[1].MentionsPresent)
+	assert.Empty(t, rule.Channels[1].Mentions)
 }
 
 func TestPathRule_ChannelsRejectsMixWithChannel(t *testing.T) {
-	if decodeOrgErr("monorepo:\n  channel: C0BASE\n  paths:\n    services/pay:\n      channel: C0PAY\n      channels:\n        - channel: C0PAY1\n") == nil {
-		t.Fatal("want error mixing path channel and channels")
-	}
+	err := decodeOrgError("monorepo:\n  channel: C0BASE\n  paths:\n    services/pay:\n      channel: C0PAY\n      channels:\n        - channel: C0PAY1\n")
+
+	require.Error(t, err)
 }
 
 func TestPathRule_ChannelsRejectsMixWithMentions(t *testing.T) {
-	if decodeOrgErr("monorepo:\n  channel: C0BASE\n  paths:\n    services/pay:\n      mentions: [\"<@U0ALICE>\"]\n      channels:\n        - channel: C0PAY1\n") == nil {
-		t.Fatal("want error mixing path mentions and channels")
-	}
+	err := decodeOrgError("monorepo:\n  channel: C0BASE\n  paths:\n    services/pay:\n      mentions: [\"<@U0ALICE>\"]\n      channels:\n        - channel: C0PAY1\n")
+
+	require.Error(t, err)
 }
 
 func TestRepoConfig_DigestCountryRejected(t *testing.T) {
 	// country is global-only for the same reason as timezone: one team calendar
 	// per server. Setting it on a tier must fail, not be silently ignored.
-	var o map[string]repoConfigWire
-	dec := yaml.NewDecoder(strings.NewReader("api:\n  channel: C0API\n  digest:\n    country: US\n"))
-	dec.KnownFields(true)
-	if err := dec.Decode(&o); err == nil {
-		t.Fatal("expected error for per-repo digest.country")
-	}
+	err := decodeOrgError("api:\n  channel: C0API\n  digest:\n    country: US\n")
+
+	require.Error(t, err)
 }

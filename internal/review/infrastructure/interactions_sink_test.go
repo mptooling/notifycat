@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	reviewdomain "github.com/mptooling/notifycat/internal/review/domain"
 )
 
@@ -21,9 +24,8 @@ func (f *fakeStartReview) Handle(_ context.Context, command reviewdomain.StartRe
 }
 
 func TestStartReviewSink_HappyPath_ForwardsCommand(t *testing.T) {
-	fake := &fakeStartReview{}
-	sink := NewStartReviewSink(fake, discardLogger())
-
+	startReview := &fakeStartReview{}
+	sink := NewStartReviewSink(startReview, discardLogger())
 	rawBlocks := json.RawMessage(`[{"type":"section"}]`)
 	interaction := Interaction{
 		Type:    "block_actions",
@@ -33,80 +35,57 @@ func TestStartReviewSink_HappyPath_ForwardsCommand(t *testing.T) {
 		Actions: []Action{{ActionID: "start_review", Value: "octo/web#42"}},
 	}
 
-	if err := sink(context.Background(), interaction); err != nil {
-		t.Fatalf("sink: %v", err)
-	}
-	if !fake.called {
-		t.Fatal("StartReview.Handle was not called")
-	}
-	cmd := fake.command
-	if cmd.Repository != "octo/web" {
-		t.Errorf("Repository = %q; want octo/web", cmd.Repository)
-	}
-	if cmd.PRNumber != 42 {
-		t.Errorf("PRNumber = %d; want 42", cmd.PRNumber)
-	}
-	if cmd.Reviewer.UserID != "U1" || cmd.Reviewer.UserName != "ada" {
-		t.Errorf("Reviewer = %+v", cmd.Reviewer)
-	}
-	if cmd.Message.Channel != "C1" {
-		t.Errorf("Message.Channel = %q; want C1", cmd.Message.Channel)
-	}
-	if cmd.Message.TS != "1.1" {
-		t.Errorf("Message.TS = %q; want 1.1", cmd.Message.TS)
-	}
-	if cmd.Message.Fallback != "please review" {
-		t.Errorf("Message.Fallback = %q; want please review", cmd.Message.Fallback)
-	}
-	if string(cmd.Message.RawBlocks) != string(rawBlocks) {
-		t.Errorf("Message.RawBlocks = %s; want %s", cmd.Message.RawBlocks, rawBlocks)
-	}
+	err := sink(context.Background(), interaction)
+
+	require.NoError(t, err)
+	require.True(t, startReview.called)
+	command := startReview.command
+	assert.Equal(t, "octo/web", command.Repository)
+	assert.Equal(t, 42, command.PRNumber)
+	assert.Equal(t, reviewdomain.Reviewer{UserID: "U1", UserName: "ada"}, command.Reviewer)
+	assert.Equal(t, "C1", command.Message.Channel)
+	assert.Equal(t, "1.1", command.Message.TS)
+	assert.Equal(t, "please review", command.Message.Fallback)
+	assert.JSONEq(t, string(rawBlocks), string(command.Message.RawBlocks))
 }
 
-func TestStartReviewSink_WrongType_NoOp(t *testing.T) {
-	fake := &fakeStartReview{}
-	sink := NewStartReviewSink(fake, discardLogger())
+func TestStartReviewSink_IgnoresInteractionsItDoesNotOwn(t *testing.T) {
+	testCases := []struct {
+		name        string
+		interaction Interaction
+	}{
+		{
+			name: "wrong interaction type",
+			interaction: Interaction{
+				Type:    "shortcut",
+				Actions: []Action{{ActionID: "start_review", Value: "octo/web#42"}},
+			},
+		},
+		{
+			name: "wrong action id",
+			interaction: Interaction{
+				Type:    "block_actions",
+				Actions: []Action{{ActionID: "something_else", Value: "octo/web#42"}},
+			},
+		},
+		{
+			name: "malformed action value",
+			interaction: Interaction{
+				Type:    "block_actions",
+				Actions: []Action{{ActionID: "start_review", Value: "no-hash"}},
+			},
+		},
+	}
 
-	interaction := Interaction{
-		Type:    "shortcut",
-		Actions: []Action{{ActionID: "start_review", Value: "octo/web#42"}},
-	}
-	if err := sink(context.Background(), interaction); err != nil {
-		t.Fatalf("sink: %v", err)
-	}
-	if fake.called {
-		t.Error("StartReview.Handle must not be called for non-block_actions type")
-	}
-}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			startReview := &fakeStartReview{}
+			sink := NewStartReviewSink(startReview, discardLogger())
 
-func TestStartReviewSink_WrongActionID_NoOp(t *testing.T) {
-	fake := &fakeStartReview{}
-	sink := NewStartReviewSink(fake, discardLogger())
+			err := sink(context.Background(), testCase.interaction)
 
-	interaction := Interaction{
-		Type:    "block_actions",
-		Actions: []Action{{ActionID: "something_else", Value: "octo/web#42"}},
-	}
-	if err := sink(context.Background(), interaction); err != nil {
-		t.Fatalf("sink: %v", err)
-	}
-	if fake.called {
-		t.Error("StartReview.Handle must not be called for a non-start_review action")
-	}
-}
-
-func TestStartReviewSink_MalformedValue_NoOp(t *testing.T) {
-	fake := &fakeStartReview{}
-	sink := NewStartReviewSink(fake, discardLogger())
-
-	interaction := Interaction{
-		Type:    "block_actions",
-		Actions: []Action{{ActionID: "start_review", Value: "no-hash"}},
-	}
-	if err := sink(context.Background(), interaction); err != nil {
-		t.Fatalf("sink: %v", err)
-	}
-	if fake.called {
-		t.Error("StartReview.Handle must not be called for a malformed value")
+			require.NoError(t, err)
+			assert.False(t, startReview.called)
+		})
 	}
 }

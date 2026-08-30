@@ -7,6 +7,9 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	application "github.com/mptooling/notifycat/internal/routing/application"
 	domain "github.com/mptooling/notifycat/internal/routing/domain"
 )
@@ -24,9 +27,9 @@ func (s *stubMappings) Get(_ context.Context, repository string) (domain.RepoMap
 	if s.baseErr != nil {
 		return domain.RepoMapping{}, s.baseErr
 	}
-	m := s.base
-	m.Repository = repository
-	return m, nil
+	mapping := s.base
+	mapping.Repository = repository
+	return mapping, nil
 }
 
 func (s *stubMappings) RepoHasPathRules(string) bool { return s.hasPathRules }
@@ -54,68 +57,65 @@ func discardLogger() *slog.Logger {
 }
 
 func TestRouter_NoFetcherReturnsBaseTarget(t *testing.T) {
-	m := &stubMappings{
+	mappings := &stubMappings{
 		base:         domain.RepoMapping{SlackChannel: "C0OLDUNUSED", Mentions: []string{"<!here>"}},
 		baseTargets:  []domain.Target{{Channel: "C0BASE", Mentions: []string{"<!here>"}}},
 		hasPathRules: true,
 	}
-	r := application.NewRouter(m, nil, discardLogger())
-	_, targets, err := r.ResolveTargets(context.Background(), "acme/mono", 7)
-	if err != nil {
-		t.Fatalf("resolve: %v", err)
-	}
-	if len(targets) != 1 || targets[0].Channel != "C0BASE" {
-		t.Fatalf("want single base target; got %+v", targets)
-	}
+	router := application.NewRouter(mappings, nil, discardLogger())
+
+	_, targets, err := router.ResolveTargets(context.Background(), "acme/mono", 7)
+
+	require.NoError(t, err)
+	require.Len(t, targets, 1)
+	assert.Equal(t, "C0BASE", targets[0].Channel)
 }
 
 func TestRouter_FanOutTargets(t *testing.T) {
-	m := &stubMappings{
+	mappings := &stubMappings{
 		base:         domain.RepoMapping{SlackChannel: "C0BASE"},
 		hasPathRules: true,
 		targets:      []domain.Target{{Channel: "C0A"}, {Channel: "C0B"}},
 	}
 	files := &stubFiles{files: []string{"a", "b"}}
-	r := application.NewRouter(m, files, discardLogger())
-	_, targets, err := r.ResolveTargets(context.Background(), "acme/mono", 7)
-	if err != nil {
-		t.Fatalf("resolve: %v", err)
-	}
-	if len(targets) != 2 || files.calls != 1 {
-		t.Fatalf("want 2 targets from one fetch; got %d targets, %d calls", len(targets), files.calls)
-	}
+	router := application.NewRouter(mappings, files, discardLogger())
+
+	_, targets, err := router.ResolveTargets(context.Background(), "acme/mono", 7)
+
+	require.NoError(t, err)
+	assert.Len(t, targets, 2)
+	assert.Equal(t, 1, files.calls, "the changed-file list is fetched once per event")
 }
 
 func TestRouter_FetchErrorFallsBackToBase(t *testing.T) {
-	m := &stubMappings{
+	mappings := &stubMappings{
 		base:         domain.RepoMapping{SlackChannel: "C0BASE"},
 		baseTargets:  []domain.Target{{Channel: "C0BASE"}},
 		hasPathRules: true,
 		targets:      []domain.Target{{Channel: "C0A"}},
 	}
 	files := &stubFiles{err: errors.New("github down")}
-	r := application.NewRouter(m, files, discardLogger())
-	_, targets, err := r.ResolveTargets(context.Background(), "acme/mono", 7)
-	if err != nil {
-		t.Fatalf("should soft-fail: %v", err)
-	}
-	if len(targets) != 1 || targets[0].Channel != "C0BASE" {
-		t.Fatalf("fetch error should fall back to base; got %+v", targets)
-	}
+	router := application.NewRouter(mappings, files, discardLogger())
+
+	_, targets, err := router.ResolveTargets(context.Background(), "acme/mono", 7)
+
+	require.NoError(t, err, "a failed file listing must soft-fail")
+	require.Len(t, targets, 1)
+	assert.Equal(t, "C0BASE", targets[0].Channel)
 }
 
 func TestResolveTargets_NoPathRulesReturnsFullBaseSet(t *testing.T) {
-	stub := &stubMappings{
+	mappings := &stubMappings{
 		base:         domain.RepoMapping{SlackChannel: "C0B1"},
 		baseTargets:  []domain.Target{{Channel: "C0B1"}, {Channel: "C0B2"}},
 		hasPathRules: false,
 	}
-	router := application.NewRouter(stub, nil, discardLogger())
+	router := application.NewRouter(mappings, nil, discardLogger())
+
 	_, targets, err := router.ResolveTargets(context.Background(), "acme/api", 7)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(targets) != 2 || targets[0].Channel != "C0B1" || targets[1].Channel != "C0B2" {
-		t.Fatalf("router should return full base set when no path rules: %+v", targets)
-	}
+
+	require.NoError(t, err)
+	require.Len(t, targets, 2)
+	assert.Equal(t, "C0B1", targets[0].Channel)
+	assert.Equal(t, "C0B2", targets[1].Channel)
 }

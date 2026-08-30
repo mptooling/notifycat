@@ -2,28 +2,30 @@ package infrastructure
 
 import (
 	"context"
-	"reflect"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/mptooling/notifycat/internal/digest/domain"
 	"github.com/mptooling/notifycat/internal/platform/persistence"
 	"github.com/mptooling/notifycat/internal/platform/slack"
 )
 
-func domainSectionText(m domain.Message) string {
-	for _, b := range m.Blocks {
-		if b.Type == "section" && b.Text != nil {
-			return b.Text.Text
+func domainSectionText(message domain.Message) string {
+	for _, block := range message.Blocks {
+		if block.Type == "section" && block.Text != nil {
+			return block.Text.Text
 		}
 	}
 	return ""
 }
 
-func slackSectionText(m slack.Message) string {
-	for _, b := range m.Blocks {
-		if b.Type == "section" && b.Text != nil {
-			return b.Text.Text
+func slackSectionText(message slack.Message) string {
+	for _, block := range message.Blocks {
+		if block.Type == "section" && block.Text != nil {
+			return block.Text.Text
 		}
 	}
 	return ""
@@ -32,28 +34,21 @@ func slackSectionText(m slack.Message) string {
 // The SlackComposer adapter must preserve the underlying composer's rendered
 // text and fallback when mapping slack.Message to the domain's neutral Message.
 func TestSlackComposer_PreservesComposerOutput(t *testing.T) {
-	raw := slack.NewComposer("eyes")
-	adapter := NewSlackComposer(raw)
-
-	wantParent := raw.StuckDigestParent([]string{"<!channel>"}, 2)
-	gotParent := adapter.StuckDigestParent([]string{"<!channel>"}, 2)
-	if domainSectionText(gotParent) != slackSectionText(wantParent) {
-		t.Errorf("parent section text = %q; want %q", domainSectionText(gotParent), slackSectionText(wantParent))
-	}
-	if gotParent.Fallback != wantParent.Fallback {
-		t.Errorf("parent fallback = %q; want %q", gotParent.Fallback, wantParent.Fallback)
-	}
-
+	composer := slack.NewComposer("eyes")
+	adapter := NewSlackComposer(composer)
 	domainPRs := []domain.StuckPR{{Repository: "acme/api", Number: 42, URL: "https://github.com/acme/api/pull/42", IdleDays: 2}}
 	slackPRs := []slack.StuckPR{{Repository: "acme/api", Number: 42, URL: "https://github.com/acme/api/pull/42", IdleDays: 2}}
-	wantList := raw.StuckDigestList(slackPRs)
+
+	gotParent := adapter.StuckDigestParent([]string{"<!channel>"}, 2)
 	gotList := adapter.StuckDigestList(domainPRs)
-	if domainSectionText(gotList) != slackSectionText(wantList) {
-		t.Errorf("list section text = %q; want %q", domainSectionText(gotList), slackSectionText(wantList))
-	}
-	if gotList.Fallback != wantList.Fallback {
-		t.Errorf("list fallback = %q; want %q", gotList.Fallback, wantList.Fallback)
-	}
+
+	wantParent := composer.StuckDigestParent([]string{"<!channel>"}, 2)
+	assert.Equal(t, slackSectionText(wantParent), domainSectionText(gotParent))
+	assert.Equal(t, wantParent.Fallback, gotParent.Fallback)
+
+	wantList := composer.StuckDigestList(slackPRs)
+	assert.Equal(t, slackSectionText(wantList), domainSectionText(gotList))
+	assert.Equal(t, wantList.Fallback, gotList.Fallback)
 }
 
 // The domain<->slack message mapping must round-trip block type, text, and
@@ -63,51 +58,36 @@ func TestMessageMapping_RoundTrip(t *testing.T) {
 		Blocks:   []domain.Block{{Type: "section", Text: &domain.TextObject{Type: "mrkdwn", Text: "hello"}}},
 		Fallback: "fb",
 	}
-	slackMsg := toSlackMessage(original)
-	if len(slackMsg.Blocks) != 1 || slackMsg.Blocks[0].Type != "section" ||
-		slackMsg.Blocks[0].Text == nil || slackMsg.Blocks[0].Text.Text != "hello" || slackMsg.Blocks[0].Text.Type != "mrkdwn" {
-		t.Fatalf("toSlackMessage lost block data: %+v", slackMsg)
-	}
-	if slackMsg.Fallback != "fb" {
-		t.Errorf("fallback = %q; want fb", slackMsg.Fallback)
-	}
-	if back := toDomainMessage(slackMsg); !reflect.DeepEqual(back, original) {
-		t.Errorf("round-trip = %+v; want %+v", back, original)
-	}
+
+	slackMessage := toSlackMessage(original)
+
+	require.Len(t, slackMessage.Blocks, 1)
+	assert.Equal(t, "section", slackMessage.Blocks[0].Type)
+	require.NotNil(t, slackMessage.Blocks[0].Text)
+	assert.Equal(t, "mrkdwn", slackMessage.Blocks[0].Text.Type)
+	assert.Equal(t, "hello", slackMessage.Blocks[0].Text.Text)
+	assert.Equal(t, "fb", slackMessage.Fallback)
+	assert.Equal(t, original, toDomainMessage(slackMessage))
 }
 
 // StuckRepo.FindStuck must map store rows (with preloaded messages) to digest
 // domain PullRequests.
 func TestStuckRepo_FindStuck_MapsRows(t *testing.T) {
+	ctx := context.Background()
 	db := persistence.NewTestDB(t)
 	pullRequests := persistence.NewPullRequests(db)
 	repo := NewStuckRepo(pullRequests)
-
-	old := time.Now().Add(-72 * time.Hour)
-	if err := persistence.RawCreateForTest(db, persistence.PullRequest{Repository: "acme/api", PRNumber: 42, UpdatedAt: old}); err != nil {
-		t.Fatalf("seed pr: %v", err)
-	}
-	if err := pullRequests.AddMessage(context.Background(), "acme/api", 42, "C_ACME", "ts1"); err != nil {
-		t.Fatalf("add message: %v", err)
-	}
-
+	seededAt := time.Now().Add(-72 * time.Hour)
+	require.NoError(t, persistence.RawCreateForTest(db, persistence.PullRequest{Repository: "acme/api", PRNumber: 42, UpdatedAt: seededAt}))
+	require.NoError(t, pullRequests.AddMessage(ctx, "acme/api", 42, "C_ACME", "ts1"))
 	cutoff := time.Now().Add(-24 * time.Hour)
-	got, err := repo.FindStuck(context.Background(), cutoff)
-	if err != nil {
-		t.Fatalf("FindStuck: %v", err)
-	}
-	if len(got) != 1 {
-		t.Fatalf("FindStuck returned %d rows; want 1", len(got))
-	}
-	pr := got[0]
-	if pr.Repository != "acme/api" || pr.PRNumber != 42 {
-		t.Errorf("row = %+v; want acme/api #42", pr)
-	}
-	if !pr.UpdatedAt.Before(cutoff) {
-		t.Errorf("UpdatedAt = %v; want before cutoff %v", pr.UpdatedAt, cutoff)
-	}
-	want := []domain.MessageRef{{Channel: "C_ACME", MessageID: "ts1"}}
-	if !reflect.DeepEqual(pr.Messages, want) {
-		t.Errorf("messages = %+v; want %+v", pr.Messages, want)
-	}
+
+	got, err := repo.FindStuck(ctx, cutoff)
+
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, "acme/api", got[0].Repository)
+	assert.Equal(t, 42, got[0].PRNumber)
+	assert.True(t, got[0].UpdatedAt.Before(cutoff))
+	assert.Equal(t, []domain.MessageRef{{Channel: "C_ACME", MessageID: "ts1"}}, got[0].Messages)
 }

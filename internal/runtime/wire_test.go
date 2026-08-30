@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/fx"
 	"gorm.io/gorm"
 
@@ -25,6 +27,7 @@ import (
 
 func buildTestServer(t *testing.T, cfg config.Config) *http.Server {
 	t.Helper()
+
 	var server *http.Server
 	var db *gorm.DB
 	app := fx.New(
@@ -33,9 +36,7 @@ func buildTestServer(t *testing.T, cfg config.Config) *http.Server {
 		fx.NopLogger,
 		fx.Populate(&server, &db),
 	)
-	if err := app.Err(); err != nil {
-		t.Fatalf("build runtime graph: %v", err)
-	}
+	require.NoError(t, app.Err(), "build runtime graph")
 	t.Cleanup(func() {
 		if sqlDB, dbErr := persistence.SQLDB(db); dbErr == nil {
 			_ = sqlDB.Close()
@@ -46,6 +47,7 @@ func buildTestServer(t *testing.T, cfg config.Config) *http.Server {
 
 func newTestConfig(t *testing.T) config.Config {
 	t.Helper()
+
 	dir := t.TempDir()
 	return config.Config{
 		Addr:        ":0",
@@ -70,157 +72,123 @@ func newTestConfig(t *testing.T) config.Config {
 	}
 }
 
+// serve exposes the wired handler over httptest for the duration of the test.
+func serve(t *testing.T, cfg config.Config) *httptest.Server {
+	t.Helper()
+
+	server := httptest.NewServer(buildTestServer(t, cfg).Handler)
+	t.Cleanup(server.Close)
+	return server
+}
+
+// request drives one HTTP call against the wired server and returns its status
+// and body.
+func request(t *testing.T, server *httptest.Server, method, path, body string, headers map[string]string) (int, string) {
+	t.Helper()
+
+	request, err := http.NewRequestWithContext(context.Background(), method, server.URL+path, strings.NewReader(body))
+	require.NoError(t, err)
+	for name, value := range headers {
+		request.Header.Set(name, value)
+	}
+
+	response, err := server.Client().Do(request)
+	require.NoError(t, err)
+	defer func() { _ = response.Body.Close() }()
+
+	responseBody, err := io.ReadAll(response.Body)
+	require.NoError(t, err)
+	return response.StatusCode, string(responseBody)
+}
+
+// githubSignature signs a webhook body the way GitHub does.
+func githubSignature(secret string, body string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(body))
+	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
+}
+
+// slackSignature signs an interaction body the way Slack does.
+func slackSignature(secret, timestamp, body string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte("v0:" + timestamp + ":"))
+	mac.Write([]byte(body))
+	return "v0=" + hex.EncodeToString(mac.Sum(nil))
+}
+
 func TestWire_ReturnsServerAndCleanup(t *testing.T) {
-	cfg := newTestConfig(t)
+	server := buildTestServer(t, newTestConfig(t))
 
-	server := buildTestServer(t, cfg)
-
-	if server == nil {
-		t.Fatal("buildTestServer returned nil server")
-	}
-	if server.Handler == nil {
-		t.Fatal("server.Handler is nil")
-	}
+	require.NotNil(t, server)
+	assert.NotNil(t, server.Handler)
 }
 
 func TestWire_HealthzReturns200(t *testing.T) {
-	cfg := newTestConfig(t)
-	server := buildTestServer(t, cfg)
+	server := serve(t, newTestConfig(t))
 
-	ts := httptest.NewServer(server.Handler)
-	defer ts.Close()
+	status, _ := request(t, server, http.MethodGet, "/healthz", "", nil)
 
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL+"/healthz", nil)
-	resp, err := ts.Client().Do(req)
-	if err != nil {
-		t.Fatalf("GET /healthz: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("status = %d; want 200", resp.StatusCode)
-	}
+	assert.Equal(t, http.StatusOK, status)
 }
 
 func TestWire_RejectsUnsignedWebhook(t *testing.T) {
-	cfg := newTestConfig(t)
-	server := buildTestServer(t, cfg)
+	server := serve(t, newTestConfig(t))
 
-	ts := httptest.NewServer(server.Handler)
-	defer ts.Close()
+	status, _ := request(t, server, http.MethodPost, "/webhook/github", `{"action":"opened"}`,
+		map[string]string{"Content-Type": "application/json"})
 
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost,
-		ts.URL+"/webhook/github", strings.NewReader(`{"action":"opened"}`))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := ts.Client().Do(req)
-	if err != nil {
-		t.Fatalf("POST: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Errorf("status = %d; want 401", resp.StatusCode)
-	}
+	assert.Equal(t, http.StatusUnauthorized, status)
 }
 
 func TestWire_AcceptsSignedWebhookButHasNoMapping(t *testing.T) {
-	cfg := newTestConfig(t)
-	server := buildTestServer(t, cfg)
-
-	ts := httptest.NewServer(server.Handler)
-	defer ts.Close()
-
-	body := []byte(`{
+	server := serve(t, newTestConfig(t))
+	body := `{
 		"action": "opened",
 		"repository": {"full_name": "octo/no-mapping"},
 		"pull_request": {"number": 1, "title": "t", "html_url": "u", "user": {"login": "a"}}
-	}`)
+	}`
 
-	mac := hmac.New(sha256.New, []byte("topsecret"))
-	mac.Write(body)
-	sig := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+	status, responseBody := request(t, server, http.MethodPost, "/webhook/github", body, map[string]string{
+		"X-Hub-Signature-256": githubSignature("topsecret", body),
+		"Content-Type":        "application/json",
+	})
 
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost,
-		ts.URL+"/webhook/github", strings.NewReader(string(body)))
-	req.Header.Set("X-Hub-Signature-256", sig)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := ts.Client().Do(req)
-	if err != nil {
-		t.Fatalf("Do: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		t.Errorf("status = %d, body = %s; want 200 (handler should noop)", resp.StatusCode, b)
-	}
+	assert.Equal(t, http.StatusOK, status, "an unmapped repo is a silent no-op: %s", responseBody)
 }
 
 func TestWire_SlackInteractionsAbsentWithoutSigningSecret(t *testing.T) {
-	cfg := newTestConfig(t) // no SlackSigningSecret
-	server := buildTestServer(t, cfg)
+	server := serve(t, newTestConfig(t))
 
-	ts := httptest.NewServer(server.Handler)
-	defer ts.Close()
+	status, _ := request(t, server, http.MethodPost, "/webhook/slack/interactions", "payload=x", nil)
 
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost,
-		ts.URL+"/webhook/slack/interactions", strings.NewReader("payload=x"))
-	resp, err := ts.Client().Do(req)
-	if err != nil {
-		t.Fatalf("POST: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusNotFound {
-		t.Errorf("status = %d; want 404 (route must be absent without a signing secret)", resp.StatusCode)
-	}
+	assert.Equal(t, http.StatusNotFound, status, "the route must not exist without a signing secret")
 }
 
 func TestWire_SlackInteractionsAcceptsSignedRequest(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.SlackSigningSecret = config.Secret("slack-signing-secret")
-	server := buildTestServer(t, cfg)
-
-	ts := httptest.NewServer(server.Handler)
-	defer ts.Close()
-
-	body := []byte("payload=" + `%7B%22type%22%3A%22block_actions%22%7D`)
+	server := serve(t, cfg)
+	body := "payload=" + `%7B%22type%22%3A%22block_actions%22%7D`
 	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
-	mac := hmac.New(sha256.New, []byte("slack-signing-secret"))
-	mac.Write([]byte("v0:" + timestamp + ":"))
-	mac.Write(body)
-	signature := "v0=" + hex.EncodeToString(mac.Sum(nil))
 
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost,
-		ts.URL+"/webhook/slack/interactions", strings.NewReader(string(body)))
-	req.Header.Set(security.SlackSignatureHeader, signature)
-	req.Header.Set(security.SlackTimestampHeader, timestamp)
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := ts.Client().Do(req)
-	if err != nil {
-		t.Fatalf("POST: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		t.Errorf("status = %d, body = %s; want 200 for a correctly signed interaction", resp.StatusCode, b)
-	}
+	status, responseBody := request(t, server, http.MethodPost, "/webhook/slack/interactions", body, map[string]string{
+		security.SlackSignatureHeader: slackSignature("slack-signing-secret", timestamp, body),
+		security.SlackTimestampHeader: timestamp,
+		"Content-Type":                "application/x-www-form-urlencoded",
+	})
+
+	assert.Equal(t, http.StatusOK, status, "body: %s", responseBody)
 }
 
 func TestWire_SlackInteractionsRejectsForgedRequest(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.SlackSigningSecret = config.Secret("slack-signing-secret")
-	server := buildTestServer(t, cfg)
+	server := serve(t, cfg)
 
-	ts := httptest.NewServer(server.Handler)
-	defer ts.Close()
+	status, _ := request(t, server, http.MethodPost, "/webhook/slack/interactions", "payload=x", map[string]string{
+		security.SlackSignatureHeader: "v0=deadbeef",
+		security.SlackTimestampHeader: strconv.FormatInt(time.Now().Unix(), 10),
+	})
 
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost,
-		ts.URL+"/webhook/slack/interactions", strings.NewReader("payload=x"))
-	req.Header.Set(security.SlackSignatureHeader, "v0=deadbeef")
-	req.Header.Set(security.SlackTimestampHeader, strconv.FormatInt(time.Now().Unix(), 10))
-	resp, err := ts.Client().Do(req)
-	if err != nil {
-		t.Fatalf("POST: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Errorf("status = %d; want 401 for a forged signature", resp.StatusCode)
-	}
+	assert.Equal(t, http.StatusUnauthorized, status)
 }

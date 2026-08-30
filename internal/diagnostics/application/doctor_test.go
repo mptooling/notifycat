@@ -2,8 +2,11 @@ package application_test
 
 import (
 	"context"
-	"strings"
+	"slices"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/mptooling/notifycat/internal/diagnostics/application"
 	diagnosticsdomain "github.com/mptooling/notifycat/internal/diagnostics/domain"
@@ -44,260 +47,208 @@ func validSnapshot() diagnosticsdomain.ConfigSnapshot {
 	}
 }
 
-// ---- CheckConfig tests ----
+func oneEntrySnapshot() diagnosticsdomain.ConfigSnapshot {
+	snapshot := validSnapshot()
+	snapshot.Entries = []routingdomain.Entry{
+		{Org: "octo", Repo: "widget", Channel: "C0123ABCDE"},
+	}
+	return snapshot
+}
+
+// findSectionCheck returns the named check, or fails the test.
+func findSectionCheck(t *testing.T, section diagnosticsdomain.Section, name string) validationdomain.CheckResult {
+	t.Helper()
+
+	for _, check := range section.Checks {
+		if check.Name == name {
+			return check
+		}
+	}
+	require.FailNowf(t, "missing check", "no %q check in section: %+v", name, section.Checks)
+	return validationdomain.CheckResult{}
+}
+
+// failedCheckNames lists every check in the section that failed.
+func failedCheckNames(section diagnosticsdomain.Section) []string {
+	var failed []string
+	for _, check := range section.Checks {
+		if check.Status == validationdomain.StatusFail {
+			failed = append(failed, check.Name)
+		}
+	}
+	return failed
+}
 
 func TestCheckConfig_AllSetReturnsOK(t *testing.T) {
-	sec := application.CheckConfig(validSnapshot())
-	if sec.Name != "config" {
-		t.Errorf("section name = %q; want %q", sec.Name, "config")
-	}
-	if !sec.OK() {
-		t.Fatalf("CheckConfig FAILed on valid snapshot: %+v", sec)
-	}
+	section := application.CheckConfig(validSnapshot())
+
+	assert.Equal(t, "config", section.Name)
+	assert.True(t, section.OK(), "checks: %+v", section.Checks)
 }
 
 func TestCheckConfig_MissingSecretsFail(t *testing.T) {
-	snap := validSnapshot()
-	snap.WebhookSecretSet = false
-	snap.SlackTokenSet = false
+	snapshot := validSnapshot()
+	snapshot.WebhookSecretSet = false
+	snapshot.SlackTokenSet = false
 
-	sec := application.CheckConfig(snap)
-	if sec.OK() {
-		t.Fatalf("CheckConfig succeeded with missing secrets")
-	}
+	section := application.CheckConfig(snapshot)
 
-	want := map[string]bool{"GITHUB_WEBHOOK_SECRET": false, "SLACK_BOT_TOKEN": false}
-	for _, c := range sec.Checks {
-		if _, ok := want[c.Name]; ok && c.Status == validationdomain.StatusFail {
-			want[c.Name] = true
-		}
-	}
-	for name, found := range want {
-		if !found {
-			t.Errorf("expected FAIL for %s; not found in report: %+v", name, sec.Checks)
-		}
-	}
+	assert.False(t, section.OK())
+	assert.Subset(t, failedCheckNames(section), []string{"GITHUB_WEBHOOK_SECRET", "SLACK_BOT_TOKEN"})
 }
 
-// TestCheckConfig_NeverPrintsSecretValues asserts that the snapshot exposes
-// only booleans for secrets — the detail fields never contain a raw value.
+// The snapshot exposes only booleans for secrets — the detail fields never
+// contain a raw value.
 func TestCheckConfig_NeverPrintsSecretValues(t *testing.T) {
-	snap := validSnapshot()
-	sec := application.CheckConfig(snap)
-	for _, c := range sec.Checks {
-		// Only "set" or "missing" should appear, never any raw token value.
-		if c.Detail != "set" && c.Detail != "missing; set the environment variable" &&
-			c.Name != "cleanup.message_ttl_days" &&
-			c.Name != "database.url" &&
-			c.Name != "config.yaml" &&
-			c.Name != "server.domain" {
-			t.Errorf("unexpected detail for %s: %q (should only be 'set' or 'missing')", c.Name, c.Detail)
-		}
-	}
-}
+	nonSecretChecks := []string{"cleanup.message_ttl_days", "database.url", "config.yaml", "server.domain"}
 
-func findConfigCheck(t *testing.T, sec diagnosticsdomain.Section, name string) validationdomain.CheckResult {
-	t.Helper()
-	for _, c := range sec.Checks {
-		if c.Name == name {
-			return c
+	section := application.CheckConfig(validSnapshot())
+
+	for _, check := range section.Checks {
+		if slices.Contains(nonSecretChecks, check.Name) {
+			continue
 		}
+		assert.Contains(t, []string{"set", "missing; set the environment variable"}, check.Detail,
+			"secret check %q must report only set/missing", check.Name)
 	}
-	t.Fatalf("check %q not found in section: %+v", name, sec.Checks)
-	return validationdomain.CheckResult{}
 }
 
 func TestCheckConfig_ValidDomainReportsWebhookURL(t *testing.T) {
-	snap := validSnapshot()
-	snap.Domain = "notifycat.example.com"
-	sec := application.CheckConfig(snap)
-	c := findConfigCheck(t, sec, "server.domain")
-	if c.Status != validationdomain.StatusOK {
-		t.Fatalf("DOMAIN check = %+v; want OK", c)
-	}
-	if !strings.Contains(c.Detail, "https://notifycat.example.com/webhook/github") {
-		t.Errorf("detail should name the exact webhook URL to paste into GitHub, got %q", c.Detail)
-	}
+	snapshot := validSnapshot()
+	snapshot.Domain = "notifycat.example.com"
+
+	section := application.CheckConfig(snapshot)
+
+	check := findSectionCheck(t, section, "server.domain")
+	assert.Equal(t, validationdomain.StatusOK, check.Status)
+	assert.Contains(t, check.Detail, "https://notifycat.example.com/webhook/github",
+		"the detail names the exact URL to paste into GitHub")
 }
 
 func TestCheckConfig_DomainWithSchemeFails(t *testing.T) {
-	snap := validSnapshot()
-	snap.Domain = "https://notifycat.example.com"
-	sec := application.CheckConfig(snap)
-	c := findConfigCheck(t, sec, "server.domain")
-	if c.Status != validationdomain.StatusFail {
-		t.Fatalf("DOMAIN carrying a scheme should FAIL (it must be a bare host), got %+v", c)
-	}
-	if sec.OK() {
-		t.Errorf("section must not be OK when DOMAIN is invalid")
-	}
+	snapshot := validSnapshot()
+	snapshot.Domain = "https://notifycat.example.com"
+
+	section := application.CheckConfig(snapshot)
+
+	assert.Equal(t, validationdomain.StatusFail, findSectionCheck(t, section, "server.domain").Status,
+		"the domain must be a bare host")
+	assert.False(t, section.OK())
 }
 
 func TestCheckConfig_MalformedDomainFails(t *testing.T) {
-	snap := validSnapshot()
-	snap.Domain = "not a valid host"
-	sec := application.CheckConfig(snap)
-	c := findConfigCheck(t, sec, "server.domain")
-	if c.Status != validationdomain.StatusFail {
-		t.Fatalf("malformed DOMAIN should FAIL, got %+v", c)
-	}
+	snapshot := validSnapshot()
+	snapshot.Domain = "not a valid host"
+
+	section := application.CheckConfig(snapshot)
+
+	assert.Equal(t, validationdomain.StatusFail, findSectionCheck(t, section, "server.domain").Status)
 }
 
 func TestCheckConfig_UnsetDomainSkips(t *testing.T) {
-	snap := validSnapshot() // Domain is empty
-	sec := application.CheckConfig(snap)
-	c := findConfigCheck(t, sec, "server.domain")
-	if c.Status != validationdomain.StatusSkip {
-		t.Fatalf("unset DOMAIN should SKIP (local-dev/tunnel users), got %+v", c)
-	}
-	if !sec.OK() {
-		t.Errorf("a SKIP must not fail the section")
-	}
+	section := application.CheckConfig(validSnapshot())
+
+	assert.Equal(t, validationdomain.StatusSkip, findSectionCheck(t, section, "server.domain").Status,
+		"local-dev and tunnel users run without a domain")
+	assert.True(t, section.OK())
 }
 
 func TestCheckConfig_RejectsNonPositiveTTL(t *testing.T) {
-	snap := validSnapshot()
-	snap.MessageTTLDays = 0
-	sec := application.CheckConfig(snap)
-	if sec.OK() {
-		t.Fatalf("CheckConfig should FAIL on MessageTTLDays=0")
-	}
+	snapshot := validSnapshot()
+	snapshot.MessageTTLDays = 0
+
+	section := application.CheckConfig(snapshot)
+
+	assert.False(t, section.OK())
 }
 
-// ---- CheckDatabase tests (application-layer view: reads pre-computed snapshot) ----
-
 func TestCheckDatabase_OpenableReturnsOK(t *testing.T) {
-	snap := validSnapshot()
-	snap.DatabaseURL = "file:/some/path/doctor.db"
-	snap.DatabaseOpenable = true
-	snap.DatabaseDetail = snap.DatabaseURL
+	snapshot := validSnapshot()
+	snapshot.DatabaseURL = "file:/some/path/doctor.db"
+	snapshot.DatabaseOpenable = true
+	snapshot.DatabaseDetail = snapshot.DatabaseURL
 
-	sec := application.CheckDatabase(snap)
-	if sec.Name != "database" {
-		t.Errorf("section name = %q; want %q", sec.Name, "database")
-	}
-	if !sec.OK() {
-		t.Fatalf("CheckDatabase FAILed on openable snapshot: %+v", sec.Checks)
-	}
+	section := application.CheckDatabase(snapshot)
+
+	assert.Equal(t, "database", section.Name)
+	assert.True(t, section.OK(), "checks: %+v", section.Checks)
 }
 
 func TestCheckDatabase_NotOpenableFails(t *testing.T) {
-	snap := validSnapshot()
-	snap.DatabaseURL = "file:/this/path/does/not/exist/doctor.db"
-	snap.DatabaseOpenable = false
-	snap.DatabaseDetail = `cannot open "file:/this/path/does/not/exist/doctor.db": store: open: ...; ensure the parent directory exists and is writable`
+	snapshot := validSnapshot()
+	snapshot.DatabaseURL = "file:/this/path/does/not/exist/doctor.db"
+	snapshot.DatabaseOpenable = false
+	snapshot.DatabaseDetail = `cannot open "file:/this/path/does/not/exist/doctor.db": store: open: ...; ensure the parent directory exists and is writable`
 
-	sec := application.CheckDatabase(snap)
-	if sec.OK() {
-		t.Fatalf("CheckDatabase succeeded on not-openable snapshot: %+v", sec.Checks)
-	}
+	section := application.CheckDatabase(snapshot)
+
+	assert.False(t, section.OK())
 }
 
 func TestCheckDatabase_EmptyDSNFails(t *testing.T) {
-	snap := validSnapshot()
-	snap.DatabaseURL = ""
-	snap.DatabaseOpenable = false
-	snap.DatabaseDetail = ""
+	snapshot := validSnapshot()
+	snapshot.DatabaseURL = ""
+	snapshot.DatabaseOpenable = false
+	snapshot.DatabaseDetail = ""
 
-	sec := application.CheckDatabase(snap)
-	if sec.OK() {
-		t.Fatalf("CheckDatabase succeeded on empty DSN snapshot")
-	}
-}
+	section := application.CheckDatabase(snapshot)
 
-// ---- CheckMappings tests ----
-
-func oneEntrySnapshot() diagnosticsdomain.ConfigSnapshot {
-	snap := validSnapshot()
-	snap.Entries = []routingdomain.Entry{
-		{Org: "octo", Repo: "widget", Channel: "C0123ABCDE"},
-	}
-	return snap
+	assert.False(t, section.OK())
 }
 
 func TestCheckMappings_WithEntriesIsOK(t *testing.T) {
-	snap := oneEntrySnapshot()
-	sec := application.CheckMappings(snap)
-	if sec.Name != "mappings" {
-		t.Errorf("section name = %q; want %q", sec.Name, "mappings")
-	}
-	if !sec.OK() {
-		t.Fatalf("CheckMappings FAILed on valid snapshot: %+v", sec.Checks)
-	}
-	if len(sec.Checks) == 0 || !strings.Contains(sec.Checks[0].Detail, "1 entries") {
-		t.Errorf("Detail = %q; want it to contain \"1 entries\"", sec.Checks)
-	}
+	section := application.CheckMappings(oneEntrySnapshot())
+
+	assert.Equal(t, "mappings", section.Name)
+	assert.True(t, section.OK(), "checks: %+v", section.Checks)
+	require.NotEmpty(t, section.Checks)
+	assert.Contains(t, section.Checks[0].Detail, "1 entries")
 }
 
 func TestCheckMappings_EmptyMappingsIsOK(t *testing.T) {
-	snap := validSnapshot()
-	snap.Entries = nil
-	sec := application.CheckMappings(snap)
-	if !sec.OK() {
-		t.Fatalf("CheckMappings FAILed on empty mappings: %+v", sec.Checks)
-	}
+	snapshot := validSnapshot()
+	snapshot.Entries = nil
+
+	section := application.CheckMappings(snapshot)
+
+	assert.True(t, section.OK(), "an operator may boot with no mappings yet")
 }
 
 func TestCheckMappings_PathRoutingActiveWithToken(t *testing.T) {
-	snap := oneEntrySnapshot()
-	snap.HasPathRules = true
-	snap.TokenSet = true
-	sec := application.CheckMappings(snap)
-	c := findPathRoutingCheck(t, sec)
-	if c.Status != validationdomain.StatusOK {
-		t.Errorf("path routing status = %v; want OK with a token", c.Status)
-	}
-	if !sec.OK() {
-		t.Errorf("section should be OK with token: %+v", sec.Checks)
-	}
+	snapshot := oneEntrySnapshot()
+	snapshot.HasPathRules = true
+	snapshot.TokenSet = true
+
+	section := application.CheckMappings(snapshot)
+
+	assert.Equal(t, validationdomain.StatusOK, findSectionCheck(t, section, "path routing").Status)
+	assert.True(t, section.OK())
 }
 
 func TestCheckMappings_PathRoutingInertWithoutToken(t *testing.T) {
-	snap := oneEntrySnapshot()
-	snap.HasPathRules = true
-	snap.TokenSet = false
-	sec := application.CheckMappings(snap)
-	c := findPathRoutingCheck(t, sec)
-	if c.Status != validationdomain.StatusSkip {
-		t.Errorf("path routing status = %v; want SKIP without a token", c.Status)
-	}
-	if !sec.OK() {
-		t.Errorf("inert path routing is a SKIP, not a failure: %+v", sec.Checks)
-	}
-}
+	snapshot := oneEntrySnapshot()
+	snapshot.HasPathRules = true
+	snapshot.TokenSet = false
 
-func findPathRoutingCheck(t *testing.T, sec diagnosticsdomain.Section) validationdomain.CheckResult {
-	t.Helper()
-	for _, c := range sec.Checks {
-		if c.Name == "path routing" {
-			return c
-		}
-	}
-	t.Fatalf("no \"path routing\" check in section: %+v", sec.Checks)
-	return validationdomain.CheckResult{}
-}
+	section := application.CheckMappings(snapshot)
 
-// ---- Doctor.Run tests ----
+	assert.Equal(t, validationdomain.StatusSkip, findSectionCheck(t, section, "path routing").Status,
+		"path routing needs a read token to do anything")
+	assert.True(t, section.OK(), "inert path routing is a SKIP, not a failure")
+}
 
 func TestDoctorRun_AlwaysReturnsConfigDatabaseMappings(t *testing.T) {
-	snap := validSnapshot()
-	d := application.NewDoctor(snap, nil)
-	sections := d.Run(context.Background(), "")
+	doctor := application.NewDoctor(validSnapshot(), nil)
 
-	if len(sections) != 3 {
-		t.Fatalf("got %d sections; want 3 (config, database, mappings)", len(sections))
-	}
-	wantOrder := []string{"config", "database", "mappings"}
-	for i, want := range wantOrder {
-		if sections[i].Name != want {
-			t.Errorf("sections[%d].Name = %q; want %q", i, sections[i].Name, want)
-		}
-	}
+	sections := doctor.Run(context.Background(), "")
+
+	require.Len(t, sections, 3)
+	assert.Equal(t, []string{"config", "database", "mappings"},
+		[]string{sections[0].Name, sections[1].Name, sections[2].Name})
 }
 
 func TestDoctorRun_TargetRepositoryDelegatesToValidator(t *testing.T) {
-	snap := validSnapshot()
-	fake := &fakeRepoValidator{
+	validator := &fakeRepoValidator{
 		report: validationdomain.Report{
 			Repository: "octo/widget",
 			Checks: []validationdomain.CheckResult{
@@ -306,29 +257,20 @@ func TestDoctorRun_TargetRepositoryDelegatesToValidator(t *testing.T) {
 			},
 		},
 	}
-	d := application.NewDoctor(snap, fake)
-	sections := d.Run(context.Background(), "octo/widget")
+	doctor := application.NewDoctor(validSnapshot(), validator)
 
-	if fake.got != "octo/widget" {
-		t.Errorf("validator.Validate called with %q; want %q", fake.got, "octo/widget")
-	}
-	if len(sections) != 4 {
-		t.Fatalf("got %d sections; want 4 (config, database, mappings, octo/widget)", len(sections))
-	}
-	repoSection := sections[3]
-	if repoSection.Name != "octo/widget" {
-		t.Errorf("repo section name = %q; want %q", repoSection.Name, "octo/widget")
-	}
-	if repoSection.OK() {
-		t.Errorf("repo section should reflect validator FAIL")
-	}
+	sections := doctor.Run(context.Background(), "octo/widget")
+
+	assert.Equal(t, "octo/widget", validator.got)
+	require.Len(t, sections, 4, "the repo section is appended after config/database/mappings")
+	assert.Equal(t, "octo/widget", sections[3].Name)
+	assert.False(t, sections[3].OK(), "the section mirrors the validator's verdict")
 }
 
 func TestDoctorRun_TargetRepositoryWithoutValidatorIsNoop(t *testing.T) {
-	snap := validSnapshot()
-	d := application.NewDoctor(snap, nil)
-	sections := d.Run(context.Background(), "octo/widget")
-	if len(sections) != 3 {
-		t.Fatalf("got %d sections; want 3 (no validator available, repo target ignored)", len(sections))
-	}
+	doctor := application.NewDoctor(validSnapshot(), nil)
+
+	sections := doctor.Run(context.Background(), "octo/widget")
+
+	assert.Len(t, sections, 3, "with no validator wired the repo target is ignored")
 }

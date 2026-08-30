@@ -1,10 +1,12 @@
 package infrastructure
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 	routinginfra "github.com/mptooling/notifycat/internal/routing/infrastructure"
@@ -18,8 +20,8 @@ func fixedClock() func() time.Time {
 
 func tempLockPath(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
-	return filepath.Join(dir, "mappings.lock")
+
+	return filepath.Join(t.TempDir(), "mappings.lock")
 }
 
 func explicitEntries() []routingdomain.Entry {
@@ -29,266 +31,164 @@ func explicitEntries() []routingdomain.Entry {
 	}
 }
 
-func passingResult(entry routingdomain.Entry) validationdomain.EntryResult {
+// seedLock writes a lock that already holds the current hash of every entry.
+func seedLock(t *testing.T, lockPath string, clock func() time.Time, entries []routingdomain.Entry) {
+	t.Helper()
+
+	prior := routinginfra.Lock{Version: routinginfra.LockVersion, Entries: map[string]routinginfra.LockEntry{}}
+	for _, entry := range entries {
+		prior.Entries[entry.Key()] = routinginfra.LockEntry{SHA256: entry.Hash(), ValidatedAt: clock()}
+	}
+	require.NoError(t, routinginfra.WriteLock(lockPath, prior))
+}
+
+func readLock(t *testing.T, lockPath string) routinginfra.Lock {
+	t.Helper()
+
+	lock, err := routinginfra.ReadLock(lockPath)
+	require.NoError(t, err)
+	return lock
+}
+
+func resultWith(entry routingdomain.Entry, status validationdomain.Status, detail string) validationdomain.EntryResult {
 	return validationdomain.EntryResult{
 		Entry: entry,
 		Reports: []validationdomain.Report{
-			{Repository: entry.Key(), Checks: []validationdomain.CheckResult{{Name: "x", Status: validationdomain.StatusOK, Detail: "ok"}}},
+			{Repository: entry.Key(), Checks: []validationdomain.CheckResult{{Name: "x", Status: status, Detail: detail}}},
 		},
 	}
+}
+
+func passingResult(entry routingdomain.Entry) validationdomain.EntryResult {
+	return resultWith(entry, validationdomain.StatusOK, "ok")
 }
 
 func failingResult(entry routingdomain.Entry) validationdomain.EntryResult {
-	return validationdomain.EntryResult{
-		Entry: entry,
-		Reports: []validationdomain.Report{
-			{Repository: entry.Key(), Checks: []validationdomain.CheckResult{{Name: "x", Status: validationdomain.StatusFail, Detail: "boom"}}},
-		},
-	}
+	return resultWith(entry, validationdomain.StatusFail, "boom")
 }
 
 func warningResult(entry routingdomain.Entry) validationdomain.EntryResult {
-	return validationdomain.EntryResult{
-		Entry: entry,
-		Reports: []validationdomain.Report{
-			{Repository: entry.Key(), Checks: []validationdomain.CheckResult{{Name: "webhook", Status: validationdomain.StatusWarn, Detail: "no active webhook"}}},
-		},
-	}
+	return resultWith(entry, validationdomain.StatusWarn, "no active webhook")
 }
 
-// TestLockGateway_Plan_NoLock_ReturnsAllEntries verifies that Plan with a
-// missing lock file returns every entry for validation.
 func TestLockGateway_Plan_NoLock_ReturnsAllEntries(t *testing.T) {
-	lockPath := tempLockPath(t)
-	gateway := NewLockGateway(lockPath, fixedClock())
 	entries := explicitEntries()
+	gateway := NewLockGateway(tempLockPath(t), fixedClock())
 
 	plan, err := gateway.Plan(entries, false)
 
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(plan.ToValidate) != len(entries) {
-		t.Errorf("ToValidate = %d; want %d", len(plan.ToValidate), len(entries))
-	}
-	if len(plan.Stale) != 0 {
-		t.Errorf("Stale = %v; want none", plan.Stale)
-	}
+	require.NoError(t, err)
+	assert.Len(t, plan.ToValidate, len(entries), "a missing lock is a cold start")
+	assert.Empty(t, plan.Stale)
 }
 
-// TestLockGateway_Plan_UpToDate_ReturnsEmpty verifies that an up-to-date lock
-// returns no entries for (re)validation.
 func TestLockGateway_Plan_UpToDate_ReturnsEmpty(t *testing.T) {
 	lockPath := tempLockPath(t)
 	clock := fixedClock()
 	entries := explicitEntries()
-
-	// Pre-populate the lock with current hashes.
-	prior := routinginfra.Lock{Version: routinginfra.LockVersion, Entries: map[string]routinginfra.LockEntry{}}
-	for _, entry := range entries {
-		prior.Entries[entry.Key()] = routinginfra.LockEntry{SHA256: entry.Hash(), ValidatedAt: clock()}
-	}
-	if err := routinginfra.WriteLock(lockPath, prior); err != nil {
-		t.Fatalf("seed lock: %v", err)
-	}
-
+	seedLock(t, lockPath, clock, entries)
 	gateway := NewLockGateway(lockPath, clock)
+
 	plan, err := gateway.Plan(entries, false)
 
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(plan.ToValidate) != 0 {
-		t.Errorf("ToValidate = %v; want empty (up to date)", plan.ToValidate)
-	}
+	require.NoError(t, err)
+	assert.Empty(t, plan.ToValidate)
 }
 
-// TestLockGateway_Plan_Force_ReturnsAllEntries verifies that force=true
-// bypasses the on-disk lock and returns every entry.
 func TestLockGateway_Plan_Force_ReturnsAllEntries(t *testing.T) {
 	lockPath := tempLockPath(t)
 	clock := fixedClock()
 	entries := explicitEntries()
-
-	// Pre-populate so without force nothing would need validating.
-	prior := routinginfra.Lock{Version: routinginfra.LockVersion, Entries: map[string]routinginfra.LockEntry{}}
-	for _, entry := range entries {
-		prior.Entries[entry.Key()] = routinginfra.LockEntry{SHA256: entry.Hash(), ValidatedAt: clock()}
-	}
-	if err := routinginfra.WriteLock(lockPath, prior); err != nil {
-		t.Fatalf("seed lock: %v", err)
-	}
-
+	seedLock(t, lockPath, clock, entries)
 	gateway := NewLockGateway(lockPath, clock)
+
 	plan, err := gateway.Plan(entries, true)
 
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(plan.ToValidate) != len(entries) {
-		t.Errorf("ToValidate = %d; want %d (force ignores lock)", len(plan.ToValidate), len(entries))
-	}
+	require.NoError(t, err)
+	assert.Len(t, plan.ToValidate, len(entries), "force ignores the lock")
 }
 
-// TestLockGateway_Commit_WritesAllSuccessesToLock verifies that Commit writes
-// every passing entry into the lock file.
 func TestLockGateway_Commit_WritesAllSuccessesToLock(t *testing.T) {
 	lockPath := tempLockPath(t)
 	gateway := NewLockGateway(lockPath, fixedClock())
 	entries := explicitEntries()
-	results := []validationdomain.EntryResult{
-		passingResult(entries[0]),
-		passingResult(entries[1]),
-	}
 
-	if err := gateway.Commit(results, nil); err != nil {
-		t.Fatalf("Commit: %v", err)
-	}
+	err := gateway.Commit([]validationdomain.EntryResult{passingResult(entries[0]), passingResult(entries[1])}, nil)
 
-	lock, err := routinginfra.ReadLock(lockPath)
-	if err != nil {
-		t.Fatalf("read lock: %v", err)
-	}
+	require.NoError(t, err)
+	lock := readLock(t, lockPath)
 	for _, entry := range entries {
-		lockEntry, ok := lock.Entries[entry.Key()]
-		if !ok {
-			t.Errorf("lock missing %s", entry.Key())
-			continue
-		}
-		if lockEntry.SHA256 != entry.Hash() {
-			t.Errorf("%s SHA256 = %q; want %q", entry.Key(), lockEntry.SHA256, entry.Hash())
-		}
+		require.Contains(t, lock.Entries, entry.Key())
+		assert.Equal(t, entry.Hash(), lock.Entries[entry.Key()].SHA256)
 	}
 }
 
-// TestLockGateway_Commit_PartialFailure_OnlySuccessesEnterLock verifies that
-// only passing entries are written to the lock.
 func TestLockGateway_Commit_PartialFailure_OnlySuccessesEnterLock(t *testing.T) {
 	lockPath := tempLockPath(t)
 	gateway := NewLockGateway(lockPath, fixedClock())
 	entries := explicitEntries()
-	results := []validationdomain.EntryResult{
-		failingResult(entries[0]), // acme/api fails
-		passingResult(entries[1]), // acme/web passes
-	}
 
-	if err := gateway.Commit(results, nil); err != nil {
-		t.Fatalf("Commit: %v", err)
-	}
+	err := gateway.Commit([]validationdomain.EntryResult{failingResult(entries[0]), passingResult(entries[1])}, nil)
 
-	lock, err := routinginfra.ReadLock(lockPath)
-	if err != nil {
-		t.Fatalf("read lock: %v", err)
-	}
-	if _, ok := lock.Entries["acme/api"]; ok {
-		t.Errorf("acme/api failed; should not be in lock: %+v", lock.Entries)
-	}
-	if _, ok := lock.Entries["acme/web"]; !ok {
-		t.Errorf("acme/web passed; should be in lock: %+v", lock.Entries)
-	}
+	require.NoError(t, err)
+	lock := readLock(t, lockPath)
+	assert.NotContains(t, lock.Entries, "acme/api", "a failed entry is never cached")
+	assert.Contains(t, lock.Entries, "acme/web")
 }
 
-// TestLockGateway_Commit_WarnedEntryStaysOutOfLock keeps the CLI and the server
-// in agreement: a warned entry is never cached, so both re-probe it and
-// re-surface the warning until the operator fixes it.
+// Keeps the CLI and the server in agreement: a warned entry is never cached, so
+// both re-probe it and re-surface the warning until the operator fixes it.
 func TestLockGateway_Commit_WarnedEntryStaysOutOfLock(t *testing.T) {
 	lockPath := tempLockPath(t)
 	gateway := NewLockGateway(lockPath, fixedClock())
 	entries := explicitEntries()
-	results := []validationdomain.EntryResult{
-		warningResult(entries[0]), // acme/api warns
-		passingResult(entries[1]), // acme/web passes
-	}
 
-	if err := gateway.Commit(results, nil); err != nil {
-		t.Fatalf("Commit: %v", err)
-	}
+	err := gateway.Commit([]validationdomain.EntryResult{warningResult(entries[0]), passingResult(entries[1])}, nil)
 
-	lock, err := routinginfra.ReadLock(lockPath)
-	if err != nil {
-		t.Fatalf("read lock: %v", err)
-	}
-	if _, ok := lock.Entries["acme/api"]; ok {
-		t.Errorf("acme/api warned; should not be in lock: %+v", lock.Entries)
-	}
-	if _, ok := lock.Entries["acme/web"]; !ok {
-		t.Errorf("acme/web passed; should be in lock: %+v", lock.Entries)
-	}
+	require.NoError(t, err)
+	lock := readLock(t, lockPath)
+	assert.NotContains(t, lock.Entries, "acme/api")
+	assert.Contains(t, lock.Entries, "acme/web")
 }
 
-// TestLockGateway_Commit_StaleKeysDropped verifies that Commit removes stale
-// keys from the lock.
 func TestLockGateway_Commit_StaleKeysDropped(t *testing.T) {
 	lockPath := tempLockPath(t)
 	clock := fixedClock()
 	entries := explicitEntries()
-
-	// Seed the lock with both entries plus a stale key.
-	prior := routinginfra.Lock{Version: routinginfra.LockVersion, Entries: map[string]routinginfra.LockEntry{
-		"acme/api": {SHA256: entries[0].Hash(), ValidatedAt: clock()},
-		"acme/web": {SHA256: entries[1].Hash(), ValidatedAt: clock()},
-		"acme/old": {SHA256: "deadbeef", ValidatedAt: clock()},
-	}}
-	if err := routinginfra.WriteLock(lockPath, prior); err != nil {
-		t.Fatalf("seed lock: %v", err)
-	}
-
+	seedLock(t, lockPath, clock, entries)
+	stale := readLock(t, lockPath)
+	stale.Entries["acme/old"] = routinginfra.LockEntry{SHA256: "deadbeef", ValidatedAt: clock()}
+	require.NoError(t, routinginfra.WriteLock(lockPath, stale))
 	gateway := NewLockGateway(lockPath, clock)
-	if err := gateway.Commit(nil, []string{"acme/old"}); err != nil {
-		t.Fatalf("Commit: %v", err)
-	}
 
-	lock, err := routinginfra.ReadLock(lockPath)
-	if err != nil {
-		t.Fatalf("read lock: %v", err)
-	}
-	if _, ok := lock.Entries["acme/old"]; ok {
-		t.Errorf("stale key acme/old should have been dropped")
-	}
-	// Existing valid entries should be preserved.
-	if _, ok := lock.Entries["acme/api"]; !ok {
-		t.Errorf("acme/api should still be in lock after stale drop")
-	}
+	err := gateway.Commit(nil, []string{"acme/old"})
+
+	require.NoError(t, err)
+	lock := readLock(t, lockPath)
+	assert.NotContains(t, lock.Entries, "acme/old")
+	assert.Contains(t, lock.Entries, "acme/api", "the surviving entries are preserved")
 }
 
-// TestLockGateway_CommitTargeted_WritesEntry verifies that CommitTargeted
-// writes the single entry into the lock file.
 func TestLockGateway_CommitTargeted_WritesEntry(t *testing.T) {
-	lockPath := tempLockPath(t)
-	gateway := NewLockGateway(lockPath, fixedClock())
-	entry := explicitEntries()[0] // acme/api
-
-	if err := gateway.CommitTargeted(entry); err != nil {
-		t.Fatalf("CommitTargeted: %v", err)
-	}
-
-	lock, err := routinginfra.ReadLock(lockPath)
-	if err != nil {
-		t.Fatalf("read lock: %v", err)
-	}
-	lockEntry, ok := lock.Entries["acme/api"]
-	if !ok {
-		t.Fatalf("lock missing acme/api: %+v", lock.Entries)
-	}
-	if lockEntry.SHA256 != entry.Hash() {
-		t.Errorf("SHA256 = %q; want %q", lockEntry.SHA256, entry.Hash())
-	}
-}
-
-// TestLockGateway_CommitTargeted_NoFileBeforeCall verifies that CommitTargeted
-// does not require the lock file to already exist.
-func TestLockGateway_CommitTargeted_NoFileBeforeCall(t *testing.T) {
 	lockPath := tempLockPath(t)
 	gateway := NewLockGateway(lockPath, fixedClock())
 	entry := explicitEntries()[0]
 
-	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
-		t.Fatalf("lock file should not exist yet")
-	}
-	if err := gateway.CommitTargeted(entry); err != nil {
-		t.Fatalf("CommitTargeted on missing lock: %v", err)
-	}
-	if _, err := os.Stat(lockPath); err != nil {
-		t.Errorf("lock file should now exist: %v", err)
-	}
+	err := gateway.CommitTargeted(entry)
+
+	require.NoError(t, err)
+	lock := readLock(t, lockPath)
+	require.Contains(t, lock.Entries, "acme/api")
+	assert.Equal(t, entry.Hash(), lock.Entries["acme/api"].SHA256)
+}
+
+func TestLockGateway_CommitTargeted_NoFileBeforeCall(t *testing.T) {
+	lockPath := tempLockPath(t)
+	gateway := NewLockGateway(lockPath, fixedClock())
+	require.NoFileExists(t, lockPath)
+
+	err := gateway.CommitTargeted(explicitEntries()[0])
+
+	require.NoError(t, err)
+	assert.FileExists(t, lockPath, "CommitTargeted creates the lock it needs")
 }

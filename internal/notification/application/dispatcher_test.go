@@ -7,6 +7,9 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/mptooling/notifycat/internal/kernel"
 	"github.com/mptooling/notifycat/internal/notification/application"
 	"github.com/mptooling/notifycat/internal/notification/domain"
@@ -19,78 +22,70 @@ type fakeHandler struct {
 }
 
 func (h *fakeHandler) Applicable(event kernel.Event) bool { return h.applicable(event) }
+
 func (h *fakeHandler) Handle(ctx context.Context, event kernel.Event) error {
 	h.called++
 	return h.handle(ctx, event)
 }
 
-func TestDispatcher_RunsFirstApplicableHandler(t *testing.T) {
-	skip := &fakeHandler{
+func handlerThatSkips() *fakeHandler {
+	return &fakeHandler{
 		applicable: func(kernel.Event) bool { return false },
-		handle:     func(context.Context, kernel.Event) error { t.Fatal("skip handle called"); return nil },
-	}
-	match := &fakeHandler{
-		applicable: func(kernel.Event) bool { return true },
 		handle:     func(context.Context, kernel.Event) error { return nil },
-	}
-	other := &fakeHandler{
-		applicable: func(kernel.Event) bool { return true },
-		handle:     func(context.Context, kernel.Event) error { t.Fatal("other handle called"); return nil },
-	}
-
-	d := application.NewDispatcher(discardLogger(), []domain.Handler{skip, match, other})
-	if err := d.Dispatch(context.Background(), kernel.Event{Kind: kernel.KindOpened}); err != nil {
-		t.Fatalf("Dispatch: %v", err)
-	}
-	if match.called != 1 {
-		t.Errorf("match.called = %d; want 1", match.called)
 	}
 }
 
-func TestDispatcher_NoApplicableHandlerIsNotError(t *testing.T) {
-	skip := &fakeHandler{
-		applicable: func(kernel.Event) bool { return false },
-		handle:     func(context.Context, kernel.Event) error { return nil },
+func handlerThatHandles(err error) *fakeHandler {
+	return &fakeHandler{
+		applicable: func(kernel.Event) bool { return true },
+		handle:     func(context.Context, kernel.Event) error { return err },
 	}
+}
 
-	d := application.NewDispatcher(discardLogger(), []domain.Handler{skip})
-	if err := d.Dispatch(context.Background(), kernel.Event{}); err != nil {
-		t.Fatalf("Dispatch (no match): %v", err)
-	}
+func TestDispatcher_RunsFirstApplicableHandler(t *testing.T) {
+	skipped := handlerThatSkips()
+	matched := handlerThatHandles(nil)
+	shadowed := handlerThatHandles(nil)
+	dispatcher := application.NewDispatcher(discardLogger(), []domain.Handler{skipped, matched, shadowed})
+
+	err := dispatcher.Dispatch(context.Background(), kernel.Event{Kind: kernel.KindOpened})
+
+	require.NoError(t, err)
+	assert.Zero(t, skipped.called, "a non-applicable handler never runs")
+	assert.Equal(t, 1, matched.called)
+	assert.Zero(t, shadowed.called, "only the first applicable handler runs")
+}
+
+func TestDispatcher_NoApplicableHandlerIsNotError(t *testing.T) {
+	dispatcher := application.NewDispatcher(discardLogger(), []domain.Handler{handlerThatSkips()})
+
+	err := dispatcher.Dispatch(context.Background(), kernel.Event{})
+
+	assert.NoError(t, err)
 }
 
 func TestDispatcher_PropagatesHandlerError(t *testing.T) {
 	want := errors.New("boom")
-	h := &fakeHandler{
-		applicable: func(kernel.Event) bool { return true },
-		handle:     func(context.Context, kernel.Event) error { return want },
-	}
+	dispatcher := application.NewDispatcher(discardLogger(), []domain.Handler{handlerThatHandles(want)})
 
-	d := application.NewDispatcher(discardLogger(), []domain.Handler{h})
-	if err := d.Dispatch(context.Background(), kernel.Event{}); !errors.Is(err, want) {
-		t.Fatalf("Dispatch error = %v; want %v", err, want)
-	}
+	err := dispatcher.Dispatch(context.Background(), kernel.Event{})
+
+	assert.ErrorIs(t, err, want)
 }
 
 func TestDispatcher_NoApplicableHandlerLogsContext(t *testing.T) {
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	var logged bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logged, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	dispatcher := application.NewDispatcher(logger, []domain.Handler{handlerThatSkips()})
 
-	skip := &fakeHandler{
-		applicable: func(kernel.Event) bool { return false },
-		handle:     func(context.Context, kernel.Event) error { return nil },
-	}
-	d := application.NewDispatcher(logger, []domain.Handler{skip})
-	if err := d.Dispatch(context.Background(), kernel.Event{
+	err := dispatcher.Dispatch(context.Background(), kernel.Event{
 		Provider:   kernel.ProviderGitHub,
 		Repository: "octo/widget",
 		PR:         kernel.PR{Number: 42},
-	}); err != nil {
-		t.Fatalf("Dispatch: %v", err)
-	}
+	})
 
-	rec := decodeLog(t, buf.Bytes())
-	wantFields(t, rec, map[string]any{
+	require.NoError(t, err)
+	assertLogFields(t, logged.Bytes(), map[string]any{
 		"level":      "DEBUG",
 		"msg":        "ignored webhook event",
 		"reason":     "no_handler",

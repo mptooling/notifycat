@@ -1,39 +1,48 @@
 package config
 
 import (
-	"errors"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-// TestRequireProviderSecret_FollowsProvider proves the webhook-secret requirement
-// tracks the selected provider (D8): github gates on GITHUB_WEBHOOK_SECRET and is
-// blind to the bitbucket secret; bitbucket gates on BITBUCKET_WEBHOOK_SECRET and
-// is blind to the github one. A deployment never needs the other provider's
-// credential.
+// The webhook-secret requirement tracks the selected provider: a deployment
+// never needs the other provider's credential.
 func TestRequireProviderSecret_FollowsProvider(t *testing.T) {
-	var missing *MissingVarError
+	t.Run("github without a secret names the github variable", func(t *testing.T) {
+		err := requireProviderSecret(&Config{GitProvider: gitProviderGitHub})
 
-	// github: requires GITHUB_WEBHOOK_SECRET, ignores the bitbucket secret.
-	err := requireProviderSecret(&Config{GitProvider: gitProviderGitHub})
-	if !errors.As(err, &missing) || missing.Var != "GITHUB_WEBHOOK_SECRET" {
-		t.Fatalf("github with no secret: err = %v; want MissingVarError(GITHUB_WEBHOOK_SECRET)", err)
-	}
-	if err := requireProviderSecret(&Config{GitProvider: gitProviderGitHub, GitHubWebhookSecret: Secret("shh")}); err != nil {
-		t.Errorf("github with secret: err = %v; want nil", err)
-	}
-	if err := requireProviderSecret(&Config{GitProvider: gitProviderGitHub, GitHubWebhookSecret: Secret("shh"), BitbucketWebhookSecret: ""}); err != nil {
-		t.Errorf("github must not gate on BITBUCKET_WEBHOOK_SECRET: err = %v", err)
-	}
+		var missing *MissingVarError
+		require.ErrorAs(t, err, &missing)
+		assert.Equal(t, "GITHUB_WEBHOOK_SECRET", missing.Var)
+	})
 
-	// bitbucket: requires BITBUCKET_WEBHOOK_SECRET, ignores the github secret.
-	err = requireProviderSecret(&Config{GitProvider: gitProviderBitbucket})
-	if !errors.As(err, &missing) || missing.Var != "BITBUCKET_WEBHOOK_SECRET" {
-		t.Fatalf("bitbucket with no secret: err = %v; want MissingVarError(BITBUCKET_WEBHOOK_SECRET)", err)
-	}
-	if err := requireProviderSecret(&Config{GitProvider: gitProviderBitbucket, BitbucketWebhookSecret: Secret("bb")}); err != nil {
-		t.Errorf("bitbucket with secret: err = %v; want nil", err)
-	}
-	if err := requireProviderSecret(&Config{GitProvider: gitProviderBitbucket, BitbucketWebhookSecret: Secret("bb"), GitHubWebhookSecret: ""}); err != nil {
-		t.Errorf("bitbucket must not gate on GITHUB_WEBHOOK_SECRET: err = %v", err)
-	}
+	t.Run("github ignores the bitbucket secret", func(t *testing.T) {
+		err := requireProviderSecret(&Config{
+			GitProvider:            gitProviderGitHub,
+			GitHubWebhookSecret:    Secret("shh"),
+			BitbucketWebhookSecret: "",
+		})
+
+		assert.NoError(t, err)
+	})
+
+	t.Run("bitbucket without a secret names the bitbucket variable", func(t *testing.T) {
+		err := requireProviderSecret(&Config{GitProvider: gitProviderBitbucket})
+
+		var missing *MissingVarError
+		require.ErrorAs(t, err, &missing)
+		assert.Equal(t, "BITBUCKET_WEBHOOK_SECRET", missing.Var)
+	})
+
+	t.Run("bitbucket ignores the github secret", func(t *testing.T) {
+		err := requireProviderSecret(&Config{
+			GitProvider:            gitProviderBitbucket,
+			BitbucketWebhookSecret: Secret("bb"),
+			GitHubWebhookSecret:    "",
+		})
+
+		assert.NoError(t, err)
+	})
 }

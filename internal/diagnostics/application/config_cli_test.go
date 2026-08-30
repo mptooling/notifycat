@@ -6,13 +6,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/mptooling/notifycat/internal/diagnostics/application"
 	diagnosticsdomain "github.com/mptooling/notifycat/internal/diagnostics/domain"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 	validationdomain "github.com/mptooling/notifycat/internal/validation/domain"
 )
-
-// ---- fakes -------------------------------------------------------------------
 
 type stubEntrySource struct {
 	entries []routingdomain.Entry
@@ -21,14 +22,14 @@ type stubEntrySource struct {
 func (s *stubEntrySource) Entries() []routingdomain.Entry { return s.entries }
 
 type stubChecker struct {
-	fn    func(ctx context.Context, repository string) validationdomain.Report
-	calls []string
+	report func(repository string) validationdomain.Report
+	calls  []string
 }
 
-func (s *stubChecker) Validate(ctx context.Context, repository string) validationdomain.Report {
+func (s *stubChecker) Validate(_ context.Context, repository string) validationdomain.Report {
 	s.calls = append(s.calls, repository)
-	if s.fn != nil {
-		return s.fn(ctx, repository)
+	if s.report != nil {
+		return s.report(repository)
 	}
 	return passingReport(repository)
 }
@@ -65,30 +66,23 @@ func (f *fakeLockGateway) CommitTargeted(entry routingdomain.Entry) error {
 	return nil
 }
 
-// ---- helpers -----------------------------------------------------------------
+func reportWithChecks(repository string, checks ...validationdomain.CheckResult) validationdomain.Report {
+	return validationdomain.Report{Repository: repository, Checks: checks}
+}
 
 func passingReport(repository string) validationdomain.Report {
-	return validationdomain.Report{
-		Repository: repository,
-		Checks:     []validationdomain.CheckResult{{Name: "x", Status: validationdomain.StatusOK, Detail: "ok"}},
-	}
+	return reportWithChecks(repository, validationdomain.CheckResult{Name: "x", Status: validationdomain.StatusOK, Detail: "ok"})
 }
 
 func failingReport(repository string) validationdomain.Report {
-	return validationdomain.Report{
-		Repository: repository,
-		Checks:     []validationdomain.CheckResult{{Name: "x", Status: validationdomain.StatusFail, Detail: "boom"}},
-	}
+	return reportWithChecks(repository, validationdomain.CheckResult{Name: "x", Status: validationdomain.StatusFail, Detail: "boom"})
 }
 
 func warningReport(repository string) validationdomain.Report {
-	return validationdomain.Report{
-		Repository: repository,
-		Checks: []validationdomain.CheckResult{
-			{Name: "x", Status: validationdomain.StatusOK, Detail: "ok"},
-			{Name: "webhook", Status: validationdomain.StatusWarn, Detail: "no active webhook on " + repository},
-		},
-	}
+	return reportWithChecks(repository,
+		validationdomain.CheckResult{Name: "x", Status: validationdomain.StatusOK, Detail: "ok"},
+		validationdomain.CheckResult{Name: "webhook", Status: validationdomain.StatusWarn, Detail: "no active webhook on " + repository},
+	)
 }
 
 func explicitEntries() []routingdomain.Entry {
@@ -102,258 +96,173 @@ func wildcardEntry() routingdomain.Entry {
 	return routingdomain.Entry{Org: "beta", Wildcard: true, Channel: "C0456FGHIJ", Mentions: []string{"@b"}}
 }
 
-// ---- tests -------------------------------------------------------------------
+// runValidate drives `notifycat-config validate` and returns its exit code and stdout.
+func runValidate(
+	t *testing.T,
+	entries []routingdomain.Entry,
+	checker *stubChecker,
+	gateway *fakeLockGateway,
+	target string,
+	force bool,
+) (int, string) {
+	t.Helper()
+
+	validator := application.NewMappingsValidator(&stubEntrySource{entries: entries}, checker, nil, gateway)
+	var stdout, stderr bytes.Buffer
+	code := validator.Validate(context.Background(), target, force, &stdout, &stderr)
+	if code != 0 {
+		t.Logf("stderr: %s", stderr.String())
+	}
+	return code, stdout.String()
+}
+
+// commitTargetedKeys lists the entries handed to CommitTargeted.
+func commitTargetedKeys(gateway *fakeLockGateway) []string {
+	keys := make([]string, len(gateway.commitTargetedCalls))
+	for i, entry := range gateway.commitTargetedCalls {
+		keys[i] = entry.Key()
+	}
+	return keys
+}
+
+// committedSuccessKeys lists the passing entries handed to Commit.
+func committedSuccessKeys(gateway *fakeLockGateway) []string {
+	var keys []string
+	for _, result := range gateway.lastCommitSuccesses {
+		if result.OK() {
+			keys = append(keys, result.Entry.Key())
+		}
+	}
+	return keys
+}
 
 func TestMappingsValidator_Targeted_AllPass_CommitsTargeted(t *testing.T) {
 	gateway := &fakeLockGateway{}
 	checker := &stubChecker{}
-	entries := explicitEntries()
-	source := &stubEntrySource{entries: entries}
-	validator := application.NewMappingsValidator(source, checker, nil, gateway)
-	var out, errOut bytes.Buffer
 
-	code := validator.Validate(context.Background(), "acme/api", false, &out, &errOut)
+	code, _ := runValidate(t, explicitEntries(), checker, gateway, "acme/api", false)
 
-	if code != 0 {
-		t.Fatalf("exit = %d; stderr=%s", code, errOut.String())
-	}
-	if len(checker.calls) != 1 || checker.calls[0] != "acme/api" {
-		t.Errorf("checker calls = %v", checker.calls)
-	}
-	if len(gateway.commitTargetedCalls) != 1 || gateway.commitTargetedCalls[0].Key() != "acme/api" {
-		t.Errorf("CommitTargeted calls = %v", gateway.commitTargetedCalls)
-	}
-	if gateway.commitCalls != 0 {
-		t.Errorf("Commit should not be called in targeted path; got %d calls", gateway.commitCalls)
-	}
+	assert.Zero(t, code)
+	assert.Equal(t, []string{"acme/api"}, checker.calls)
+	assert.Equal(t, []string{"acme/api"}, commitTargetedKeys(gateway))
+	assert.Zero(t, gateway.commitCalls, "the targeted path never rewrites the whole lock")
 }
 
 func TestMappingsValidator_Targeted_Failure_DoesNotCommit(t *testing.T) {
 	gateway := &fakeLockGateway{}
-	checker := &stubChecker{fn: func(_ context.Context, r string) validationdomain.Report { return failingReport(r) }}
-	source := &stubEntrySource{entries: explicitEntries()}
-	validator := application.NewMappingsValidator(source, checker, nil, gateway)
-	var out, errOut bytes.Buffer
+	checker := &stubChecker{report: failingReport}
 
-	code := validator.Validate(context.Background(), "acme/api", false, &out, &errOut)
+	code, _ := runValidate(t, explicitEntries(), checker, gateway, "acme/api", false)
 
-	if code != 1 {
-		t.Fatalf("exit = %d; want 1", code)
-	}
-	if len(gateway.commitTargetedCalls) != 0 {
-		t.Errorf("CommitTargeted must not be called on failure; got %v", gateway.commitTargetedCalls)
-	}
-	if gateway.commitCalls != 0 {
-		t.Errorf("Commit must not be called on failure; got %d calls", gateway.commitCalls)
-	}
+	assert.Equal(t, 1, code)
+	assert.Empty(t, gateway.commitTargetedCalls)
+	assert.Zero(t, gateway.commitCalls)
 }
 
-// TestMappingsValidator_Targeted_Warning_DoesNotCommit: a warning is not a
-// failure (exit 0), but it must not be cached either — otherwise the next boot
-// skips the re-probe and the warning silently disappears.
+// A warning is not a failure (exit 0), but it must not be cached either —
+// otherwise the next boot skips the re-probe and the warning silently disappears.
 func TestMappingsValidator_Targeted_Warning_DoesNotCommit(t *testing.T) {
 	gateway := &fakeLockGateway{}
-	checker := &stubChecker{fn: func(_ context.Context, r string) validationdomain.Report { return warningReport(r) }}
-	source := &stubEntrySource{entries: explicitEntries()}
-	validator := application.NewMappingsValidator(source, checker, nil, gateway)
-	var out, errOut bytes.Buffer
+	checker := &stubChecker{report: warningReport}
 
-	code := validator.Validate(context.Background(), "acme/api", false, &out, &errOut)
+	code, stdout := runValidate(t, explicitEntries(), checker, gateway, "acme/api", false)
 
-	if code != 0 {
-		t.Fatalf("exit = %d; want 0; stderr=%s", code, errOut.String())
-	}
-	if !strings.Contains(out.String(), "WARN") {
-		t.Errorf("output should carry a WARN row: %q", out.String())
-	}
-	if len(gateway.commitTargetedCalls) != 0 {
-		t.Errorf("CommitTargeted must not be called for a warned entry; got %v", gateway.commitTargetedCalls)
-	}
+	assert.Zero(t, code)
+	assert.Contains(t, stdout, "WARN")
+	assert.Empty(t, gateway.commitTargetedCalls)
 }
 
 func TestMappingsValidator_Targeted_WildcardOrg_SkipsLockUpdate(t *testing.T) {
 	gateway := &fakeLockGateway{}
-	checker := &stubChecker{}
-	source := &stubEntrySource{entries: []routingdomain.Entry{wildcardEntry()}}
-	validator := application.NewMappingsValidator(source, checker, nil, gateway)
-	var out, errOut bytes.Buffer
 
-	code := validator.Validate(context.Background(), "beta/anything", false, &out, &errOut)
+	code, _ := runValidate(t, []routingdomain.Entry{wildcardEntry()}, &stubChecker{}, gateway, "beta/anything", false)
 
-	if code != 0 {
-		t.Fatalf("exit = %d; stderr=%s", code, errOut.String())
-	}
-	if len(gateway.commitTargetedCalls) != 0 {
-		t.Errorf("wildcard-resolved targeted run must not call CommitTargeted; got %v", gateway.commitTargetedCalls)
-	}
+	assert.Zero(t, code)
+	assert.Empty(t, gateway.commitTargetedCalls, "a wildcard-resolved repo has no lock key of its own")
 }
 
-// TestMappingsValidator_Full_WarningOnly_ExitsZero proves warnings never change
-// the exit code; the lock gateway decides on its own what may be cached.
+// Warnings never change the exit code; the lock gateway decides on its own what
+// may be cached.
 func TestMappingsValidator_Full_WarningOnly_ExitsZero(t *testing.T) {
 	entries := explicitEntries()
 	gateway := &fakeLockGateway{planResult: diagnosticsdomain.LockPlan{ToValidate: entries}}
-	checker := &stubChecker{fn: func(_ context.Context, r string) validationdomain.Report { return warningReport(r) }}
-	source := &stubEntrySource{entries: entries}
-	validator := application.NewMappingsValidator(source, checker, nil, gateway)
-	var out, errOut bytes.Buffer
+	checker := &stubChecker{report: warningReport}
 
-	code := validator.Validate(context.Background(), "", false, &out, &errOut)
+	code, stdout := runValidate(t, entries, checker, gateway, "", false)
 
-	if code != 0 {
-		t.Fatalf("exit = %d; want 0; stderr=%s", code, errOut.String())
-	}
-	if !strings.Contains(out.String(), "WARN") {
-		t.Errorf("output should carry WARN rows: %q", out.String())
-	}
-	if gateway.commitCalls != 1 {
-		t.Errorf("Commit calls = %d; want 1", gateway.commitCalls)
-	}
+	assert.Zero(t, code)
+	assert.Contains(t, stdout, "WARN")
+	assert.Equal(t, 1, gateway.commitCalls)
 	for _, result := range gateway.lastCommitSuccesses {
-		if result.Cacheable() {
-			t.Errorf("%s warned; it must not be cacheable", result.Entry.Key())
-		}
+		assert.False(t, result.Cacheable(), "%s warned, so it must not be cached", result.Entry.Key())
 	}
 }
 
 func TestMappingsValidator_Full_EmptyMappings(t *testing.T) {
 	gateway := &fakeLockGateway{}
 	checker := &stubChecker{}
-	source := &stubEntrySource{entries: nil}
-	validator := application.NewMappingsValidator(source, checker, nil, gateway)
-	var out, errOut bytes.Buffer
 
-	code := validator.Validate(context.Background(), "", false, &out, &errOut)
+	code, stdout := runValidate(t, nil, checker, gateway, "", false)
 
-	if code != 0 {
-		t.Fatalf("exit = %d", code)
-	}
-	if !strings.Contains(out.String(), "no mappings to validate") {
-		t.Errorf("expected friendly empty-state message; got %q", out.String())
-	}
-	if len(checker.calls) != 0 {
-		t.Errorf("checker should not have been called: %v", checker.calls)
-	}
-	if gateway.planCalls != 0 {
-		t.Errorf("Plan should not be called for empty mappings; got %d calls", gateway.planCalls)
-	}
+	assert.Zero(t, code)
+	assert.Contains(t, stdout, "no mappings to validate")
+	assert.Empty(t, checker.calls)
+	assert.Zero(t, gateway.planCalls)
 }
 
 func TestMappingsValidator_Full_NoLock_ValidatesAll_Commits(t *testing.T) {
 	entries := explicitEntries()
-	// Simulate "no lock" by returning all entries in ToValidate.
-	gateway := &fakeLockGateway{
-		planResult: diagnosticsdomain.LockPlan{ToValidate: entries},
-	}
+	gateway := &fakeLockGateway{planResult: diagnosticsdomain.LockPlan{ToValidate: entries}}
 	checker := &stubChecker{}
-	source := &stubEntrySource{entries: entries}
-	validator := application.NewMappingsValidator(source, checker, nil, gateway)
-	var out, errOut bytes.Buffer
 
-	code := validator.Validate(context.Background(), "", false, &out, &errOut)
+	code, _ := runValidate(t, entries, checker, gateway, "", false)
 
-	if code != 0 {
-		t.Fatalf("exit = %d; stderr=%s", code, errOut.String())
-	}
-	if len(checker.calls) != 2 {
-		t.Errorf("expected 2 calls (api, web); got %v", checker.calls)
-	}
-	if gateway.commitCalls != 1 {
-		t.Errorf("expected 1 Commit call; got %d", gateway.commitCalls)
-	}
-	// Both entries passed so both successes should be in the commit.
-	if len(gateway.lastCommitSuccesses) != 2 {
-		t.Errorf("expected 2 successes in Commit; got %d", len(gateway.lastCommitSuccesses))
-	}
+	assert.Zero(t, code)
+	assert.Equal(t, []string{"acme/api", "acme/web"}, checker.calls)
+	assert.Equal(t, 1, gateway.commitCalls)
+	assert.Len(t, gateway.lastCommitSuccesses, 2)
 }
 
 func TestMappingsValidator_Full_UpToDateLock_SkipsValidation(t *testing.T) {
-	entries := explicitEntries()
-	// Simulate "up to date" by returning an empty ToValidate.
-	gateway := &fakeLockGateway{
-		planResult: diagnosticsdomain.LockPlan{ToValidate: nil, Stale: nil},
-	}
+	gateway := &fakeLockGateway{planResult: diagnosticsdomain.LockPlan{}}
 	checker := &stubChecker{}
-	source := &stubEntrySource{entries: entries}
-	validator := application.NewMappingsValidator(source, checker, nil, gateway)
-	var out, errOut bytes.Buffer
 
-	code := validator.Validate(context.Background(), "", false, &out, &errOut)
+	code, stdout := runValidate(t, explicitEntries(), checker, gateway, "", false)
 
-	if code != 0 {
-		t.Fatalf("exit = %d", code)
-	}
-	if len(checker.calls) != 0 {
-		t.Errorf("expected zero calls; got %v", checker.calls)
-	}
-	if !strings.Contains(out.String(), "lock is up to date") {
-		t.Errorf("expected up-to-date hint; got %q", out.String())
-	}
-	if gateway.commitCalls != 0 {
-		t.Errorf("Commit should not be called when nothing to validate; got %d", gateway.commitCalls)
-	}
+	assert.Zero(t, code)
+	assert.Empty(t, checker.calls)
+	assert.Contains(t, stdout, "lock is up to date")
+	assert.Zero(t, gateway.commitCalls, "nothing to validate means nothing to write")
 }
 
 func TestMappingsValidator_Full_Force_ValidatesAll(t *testing.T) {
 	entries := explicitEntries()
-	// Force: Plan returns all entries regardless of the planResult field.
-	gateway := &fakeLockGateway{
-		planResult: diagnosticsdomain.LockPlan{ToValidate: nil}, // would be empty without force
-	}
+	// Without force this plan would validate nothing.
+	gateway := &fakeLockGateway{planResult: diagnosticsdomain.LockPlan{}}
 	checker := &stubChecker{}
-	source := &stubEntrySource{entries: entries}
-	validator := application.NewMappingsValidator(source, checker, nil, gateway)
-	var out, errOut bytes.Buffer
 
-	code := validator.Validate(context.Background(), "", true, &out, &errOut)
+	code, _ := runValidate(t, entries, checker, gateway, "", true)
 
-	if code != 0 {
-		t.Fatalf("exit = %d; stderr=%s", code, errOut.String())
-	}
-	if len(checker.calls) != 2 {
-		t.Errorf("force should revalidate everything; got calls=%v", checker.calls)
-	}
-	if gateway.commitCalls != 1 {
-		t.Errorf("expected 1 Commit call after force run; got %d", gateway.commitCalls)
-	}
+	assert.Zero(t, code)
+	assert.Equal(t, []string{"acme/api", "acme/web"}, checker.calls)
+	assert.Equal(t, 1, gateway.commitCalls)
 }
 
 func TestMappingsValidator_Full_PartialFailure_OnlySuccessesInCommit(t *testing.T) {
 	entries := explicitEntries()
-	gateway := &fakeLockGateway{
-		planResult: diagnosticsdomain.LockPlan{ToValidate: entries},
-	}
-	checker := &stubChecker{fn: func(_ context.Context, r string) validationdomain.Report {
-		if r == "acme/api" {
-			return failingReport(r)
+	gateway := &fakeLockGateway{planResult: diagnosticsdomain.LockPlan{ToValidate: entries}}
+	checker := &stubChecker{report: func(repository string) validationdomain.Report {
+		if repository == "acme/api" {
+			return failingReport(repository)
 		}
-		return passingReport(r)
+		return passingReport(repository)
 	}}
-	source := &stubEntrySource{entries: entries}
-	validator := application.NewMappingsValidator(source, checker, nil, gateway)
-	var out, errOut bytes.Buffer
 
-	code := validator.Validate(context.Background(), "", false, &out, &errOut)
+	code, _ := runValidate(t, entries, checker, gateway, "", false)
 
-	if code != 1 {
-		t.Fatalf("exit = %d; want 1 (one entry failed)", code)
-	}
-	if gateway.commitCalls != 1 {
-		t.Errorf("expected 1 Commit call even on partial failure; got %d", gateway.commitCalls)
-	}
-	// Only the passing entry (acme/web) should be in the successes.
-	successKeys := map[string]bool{}
-	for _, result := range gateway.lastCommitSuccesses {
-		if result.OK() {
-			successKeys[result.Entry.Key()] = true
-		}
-	}
-	if successKeys["acme/api"] {
-		t.Errorf("acme/api failed; should not appear as success in Commit")
-	}
-	if !successKeys["acme/web"] {
-		t.Errorf("acme/web passed; should appear as success in Commit")
-	}
+	assert.Equal(t, 1, code)
+	assert.Equal(t, 1, gateway.commitCalls, "the passing entries are still committed")
+	assert.Equal(t, []string{"acme/web"}, committedSuccessKeys(gateway))
 }
 
 func TestList_ShowsEveryChannel(t *testing.T) {
@@ -362,22 +271,16 @@ func TestList_ShowsEveryChannel(t *testing.T) {
 			ExtraChannels: []string{"C0ZETA0002", "C0ZETA0003"}},
 		{Org: "acme", Repo: "api", Channel: "C0AAA0001", Mentions: []string{"<@U0A>"}},
 	}}
-	var out bytes.Buffer
+	var stdout bytes.Buffer
 
-	if code := application.List(entries, &out); code != 0 {
-		t.Fatalf("List() = %d; want 0", code)
-	}
+	code := application.List(entries, &stdout)
 
-	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	if len(lines) != 3 {
-		t.Fatalf("got %d lines; want header + 2 entries:\n%s", len(lines), out.String())
-	}
-	for _, channel := range []string{"C0ZETA0001", "C0ZETA0002", "C0ZETA0003"} {
-		if !strings.Contains(lines[1], channel) {
-			t.Errorf("multi-channel row %q is missing %s", lines[1], channel)
-		}
-	}
-	if !strings.Contains(lines[2], "C0AAA0001") || strings.Contains(lines[2], ",") {
-		t.Errorf("single-channel row = %q; want just C0AAA0001", lines[2])
-	}
+	require.Zero(t, code)
+	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
+	require.Len(t, lines, 3, "header plus one row per entry:\n%s", stdout.String())
+	assert.Contains(t, lines[1], "C0ZETA0001")
+	assert.Contains(t, lines[1], "C0ZETA0002")
+	assert.Contains(t, lines[1], "C0ZETA0003")
+	assert.Contains(t, lines[2], "C0AAA0001")
+	assert.NotContains(t, lines[2], ",", "a single-channel entry lists one channel")
 }

@@ -4,46 +4,29 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/mptooling/notifycat/internal/platform/persistence"
 )
 
 func TestMessageChecker_HasMessages_TrueForSeededPR(t *testing.T) {
-	db := persistence.NewTestDB(t)
 	ctx := context.Background()
-
-	pullRequests := persistence.NewPullRequests(db)
+	pullRequests := persistence.NewPullRequests(persistence.NewTestDB(t))
 	checker := NewMessageChecker(pullRequests)
+	require.NoError(t, pullRequests.AddMessage(ctx, "octo/widget", 10, "C001", "ts-1"))
 
-	const (
-		repository = "octo/widget"
-		prNumber   = 10
-	)
+	hasMessages, err := checker.HasMessages(ctx, "octo/widget", 10)
 
-	if err := pullRequests.AddMessage(ctx, repository, prNumber, "C001", "ts-1"); err != nil {
-		t.Fatalf("seed pull request: %v", err)
-	}
-
-	hasMessages, err := checker.HasMessages(ctx, repository, prNumber)
-	if err != nil {
-		t.Fatalf("HasMessages: %v", err)
-	}
-	if !hasMessages {
-		t.Error("HasMessages = false for a seeded PR; want true")
-	}
+	require.NoError(t, err)
+	assert.True(t, hasMessages)
 }
 
 func TestMessageChecker_HasMessages_FalseForUntrackedPR(t *testing.T) {
-	db := persistence.NewTestDB(t)
-	ctx := context.Background()
+	checker := NewMessageChecker(persistence.NewPullRequests(persistence.NewTestDB(t)))
 
-	pullRequests := persistence.NewPullRequests(db)
-	checker := NewMessageChecker(pullRequests)
+	hasMessages, err := checker.HasMessages(context.Background(), "octo/widget", 99)
 
-	hasMessages, err := checker.HasMessages(ctx, "octo/widget", 99)
-	if err != nil {
-		t.Fatalf("HasMessages for untracked PR: %v", err)
-	}
-	if hasMessages {
-		t.Error("HasMessages = true for an untracked PR; want false")
-	}
+	require.NoError(t, err)
+	assert.False(t, hasMessages)
 }

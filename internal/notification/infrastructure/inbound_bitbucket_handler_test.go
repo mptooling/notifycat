@@ -7,123 +7,78 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/mptooling/notifycat/internal/kernel"
 	"github.com/mptooling/notifycat/internal/notification/infrastructure"
 )
 
+const bitbucketOpenedBody = `{
+	"actor": {"type": "user", "display_name": "Jane"},
+	"pullrequest": {"id": 42, "title": "Fix", "state": "OPEN", "draft": false,
+		"links": {"html": {"href": "https://bitbucket.org/ws/repo/pull-requests/42"}},
+		"author": {"display_name": "Bob", "type": "user"}},
+	"repository": {"full_name": "workspace/repo"}
+}`
+
+// postBitbucketWebhook drives the Bitbucket handler with body and returns the recorder.
+func postBitbucketWebhook(handler http.Handler, eventKey, body string) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(http.MethodPost, "/webhook/bitbucket", strings.NewReader(body))
+	if eventKey != "" {
+		request.Header.Set("X-Event-Key", eventKey)
+	}
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	return recorder
+}
+
 func TestBitbucketHandler_HappyPath(t *testing.T) {
 	dispatcher := &fakeDispatcher{}
-	h := infrastructure.NewBitbucketHandler(dispatcher)
 
-	body := strings.NewReader(`{
-		"actor": {"type": "user", "display_name": "Jane"},
-		"pullrequest": {"id": 42, "title": "Fix", "state": "OPEN", "draft": false,
-			"links": {"html": {"href": "https://bitbucket.org/ws/repo/pull-requests/42"}},
-			"author": {"display_name": "Bob", "type": "user"}},
-		"repository": {"full_name": "workspace/repo"}
-	}`)
-	req := httptest.NewRequest(http.MethodPost, "/webhook/bitbucket", body)
-	req.Header.Set("X-Event-Key", "pullrequest:created")
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	recorder := postBitbucketWebhook(infrastructure.NewBitbucketHandler(dispatcher), "pullrequest:created", bitbucketOpenedBody)
 
-	if rec.Code != http.StatusOK {
-		t.Errorf("status = %d; want 200", rec.Code)
-	}
-	if !dispatcher.called {
-		t.Fatal("dispatcher not called")
-	}
-	if dispatcher.event.Provider != kernel.ProviderBitbucket {
-		t.Errorf("Provider = %q; want %q", dispatcher.event.Provider, kernel.ProviderBitbucket)
-	}
-	if dispatcher.event.Kind != kernel.KindOpened {
-		t.Errorf("Kind = %v; want KindOpened", dispatcher.event.Kind)
-	}
-	if dispatcher.event.PR.Number != 42 {
-		t.Errorf("PR.Number = %d; want 42", dispatcher.event.PR.Number)
-	}
-	if dispatcher.event.Repository != "workspace/repo" {
-		t.Errorf("Repository = %q; want %q", dispatcher.event.Repository, "workspace/repo")
-	}
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	require.True(t, dispatcher.called)
+	assert.Equal(t, kernel.ProviderBitbucket, dispatcher.event.Provider)
+	assert.Equal(t, kernel.KindOpened, dispatcher.event.Kind)
+	assert.Equal(t, 42, dispatcher.event.PR.Number)
+	assert.Equal(t, "workspace/repo", dispatcher.event.Repository)
 }
 
 func TestBitbucketHandler_MissingIDReturns400(t *testing.T) {
 	dispatcher := &fakeDispatcher{}
-	h := infrastructure.NewBitbucketHandler(dispatcher)
 
-	body := strings.NewReader(`{"repository":{"full_name":"w/r"},"pullrequest":{}}`)
-	req := httptest.NewRequest(http.MethodPost, "/webhook/bitbucket", body)
-	req.Header.Set("X-Event-Key", "pullrequest:created")
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	recorder := postBitbucketWebhook(infrastructure.NewBitbucketHandler(dispatcher), "pullrequest:created",
+		`{"repository":{"full_name":"w/r"},"pullrequest":{}}`)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("status = %d; want 400", rec.Code)
-	}
-	if dispatcher.called {
-		t.Error("dispatcher invoked despite missing PR id")
-	}
+	assert.Equal(t, http.StatusBadRequest, recorder.Code)
+	assert.False(t, dispatcher.called)
 }
 
 func TestBitbucketHandler_InvalidJSONReturns400(t *testing.T) {
 	dispatcher := &fakeDispatcher{}
-	h := infrastructure.NewBitbucketHandler(dispatcher)
 
-	body := strings.NewReader("not-json")
-	req := httptest.NewRequest(http.MethodPost, "/webhook/bitbucket", body)
-	req.Header.Set("X-Event-Key", "pullrequest:created")
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	recorder := postBitbucketWebhook(infrastructure.NewBitbucketHandler(dispatcher), "pullrequest:created", "not-json")
 
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("status = %d; want 400", rec.Code)
-	}
-	if dispatcher.called {
-		t.Error("dispatcher invoked despite invalid JSON")
-	}
+	assert.Equal(t, http.StatusBadRequest, recorder.Code)
+	assert.False(t, dispatcher.called)
 }
 
 func TestBitbucketHandler_DispatchErrorReturns500(t *testing.T) {
 	dispatcher := &fakeDispatcher{err: context.DeadlineExceeded}
-	h := infrastructure.NewBitbucketHandler(dispatcher)
 
-	body := strings.NewReader(`{
-		"actor": {"type": "user", "display_name": "Jane"},
-		"pullrequest": {"id": 42, "title": "Fix", "state": "OPEN",
-			"links": {"html": {"href": "u"}}, "author": {"display_name": "Bob", "type": "user"}},
-		"repository": {"full_name": "workspace/repo"}
-	}`)
-	req := httptest.NewRequest(http.MethodPost, "/webhook/bitbucket", body)
-	req.Header.Set("X-Event-Key", "pullrequest:created")
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	recorder := postBitbucketWebhook(infrastructure.NewBitbucketHandler(dispatcher), "pullrequest:created", bitbucketOpenedBody)
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d; want 500", rec.Code)
-	}
+	assert.Equal(t, http.StatusInternalServerError, recorder.Code)
 }
 
 func TestBitbucketHandler_XEventKeyHeaderMapped(t *testing.T) {
 	dispatcher := &fakeDispatcher{}
-	h := infrastructure.NewBitbucketHandler(dispatcher)
 
-	body := strings.NewReader(`{
-		"actor": {"type": "user", "display_name": "Jane"},
-		"pullrequest": {"id": 3, "title": "feat", "state": "OPEN",
-			"links": {"html": {"href": "u"}}, "author": {"display_name": "Bob", "type": "user"}},
-		"repository": {"full_name": "workspace/repo"}
-	}`)
-	req := httptest.NewRequest(http.MethodPost, "/webhook/bitbucket", body)
-	req.Header.Set("X-Event-Key", "pullrequest:approved")
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	recorder := postBitbucketWebhook(infrastructure.NewBitbucketHandler(dispatcher), "pullrequest:approved", bitbucketOpenedBody)
 
-	if rec.Code != http.StatusOK {
-		t.Errorf("status = %d; want 200", rec.Code)
-	}
-	// The X-Event-Key header drives the kind mapping: without it the adapter
-	// cannot tell this is an approval and would fall through to KindUnknown.
-	if dispatcher.event.Kind != kernel.KindApproved {
-		t.Errorf("Kind = %v; want KindApproved", dispatcher.event.Kind)
-	}
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Equal(t, kernel.KindApproved, dispatcher.event.Kind,
+		"without the header the adapter cannot tell this is an approval")
 }

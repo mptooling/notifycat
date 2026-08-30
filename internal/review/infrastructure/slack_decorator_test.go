@@ -3,17 +3,24 @@ package infrastructure
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func blockType(t *testing.T, raw json.RawMessage) string {
+// blockTypes returns the "type" of every raw block, in order.
+func blockTypes(t *testing.T, blocks []json.RawMessage) []string {
 	t.Helper()
-	var probe struct {
-		Type string `json:"type"`
+
+	types := make([]string, len(blocks))
+	for i, raw := range blocks {
+		var probe struct {
+			Type string `json:"type"`
+		}
+		require.NoError(t, json.Unmarshal(raw, &probe), "block %s", raw)
+		types[i] = probe.Type
 	}
-	if err := json.Unmarshal(raw, &probe); err != nil {
-		t.Fatalf("unmarshal block %s: %v", raw, err)
-	}
-	return probe.Type
+	return types
 }
 
 func TestInsertBeforeActions_MarkerBeforeActionsBlock(t *testing.T) {
@@ -21,30 +28,21 @@ func TestInsertBeforeActions_MarkerBeforeActionsBlock(t *testing.T) {
 		json.RawMessage(`{"type":"section"}`),
 		json.RawMessage(`{"type":"actions"}`),
 	}
-	marker := json.RawMessage(`{"type":"context"}`)
-	out := insertBeforeActions(blocks, marker)
-	if len(out) != 3 {
-		t.Fatalf("got %d blocks; want 3", len(out))
-	}
-	if blockType(t, out[0]) != "section" || blockType(t, out[1]) != "context" || blockType(t, out[2]) != "actions" {
-		t.Errorf("wrong order: %s, %s, %s; want section, context, actions", out[0], out[1], out[2])
-	}
+
+	got := insertBeforeActions(blocks, json.RawMessage(`{"type":"context"}`))
+
+	assert.Equal(t, []string{"section", "context", "actions"}, blockTypes(t, got))
 }
 
 func TestInsertBeforeActions_AppendsWhenNoActionsBlock(t *testing.T) {
 	blocks := []json.RawMessage{json.RawMessage(`{"type":"section"}`)}
-	marker := json.RawMessage(`{"type":"context"}`)
-	out := insertBeforeActions(blocks, marker)
-	if len(out) != 2 || blockType(t, out[1]) != "context" {
-		t.Errorf("marker not appended last: %v", out)
-	}
+
+	got := insertBeforeActions(blocks, json.RawMessage(`{"type":"context"}`))
+
+	assert.Equal(t, []string{"section", "context"}, blockTypes(t, got))
 }
 
 func TestSplitBlocks_MalformedOrEmptyYieldsNil(t *testing.T) {
-	if got := splitBlocks(json.RawMessage(`not-json`)); got != nil {
-		t.Errorf("splitBlocks(malformed) = %v; want nil", got)
-	}
-	if got := splitBlocks(nil); got != nil {
-		t.Errorf("splitBlocks(nil) = %v; want nil", got)
-	}
+	assert.Nil(t, splitBlocks(json.RawMessage(`not-json`)))
+	assert.Nil(t, splitBlocks(nil))
 }

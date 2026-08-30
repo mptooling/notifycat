@@ -3,61 +3,49 @@ package infrastructure_test
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/mptooling/notifycat/internal/diagnostics/infrastructure"
 	"github.com/mptooling/notifycat/internal/platform/security"
 )
 
 func TestGitHubSigner_ProducesCorrectHeaderAndValue(t *testing.T) {
 	signer := infrastructure.NewGitHubSigner()
-	secret := "topsecret"
 	body := []byte(`{"action":"opened"}`)
 
-	header, value := signer.Sign(secret, body)
+	header, value := signer.Sign("topsecret", body)
 
-	if header != security.SignatureHeader {
-		t.Errorf("header = %q; want %q", header, security.SignatureHeader)
-	}
-	// The value must verify correctly via the standard GitHubVerifier.
-	if err := security.NewGitHubVerifier(secret).Verify(body, value); err != nil {
-		t.Errorf("Verify of Sign output returned %v; want nil", err)
-	}
+	assert.Equal(t, security.SignatureHeader, header)
+	assert.NoError(t, security.NewGitHubVerifier("topsecret").Verify(body, value),
+		"the signature must verify through the production verifier")
 }
 
 func TestGitHubSigner_DifferentSecrets_ProduceDifferentValues(t *testing.T) {
 	signer := infrastructure.NewGitHubSigner()
 	body := []byte(`{"action":"opened"}`)
 
-	_, v1 := signer.Sign("secret1", body)
-	_, v2 := signer.Sign("secret2", body)
+	_, first := signer.Sign("secret1", body)
+	_, second := signer.Sign("secret2", body)
 
-	if v1 == v2 {
-		t.Error("same signature for different secrets; want distinct values")
-	}
+	assert.NotEqual(t, first, second)
 }
 
 func TestBitbucketSigner_ProducesCorrectHeaderAndValue(t *testing.T) {
 	signer := infrastructure.NewBitbucketSigner()
-	secret := "topsecret"
 	body := []byte(`{"action":"opened"}`)
 
-	header, value := signer.Sign(secret, body)
+	header, value := signer.Sign("topsecret", body)
 
-	if header != security.SignatureHeaderBitbucket {
-		t.Errorf("header = %q; want %q", header, security.SignatureHeaderBitbucket)
-	}
-	if err := security.NewBitbucketVerifier(secret).Verify(body, value); err != nil {
-		t.Errorf("Verify of Sign output returned %v; want nil", err)
-	}
+	assert.Equal(t, security.SignatureHeaderBitbucket, header)
+	assert.NoError(t, security.NewBitbucketVerifier("topsecret").Verify(body, value))
 }
 
 func TestBitbucketSigner_DifferentSecrets_ProduceDifferentValues(t *testing.T) {
 	signer := infrastructure.NewBitbucketSigner()
 	body := []byte(`{"action":"opened"}`)
 
-	_, v1 := signer.Sign("secret1", body)
-	_, v2 := signer.Sign("secret2", body)
+	_, first := signer.Sign("secret1", body)
+	_, second := signer.Sign("secret2", body)
 
-	if v1 == v2 {
-		t.Error("same signature for different secrets; want distinct values")
-	}
+	assert.NotEqual(t, first, second)
 }
