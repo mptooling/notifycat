@@ -4,17 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/mptooling/notifycat/internal/diagnostics/application"
 	diagnosticsdomain "github.com/mptooling/notifycat/internal/diagnostics/domain"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 )
-
-// ---- constants -----
 
 const (
 	testSecret  = "topsecret"
@@ -23,7 +23,7 @@ const (
 	testTS      = "1717171717.000100"
 )
 
-var testRxCfg = diagnosticsdomain.SmokeReactionsConfig{
+var testReactions = diagnosticsdomain.SmokeReactionsConfig{
 	Enabled:       true,
 	NewPR:         "large_green_circle",
 	MergedPR:      "twisted_rightwards_arrows",
@@ -31,8 +31,6 @@ var testRxCfg = diagnosticsdomain.SmokeReactionsConfig{
 	Commented:     "speech_balloon",
 	RequestChange: "exclamation",
 }
-
-// ---- fake ports -----
 
 // fakeMappings answers Get for exactly one repository.
 type fakeMappings struct {
@@ -124,12 +122,12 @@ func (f *fakeSender) captured() []fakeSend {
 	return append([]fakeSend(nil), f.sends...)
 }
 
-func copyHeaders(h map[string]string) map[string]string {
-	out := make(map[string]string, len(h))
-	for k, v := range h {
-		out[k] = v
+func copyHeaders(headers map[string]string) map[string]string {
+	copied := make(map[string]string, len(headers))
+	for name, value := range headers {
+		copied[name] = value
 	}
-	return out
+	return copied
 }
 
 // fakeSigner records what it was asked to sign, returning a deterministic header.
@@ -157,7 +155,7 @@ func (f *fakeSigner) Sign(secret string, body []byte) (header, value string) {
 // GitHubWebhookBuilder's full wire format is covered by github_webhook_builder_test.go.
 type fakeWebhookBuilder struct{}
 
-func (fakeWebhookBuilder) Build(_ string, number int, title string, ev diagnosticsdomain.SmokeEvent) (diagnosticsdomain.ForgedWebhook, error) {
+func (fakeWebhookBuilder) Build(_ string, number int, title string, event diagnosticsdomain.SmokeEvent) (diagnosticsdomain.ForgedWebhook, error) {
 	type review struct {
 		State string `json:"state"`
 	}
@@ -178,14 +176,14 @@ func (fakeWebhookBuilder) Build(_ string, number int, title string, ev diagnosti
 	payload.Sender.Type = "User"
 
 	eventValue := "pull_request"
-	switch ev.Kind {
+	switch event.Kind {
 	case diagnosticsdomain.SmokeOpened:
 		payload.Action = "opened"
 	case diagnosticsdomain.SmokeCommented:
 		eventValue = "pull_request_review"
 		payload.Action = "submitted"
 		payload.Review = &review{State: "commented"}
-		if ev.IsBot {
+		if event.IsBot {
 			payload.Sender.Type = "Bot"
 		}
 	case diagnosticsdomain.SmokeApproved:
@@ -203,41 +201,54 @@ func (fakeWebhookBuilder) Build(_ string, number int, title string, ev diagnosti
 	return diagnosticsdomain.ForgedWebhook{EventHeader: "X-GitHub-Event", EventValue: eventValue, Body: body}, nil
 }
 
-// ---- helpers -----
-
 func fixedClock() func() time.Time {
 	return func() time.Time { return time.Unix(1717171717, 0) }
 }
 
-func defaultCfg(url string) diagnosticsdomain.SmokeConfig {
+func defaultConfig() diagnosticsdomain.SmokeConfig {
 	return diagnosticsdomain.SmokeConfig{
-		WebhookURL:      url,
+		WebhookURL:      "http://fake",
 		WebhookSecret:   testSecret,
 		IgnoreAIReviews: false,
-		Reactions:       testRxCfg,
+		Reactions:       testReactions,
 		Now:             fixedClock(),
 	}
 }
 
-func newSmoke(sender *fakeSender, msgs *fakeMessages, rx *fakeReactions, cleanup *fakeCleanup, cfg diagnosticsdomain.SmokeConfig) *application.SmokeUseCase {
-	signer := &fakeSigner{}
-	builder := fakeWebhookBuilder{}
+func newSmoke(
+	sender *fakeSender,
+	messages *fakeMessages,
+	reactions *fakeReactions,
+	cleanup *fakeCleanup,
+	cfg diagnosticsdomain.SmokeConfig,
+) *application.SmokeUseCase {
 	return application.NewSmokeUseCase(
 		fakeMappings{repo: testRepo, channel: testChannel},
-		msgs,
-		rx,
+		messages,
+		reactions,
 		cleanup,
-		signer,
-		builder,
+		&fakeSigner{},
+		fakeWebhookBuilder{},
 		sender,
 		cfg,
 	)
 }
 
-// decodeEvent pulls routing-relevant fields from a captured body.
-func decodeEvent(t *testing.T, body []byte) (action, reviewState string, merged bool, number int, title string) {
+// deliveredEvent is the routing-relevant view of one captured delivery.
+type deliveredEvent struct {
+	EventValue  string
+	Action      string
+	ReviewState string
+	Merged      bool
+	Number      int
+	Title       string
+	SenderType  string
+}
+
+func decodeSend(t *testing.T, send fakeSend) deliveredEvent {
 	t.Helper()
-	var p struct {
+
+	var payload struct {
 		Action      string `json:"action"`
 		PullRequest struct {
 			Number int    `json:"number"`
@@ -247,382 +258,298 @@ func decodeEvent(t *testing.T, body []byte) (action, reviewState string, merged 
 		Review *struct {
 			State string `json:"state"`
 		} `json:"review"`
-	}
-	if err := json.Unmarshal(body, &p); err != nil {
-		t.Fatalf("payload is not valid JSON: %v", err)
-	}
-	state := ""
-	if p.Review != nil {
-		state = p.Review.State
-	}
-	return p.Action, state, p.PullRequest.Merged, p.PullRequest.Number, p.PullRequest.Title
-}
-
-func decodeSenderType(t *testing.T, body []byte) string {
-	t.Helper()
-	var p struct {
 		Sender struct {
 			Type string `json:"type"`
 		} `json:"sender"`
 	}
-	if err := json.Unmarshal(body, &p); err != nil {
-		t.Fatalf("payload is not valid JSON: %v", err)
+	require.NoError(t, json.Unmarshal(send.body, &payload), "body = %s", send.body)
+
+	delivered := deliveredEvent{
+		EventValue: send.headers["X-GitHub-Event"],
+		Action:     payload.Action,
+		Merged:     payload.PullRequest.Merged,
+		Number:     payload.PullRequest.Number,
+		Title:      payload.PullRequest.Title,
+		SenderType: payload.Sender.Type,
 	}
-	return p.Sender.Type
+	if payload.Review != nil {
+		delivered.ReviewState = payload.Review.State
+	}
+	return delivered
 }
 
-// ---- tests -----
+func decodeSends(t *testing.T, sends []fakeSend) []deliveredEvent {
+	t.Helper()
+
+	decoded := make([]deliveredEvent, len(sends))
+	for i, send := range sends {
+		decoded[i] = decodeSend(t, send)
+	}
+	return decoded
+}
+
+// reactionSteps lists the lifecycle steps recorded in the result.
+func reactionSteps(result diagnosticsdomain.SmokeResult) []string {
+	steps := make([]string, len(result.Reactions))
+	for i, check := range result.Reactions {
+		steps[i] = check.Step
+	}
+	return steps
+}
 
 func TestSmokeRun_OpenedDelivery_DrivesEndpointAndReportsChannelAndTS(t *testing.T) {
 	sender := &fakeSender{}
-	msgs := &fakeMessages{ts: testTS}
-	rx := &fakeReactions{}
-	cleanup := &fakeCleanup{}
+	messages := &fakeMessages{ts: testTS}
+	reactions := &fakeReactions{}
 
-	res, err := newSmoke(sender, msgs, rx, cleanup, defaultCfg("http://fake")).Run(context.Background(), testRepo, false)
-	if err != nil {
-		t.Fatalf("Run returned %v; want nil", err)
-	}
+	result, err := newSmoke(sender, messages, reactions, &fakeCleanup{}, defaultConfig()).
+		Run(context.Background(), testRepo, false)
 
+	require.NoError(t, err)
 	sends := sender.captured()
-	if len(sends) != 1 {
-		t.Fatalf("got %d sends; want 1 (opened only, no --reactions)", len(sends))
-	}
-	action, _, _, number, title := decodeEvent(t, sends[0].body)
-	if action != "opened" {
-		t.Errorf("action = %q; want opened", action)
-	}
-	if !strings.Contains(title, "[notifycat smoke]") {
-		t.Errorf("title %q is not marked as a smoke test", title)
-	}
-	if sends[0].headers["X-GitHub-Event"] != "pull_request" {
-		t.Errorf("X-GitHub-Event = %q; want pull_request", sends[0].headers["X-GitHub-Event"])
-	}
-	if sends[0].headers["X-Hub-Signature-256"] == "" {
-		t.Error("signature header missing from sent request")
-	}
-	if rx.calls != 0 {
-		t.Errorf("Reactions called %d times without --reactions; want 0", rx.calls)
-	}
-	if res.Channel != testChannel || res.Timestamp != testTS {
-		t.Errorf("Result channel/ts = %q/%q; want %q/%q", res.Channel, res.Timestamp, testChannel, testTS)
-	}
-	if msgs.gotNumber != number {
-		t.Errorf("Messages number = %d; want %d", msgs.gotNumber, number)
-	}
-	if len(res.Reactions) != 0 {
-		t.Errorf("Result.Reactions = %+v; want empty without --reactions", res.Reactions)
-	}
+	require.Len(t, sends, 1, "without --reactions only the open event is replayed")
+	delivered := decodeSend(t, sends[0])
+	assert.Equal(t, "pull_request", delivered.EventValue)
+	assert.Equal(t, "opened", delivered.Action)
+	assert.Contains(t, delivered.Title, "[notifycat smoke]")
+	assert.NotEmpty(t, sends[0].headers["X-Hub-Signature-256"])
+	assert.Zero(t, reactions.calls)
+	assert.Equal(t, testChannel, result.Channel)
+	assert.Equal(t, testTS, result.Timestamp)
+	assert.Equal(t, delivered.Number, messages.gotNumber)
+	assert.Empty(t, result.Reactions)
 }
 
 func TestSmokeRun_WithReactions_RunsLifecycleAndVerifiesEachEmoji(t *testing.T) {
 	sender := &fakeSender{}
-	rx := &fakeReactions{names: []string{testRxCfg.Commented, testRxCfg.Approved, testRxCfg.MergedPR}}
-	cleanup := &fakeCleanup{}
+	reactions := &fakeReactions{names: []string{testReactions.Commented, testReactions.Approved, testReactions.MergedPR}}
 
-	res, err := newSmoke(sender, &fakeMessages{ts: testTS}, rx, cleanup, defaultCfg("http://fake")).Run(context.Background(), testRepo, true)
-	if err != nil {
-		t.Fatalf("Run returned %v; want nil", err)
-	}
+	result, err := newSmoke(sender, &fakeMessages{ts: testTS}, reactions, &fakeCleanup{}, defaultConfig()).
+		Run(context.Background(), testRepo, true)
 
-	sends := sender.captured()
-	if len(sends) != 4 {
-		t.Fatalf("got %d sends; want 4 (opened, comment, approve, merge)", len(sends))
-	}
-	if a, _, _, _, _ := decodeEvent(t, sends[0].body); sends[0].headers["X-GitHub-Event"] != "pull_request" || a != "opened" {
-		t.Errorf("send0 = %s/%s; want pull_request/opened", sends[0].headers["X-GitHub-Event"], a)
-	}
-	if a, s, _, _, _ := decodeEvent(t, sends[1].body); sends[1].headers["X-GitHub-Event"] != "pull_request_review" || a != "submitted" || s != "commented" {
-		t.Errorf("send1 = %s/%s/%s; want pull_request_review/submitted/commented", sends[1].headers["X-GitHub-Event"], a, s)
-	}
-	if a, s, _, _, _ := decodeEvent(t, sends[2].body); sends[2].headers["X-GitHub-Event"] != "pull_request_review" || a != "submitted" || s != "approved" {
-		t.Errorf("send2 = %s/%s/%s; want pull_request_review/submitted/approved", sends[2].headers["X-GitHub-Event"], a, s)
-	}
-	if a, _, merged, _, _ := decodeEvent(t, sends[3].body); sends[3].headers["X-GitHub-Event"] != "pull_request" || a != "closed" || !merged {
-		t.Errorf("send3 = %s/%s/merged=%v; want pull_request/closed/merged=true", sends[3].headers["X-GitHub-Event"], a, merged)
+	require.NoError(t, err)
+	delivered := decodeSends(t, sender.captured())
+	require.Len(t, delivered, 4, "opened, comment, approve, merge")
+	assert.Equal(t, "pull_request", delivered[0].EventValue)
+	assert.Equal(t, "opened", delivered[0].Action)
+	assert.Equal(t, "pull_request_review", delivered[1].EventValue)
+	assert.Equal(t, "submitted", delivered[1].Action)
+	assert.Equal(t, "commented", delivered[1].ReviewState)
+	assert.Equal(t, "pull_request_review", delivered[2].EventValue)
+	assert.Equal(t, "approved", delivered[2].ReviewState)
+	assert.Equal(t, "pull_request", delivered[3].EventValue)
+	assert.Equal(t, "closed", delivered[3].Action)
+	assert.True(t, delivered[3].Merged)
+
+	for i, event := range delivered {
+		assert.Equal(t, delivered[0].Number, event.Number, "send %d must reuse the same PR number", i)
 	}
 
-	// All events share the same PR number.
-	_, _, _, prNumber, _ := decodeEvent(t, sends[0].body)
-	for i, send := range sends {
-		if _, _, _, n, _ := decodeEvent(t, send.body); n != prNumber {
-			t.Errorf("send%d PR number = %d; want %d", i, n, prNumber)
-		}
-	}
-
-	want := []struct{ step, emoji string }{
-		{"comment", testRxCfg.Commented},
-		{"approve", testRxCfg.Approved},
-		{"merge", testRxCfg.MergedPR},
-	}
-	if len(res.Reactions) != len(want) {
-		t.Fatalf("Result.Reactions has %d entries; want %d", len(res.Reactions), len(want))
-	}
-	for i, w := range want {
-		c := res.Reactions[i]
-		if c.Step != w.step || c.Emoji != w.emoji || !c.Present || c.VerifyErr != nil {
-			t.Errorf("Reactions[%d] = %+v; want step=%s emoji=%s present=true err=nil", i, c, w.step, w.emoji)
-		}
+	require.Len(t, result.Reactions, 3)
+	assert.Equal(t, []string{"comment", "approve", "merge"}, reactionSteps(result))
+	assert.Equal(t, []string{testReactions.Commented, testReactions.Approved, testReactions.MergedPR},
+		[]string{result.Reactions[0].Emoji, result.Reactions[1].Emoji, result.Reactions[2].Emoji})
+	for _, check := range result.Reactions {
+		assert.True(t, check.Present, "step %s", check.Step)
+		assert.NoError(t, check.VerifyErr, "step %s", check.Step)
 	}
 }
 
 func TestSmokeRun_WithReactions_BotMarkerConfigured_ReplaysBotReviewAndVerifiesMarker(t *testing.T) {
 	sender := &fakeSender{}
-	rxCfg := testRxCfg
-	rxCfg.BotReview = "robot_face"
-	rx := &fakeReactions{names: []string{rxCfg.Commented, rxCfg.BotReview, rxCfg.Approved, rxCfg.MergedPR}}
-	cleanup := &fakeCleanup{}
+	cfg := defaultConfig()
+	cfg.Reactions.BotReview = "robot_face"
+	reactions := &fakeReactions{names: []string{
+		cfg.Reactions.Commented, cfg.Reactions.BotReview, cfg.Reactions.Approved, cfg.Reactions.MergedPR,
+	}}
 
-	cfg := defaultCfg("http://fake")
-	cfg.Reactions = rxCfg
-	res, err := newSmoke(sender, &fakeMessages{ts: testTS}, rx, cleanup, cfg).Run(context.Background(), testRepo, true)
-	if err != nil {
-		t.Fatalf("Run returned %v; want nil", err)
-	}
+	result, err := newSmoke(sender, &fakeMessages{ts: testTS}, reactions, &fakeCleanup{}, cfg).
+		Run(context.Background(), testRepo, true)
 
-	sends := sender.captured()
-	if len(sends) != 5 {
-		t.Fatalf("got %d sends; want 5 (opened, comment, bot, approve, merge)", len(sends))
-	}
-	if got := decodeSenderType(t, sends[2].body); got != "Bot" {
-		t.Errorf("bot step sender.type = %q; want Bot", got)
-	}
-	if got := decodeSenderType(t, sends[1].body); got != "User" {
-		t.Errorf("human comment step sender.type = %q; want User", got)
-	}
+	require.NoError(t, err)
+	delivered := decodeSends(t, sender.captured())
+	require.Len(t, delivered, 5, "opened, comment, bot, approve, merge")
+	assert.Equal(t, "User", delivered[1].SenderType)
+	assert.Equal(t, "Bot", delivered[2].SenderType)
 
-	var bot *diagnosticsdomain.SmokeReactionCheck
-	for i := range res.Reactions {
-		if res.Reactions[i].Step == "bot" {
-			bot = &res.Reactions[i]
+	assert.Contains(t, reactionSteps(result), "bot")
+	for _, check := range result.Reactions {
+		if check.Step != "bot" {
+			continue
 		}
-	}
-	if bot == nil {
-		t.Fatalf("no bot step recorded in Result.Reactions: %+v", res.Reactions)
-	}
-	if bot.Emoji != "robot_face" || !bot.Present || bot.VerifyErr != nil {
-		t.Errorf("bot step = %+v; want emoji=robot_face present=true err=nil", *bot)
+		assert.Equal(t, "robot_face", check.Emoji)
+		assert.True(t, check.Present)
+		assert.NoError(t, check.VerifyErr)
 	}
 }
 
 func TestSmokeRun_WithReactions_IgnoreAIReviews_SkipsBotStep(t *testing.T) {
 	sender := &fakeSender{}
-	rxCfg := testRxCfg
-	rxCfg.BotReview = "robot_face"
-	rx := &fakeReactions{names: []string{rxCfg.Commented, rxCfg.Approved, rxCfg.MergedPR}}
-	cleanup := &fakeCleanup{}
-
-	cfg := defaultCfg("http://fake")
+	cfg := defaultConfig()
 	cfg.IgnoreAIReviews = true
-	cfg.Reactions = rxCfg
-	res, err := newSmoke(sender, &fakeMessages{ts: testTS}, rx, cleanup, cfg).Run(context.Background(), testRepo, true)
-	if err != nil {
-		t.Fatalf("Run returned %v; want nil", err)
-	}
-	if got := len(sender.captured()); got != 4 {
-		t.Fatalf("got %d sends; want 4 (bot step skipped when AI reviews are ignored)", got)
-	}
-	for _, c := range res.Reactions {
-		if c.Step == "bot" {
-			t.Errorf("bot step replayed despite IgnoreAIReviews: %+v", res.Reactions)
-		}
-	}
-	if !res.IgnoreAIReviews {
-		t.Error("Result.IgnoreAIReviews = false; want true so the CLI can explain the skip")
-	}
+	cfg.Reactions.BotReview = "robot_face"
+	reactions := &fakeReactions{names: []string{testReactions.Commented, testReactions.Approved, testReactions.MergedPR}}
+
+	result, err := newSmoke(sender, &fakeMessages{ts: testTS}, reactions, &fakeCleanup{}, cfg).
+		Run(context.Background(), testRepo, true)
+
+	require.NoError(t, err)
+	assert.Len(t, sender.captured(), 4, "the bot step is skipped when AI reviews are ignored")
+	assert.NotContains(t, reactionSteps(result), "bot")
+	assert.True(t, result.IgnoreAIReviews, "the CLI needs the flag to explain the skip")
 }
 
 func TestSmokeRun_WithReactions_EmptyBotMarker_SkipsBotStep(t *testing.T) {
 	sender := &fakeSender{}
-	rx := &fakeReactions{names: []string{testRxCfg.Commented, testRxCfg.Approved, testRxCfg.MergedPR}}
-	cleanup := &fakeCleanup{}
+	reactions := &fakeReactions{names: []string{testReactions.Commented, testReactions.Approved, testReactions.MergedPR}}
 
-	// testRxCfg has BotReview == "" — the operator's off-switch.
-	res, err := newSmoke(sender, &fakeMessages{ts: testTS}, rx, cleanup, defaultCfg("http://fake")).Run(context.Background(), testRepo, true)
-	if err != nil {
-		t.Fatalf("Run returned %v; want nil", err)
-	}
-	if got := len(sender.captured()); got != 4 {
-		t.Fatalf("got %d sends; want 4 (no bot step when the marker is empty)", got)
-	}
-	for _, c := range res.Reactions {
-		if c.Step == "bot" {
-			t.Error("bot step replayed with an empty marker")
-		}
-	}
-	if res.BotReviewMarker != "" {
-		t.Errorf("Result.BotReviewMarker = %q; want empty", res.BotReviewMarker)
-	}
+	// testReactions leaves BotReview empty — the operator's off-switch.
+	result, err := newSmoke(sender, &fakeMessages{ts: testTS}, reactions, &fakeCleanup{}, defaultConfig()).
+		Run(context.Background(), testRepo, true)
+
+	require.NoError(t, err)
+	assert.Len(t, sender.captured(), 4)
+	assert.NotContains(t, reactionSteps(result), "bot")
+	assert.Empty(t, result.BotReviewMarker)
 }
 
 func TestSmokeRun_WithReactions_MissingEmoji_RecordedNotPresent(t *testing.T) {
 	sender := &fakeSender{}
-	rx := &fakeReactions{names: nil} // server "added" nothing
-	cleanup := &fakeCleanup{}
+	reactions := &fakeReactions{names: nil} // the server "added" nothing
 
-	res, err := newSmoke(sender, &fakeMessages{ts: testTS}, rx, cleanup, defaultCfg("http://fake")).Run(context.Background(), testRepo, true)
-	if err != nil {
-		t.Fatalf("Run returned %v; want nil (missing emoji is reported in Result, not an error)", err)
-	}
-	for _, c := range res.Reactions {
-		if c.Present || c.VerifyErr != nil {
-			t.Errorf("Reactions[%s] = %+v; want present=false err=nil", c.Step, c)
-		}
+	result, err := newSmoke(sender, &fakeMessages{ts: testTS}, reactions, &fakeCleanup{}, defaultConfig()).
+		Run(context.Background(), testRepo, true)
+
+	require.NoError(t, err, "a missing emoji is reported in the result, not as an error")
+	require.NotEmpty(t, result.Reactions)
+	for _, check := range result.Reactions {
+		assert.False(t, check.Present, "step %s", check.Step)
+		assert.NoError(t, check.VerifyErr, "step %s", check.Step)
 	}
 }
 
 func TestSmokeRun_WithReactions_VerifyError_RecordedAsErr(t *testing.T) {
 	sender := &fakeSender{}
-	sentinel := errors.New("missing_scope: reactions:read")
-	rx := &fakeReactions{err: sentinel}
-	cleanup := &fakeCleanup{}
+	verifyErr := errors.New("missing_scope: reactions:read")
+	reactions := &fakeReactions{err: verifyErr}
 
-	res, err := newSmoke(sender, &fakeMessages{ts: testTS}, rx, cleanup, defaultCfg("http://fake")).Run(context.Background(), testRepo, true)
-	if err != nil {
-		t.Fatalf("Run returned %v; want nil (a verify error degrades gracefully)", err)
-	}
-	for _, c := range res.Reactions {
-		if c.VerifyErr == nil {
-			t.Errorf("Reactions[%s].VerifyErr = nil; want the Reactions error", c.Step)
-		}
+	result, err := newSmoke(sender, &fakeMessages{ts: testTS}, reactions, &fakeCleanup{}, defaultConfig()).
+		Run(context.Background(), testRepo, true)
+
+	require.NoError(t, err, "a verify error degrades gracefully")
+	require.NotEmpty(t, result.Reactions)
+	for _, check := range result.Reactions {
+		assert.ErrorIs(t, check.VerifyErr, verifyErr, "step %s", check.Step)
 	}
 }
 
 func TestSmokeRun_ReactionsFlagButDisabledInConfig_SkipsLifecycle(t *testing.T) {
 	sender := &fakeSender{}
-	rx := &fakeReactions{}
-	cleanup := &fakeCleanup{}
-
-	cfg := defaultCfg("http://fake")
+	reactions := &fakeReactions{}
+	cfg := defaultConfig()
 	cfg.Reactions.Enabled = false
-	res, err := newSmoke(sender, &fakeMessages{ts: testTS}, rx, cleanup, cfg).Run(context.Background(), testRepo, true)
-	if err != nil {
-		t.Fatalf("Run returned %v; want nil", err)
-	}
-	if got := len(sender.captured()); got != 1 {
-		t.Errorf("got %d sends; want 1 (reactions disabled → opened only)", got)
-	}
-	if rx.calls != 0 {
-		t.Errorf("Reactions called %d times; want 0 when reactions are disabled", rx.calls)
-	}
-	if !res.ReactionsRequested || res.ReactionsEnabled {
-		t.Errorf("Result requested=%v enabled=%v; want requested=true enabled=false", res.ReactionsRequested, res.ReactionsEnabled)
-	}
-	if len(res.Reactions) != 0 {
-		t.Errorf("Result.Reactions = %+v; want empty when disabled", res.Reactions)
-	}
+
+	result, err := newSmoke(sender, &fakeMessages{ts: testTS}, reactions, &fakeCleanup{}, cfg).
+		Run(context.Background(), testRepo, true)
+
+	require.NoError(t, err)
+	assert.Len(t, sender.captured(), 1, "reactions disabled means the open event only")
+	assert.Zero(t, reactions.calls)
+	assert.True(t, result.ReactionsRequested)
+	assert.False(t, result.ReactionsEnabled)
+	assert.Empty(t, result.Reactions)
 }
 
 func TestSmokeRun_UnmappedRepo_FailsBeforeAnyNetworkCall(t *testing.T) {
 	sender := &fakeSender{}
-	cleanup := &fakeCleanup{}
 
-	_, err := newSmoke(sender, &fakeMessages{ts: testTS}, &fakeReactions{}, cleanup, defaultCfg("http://fake")).Run(context.Background(), "nope/missing", true)
-	if !errors.Is(err, diagnosticsdomain.ErrNoMapping) {
-		t.Fatalf("Run error = %v; want ErrNoMapping", err)
-	}
-	if len(sender.captured()) != 0 {
-		t.Error("sender was called for an unmapped repo; want no network call")
-	}
+	_, err := newSmoke(sender, &fakeMessages{ts: testTS}, &fakeReactions{}, &fakeCleanup{}, defaultConfig()).
+		Run(context.Background(), "nope/missing", true)
+
+	require.ErrorIs(t, err, diagnosticsdomain.ErrNoMapping)
+	assert.Empty(t, sender.captured(), "an unmapped repo never reaches the network")
 }
 
 func TestSmokeRun_BadSecret_ReportsSignatureRejected(t *testing.T) {
 	sender := &fakeSender{statusCode: 401}
-	cleanup := &fakeCleanup{}
 
-	_, err := newSmoke(sender, &fakeMessages{ts: testTS}, &fakeReactions{}, cleanup, defaultCfg("http://fake")).Run(context.Background(), testRepo, false)
-	if !errors.Is(err, diagnosticsdomain.ErrSignatureRejected) {
-		t.Fatalf("Run error = %v; want ErrSignatureRejected", err)
-	}
+	_, err := newSmoke(sender, &fakeMessages{ts: testTS}, &fakeReactions{}, &fakeCleanup{}, defaultConfig()).
+		Run(context.Background(), testRepo, false)
+
+	assert.ErrorIs(t, err, diagnosticsdomain.ErrSignatureRejected)
 }
 
 func TestSmokeRun_TransportError_ReportsUnreachable(t *testing.T) {
-	transportErr := errors.New("connection refused")
-	sender := &fakeSender{transportErr: transportErr}
-	cleanup := &fakeCleanup{}
+	sender := &fakeSender{transportErr: errors.New("connection refused")}
 
-	_, err := newSmoke(sender, &fakeMessages{ts: testTS}, &fakeReactions{}, cleanup, defaultCfg("http://fake")).Run(context.Background(), testRepo, false)
-	if !errors.Is(err, diagnosticsdomain.ErrUnreachable) {
-		t.Fatalf("Run error = %v; want ErrUnreachable", err)
-	}
+	_, err := newSmoke(sender, &fakeMessages{ts: testTS}, &fakeReactions{}, &fakeCleanup{}, defaultConfig()).
+		Run(context.Background(), testRepo, false)
+
+	assert.ErrorIs(t, err, diagnosticsdomain.ErrUnreachable)
 }
 
 func TestSmokeRun_UnexpectedStatus_ReportsUnexpectedStatus(t *testing.T) {
 	sender := &fakeSender{statusCode: 500}
-	cleanup := &fakeCleanup{}
 
-	_, err := newSmoke(sender, &fakeMessages{ts: testTS}, &fakeReactions{}, cleanup, defaultCfg("http://fake")).Run(context.Background(), testRepo, false)
-	if !errors.Is(err, diagnosticsdomain.ErrUnexpectedStatus) {
-		t.Fatalf("Run error = %v; want ErrUnexpectedStatus", err)
-	}
+	_, err := newSmoke(sender, &fakeMessages{ts: testTS}, &fakeReactions{}, &fakeCleanup{}, defaultConfig()).
+		Run(context.Background(), testRepo, false)
+
+	assert.ErrorIs(t, err, diagnosticsdomain.ErrUnexpectedStatus)
 }
 
 func TestSmokeRun_DeletesSyntheticRow_OnSuccess(t *testing.T) {
-	sender := &fakeSender{}
 	cleanup := &fakeCleanup{}
 
-	res, err := newSmoke(sender, &fakeMessages{ts: testTS}, &fakeReactions{}, cleanup, defaultCfg("http://fake")).Run(context.Background(), testRepo, false)
-	if err != nil {
-		t.Fatalf("Run returned %v; want nil", err)
-	}
-	if !cleanup.deleteCalled {
-		t.Fatal("DeletePR was not called; the synthetic pull_requests row would be orphaned")
-	}
-	if cleanup.deletedRepo != testRepo || cleanup.deletedNumber != res.PRNumber {
-		t.Errorf("DeletePR(%q, %d); want (%q, %d)", cleanup.deletedRepo, cleanup.deletedNumber, testRepo, res.PRNumber)
-	}
+	result, err := newSmoke(&fakeSender{}, &fakeMessages{ts: testTS}, &fakeReactions{}, cleanup, defaultConfig()).
+		Run(context.Background(), testRepo, false)
+
+	require.NoError(t, err)
+	require.True(t, cleanup.deleteCalled, "the synthetic pull_requests row would otherwise be orphaned")
+	assert.Equal(t, testRepo, cleanup.deletedRepo)
+	assert.Equal(t, result.PRNumber, cleanup.deletedNumber)
 }
 
 func TestSmokeRun_DeletesSyntheticRow_WithReactions(t *testing.T) {
-	sender := &fakeSender{}
-	rx := &fakeReactions{names: []string{testRxCfg.Commented, testRxCfg.Approved, testRxCfg.MergedPR}}
 	cleanup := &fakeCleanup{}
+	reactions := &fakeReactions{names: []string{testReactions.Commented, testReactions.Approved, testReactions.MergedPR}}
 
-	res, err := newSmoke(sender, &fakeMessages{ts: testTS}, rx, cleanup, defaultCfg("http://fake")).Run(context.Background(), testRepo, true)
-	if err != nil {
-		t.Fatalf("Run returned %v; want nil", err)
-	}
-	if !cleanup.deleteCalled || cleanup.deletedRepo != testRepo || cleanup.deletedNumber != res.PRNumber {
-		t.Errorf("DeletePR called=%v (%q, %d); want true (%q, %d)", cleanup.deleteCalled, cleanup.deletedRepo, cleanup.deletedNumber, testRepo, res.PRNumber)
-	}
+	result, err := newSmoke(&fakeSender{}, &fakeMessages{ts: testTS}, reactions, cleanup, defaultConfig()).
+		Run(context.Background(), testRepo, true)
+
+	require.NoError(t, err)
+	require.True(t, cleanup.deleteCalled)
+	assert.Equal(t, testRepo, cleanup.deletedRepo)
+	assert.Equal(t, result.PRNumber, cleanup.deletedNumber)
 }
 
 func TestSmokeRun_CleanupFailure_IsReported(t *testing.T) {
-	sender := &fakeSender{}
-	sentinel := errors.New("db is locked")
-	cleanup := &fakeCleanup{deleteErr: sentinel}
+	cleanupErr := errors.New("db is locked")
+	cleanup := &fakeCleanup{deleteErr: cleanupErr}
 
-	_, err := newSmoke(sender, &fakeMessages{ts: testTS}, &fakeReactions{}, cleanup, defaultCfg("http://fake")).Run(context.Background(), testRepo, false)
-	if !errors.Is(err, sentinel) {
-		t.Fatalf("Run error = %v; want it to wrap the cleanup failure", err)
-	}
+	_, err := newSmoke(&fakeSender{}, &fakeMessages{ts: testTS}, &fakeReactions{}, cleanup, defaultConfig()).
+		Run(context.Background(), testRepo, false)
+
+	assert.ErrorIs(t, err, cleanupErr)
 }
 
 func TestSmokeRun_SignerReceivesSecret(t *testing.T) {
 	signer := &fakeSigner{}
-	sender := &fakeSender{}
-	cleanup := &fakeCleanup{}
-
-	cfg := defaultCfg("http://fake")
-	uc := application.NewSmokeUseCase(
+	smoke := application.NewSmokeUseCase(
 		fakeMappings{repo: testRepo, channel: testChannel},
 		&fakeMessages{ts: testTS},
 		&fakeReactions{},
-		cleanup,
+		&fakeCleanup{},
 		signer,
 		fakeWebhookBuilder{},
-		sender,
-		cfg,
+		&fakeSender{},
+		defaultConfig(),
 	)
-	if _, err := uc.Run(context.Background(), testRepo, false); err != nil {
-		t.Fatalf("Run returned %v; want nil", err)
-	}
+
+	_, err := smoke.Run(context.Background(), testRepo, false)
+
+	require.NoError(t, err)
 	signer.mu.Lock()
 	defer signer.mu.Unlock()
-	if signer.secret != testSecret {
-		t.Errorf("signer received webhook secret %q; want %q", signer.secret, testSecret)
-	}
-	if len(signer.signed) == 0 {
-		t.Error("signer was never called")
-	}
+	assert.Equal(t, testSecret, signer.secret)
+	assert.NotEmpty(t, signer.signed, "every delivery is signed")
 }

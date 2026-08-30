@@ -3,6 +3,9 @@ package config_test
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/mptooling/notifycat/internal/platform/config"
 	routingapp "github.com/mptooling/notifycat/internal/routing/application"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
@@ -10,19 +13,17 @@ import (
 
 func resolvedMentions(t *testing.T, repository string) []string {
 	t.Helper()
+
 	cfg, err := config.Load()
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
+	require.NoError(t, err)
+
 	provider := routingapp.NewProvider(
 		routingdomain.Defaults{GitProvider: cfg.GitProvider},
 		cfg.Mappings,
 		cfg.Digest,
 	)
 	targets := provider.BaseTargets(repository)
-	if len(targets) != 1 {
-		t.Fatalf("BaseTargets(%q) = %d targets; want 1", repository, len(targets))
-	}
+	require.Len(t, targets, 1)
 	return targets[0].Mentions
 }
 
@@ -37,9 +38,7 @@ mappings:
 `)
 	setSecrets(t)
 
-	if mentions := resolvedMentions(t, "acme/web"); len(mentions) != 0 {
-		t.Errorf("mentions = %v; want empty — `mentions: []` must ping nobody, not @channel", mentions)
-	}
+	assert.Empty(t, resolvedMentions(t, "acme/web"), "`mentions: []` pings nobody, not @channel")
 }
 
 func TestLoad_AbsentMentionsDefaultsToChannel(t *testing.T) {
@@ -52,8 +51,5 @@ mappings:
 `)
 	setSecrets(t)
 
-	mentions := resolvedMentions(t, "acme/web")
-	if len(mentions) != 1 || mentions[0] != routingdomain.ChannelMention {
-		t.Errorf("mentions = %v; want [%s] — an absent `mentions:` key must default to @channel", mentions, routingdomain.ChannelMention)
-	}
+	assert.Equal(t, []string{routingdomain.ChannelMention}, resolvedMentions(t, "acme/web"), "an absent `mentions:` key defaults to @channel")
 }

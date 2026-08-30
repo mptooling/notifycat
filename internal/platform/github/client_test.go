@@ -2,25 +2,38 @@ package github_test
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"sort"
 	"sync/atomic"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/mptooling/notifycat/internal/platform/github"
 )
 
+// newTestClient serves handler over httptest and returns a client pointed at it.
+// Assertions inside a handler must use assert, never require: it runs on the
+// server goroutine, where FailNow is illegal.
+func newTestClient(t *testing.T, handler http.HandlerFunc) *github.Client {
+	t.Helper()
+
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	return github.NewClient(server.Client(), "tok", github.WithBaseURL(server.URL))
+}
+
+func notFoundHandler(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusNotFound)
+	_, _ = io.WriteString(w, `{"message":"Not Found"}`)
+}
+
 func TestListHookEvents_FiltersBySuffixAndUnionsEvents(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.URL.Path; got != "/repos/acme/widgets/hooks" {
-			t.Errorf("path = %q", got)
-		}
-		if got := r.Header.Get("Authorization"); got != "Bearer tok" {
-			t.Errorf("auth = %q", got)
-		}
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/repos/acme/widgets/hooks", r.URL.Path)
+		assert.Equal(t, "Bearer tok", r.Header.Get("Authorization"))
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `[
 			{"id":1,"active":true,"events":["pull_request","pull_request_review"],"config":{"url":"https://notifycat.example/webhook/github"}},
@@ -28,208 +41,144 @@ func TestListHookEvents_FiltersBySuffixAndUnionsEvents(t *testing.T) {
 			{"id":3,"active":false,"events":["pull_request_review_comment"],"config":{"url":"https://notifycat.example/webhook/github"}},
 			{"id":4,"active":true,"events":["pull_request_review_comment"],"config":{"url":"https://notifycat.example/webhook/github"}}
 		]`)
-	}))
-	defer srv.Close()
+	})
 
-	c := github.NewClient(srv.Client(), "tok", github.WithBaseURL(srv.URL))
-	got, err := c.ListHookEvents(context.Background(), "acme", "widgets", "/webhook/github")
-	if err != nil {
-		t.Fatalf("ListHookEvents: %v", err)
-	}
-	sort.Strings(got)
-	want := []string{"pull_request", "pull_request_review", "pull_request_review_comment"}
-	if len(got) != len(want) {
-		t.Fatalf("events = %v; want %v", got, want)
-	}
-	for i, ev := range want {
-		if got[i] != ev {
-			t.Fatalf("events[%d] = %q; want %q", i, got[i], ev)
-		}
-	}
+	got, err := client.ListHookEvents(context.Background(), "acme", "widgets", "/webhook/github")
+
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"pull_request", "pull_request_review", "pull_request_review_comment"}, got,
+		"only active hooks whose URL carries our suffix count, and their events union")
 }
 
 func TestListHookEvents_NoMatchingHook(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, `[{"id":1,"active":true,"events":["push"],"config":{"url":"https://other.example/hook"}}]`)
-	}))
-	defer srv.Close()
+	})
 
-	c := github.NewClient(srv.Client(), "tok", github.WithBaseURL(srv.URL))
-	got, err := c.ListHookEvents(context.Background(), "acme", "widgets", "/webhook/github")
-	if err != nil {
-		t.Fatalf("ListHookEvents: %v", err)
-	}
-	if len(got) != 0 {
-		t.Fatalf("events = %v; want empty", got)
-	}
+	got, err := client.ListHookEvents(context.Background(), "acme", "widgets", "/webhook/github")
+
+	require.NoError(t, err)
+	assert.Empty(t, got)
 }
 
 func TestListHookEvents_APIError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = io.WriteString(w, `{"message":"Not Found","documentation_url":"..."}`)
-	}))
-	defer srv.Close()
+	client := newTestClient(t, notFoundHandler)
 
-	c := github.NewClient(srv.Client(), "tok", github.WithBaseURL(srv.URL))
-	_, err := c.ListHookEvents(context.Background(), "acme", "widgets", "/webhook/github")
+	_, err := client.ListHookEvents(context.Background(), "acme", "widgets", "/webhook/github")
+
 	var apiErr *github.APIError
-	if !errors.As(err, &apiErr) {
-		t.Fatalf("err = %v; want *github.APIError", err)
-	}
-	if apiErr.Status != http.StatusNotFound || apiErr.Message != "Not Found" {
-		t.Fatalf("apiErr = %+v", apiErr)
-	}
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, http.StatusNotFound, apiErr.Status)
+	assert.Equal(t, "Not Found", apiErr.Message)
 }
 
 func TestListOrgRepos_SinglePage(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/orgs/acme/repos" {
-			t.Errorf("path = %q", r.URL.Path)
-		}
-		_, _ = w.Write([]byte(`[{"name":"api"},{"name":"web"}]`))
-	}))
-	defer srv.Close()
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/orgs/acme/repos", r.URL.Path)
+		_, _ = io.WriteString(w, `[{"name":"api"},{"name":"web"}]`)
+	})
 
-	c := github.NewClient(srv.Client(), "tok", github.WithBaseURL(srv.URL))
-	got, err := c.ListOrgRepos(context.Background(), "acme")
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-	if len(got) != 2 || got[0] != "api" || got[1] != "web" {
-		t.Errorf("got %v", got)
-	}
+	got, err := client.ListOrgRepos(context.Background(), "acme")
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"api", "web"}, got)
 }
 
 func TestListOrgRepos_FollowsLinkHeader(t *testing.T) {
 	var page atomic.Int32
-	var base string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	var baseURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		switch page.Add(1) {
 		case 1:
-			w.Header().Set("Link", `<`+base+`/orgs/acme/repos?page=2>; rel="next"`)
-			_, _ = w.Write([]byte(`[{"name":"api"}]`))
+			w.Header().Set("Link", `<`+baseURL+`/orgs/acme/repos?page=2>; rel="next"`)
+			_, _ = io.WriteString(w, `[{"name":"api"}]`)
 		default:
-			_, _ = w.Write([]byte(`[{"name":"web"}]`))
+			_, _ = io.WriteString(w, `[{"name":"web"}]`)
 		}
 	}))
-	defer srv.Close()
-	base = srv.URL
+	defer server.Close()
+	baseURL = server.URL
+	client := github.NewClient(server.Client(), "tok", github.WithBaseURL(server.URL))
 
-	c := github.NewClient(srv.Client(), "tok", github.WithBaseURL(srv.URL))
-	got, err := c.ListOrgRepos(context.Background(), "acme")
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-	if len(got) != 2 || got[0] != "api" || got[1] != "web" {
-		t.Errorf("expected [api, web]; got %v", got)
-	}
+	got, err := client.ListOrgRepos(context.Background(), "acme")
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"api", "web"}, got)
 }
 
 func TestListOrgRepos_Non2xxIsAPIError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = w.Write([]byte(`{"message":"Not Found"}`))
-	}))
-	defer srv.Close()
+	client := newTestClient(t, notFoundHandler)
 
-	c := github.NewClient(srv.Client(), "tok", github.WithBaseURL(srv.URL))
-	_, err := c.ListOrgRepos(context.Background(), "acme")
+	_, err := client.ListOrgRepos(context.Background(), "acme")
+
 	var apiErr *github.APIError
-	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusNotFound {
-		t.Fatalf("want APIError 404; got %T %v", err, err)
-	}
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, http.StatusNotFound, apiErr.Status)
 }
 
 func TestGetPullRequest_OpenAndDraft(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/repos/acme/web/pulls/42" {
-			t.Errorf("path = %q", r.URL.Path)
-		}
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/repos/acme/web/pulls/42", r.URL.Path)
 		_, _ = io.WriteString(w, `{"state":"open","draft":true,"title":"x"}`)
-	}))
-	defer srv.Close()
+	})
 
-	c := github.NewClient(srv.Client(), "tok", github.WithBaseURL(srv.URL))
-	pr, err := c.GetPullRequest(context.Background(), "acme", "web", 42)
-	if err != nil {
-		t.Fatalf("GetPullRequest: %v", err)
-	}
-	if pr.State != "open" || !pr.Draft {
-		t.Fatalf("pr = %+v; want open+draft", pr)
-	}
+	pullRequest, err := client.GetPullRequest(context.Background(), "acme", "web", 42)
+
+	require.NoError(t, err)
+	assert.Equal(t, "open", pullRequest.State)
+	assert.True(t, pullRequest.Draft)
 }
 
 func TestGetPullRequest_NotFoundIsAPIError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = io.WriteString(w, `{"message":"Not Found"}`)
-	}))
-	defer srv.Close()
+	client := newTestClient(t, notFoundHandler)
 
-	c := github.NewClient(srv.Client(), "tok", github.WithBaseURL(srv.URL))
-	_, err := c.GetPullRequest(context.Background(), "acme", "web", 99)
+	_, err := client.GetPullRequest(context.Background(), "acme", "web", 99)
+
 	var apiErr *github.APIError
-	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusNotFound {
-		t.Fatalf("want APIError 404; got %T %v", err, err)
-	}
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, http.StatusNotFound, apiErr.Status)
 }
 
 func TestListPullRequestFiles_SinglePage(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/repos/acme/web/pulls/42/files" {
-			t.Errorf("path = %q", r.URL.Path)
-		}
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/repos/acme/web/pulls/42/files", r.URL.Path)
 		_, _ = io.WriteString(w, `[{"filename":"modules/acme/x.go"},{"filename":"README.md"}]`)
-	}))
-	defer srv.Close()
+	})
 
-	c := github.NewClient(srv.Client(), "tok", github.WithBaseURL(srv.URL))
-	got, err := c.ListPullRequestFiles(context.Background(), "acme", "web", 42)
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-	if len(got) != 2 || got[0] != "modules/acme/x.go" || got[1] != "README.md" {
-		t.Errorf("got %v; want [modules/acme/x.go README.md]", got)
-	}
+	got, err := client.ListPullRequestFiles(context.Background(), "acme", "web", 42)
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"modules/acme/x.go", "README.md"}, got)
 }
 
 func TestListPullRequestFiles_FollowsLinkHeader(t *testing.T) {
 	var page atomic.Int32
-	var base string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	var baseURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		switch page.Add(1) {
 		case 1:
-			w.Header().Set("Link", `<`+base+`/repos/acme/web/pulls/42/files?page=2>; rel="next"`)
+			w.Header().Set("Link", `<`+baseURL+`/repos/acme/web/pulls/42/files?page=2>; rel="next"`)
 			_, _ = io.WriteString(w, `[{"filename":"a.go"}]`)
 		default:
 			_, _ = io.WriteString(w, `[{"filename":"b.go"}]`)
 		}
 	}))
-	defer srv.Close()
-	base = srv.URL
+	defer server.Close()
+	baseURL = server.URL
+	client := github.NewClient(server.Client(), "tok", github.WithBaseURL(server.URL))
 
-	c := github.NewClient(srv.Client(), "tok", github.WithBaseURL(srv.URL))
-	got, err := c.ListPullRequestFiles(context.Background(), "acme", "web", 42)
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-	if len(got) != 2 || got[0] != "a.go" || got[1] != "b.go" {
-		t.Errorf("got %v; want [a.go b.go]", got)
-	}
+	got, err := client.ListPullRequestFiles(context.Background(), "acme", "web", 42)
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"a.go", "b.go"}, got)
 }
 
 func TestListPullRequestFiles_Non2xxIsAPIError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = io.WriteString(w, `{"message":"Not Found"}`)
-	}))
-	defer srv.Close()
+	client := newTestClient(t, notFoundHandler)
 
-	c := github.NewClient(srv.Client(), "tok", github.WithBaseURL(srv.URL))
-	_, err := c.ListPullRequestFiles(context.Background(), "acme", "web", 99)
+	_, err := client.ListPullRequestFiles(context.Background(), "acme", "web", 99)
+
 	var apiErr *github.APIError
-	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusNotFound {
-		t.Fatalf("want APIError 404; got %T %v", err, err)
-	}
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, http.StatusNotFound, apiErr.Status)
 }

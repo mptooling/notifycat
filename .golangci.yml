@@ -12,6 +12,7 @@ linters:
     - ineffassign
     - revive
     - staticcheck
+    - testifylint
     - unused
     - misspell
     - bodyclose
@@ -209,6 +210,12 @@ linters:
         - fmt.Fprintln
         - fmt.Fprintf
         - (io.Writer).Write
+    testifylint:
+      # House style: require for preconditions, assert for the independent
+      # checks at the end of a test — so several assert.ErrorIs calls in a row
+      # are deliberate and require-error stays off.
+      disable:
+        - require-error
     gosec:
       excludes:
         # G705 (XSS via taint) is HTML-rendering oriented; this is not a web

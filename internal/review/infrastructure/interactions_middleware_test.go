@@ -12,6 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/mptooling/notifycat/internal/platform/security"
 )
 
@@ -22,8 +25,8 @@ const testSecret = "8f742231b10e8888abcd99yyyzzz85a5"
 // timestamp used to sign must agree (within the replay window).
 var fixedClock = time.Date(2026, 6, 30, 12, 0, 0, 0, time.UTC)
 
-func clockAt(t time.Time) security.SlackOption {
-	return security.WithSlackClock(func() time.Time { return t })
+func verifierAt(now time.Time) *security.SlackVerifier {
+	return security.NewSlackVerifier(testSecret, security.WithSlackClock(func() time.Time { return now }))
 }
 
 // sign builds the "v0=<hex>" Slack signature of body for the given timestamp.
@@ -34,119 +37,85 @@ func sign(timestamp string, body []byte) string {
 	return "v0=" + hex.EncodeToString(mac.Sum(nil))
 }
 
-func tsString(t time.Time) string {
-	return strconv.FormatInt(t.Unix(), 10)
+func signedRequest(body []byte) *http.Request {
+	timestamp := strconv.FormatInt(fixedClock.Unix(), 10)
+	request := httptest.NewRequest(http.MethodPost, "/webhook/slack/interactions", bytes.NewReader(body))
+	request.Header.Set(security.SlackSignatureHeader, sign(timestamp, body))
+	request.Header.Set(security.SlackTimestampHeader, timestamp)
+	return request
 }
 
-func signedRequest(t *testing.T, body []byte) *http.Request {
+// rejectingHandler fails the test if the middleware ever lets a request through.
+func rejectingHandler(t *testing.T) http.Handler {
 	t.Helper()
-	ts := tsString(fixedClock)
-	req := httptest.NewRequest(http.MethodPost, "/webhook/slack/interactions", bytes.NewReader(body))
-	req.Header.Set(security.SlackSignatureHeader, sign(ts, body))
-	req.Header.Set(security.SlackTimestampHeader, ts)
-	return req
+
+	return http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		assert.Fail(t, "next handler must not be called")
+	})
 }
 
 func TestSignatureMiddleware_PassesValid(t *testing.T) {
-	v := security.NewSlackVerifier(testSecret, clockAt(fixedClock))
-	called := false
 	var seenBody []byte
+	called := false
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
 		seenBody, _ = io.ReadAll(r.Body)
 		w.WriteHeader(http.StatusOK)
 	})
-
 	body := []byte(`payload=%7B%22type%22%3A%22block_actions%22%7D`)
-	rec := httptest.NewRecorder()
-	SignatureMiddleware(v)(next).ServeHTTP(rec, signedRequest(t, body))
+	recorder := httptest.NewRecorder()
 
-	if !called {
-		t.Fatal("next handler not invoked on valid signature")
-	}
-	if rec.Code != http.StatusOK {
-		t.Errorf("status = %d; want 200", rec.Code)
-	}
-	if !bytes.Equal(seenBody, body) {
-		t.Errorf("downstream body = %q; want %q", seenBody, body)
-	}
+	SignatureMiddleware(verifierAt(fixedClock))(next).ServeHTTP(recorder, signedRequest(body))
+
+	require.True(t, called, "a valid signature must reach the handler")
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Equal(t, body, seenBody, "the body is replayed intact downstream")
 }
 
 func TestSignatureMiddleware_RejectsForged(t *testing.T) {
-	v := security.NewSlackVerifier(testSecret, clockAt(fixedClock))
-	next := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
-		t.Fatal("next handler must not be called for a forged signature")
-	})
+	request := signedRequest([]byte("payload=x"))
+	request.Header.Set(security.SlackSignatureHeader, "v0=deadbeef")
+	recorder := httptest.NewRecorder()
 
-	body := []byte("payload=x")
-	req := signedRequest(t, body)
-	req.Header.Set(security.SlackSignatureHeader, "v0=deadbeef")
-	rec := httptest.NewRecorder()
-	SignatureMiddleware(v)(next).ServeHTTP(rec, req)
+	SignatureMiddleware(verifierAt(fixedClock))(rejectingHandler(t)).ServeHTTP(recorder, request)
 
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d; want 401", rec.Code)
-	}
+	assert.Equal(t, http.StatusUnauthorized, recorder.Code)
 }
 
 func TestSignatureMiddleware_RejectsMissingSignature(t *testing.T) {
-	v := security.NewSlackVerifier(testSecret, clockAt(fixedClock))
-	next := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
-		t.Fatal("next handler must not be called when signature is missing")
-	})
+	request := signedRequest([]byte("payload=x"))
+	request.Header.Del(security.SlackSignatureHeader)
+	recorder := httptest.NewRecorder()
 
-	req := signedRequest(t, []byte("payload=x"))
-	req.Header.Del(security.SlackSignatureHeader)
-	rec := httptest.NewRecorder()
-	SignatureMiddleware(v)(next).ServeHTTP(rec, req)
+	SignatureMiddleware(verifierAt(fixedClock))(rejectingHandler(t)).ServeHTTP(recorder, request)
 
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d; want 401", rec.Code)
-	}
+	assert.Equal(t, http.StatusUnauthorized, recorder.Code)
 }
 
 func TestSignatureMiddleware_RejectsMissingTimestamp(t *testing.T) {
-	v := security.NewSlackVerifier(testSecret, clockAt(fixedClock))
-	next := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
-		t.Fatal("next handler must not be called when timestamp is missing")
-	})
+	request := signedRequest([]byte("payload=x"))
+	request.Header.Del(security.SlackTimestampHeader)
+	recorder := httptest.NewRecorder()
 
-	req := signedRequest(t, []byte("payload=x"))
-	req.Header.Del(security.SlackTimestampHeader)
-	rec := httptest.NewRecorder()
-	SignatureMiddleware(v)(next).ServeHTTP(rec, req)
+	SignatureMiddleware(verifierAt(fixedClock))(rejectingHandler(t)).ServeHTTP(recorder, request)
 
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d; want 401", rec.Code)
-	}
+	assert.Equal(t, http.StatusUnauthorized, recorder.Code)
 }
 
 func TestSignatureMiddleware_RejectsStaleTimestamp(t *testing.T) {
-	// Verifier's clock is six minutes ahead of the signed timestamp.
-	v := security.NewSlackVerifier(testSecret, clockAt(fixedClock.Add(6*time.Minute)))
-	next := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
-		t.Fatal("next handler must not be called for a stale timestamp")
-	})
+	// The verifier's clock sits six minutes past the signed timestamp.
+	recorder := httptest.NewRecorder()
 
-	rec := httptest.NewRecorder()
-	SignatureMiddleware(v)(next).ServeHTTP(rec, signedRequest(t, []byte("payload=x")))
+	SignatureMiddleware(verifierAt(fixedClock.Add(6*time.Minute)))(rejectingHandler(t)).ServeHTTP(recorder, signedRequest([]byte("payload=x")))
 
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d; want 401", rec.Code)
-	}
+	assert.Equal(t, http.StatusUnauthorized, recorder.Code)
 }
 
 func TestSignatureMiddleware_BodyTooLargeReturns413(t *testing.T) {
-	v := security.NewSlackVerifier(testSecret, clockAt(fixedClock))
-	next := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
-		t.Fatal("next handler must not be called when body is too large")
-	})
+	oversized := bytes.Repeat([]byte("a"), int(MaxBodyBytes)+1)
+	recorder := httptest.NewRecorder()
 
-	big := bytes.Repeat([]byte("a"), int(MaxBodyBytes)+1)
-	rec := httptest.NewRecorder()
-	SignatureMiddleware(v)(next).ServeHTTP(rec, signedRequest(t, big))
+	SignatureMiddleware(verifierAt(fixedClock))(rejectingHandler(t)).ServeHTTP(recorder, signedRequest(oversized))
 
-	if rec.Code != http.StatusRequestEntityTooLarge {
-		t.Errorf("status = %d; want 413", rec.Code)
-	}
+	assert.Equal(t, http.StatusRequestEntityTooLarge, recorder.Code)
 }

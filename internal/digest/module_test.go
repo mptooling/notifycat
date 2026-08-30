@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 
@@ -78,9 +79,10 @@ func TestModule_ResolvesCalendarForConfiguredCountry(t *testing.T) {
 		fx.Supply(digest.Config{Specs: []string{"0 9 * * *"}, TZ: time.UTC, Country: "DE"}),
 		fx.Invoke(func(calendar domain.DigestCalendar) {
 			// 2026-12-25 is a Friday and a German public holiday.
-			if reason, skip := calendar.SkipReason(time.Date(2026, time.December, 25, 9, 0, 0, 0, time.UTC)); !skip || reason != domain.SkipReasonHoliday {
-				t.Errorf("calendar not wired to the configured country: reason=%q skip=%v", reason, skip)
-			}
+			reason, skip := calendar.SkipReason(time.Date(2026, time.December, 25, 9, 0, 0, 0, time.UTC))
+
+			assert.True(t, skip, "the calendar is wired to the configured country")
+			assert.Equal(t, domain.SkipReasonHoliday, reason)
 		}),
 	)
 	app.RequireStart()
@@ -96,17 +98,15 @@ func TestModule_UnknownCountryStartsAndDegrades(t *testing.T) {
 		digestGraphDeps(t),
 		fx.Supply(digest.Config{Specs: []string{"0 9 * * *"}, TZ: time.UTC, Country: "ZZ"}),
 		fx.Invoke(func(calendar domain.DigestCalendar) {
-			if calendar.Country() != "" {
-				t.Errorf("Country() = %q; an unrecognized code must resolve to none", calendar.Country())
-			}
+			assert.Empty(t, calendar.Country(), "an unrecognized code resolves to no country")
+
 			// 2026-12-25 is a Friday: no holiday table, so the digest still posts.
-			if reason, skip := calendar.SkipReason(time.Date(2026, time.December, 25, 9, 0, 0, 0, time.UTC)); skip {
-				t.Errorf("2026-12-25 skipped as %q; want no skip without a usable table", reason)
-			}
-			// Saturday is still skipped.
-			if reason, skip := calendar.SkipReason(time.Date(2026, time.July, 4, 9, 0, 0, 0, time.UTC)); !skip || reason != domain.SkipReasonWeekend {
-				t.Errorf("Saturday: reason=%q skip=%v; want %q true", reason, skip, domain.SkipReasonWeekend)
-			}
+			_, skipHoliday := calendar.SkipReason(time.Date(2026, time.December, 25, 9, 0, 0, 0, time.UTC))
+			assert.False(t, skipHoliday)
+
+			weekendReason, skipWeekend := calendar.SkipReason(time.Date(2026, time.July, 4, 9, 0, 0, 0, time.UTC))
+			assert.True(t, skipWeekend, "weekends are still skipped")
+			assert.Equal(t, domain.SkipReasonWeekend, weekendReason)
 		}),
 	)
 	app.RequireStart()

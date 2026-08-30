@@ -7,6 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/mptooling/notifycat/internal/kernel"
 	"github.com/mptooling/notifycat/internal/notification/domain"
 	"github.com/mptooling/notifycat/internal/notification/infrastructure"
@@ -18,121 +21,82 @@ type fakeDispatcher struct {
 	err    error
 }
 
-func (f *fakeDispatcher) Dispatch(_ context.Context, e kernel.Event) error {
-	f.event = e
+func (f *fakeDispatcher) Dispatch(_ context.Context, event kernel.Event) error {
+	f.event = event
 	f.called = true
 	return f.err
 }
 
 var _ domain.EventDispatcher = (*fakeDispatcher)(nil)
 
+const openedPRBody = `{
+	"action": "opened",
+	"repository": {"full_name": "octo/widget"},
+	"pull_request": {"number": 7, "title": "x", "html_url": "u", "user": {"login": "a"}}
+}`
+
+// postGitHubWebhook drives the GitHub handler with body and returns the recorder.
+func postGitHubWebhook(handler http.Handler, githubEvent, body string) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(http.MethodPost, "/webhook/github", strings.NewReader(body))
+	if githubEvent != "" {
+		request.Header.Set("X-GitHub-Event", githubEvent)
+	}
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	return recorder
+}
+
 func TestGitHubHandler_HappyPath(t *testing.T) {
 	dispatcher := &fakeDispatcher{}
-	h := infrastructure.NewGitHubHandler(dispatcher)
 
-	body := strings.NewReader(`{
-		"action": "opened",
-		"repository": {"full_name": "octo/widget"},
-		"pull_request": {"number": 7, "title": "x", "html_url": "u", "user": {"login": "a"}}
-	}`)
-	req := httptest.NewRequest(http.MethodPost, "/webhook/github", body)
-	req.Header.Set("X-GitHub-Event", "pull_request")
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	recorder := postGitHubWebhook(infrastructure.NewGitHubHandler(dispatcher), "pull_request", openedPRBody)
 
-	if rec.Code != http.StatusOK {
-		t.Errorf("status = %d; want 200", rec.Code)
-	}
-	if !dispatcher.called {
-		t.Fatal("dispatcher not called")
-	}
-	if dispatcher.event.Provider != kernel.ProviderGitHub {
-		t.Errorf("Provider = %q; want %q", dispatcher.event.Provider, kernel.ProviderGitHub)
-	}
-	if dispatcher.event.Kind != kernel.KindOpened {
-		t.Errorf("Kind = %v; want KindOpened", dispatcher.event.Kind)
-	}
-	if dispatcher.event.PR.Number != 7 {
-		t.Errorf("PR.Number = %d; want 7", dispatcher.event.PR.Number)
-	}
-	if dispatcher.event.Repository != "octo/widget" {
-		t.Errorf("Repository = %q; want %q", dispatcher.event.Repository, "octo/widget")
-	}
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	require.True(t, dispatcher.called)
+	assert.Equal(t, kernel.ProviderGitHub, dispatcher.event.Provider)
+	assert.Equal(t, kernel.KindOpened, dispatcher.event.Kind)
+	assert.Equal(t, 7, dispatcher.event.PR.Number)
+	assert.Equal(t, "octo/widget", dispatcher.event.Repository)
 }
 
 func TestGitHubHandler_MissingPRReturns400(t *testing.T) {
 	dispatcher := &fakeDispatcher{}
-	h := infrastructure.NewGitHubHandler(dispatcher)
 
-	body := strings.NewReader(`{"action":"opened","repository":{"full_name":"o/r"},"pull_request":{}}`)
-	req := httptest.NewRequest(http.MethodPost, "/webhook/github", body)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	recorder := postGitHubWebhook(infrastructure.NewGitHubHandler(dispatcher), "",
+		`{"action":"opened","repository":{"full_name":"o/r"},"pull_request":{}}`)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("status = %d; want 400", rec.Code)
-	}
-	if dispatcher.called {
-		t.Error("dispatcher invoked despite missing PR")
-	}
+	assert.Equal(t, http.StatusBadRequest, recorder.Code)
+	assert.False(t, dispatcher.called)
 }
 
 func TestGitHubHandler_InvalidJSONReturns400(t *testing.T) {
 	dispatcher := &fakeDispatcher{}
-	h := infrastructure.NewGitHubHandler(dispatcher)
 
-	body := strings.NewReader("not-json")
-	req := httptest.NewRequest(http.MethodPost, "/webhook/github", body)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	recorder := postGitHubWebhook(infrastructure.NewGitHubHandler(dispatcher), "", "not-json")
 
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("status = %d; want 400", rec.Code)
-	}
-	if dispatcher.called {
-		t.Error("dispatcher invoked despite invalid JSON")
-	}
+	assert.Equal(t, http.StatusBadRequest, recorder.Code)
+	assert.False(t, dispatcher.called)
 }
 
 func TestGitHubHandler_DispatchErrorReturns500(t *testing.T) {
 	dispatcher := &fakeDispatcher{err: context.DeadlineExceeded}
-	h := infrastructure.NewGitHubHandler(dispatcher)
 
-	body := strings.NewReader(`{
-		"action": "opened",
-		"repository": {"full_name": "octo/widget"},
-		"pull_request": {"number": 7, "title": "x", "html_url": "u", "user": {"login": "a"}}
-	}`)
-	req := httptest.NewRequest(http.MethodPost, "/webhook/github", body)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	recorder := postGitHubWebhook(infrastructure.NewGitHubHandler(dispatcher), "", openedPRBody)
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d; want 500", rec.Code)
-	}
+	assert.Equal(t, http.StatusInternalServerError, recorder.Code)
 }
 
 func TestGitHubHandler_XGitHubEventHeaderMapped(t *testing.T) {
 	dispatcher := &fakeDispatcher{}
-	h := infrastructure.NewGitHubHandler(dispatcher)
 
-	body := strings.NewReader(`{
+	recorder := postGitHubWebhook(infrastructure.NewGitHubHandler(dispatcher), "pull_request_review", `{
 		"action": "submitted",
 		"review": {"state": "approved"},
 		"repository": {"full_name": "octo/widget"},
 		"pull_request": {"number": 3, "title": "feat", "html_url": "u", "user": {"login": "alice"}}
 	}`)
-	req := httptest.NewRequest(http.MethodPost, "/webhook/github", body)
-	req.Header.Set("X-GitHub-Event", "pull_request_review")
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Errorf("status = %d; want 200", rec.Code)
-	}
-	// The X-GitHub-Event header drives the kind mapping: without it the adapter
-	// cannot tell this is a review and would fall through to KindUnknown.
-	if dispatcher.event.Kind != kernel.KindApproved {
-		t.Errorf("Kind = %v; want KindApproved", dispatcher.event.Kind)
-	}
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Equal(t, kernel.KindApproved, dispatcher.event.Kind,
+		"without the header the adapter cannot tell this is a review")
 }

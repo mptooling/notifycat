@@ -1,26 +1,28 @@
 package config_test
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/mptooling/notifycat/internal/kernel"
 	"github.com/mptooling/notifycat/internal/platform/config"
 )
+
+const minimalConfig = "git_provider: github\nserver:\n  log_level: info\n"
 
 // writeConfig writes a config.yaml into a temp dir, points NOTIFYCAT_CONFIG_FILE
 // at it, and clears every secret + retired env var so each test starts clean.
 func writeConfig(t *testing.T, body string) {
 	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
+
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
 	t.Setenv("NOTIFYCAT_CONFIG_FILE", path)
-	for _, k := range []string{
+	for _, name := range []string{
 		"ADDR", "LOG_LEVEL", "LOG_FORMAT", "DATABASE_URL", "NOTIFYCAT_MAPPINGS_FILE",
 		"SLACK_BASE_URL", "GITHUB_BASE_URL", "NOTIFYCAT_MESSAGE_TTL_DAYS",
 		"NOTIFYCAT_IGNORE_AI_REVIEWS", "NOTIFYCAT_DEPENDABOT_FORMAT",
@@ -28,42 +30,39 @@ func writeConfig(t *testing.T, body string) {
 		"GITHUB_WEBHOOK_SECRET", "SLACK_BOT_TOKEN", "GITHUB_TOKEN",
 		"SLACK_SIGNING_SECRET",
 	} {
-		t.Setenv(k, "")
+		t.Setenv(name, "")
 	}
 }
 
-const minimalConfig = "git_provider: github\nserver:\n  log_level: info\n"
-
 func setSecrets(t *testing.T) {
 	t.Helper()
+
 	t.Setenv("GITHUB_WEBHOOK_SECRET", "shh")
 	t.Setenv("SLACK_BOT_TOKEN", "xoxb-x")
 }
 
-func TestLoad_RequiresGitProvider(t *testing.T) {
-	writeConfig(t, "server:\n  log_level: info\n") // no git_provider
-	setSecrets(t)
+// loadConfigured writes body, applies the github secrets, and loads.
+func loadConfigured(t *testing.T, body string) (config.Config, error) {
+	t.Helper()
 
-	_, err := config.Load()
-	if err == nil {
-		t.Fatal("Load() succeeded with no git_provider; want a fail-fast error")
-	}
-	if msg := err.Error(); !strings.Contains(msg, "git_provider") || !strings.Contains(msg, "upgrading.md") {
-		t.Errorf("error = %q; want it to name git_provider and point at the upgrade doc", msg)
-	}
+	writeConfig(t, body)
+	setSecrets(t)
+	return config.Load()
+}
+
+func TestLoad_RequiresGitProvider(t *testing.T) {
+	_, err := loadConfigured(t, "server:\n  log_level: info\n")
+
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "git_provider")
+	assert.ErrorContains(t, err, "upgrading.md", "the error points at the upgrade doc")
 }
 
 func TestLoad_GitProviderGitHub_Boots(t *testing.T) {
-	writeConfig(t, minimalConfig)
-	setSecrets(t)
+	cfg, err := loadConfigured(t, minimalConfig)
 
-	cfg, err := config.Load()
-	if err != nil {
-		t.Fatalf("Load() with git_provider: github = %v; want nil", err)
-	}
-	if cfg.GitProvider != "github" {
-		t.Errorf("GitProvider = %q; want github", cfg.GitProvider)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, kernel.ProviderGitHub, cfg.GitProvider)
 }
 
 func TestLoad_GitProviderBitbucket_Boots(t *testing.T) {
@@ -72,45 +71,34 @@ func TestLoad_GitProviderBitbucket_Boots(t *testing.T) {
 	t.Setenv("BITBUCKET_WEBHOOK_SECRET", "bb-shh")
 
 	cfg, err := config.Load()
-	if err != nil {
-		t.Fatalf("Load() with git_provider: bitbucket = %v; want nil", err)
-	}
-	if cfg.GitProvider != "bitbucket" {
-		t.Errorf("GitProvider = %q; want bitbucket", cfg.GitProvider)
-	}
+
+	require.NoError(t, err)
+	assert.Equal(t, kernel.ProviderBitbucket, cfg.GitProvider)
 }
 
 func TestLoad_BitbucketRequiresWebhookSecret(t *testing.T) {
 	writeConfig(t, "git_provider: bitbucket\nserver:\n  log_level: info\n")
-	t.Setenv("SLACK_BOT_TOKEN", "xoxb-x") // no BITBUCKET_WEBHOOK_SECRET
+	t.Setenv("SLACK_BOT_TOKEN", "xoxb-x")
 
 	_, err := config.Load()
+
 	var missing *config.MissingVarError
-	if !errors.As(err, &missing) || missing.Var != "BITBUCKET_WEBHOOK_SECRET" {
-		t.Fatalf("Load() error = %v; want MissingVarError(BITBUCKET_WEBHOOK_SECRET)", err)
-	}
+	require.ErrorAs(t, err, &missing)
+	assert.Equal(t, "BITBUCKET_WEBHOOK_SECRET", missing.Var)
 }
 
 func TestLoad_GitHubProviderDoesNotRequireBitbucketSecret(t *testing.T) {
-	writeConfig(t, minimalConfig)
-	setSecrets(t) // GITHUB_WEBHOOK_SECRET + SLACK_BOT_TOKEN, no BITBUCKET_WEBHOOK_SECRET
+	_, err := loadConfigured(t, minimalConfig)
 
-	if _, err := config.Load(); err != nil {
-		t.Fatalf("Load() github with no BITBUCKET_WEBHOOK_SECRET = %v; want nil", err)
-	}
+	assert.NoError(t, err, "a github deployment never needs the bitbucket secret")
 }
 
 func TestLoad_RejectsInvalidProvider(t *testing.T) {
-	writeConfig(t, "git_provider: gitlab\n")
-	setSecrets(t)
+	_, err := loadConfigured(t, "git_provider: gitlab\n")
 
-	_, err := config.Load()
-	if err == nil {
-		t.Fatal("Load() succeeded with an unknown git_provider; want an invalid-enum error")
-	}
-	if msg := err.Error(); !strings.Contains(msg, "git_provider") || !strings.Contains(msg, "invalid") {
-		t.Errorf("error = %q; want it to name git_provider as invalid", msg)
-	}
+	require.Error(t, err)
+	require.ErrorContains(t, err, "git_provider")
+	assert.ErrorContains(t, err, "invalid")
 }
 
 func TestLoad_RequiresWebhookSecret(t *testing.T) {
@@ -118,10 +106,10 @@ func TestLoad_RequiresWebhookSecret(t *testing.T) {
 	t.Setenv("SLACK_BOT_TOKEN", "xoxb-x")
 
 	_, err := config.Load()
+
 	var missing *config.MissingVarError
-	if !errors.As(err, &missing) || missing.Var != "GITHUB_WEBHOOK_SECRET" {
-		t.Fatalf("Load() error = %v; want MissingVarError(GITHUB_WEBHOOK_SECRET)", err)
-	}
+	require.ErrorAs(t, err, &missing)
+	assert.Equal(t, "GITHUB_WEBHOOK_SECRET", missing.Var)
 }
 
 func TestLoad_RequiresSlackBotToken(t *testing.T) {
@@ -129,23 +117,17 @@ func TestLoad_RequiresSlackBotToken(t *testing.T) {
 	t.Setenv("GITHUB_WEBHOOK_SECRET", "shh")
 
 	_, err := config.Load()
+
 	var missing *config.MissingVarError
-	if !errors.As(err, &missing) || missing.Var != "SLACK_BOT_TOKEN" {
-		t.Fatalf("Load() error = %v; want MissingVarError(SLACK_BOT_TOKEN)", err)
-	}
+	require.ErrorAs(t, err, &missing)
+	assert.Equal(t, "SLACK_BOT_TOKEN", missing.Var)
 }
 
 func TestLoad_SlackSigningSecretIsOptional(t *testing.T) {
-	writeConfig(t, minimalConfig)
-	setSecrets(t)
+	cfg, err := loadConfigured(t, minimalConfig)
 
-	cfg, err := config.Load()
-	if err != nil {
-		t.Fatalf("Load() with no SLACK_SIGNING_SECRET = %v; want nil (it is optional)", err)
-	}
-	if cfg.SlackSigningSecret.Reveal() != "" {
-		t.Errorf("SlackSigningSecret = %q; want empty when unset", cfg.SlackSigningSecret.Reveal())
-	}
+	require.NoError(t, err)
+	assert.Empty(t, cfg.SlackSigningSecret.Reveal())
 }
 
 func TestLoad_SlackSigningSecretRead(t *testing.T) {
@@ -154,54 +136,36 @@ func TestLoad_SlackSigningSecretRead(t *testing.T) {
 	t.Setenv("SLACK_SIGNING_SECRET", "v0-signing")
 
 	cfg, err := config.Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if cfg.SlackSigningSecret.Reveal() != "v0-signing" {
-		t.Errorf("SlackSigningSecret = %q; want v0-signing", cfg.SlackSigningSecret.Reveal())
-	}
+
+	require.NoError(t, err)
+	assert.Equal(t, "v0-signing", cfg.SlackSigningSecret.Reveal())
 }
 
 func TestLoad_AppliesDefaultsForAbsentKeys(t *testing.T) {
-	writeConfig(t, minimalConfig)
-	setSecrets(t)
+	cfg, err := loadConfigured(t, minimalConfig)
 
-	cfg, err := config.Load()
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	checks := []struct {
-		name string
-		got  any
-		want any
-	}{
-		{"Addr", cfg.Addr, ":8080"},
-		{"LogLevel", cfg.LogLevel, "info"},
-		{"LogFormat", cfg.LogFormat, "text"},
-		{"DatabaseURL", cfg.DatabaseURL, "file:./data/notifycat.db"},
-		{"SlackBaseURL", cfg.SlackBaseURL, "https://slack.com"},
-		{"GitHubBaseURL", cfg.GitHubBaseURL, "https://api.github.com"},
-		{"Reactions.Enabled", cfg.Reactions.Enabled, true},
-		{"Reactions.NewPR", cfg.Reactions.NewPR, "eyes"},
-		{"Reactions.MergedPR", cfg.Reactions.MergedPR, "twisted_rightwards_arrows"},
-		{"Reactions.ClosedPR", cfg.Reactions.ClosedPR, "x"},
-		{"Reactions.Approved", cfg.Reactions.Approved, "white_check_mark"},
-		{"Reactions.Commented", cfg.Reactions.Commented, "speech_balloon"},
-		{"Reactions.RequestChange", cfg.Reactions.RequestChange, "exclamation"},
-		{"Reactions.BotReview", cfg.Reactions.BotReview, "robot_face"},
-		{"MessageTTLDays", cfg.MessageTTLDays, 30},
-		{"IgnoreAIReviews", cfg.IgnoreAIReviews, false},
-		{"DependabotFormat", cfg.DependabotFormat, true},
-	}
-	for _, c := range checks {
-		if c.got != c.want {
-			t.Errorf("%s = %v; want %v", c.name, c.got, c.want)
-		}
-	}
+	require.NoError(t, err)
+	assert.Equal(t, ":8080", cfg.Addr)
+	assert.Equal(t, "info", cfg.LogLevel)
+	assert.Equal(t, "text", cfg.LogFormat)
+	assert.Equal(t, "file:./data/notifycat.db", cfg.DatabaseURL)
+	assert.Equal(t, "https://slack.com", cfg.SlackBaseURL)
+	assert.Equal(t, "https://api.github.com", cfg.GitHubBaseURL)
+	assert.True(t, cfg.Reactions.Enabled)
+	assert.Equal(t, "eyes", cfg.Reactions.NewPR)
+	assert.Equal(t, "twisted_rightwards_arrows", cfg.Reactions.MergedPR)
+	assert.Equal(t, "x", cfg.Reactions.ClosedPR)
+	assert.Equal(t, "white_check_mark", cfg.Reactions.Approved)
+	assert.Equal(t, "speech_balloon", cfg.Reactions.Commented)
+	assert.Equal(t, "exclamation", cfg.Reactions.RequestChange)
+	assert.Equal(t, "robot_face", cfg.Reactions.BotReview)
+	assert.Equal(t, 30, cfg.MessageTTLDays)
+	assert.False(t, cfg.IgnoreAIReviews)
+	assert.True(t, cfg.DependabotFormat)
 }
 
 func TestLoad_OverridesAndMappings(t *testing.T) {
-	writeConfig(t, `
+	cfg, err := loadConfigured(t, `
 git_provider: github
 server:
   addr: ":9000"
@@ -226,164 +190,114 @@ mappings:
     web:
       channel: C0123ABCDE
 `)
-	setSecrets(t)
 
-	cfg, err := config.Load()
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if cfg.Addr != ":9000" || cfg.LogLevel != "debug" || cfg.LogFormat != "json" {
-		t.Errorf("server overrides not applied: %+v", cfg)
-	}
-	if cfg.Domain != "notifycat.example.com" {
-		t.Errorf("Domain = %q", cfg.Domain)
-	}
-	if cfg.DatabaseURL != "file:/tmp/custom.db" {
-		t.Errorf("DatabaseURL = %q", cfg.DatabaseURL)
-	}
-	if cfg.Reactions.Enabled {
-		t.Errorf("Reactions.Enabled = true; want false")
-	}
-	if cfg.Reactions.NewPR != "rocket" {
-		t.Errorf("Reactions.NewPR = %q", cfg.Reactions.NewPR)
-	}
-	if cfg.Reactions.MergedPR != "twisted_rightwards_arrows" {
-		t.Errorf("Reactions.MergedPR default lost = %q", cfg.Reactions.MergedPR)
-	}
-	if !cfg.IgnoreAIReviews || cfg.DependabotFormat {
-		t.Errorf("reviews overrides not applied: ignore=%v dependabot=%v", cfg.IgnoreAIReviews, cfg.DependabotFormat)
-	}
-	if cfg.MessageTTLDays != 7 {
-		t.Errorf("MessageTTLDays = %d; want 7", cfg.MessageTTLDays)
-	}
-	if cfg.Digest == nil || cfg.Digest.Enabled {
-		t.Errorf("Digest = %+v; want non-nil, disabled", cfg.Digest)
-	}
-	org, ok := cfg.Mappings["acme"]
-	if !ok {
-		t.Fatalf("Mappings missing acme: %+v", cfg.Mappings)
-	}
-	if org["web"].Channel != "C0123ABCDE" {
-		t.Errorf("acme/web channel = %q; want C0123ABCDE", org["web"].Channel)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, ":9000", cfg.Addr)
+	assert.Equal(t, "debug", cfg.LogLevel)
+	assert.Equal(t, "json", cfg.LogFormat)
+	assert.Equal(t, "notifycat.example.com", cfg.Domain)
+	assert.Equal(t, "file:/tmp/custom.db", cfg.DatabaseURL)
+	assert.False(t, cfg.Reactions.Enabled)
+	assert.Equal(t, "rocket", cfg.Reactions.NewPR)
+	assert.Equal(t, "twisted_rightwards_arrows", cfg.Reactions.MergedPR, "un-overridden reaction defaults survive")
+	assert.True(t, cfg.IgnoreAIReviews)
+	assert.False(t, cfg.DependabotFormat)
+	assert.Equal(t, 7, cfg.MessageTTLDays)
+	require.NotNil(t, cfg.Digest)
+	assert.False(t, cfg.Digest.Enabled)
+	require.Contains(t, cfg.Mappings, "acme")
+	assert.Equal(t, "C0123ABCDE", cfg.Mappings["acme"]["web"].Channel)
 }
 
 func TestLoad_DigestTimezone_DefaultsToUTC(t *testing.T) {
-	writeConfig(t, minimalConfig)
-	setSecrets(t)
-	cfg, err := config.Load()
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if cfg.DigestTimezone == nil || cfg.DigestTimezone.String() != "UTC" {
-		t.Errorf("DigestTimezone = %v; want UTC when timezone absent", cfg.DigestTimezone)
-	}
+	cfg, err := loadConfigured(t, minimalConfig)
+
+	require.NoError(t, err)
+	require.NotNil(t, cfg.DigestTimezone)
+	assert.Equal(t, "UTC", cfg.DigestTimezone.String())
 }
 
 func TestLoad_DigestTimezone_Valid(t *testing.T) {
-	writeConfig(t, "git_provider: github\ndigest:\n  timezone: \"Europe/Kyiv\"\n")
-	setSecrets(t)
-	cfg, err := config.Load()
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if cfg.DigestTimezone == nil || cfg.DigestTimezone.String() != "Europe/Kyiv" {
-		t.Errorf("DigestTimezone = %v; want Europe/Kyiv", cfg.DigestTimezone)
-	}
+	cfg, err := loadConfigured(t, "git_provider: github\ndigest:\n  timezone: \"Europe/Kyiv\"\n")
+
+	require.NoError(t, err)
+	require.NotNil(t, cfg.DigestTimezone)
+	assert.Equal(t, "Europe/Kyiv", cfg.DigestTimezone.String())
 }
 
 func TestLoad_DigestTimezone_InvalidRejected(t *testing.T) {
-	writeConfig(t, "git_provider: github\ndigest:\n  timezone: \"Mars/Phobos\"\n")
-	setSecrets(t)
-	if _, err := config.Load(); err == nil {
-		t.Fatal("Load() succeeded with an invalid timezone; want a descriptive error")
-	}
+	_, err := loadConfigured(t, "git_provider: github\ndigest:\n  timezone: \"Mars/Phobos\"\n")
+
+	assert.Error(t, err)
 }
 
 func TestLoad_RejectsUnknownTierKey(t *testing.T) {
-	writeConfig(t, "mappings:\n  acme:\n    api:\n      channel: C0API\n      bogus: x\n")
-	setSecrets(t)
-	if _, err := config.Load(); err == nil {
-		t.Fatal("expected error for unknown tier key in mappings")
-	}
+	_, err := loadConfigured(t, "mappings:\n  acme:\n    api:\n      channel: C0API\n      bogus: x\n")
+
+	assert.Error(t, err)
 }
 
 func TestLoad_MessageTTLDays_RejectsZero(t *testing.T) {
-	writeConfig(t, "git_provider: github\ncleanup:\n  message_ttl_days: 0\n")
-	setSecrets(t)
-	if _, err := config.Load(); err == nil {
-		t.Fatal("Load() succeeded with message_ttl_days=0; want error")
-	}
+	_, err := loadConfigured(t, "git_provider: github\ncleanup:\n  message_ttl_days: 0\n")
+
+	assert.Error(t, err)
 }
 
 func TestLoad_MissingFileIsError(t *testing.T) {
 	writeConfig(t, minimalConfig)
 	setSecrets(t)
 	t.Setenv("NOTIFYCAT_CONFIG_FILE", filepath.Join(t.TempDir(), "does-not-exist.yaml"))
-	if _, err := config.Load(); err == nil {
-		t.Fatal("Load() succeeded with missing config.yaml; want error")
-	}
+
+	_, err := config.Load()
+
+	assert.Error(t, err)
 }
 
 func TestLoad_UnknownKeyRejected(t *testing.T) {
-	writeConfig(t, "server:\n  not_a_real_key: x\n")
-	setSecrets(t)
-	if _, err := config.Load(); err == nil {
-		t.Fatal("Load() succeeded with an unknown key; want error")
-	}
+	_, err := loadConfigured(t, "server:\n  not_a_real_key: x\n")
+
+	assert.Error(t, err)
 }
 
 func TestLoad_MappingsTierWithNoChannel_Rejected(t *testing.T) {
-	// api has no channel and there is no org/* to inherit from → structural error.
-	writeConfig(t, `
+	_, err := loadConfigured(t, `
 git_provider: github
 mappings:
   acme:
     api:
       mentions: ["<@U1>"]
 `)
-	setSecrets(t)
-	if _, err := config.Load(); err == nil {
-		t.Fatal("Load() succeeded with a tier that has no resolvable channel; want error")
-	}
+
+	assert.Error(t, err, "api has no channel and no org/* to inherit from")
 }
 
 func TestLoad_EmptyOrg_Rejected(t *testing.T) {
-	writeConfig(t, "git_provider: github\nmappings:\n  acme: {}\n")
-	setSecrets(t)
-	if _, err := config.Load(); err == nil {
-		t.Fatal("Load() succeeded with an empty org entry; want error")
-	}
+	_, err := loadConfigured(t, "git_provider: github\nmappings:\n  acme: {}\n")
+
+	assert.Error(t, err)
 }
 
 func TestLoad_EmptyMappings_Valid(t *testing.T) {
-	writeConfig(t, "git_provider: github\nmappings: {}\n")
-	setSecrets(t)
-	if _, err := config.Load(); err != nil {
-		t.Fatalf("Load() with empty mappings returned error %v; want nil", err)
-	}
+	_, err := loadConfigured(t, "git_provider: github\nmappings: {}\n")
+
+	assert.NoError(t, err)
 }
 
 func TestLoad_RetiredEnvVarRejected(t *testing.T) {
 	writeConfig(t, minimalConfig)
 	setSecrets(t)
-	t.Setenv("LOG_LEVEL", "debug") // retired: app config now lives in config.yaml
-	if _, err := config.Load(); err == nil {
-		t.Fatal("Load() succeeded with a retired env var set; want error pointing to migration")
-	}
+	t.Setenv("LOG_LEVEL", "debug")
+
+	_, err := config.Load()
+
+	assert.Error(t, err, "app config lives in config.yaml now; a retired env var must point at the migration")
 }
 
 func TestLoad_SecretsAreSecretType(t *testing.T) {
-	writeConfig(t, minimalConfig)
-	setSecrets(t)
-	cfg, err := config.Load()
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if cfg.GitHubWebhookSecret.Reveal() != "shh" || cfg.SlackBotToken.Reveal() != "xoxb-x" {
-		t.Error("secrets not read from env")
-	}
-	if cfg.GitHubWebhookSecret.String() == "shh" {
-		t.Error("secret renders raw via String()")
-	}
+	cfg, err := loadConfigured(t, minimalConfig)
+
+	require.NoError(t, err)
+	assert.Equal(t, "shh", cfg.GitHubWebhookSecret.Reveal())
+	assert.Equal(t, "xoxb-x", cfg.SlackBotToken.Reveal())
+	assert.NotEqual(t, "shh", cfg.GitHubWebhookSecret.String(), "String() must redact")
 }

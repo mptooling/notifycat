@@ -2,9 +2,10 @@ package infrastructure_test
 
 import (
 	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/mptooling/notifycat/internal/kernel"
 	"github.com/mptooling/notifycat/internal/notification/infrastructure"
@@ -16,22 +17,12 @@ import (
 // debug-logs no_handler.
 func dispatchBitbucketKind(t *testing.T, eventKey, body string) kernel.Event {
 	t.Helper()
+
 	dispatcher := &fakeDispatcher{}
-	handler := infrastructure.NewBitbucketHandler(dispatcher)
+	recorder := postBitbucketWebhook(infrastructure.NewBitbucketHandler(dispatcher), eventKey, body)
 
-	req := httptest.NewRequest(http.MethodPost, "/webhook/bitbucket", strings.NewReader(body))
-	if eventKey != "" {
-		req.Header.Set("X-Event-Key", eventKey)
-	}
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d; want 200 (body should dispatch, not error)", rec.Code)
-	}
-	if !dispatcher.called {
-		t.Fatal("dispatcher not called")
-	}
+	require.Equal(t, http.StatusOK, recorder.Code, "a body with a valid id dispatches rather than erroring")
+	require.True(t, dispatcher.called)
 	return dispatcher.event
 }
 
@@ -41,7 +32,7 @@ func dispatchBitbucketKind(t *testing.T, eventKey, body string) kernel.Event {
 // Handlers rely on these kinds alone, so a regression here would silently change
 // delivery behavior.
 func TestMapBitbucketKind(t *testing.T) {
-	cases := []struct {
+	testCases := []struct {
 		name     string
 		eventKey string
 		body     string
@@ -115,24 +106,20 @@ func TestMapBitbucketKind(t *testing.T) {
 		},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			event := dispatchBitbucketKind(t, tc.eventKey, tc.body)
-			if event.Kind != tc.want {
-				t.Errorf("kind = %v (%s); want %v (%s)", int(event.Kind), event.Kind, int(tc.want), tc.want)
-			}
-			if event.Provider != kernel.ProviderBitbucket {
-				t.Errorf("provider = %q; want %q", event.Provider, kernel.ProviderBitbucket)
-			}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			event := dispatchBitbucketKind(t, testCase.eventKey, testCase.body)
+
+			assert.Equal(t, testCase.want, event.Kind)
+			assert.Equal(t, kernel.ProviderBitbucket, event.Provider)
 		})
 	}
 }
 
-// TestToBitbucketEvent_SenderIsBot pins that the adapter resolves Bitbucket's
-// actor.type to the neutral Sender.IsBot — "user" is a human, anything else
-// (a "team" or "app_user") is a bot.
+// The adapter resolves Bitbucket's actor.type to the neutral Sender.IsBot —
+// "user" is a human, anything else (a "team" or "app_user") is a bot.
 func TestToBitbucketEvent_SenderIsBot(t *testing.T) {
-	cases := []struct {
+	testCases := []struct {
 		actorType string
 		wantBot   bool
 	}{
@@ -140,14 +127,15 @@ func TestToBitbucketEvent_SenderIsBot(t *testing.T) {
 		{actorType: "team", wantBot: true},
 		{actorType: "app_user", wantBot: true},
 	}
-	for _, tc := range cases {
-		t.Run(tc.actorType, func(t *testing.T) {
-			body := `{"actor":{"type":"` + tc.actorType + `","display_name":"X"},` +
+
+	for _, testCase := range testCases {
+		t.Run(testCase.actorType, func(t *testing.T) {
+			body := `{"actor":{"type":"` + testCase.actorType + `","display_name":"X"},` +
 				`"repository":{"full_name":"w/r"},"pullrequest":{"id":7,"state":"OPEN"}}`
+
 			event := dispatchBitbucketKind(t, "pullrequest:approved", body)
-			if event.Sender.IsBot != tc.wantBot {
-				t.Errorf("actor.type=%q -> IsBot=%v; want %v", tc.actorType, event.Sender.IsBot, tc.wantBot)
-			}
+
+			assert.Equal(t, testCase.wantBot, event.Sender.IsBot)
 		})
 	}
 }

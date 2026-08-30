@@ -3,9 +3,14 @@ package application_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/mptooling/notifycat/internal/notification/domain"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
@@ -18,6 +23,17 @@ func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Disca
 func captureLogger() (*slog.Logger, *bytes.Buffer) {
 	buf := &bytes.Buffer{}
 	return slog.New(slog.NewJSONHandler(buf, nil)), buf
+}
+
+// assertLogFields decodes a single JSON log record and checks the given fields.
+func assertLogFields(t *testing.T, raw []byte, want map[string]any) {
+	t.Helper()
+
+	record := map[string]any{}
+	require.NoError(t, json.Unmarshal(raw, &record), "raw log = %s", raw)
+	for key, value := range want {
+		assert.Equal(t, value, record[key], "log field %q", key)
+	}
 }
 
 // fakeMessenger records the domain intent each handler drives it with (no Slack
@@ -88,11 +104,11 @@ func (f *fakeMessenger) Delete(_ context.Context, channel, messageID string) err
 
 // reactionEmojis returns the emoji of every AddReaction call, in order.
 func (f *fakeMessenger) reactionEmojis() []string {
-	out := make([]string, len(f.reactions))
-	for i, r := range f.reactions {
-		out[i] = r.emoji
+	emojis := make([]string, len(f.reactions))
+	for i, reaction := range f.reactions {
+		emojis[i] = reaction.emoji
 	}
-	return out
+	return emojis
 }
 
 // fakeMessageStore is an in-memory domain.MessageStore.
@@ -130,11 +146,11 @@ func (f *fakeMessageStore) Messages(_ context.Context, repository string, prNumb
 	if f.messagesErr != nil {
 		return nil, f.messagesErr
 	}
-	msgs, ok := f.messages[storeKey(repository, prNumber)]
+	messages, ok := f.messages[storeKey(repository, prNumber)]
 	if !ok {
 		return nil, routingdomain.ErrNotFound
 	}
-	return msgs, nil
+	return messages, nil
 }
 func (f *fakeMessageStore) Touch(_ context.Context, repository string, prNumber int) error {
 	f.touched[storeKey(repository, prNumber)]++

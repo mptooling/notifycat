@@ -1,13 +1,15 @@
 package infrastructure
 
 import (
-	"errors"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseBitbucketPayload_AllFields(t *testing.T) {
-	body := []byte(`{
+	payload, err := parseBitbucketPayload([]byte(`{
 		"actor": {"type": "user", "display_name": "Jane", "nickname": "jane"},
 		"pullrequest": {
 			"id": 42, "title": "Fix", "description": "body text",
@@ -17,89 +19,52 @@ func TestParseBitbucketPayload_AllFields(t *testing.T) {
 			"author": {"display_name": "Bob", "type": "user"}
 		},
 		"repository": {"full_name": "workspace/repo"}
-	}`)
+	}`))
 
-	p, err := parseBitbucketPayload(body)
-	if err != nil {
-		t.Fatalf("parseBitbucketPayload: %v", err)
-	}
-	if p.Repository != "workspace/repo" {
-		t.Errorf("Repository = %q; want workspace/repo", p.Repository)
-	}
-	if p.PullRequest.ID != 42 {
-		t.Errorf("ID = %d; want 42", p.PullRequest.ID)
-	}
-	if p.PullRequest.Title != "Fix" {
-		t.Errorf("Title = %q; want Fix", p.PullRequest.Title)
-	}
-	if p.PullRequest.URL != "https://bitbucket.org/ws/repo/pull-requests/42" {
-		t.Errorf("URL = %q", p.PullRequest.URL)
-	}
-	if p.PullRequest.Author != "Bob" {
-		t.Errorf("Author = %q; want Bob", p.PullRequest.Author)
-	}
-	if p.PullRequest.State != "OPEN" {
-		t.Errorf("State = %q; want OPEN", p.PullRequest.State)
-	}
-	if p.PullRequest.Draft {
-		t.Error("Draft = true; want false")
-	}
-	if p.PullRequest.Description != "body text" {
-		t.Errorf("Description = %q; want body text", p.PullRequest.Description)
-	}
-	want := time.Date(2026, 6, 5, 14, 4, 0, 0, time.UTC)
-	if !p.PullRequest.CreatedAt.Equal(want) {
-		t.Errorf("CreatedAt = %v; want %v", p.PullRequest.CreatedAt, want)
-	}
-	if p.Actor.DisplayName != "Jane" || p.Actor.Type != "user" {
-		t.Errorf("Actor = %+v; want {Jane user}", p.Actor)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "workspace/repo", payload.Repository)
+	assert.Equal(t, 42, payload.PullRequest.ID)
+	assert.Equal(t, "Fix", payload.PullRequest.Title)
+	assert.Equal(t, "https://bitbucket.org/ws/repo/pull-requests/42", payload.PullRequest.URL)
+	assert.Equal(t, "Bob", payload.PullRequest.Author)
+	assert.Equal(t, "OPEN", payload.PullRequest.State)
+	assert.False(t, payload.PullRequest.Draft)
+	assert.Equal(t, "body text", payload.PullRequest.Description)
+	assert.Equal(t, time.Date(2026, 6, 5, 14, 4, 0, 0, time.UTC), payload.PullRequest.CreatedAt.UTC())
+	assert.Equal(t, "Jane", payload.Actor.DisplayName)
+	assert.Equal(t, "user", payload.Actor.Type)
 }
 
 func TestParseBitbucketPayload_CreatedOnMalformedIsZero(t *testing.T) {
-	body := []byte(`{
+	payload, err := parseBitbucketPayload([]byte(`{
 		"pullrequest": {"id": 42, "title": "x", "state": "OPEN", "created_on": "not-a-time"},
 		"repository": {"full_name": "w/r"}
-	}`)
+	}`))
 
-	p, err := parseBitbucketPayload(body)
-	if err != nil {
-		t.Fatalf("parseBitbucketPayload: %v", err)
-	}
-	if !p.PullRequest.CreatedAt.IsZero() {
-		t.Errorf("CreatedAt = %v; want zero for a malformed timestamp", p.PullRequest.CreatedAt)
-	}
+	require.NoError(t, err)
+	assert.True(t, payload.PullRequest.CreatedAt.IsZero())
 }
 
 func TestParseBitbucketPayload_MissingIDIsError(t *testing.T) {
-	body := []byte(`{"repository":{"full_name":"w/r"},"pullrequest":{"title":"x"}}`)
+	_, err := parseBitbucketPayload([]byte(`{"repository":{"full_name":"w/r"},"pullrequest":{"title":"x"}}`))
 
-	_, err := parseBitbucketPayload(body)
-	if err == nil {
-		t.Fatal("parseBitbucketPayload(missing id) returned nil; want error")
-	}
-	if !errors.Is(err, ErrMissingPRNumber) {
-		t.Errorf("err = %v; want errors.Is(err, ErrMissingPRNumber)", err)
-	}
+	assert.ErrorIs(t, err, ErrMissingPRNumber)
 }
 
 func TestParseBitbucketPayload_InvalidJSONIsError(t *testing.T) {
 	_, err := parseBitbucketPayload([]byte("not-json"))
-	if err == nil {
-		t.Fatal("parseBitbucketPayload(invalid) returned nil; want error")
-	}
+
+	assert.Error(t, err)
 }
 
 func TestToBitbucketEvent_MergedFromState(t *testing.T) {
-	p, err := parseBitbucketPayload([]byte(`{
+	payload, err := parseBitbucketPayload([]byte(`{
 		"pullrequest": {"id": 7, "state": "MERGED"},
 		"repository": {"full_name": "w/r"}
 	}`))
-	if err != nil {
-		t.Fatalf("parseBitbucketPayload: %v", err)
-	}
-	event := toBitbucketEvent("pullrequest:fulfilled", p)
-	if !event.PR.Merged {
-		t.Error("PR.Merged = false; want true for state MERGED")
-	}
+	require.NoError(t, err)
+
+	event := toBitbucketEvent("pullrequest:fulfilled", payload)
+
+	assert.True(t, event.PR.Merged, "state MERGED marks the PR merged")
 }

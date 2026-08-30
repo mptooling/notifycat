@@ -128,6 +128,30 @@ The `notification` domain's `IsBot` policy, gated by `reviews.ignore_ai_reviews`
 - **TDD for new behavior.** RED → verify failure → GREEN → REFACTOR.
   Bug fixes start with a regression test that reproduces the bug.
 
+## Test style
+
+Every test in the repository uses `testify`, and `testifylint` enforces the
+mechanical parts in `just lint`.
+
+- **`require` vs `assert`.** `require` for anything whose failure makes the
+  rest of the test meaningless — setup, error checks, a length check before
+  indexing. `assert` for the independent checks at the end, so one run reports
+  every failure. Inside an `httptest` handler always use `assert`: it runs on
+  the server goroutine, where `FailNow` is illegal.
+- **Argument order** is `(t, want, got)`.
+- **Prefer the specific helper** over a hand-rolled comparison:
+  `require.NoError`, `require.ErrorIs`/`ErrorAs`, `assert.Equal`, `assert.Len`,
+  `assert.Empty`, `assert.Contains`, `assert.ElementsMatch`, `assert.JSONEq`,
+  `assert.Zero`, `require.Eventually`. Never `reflect.DeepEqual`.
+- **Messages carry the *why*, not the values.** testify already prints the diff,
+  so add a message only when the assertion alone does not explain the invariant
+  (`"a warned entry is never cached"`), never to restate got/want.
+- **Arrange / act / assert**, separated by a blank line — one action per test,
+  with the assertions after it.
+- **Table tests** are `testCases := []struct{ name string; ... }` driven through
+  `t.Run(testCase.name, ...)`; loop variables are spelled out (`testCase`,
+  `testCases`), never `tc`/`c`.
+
 ## Commits, PRs, releases
 
 - **PR title = commit message.** Squash-merge keeps the PR title as

@@ -3,12 +3,14 @@ package application_test
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/mptooling/notifycat/internal/notification/application"
 	"github.com/mptooling/notifycat/internal/notification/domain"
 )
 
 func TestDetectBot(t *testing.T) {
-	cases := []struct {
+	testCases := []struct {
 		name  string
 		login string
 		want  domain.BotKind
@@ -22,17 +24,16 @@ func TestDetectBot(t *testing.T) {
 		{"empty", "", domain.BotKindNone},
 		{"prefix is not a match", "dependabot", domain.BotKindNone},
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if got := application.DetectBot(c.login); got != c.want {
-				t.Errorf("DetectBot(%q) = %v; want %v", c.login, got, c.want)
-			}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			assert.Equal(t, testCase.want, application.DetectBot(testCase.login))
 		})
 	}
 }
 
 func TestBotKind_Name(t *testing.T) {
-	cases := []struct {
+	testCases := []struct {
 		kind domain.BotKind
 		want string
 	}{
@@ -40,16 +41,17 @@ func TestBotKind_Name(t *testing.T) {
 		{domain.BotKindRenovate, "renovate"},
 		{domain.BotKindNone, ""},
 	}
-	for _, c := range cases {
-		if got := c.kind.Name(); got != c.want {
-			t.Errorf("BotKind(%d).Name() = %q; want %q", c.kind, got, c.want)
-		}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.want, func(t *testing.T) {
+			assert.Equal(t, testCase.want, testCase.kind.Name())
+		})
 	}
 }
 
 func TestIsSecurityAdvisory(t *testing.T) {
 	// Mirrors the structured header Dependabot inserts for advisory PRs.
-	dependabotSecurity := `Bumps acme/lib from 1.2.0 to 1.2.1.
+	const dependabotSecurity = `Bumps acme/lib from 1.2.0 to 1.2.1.
 
 ## Vulnerabilities fixed
 
@@ -58,27 +60,27 @@ Sourced from the GitHub Security Advisory Database.
 > CVE-2026-1234: a thing
 `
 	// Renovate's section header when vulnerabilityAlerts is enabled.
-	renovateSecurity := `This PR contains the following updates.
+	const renovateSecurity = `This PR contains the following updates.
 
 ### Vulnerabilities
 
 This update fixes a known vulnerability.
 `
-	routine := `Bumps acme/lib from 1.2.0 to 1.2.1.
+	const routine = `Bumps acme/lib from 1.2.0 to 1.2.1.
 
 ## Release notes
 
 - Fixed a typo.
 `
 	// "vulnerability" only in prose / a release-note line, not a header.
-	proseOnly := `Bumps acme/lib from 1.2.0 to 1.2.1.
+	const proseOnly = `Bumps acme/lib from 1.2.0 to 1.2.1.
 
 ## Release notes
 
 - This release mentions a vulnerability in the changelog but is a routine bump.
 `
 
-	cases := []struct {
+	testCases := []struct {
 		name string
 		body string
 		want bool
@@ -89,11 +91,10 @@ This update fixes a known vulnerability.
 		{"empty body", "", false},
 		{"prose-only mention is not a match", proseOnly, false},
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if got := application.IsSecurityAdvisory(c.body); got != c.want {
-				t.Errorf("IsSecurityAdvisory(...) = %v; want %v\nbody:\n%s", got, c.want, c.body)
-			}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			assert.Equal(t, testCase.want, application.IsSecurityAdvisory(testCase.body))
 		})
 	}
 }

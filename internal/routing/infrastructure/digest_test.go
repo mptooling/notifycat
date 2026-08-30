@@ -3,6 +3,10 @@ package infrastructure_test
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	application "github.com/mptooling/notifycat/internal/routing/application"
 	domain "github.com/mptooling/notifycat/internal/routing/domain"
 	"github.com/mptooling/notifycat/internal/routing/infrastructure"
 )
@@ -14,109 +18,73 @@ mappings:
       channel: C0123ABCDE
 `
 
+func loadDigestProvider(t *testing.T, body string) *application.Provider {
+	t.Helper()
+
+	provider, err := infrastructure.Load(writeMappingsFile(t, body))
+	require.NoError(t, err)
+	return provider
+}
+
 func TestProvider_Digest_AbsentDefaultsToEnabled(t *testing.T) {
-	p, err := infrastructure.Load(writeMappingsFile(t, digestMappingsTail))
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	d := p.Digest()
-	if !d.Enabled {
-		t.Errorf("digest disabled with no section; want enabled by default")
-	}
-	if d.Schedule != domain.DefaultDigestSchedule {
-		t.Errorf("schedule = %q; want default %q", d.Schedule, domain.DefaultDigestSchedule)
-	}
+	provider := loadDigestProvider(t, digestMappingsTail)
+
+	digest := provider.Digest()
+
+	assert.True(t, digest.Enabled, "digest is on unless the operator turns it off")
+	assert.Equal(t, domain.DefaultDigestSchedule, digest.Schedule)
 }
 
 func TestProvider_Digest_CustomSchedule(t *testing.T) {
-	body := "digest:\n  schedule: \"0 8 * * 1-5\"\n" + digestMappingsTail
-	p, err := infrastructure.Load(writeMappingsFile(t, body))
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	d := p.Digest()
-	if !d.Enabled {
-		t.Errorf("want enabled")
-	}
-	if d.Schedule != "0 8 * * 1-5" {
-		t.Errorf("schedule = %q; want custom", d.Schedule)
-	}
+	provider := loadDigestProvider(t, "digest:\n  schedule: \"0 8 * * 1-5\"\n"+digestMappingsTail)
+
+	digest := provider.Digest()
+
+	assert.True(t, digest.Enabled)
+	assert.Equal(t, "0 8 * * 1-5", digest.Schedule)
 }
 
 func TestProvider_Digest_ExplicitlyDisabled(t *testing.T) {
-	body := "digest:\n  enabled: false\n" + digestMappingsTail
-	p, err := infrastructure.Load(writeMappingsFile(t, body))
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	d := p.Digest()
-	if d.Enabled {
-		t.Errorf("digest enabled despite `enabled: false`")
-	}
-	// The schedule still resolves to the default even while disabled.
-	if d.Schedule != domain.DefaultDigestSchedule {
-		t.Errorf("schedule = %q; want default", d.Schedule)
-	}
+	provider := loadDigestProvider(t, "digest:\n  enabled: false\n"+digestMappingsTail)
+
+	digest := provider.Digest()
+
+	assert.False(t, digest.Enabled)
+	assert.Equal(t, domain.DefaultDigestSchedule, digest.Schedule, "the schedule still resolves while disabled")
 }
 
 func TestProvider_Digest_UnknownFieldRejected(t *testing.T) {
-	body := "digest:\n  frequency: daily\n" + digestMappingsTail
-	if _, err := infrastructure.Load(writeMappingsFile(t, body)); err == nil {
-		t.Fatalf("expected parse error for unknown digest field, got nil")
-	}
+	_, err := infrastructure.Load(writeMappingsFile(t, "digest:\n  frequency: daily\n"+digestMappingsTail))
+
+	require.Error(t, err)
 }
 
 func TestProvider_Digest_Timezone(t *testing.T) {
-	body := "digest:\n  timezone: \"Europe/Kyiv\"\n" + digestMappingsTail
-	p, err := infrastructure.Load(writeMappingsFile(t, body))
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	if got := p.Digest().Timezone; got != "Europe/Kyiv" {
-		t.Errorf("timezone = %q; want Europe/Kyiv", got)
-	}
+	provider := loadDigestProvider(t, "digest:\n  timezone: \"Europe/Kyiv\"\n"+digestMappingsTail)
+
+	assert.Equal(t, "Europe/Kyiv", provider.Digest().Timezone)
 }
 
 func TestProvider_Digest_TimezoneAbsentIsEmpty(t *testing.T) {
-	p, err := infrastructure.Load(writeMappingsFile(t, digestMappingsTail))
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	if got := p.Digest().Timezone; got != "" {
-		t.Errorf("timezone = %q; want empty when absent (resolved to UTC by config)", got)
-	}
+	provider := loadDigestProvider(t, digestMappingsTail)
+
+	assert.Empty(t, provider.Digest().Timezone, "config resolves the empty timezone to UTC")
 }
 
 func TestProvider_Digest_Country(t *testing.T) {
-	body := "digest:\n  country: \"DE\"\n" + digestMappingsTail
-	p, err := infrastructure.Load(writeMappingsFile(t, body))
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	if got := p.Digest().Country; got != "DE" {
-		t.Errorf("country = %q; want DE", got)
-	}
+	provider := loadDigestProvider(t, "digest:\n  country: \"DE\"\n"+digestMappingsTail)
+
+	assert.Equal(t, "DE", provider.Digest().Country)
 }
 
 func TestProvider_Digest_CountryAbsentIsEmpty(t *testing.T) {
-	p, err := infrastructure.Load(writeMappingsFile(t, digestMappingsTail))
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	if got := p.Digest().Country; got != "" {
-		t.Errorf("country = %q; want empty when absent (weekends-only)", got)
-	}
+	provider := loadDigestProvider(t, digestMappingsTail)
+
+	assert.Empty(t, provider.Digest().Country, "no country means weekends-only")
 }
 
-// A repo tier may override the schedule without inheriting or clobbering the
-// global country.
 func TestProvider_DigestFor_KeepsGlobalCountry(t *testing.T) {
-	body := "digest:\n  country: \"DE\"\n" + digestMappingsTail
-	p, err := infrastructure.Load(writeMappingsFile(t, body))
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	if got := p.DigestFor("acme/api").Country; got != "DE" {
-		t.Errorf("DigestFor country = %q; want DE", got)
-	}
+	provider := loadDigestProvider(t, "digest:\n  country: \"DE\"\n"+digestMappingsTail)
+
+	assert.Equal(t, "DE", provider.DigestFor("acme/api").Country, "a repo tier override must not clobber the global country")
 }

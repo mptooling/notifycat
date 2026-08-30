@@ -2,200 +2,154 @@ package persistence_test
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
 	"github.com/mptooling/notifycat/internal/platform/persistence"
 )
 
-// prAbsent reports whether the PR has no row (Messages returns ErrNotFound).
-func prAbsent(t *testing.T, repo *persistence.PullRequests, repository string, prNumber int) bool {
+func seedPullRequests(t *testing.T, db *gorm.DB, rows ...persistence.PullRequest) {
 	t.Helper()
-	_, err := repo.Messages(context.Background(), repository, prNumber)
-	return errors.Is(err, persistence.ErrNotFound)
+
+	for _, row := range rows {
+		require.NoError(t, persistence.RawCreateForTest(db, row))
+	}
 }
 
 func TestPullRequests_Touch_BumpsUpdatedAt(t *testing.T) {
 	db := persistence.NewTestDB(t)
 	repo := persistence.NewPullRequests(db)
 	ctx := context.Background()
+	seededAt := time.Now().UTC().Add(-48 * time.Hour).Truncate(time.Second)
+	seedPullRequests(t, db, persistence.PullRequest{PRNumber: 1, Repository: "o/r", UpdatedAt: seededAt})
 
-	old := time.Now().UTC().Add(-48 * time.Hour).Truncate(time.Second)
-	if err := persistence.RawCreateForTest(db, persistence.PullRequest{PRNumber: 1, Repository: "o/r", UpdatedAt: old}); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-
-	if err := repo.Touch(ctx, "o/r", 1); err != nil {
-		t.Fatalf("Touch: %v", err)
-	}
+	require.NoError(t, repo.Touch(ctx, "o/r", 1))
 
 	// FindStuck reads each PR's updated_at; a far-future cutoff returns ours.
 	stuck, err := repo.FindStuck(ctx, time.Now().Add(time.Hour))
-	if err != nil {
-		t.Fatalf("FindStuck: %v", err)
-	}
-	if len(stuck) != 1 || !stuck[0].UpdatedAt.After(old) {
-		t.Fatalf("Touch did not bump updated_at: %+v (seed %v)", stuck, old)
-	}
+
+	require.NoError(t, err)
+	require.Len(t, stuck, 1)
+	assert.True(t, stuck[0].UpdatedAt.After(seededAt), "Touch must bump updated_at")
 }
 
 func TestPullRequests_Touch_MissingIsNoop(t *testing.T) {
 	repo := persistence.NewPullRequests(persistence.NewTestDB(t))
-	if err := repo.Touch(context.Background(), "o/r", 1); err != nil {
-		t.Fatalf("Touch missing: %v", err)
-	}
+
+	err := repo.Touch(context.Background(), "o/r", 1)
+
+	assert.NoError(t, err)
 }
 
 func TestPullRequests_MarkClosed_ExcludesFromFindStuck(t *testing.T) {
 	db := persistence.NewTestDB(t)
 	repo := persistence.NewPullRequests(db)
 	ctx := context.Background()
+	seededAt := time.Now().UTC().Add(-48 * time.Hour).Truncate(time.Second)
+	seedPullRequests(t, db, persistence.PullRequest{PRNumber: 1, Repository: "o/r", UpdatedAt: seededAt})
 
-	old := time.Now().UTC().Add(-48 * time.Hour).Truncate(time.Second)
-	if err := persistence.RawCreateForTest(db, persistence.PullRequest{PRNumber: 1, Repository: "o/r", UpdatedAt: old}); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-
-	if err := repo.MarkClosed(ctx, "o/r", 1); err != nil {
-		t.Fatalf("MarkClosed: %v", err)
-	}
+	require.NoError(t, repo.MarkClosed(ctx, "o/r", 1))
 
 	stuck, err := repo.FindStuck(ctx, time.Now())
-	if err != nil {
-		t.Fatalf("FindStuck: %v", err)
-	}
-	if len(stuck) != 0 {
-		t.Fatalf("FindStuck returned %d rows; want 0 (closed PR excluded)", len(stuck))
-	}
+
+	require.NoError(t, err)
+	assert.Empty(t, stuck, "a closed PR never counts as stuck")
 }
 
 func TestPullRequests_FindStuck_OnlyOpenAndStale(t *testing.T) {
 	db := persistence.NewTestDB(t)
 	repo := persistence.NewPullRequests(db)
 	ctx := context.Background()
-
 	now := time.Now().UTC().Truncate(time.Second)
 	stale := now.Add(-48 * time.Hour)
 	closedAt := now.Add(-1 * time.Hour)
+	seedPullRequests(t, db,
+		persistence.PullRequest{PRNumber: 1, Repository: "o/r", UpdatedAt: stale},
+		persistence.PullRequest{PRNumber: 2, Repository: "o/r", UpdatedAt: now.Add(-1 * time.Hour)},
+		persistence.PullRequest{PRNumber: 3, Repository: "o/r", UpdatedAt: stale, ClosedAt: &closedAt},
+	)
 
-	seed := []persistence.PullRequest{
-		{PRNumber: 1, Repository: "o/r", UpdatedAt: stale},
-		{PRNumber: 2, Repository: "o/r", UpdatedAt: now.Add(-1 * time.Hour)},
-		{PRNumber: 3, Repository: "o/r", UpdatedAt: stale, ClosedAt: &closedAt},
-	}
-	for _, pr := range seed {
-		if err := persistence.RawCreateForTest(db, pr); err != nil {
-			t.Fatalf("seed: %v", err)
-		}
-	}
+	stuck, err := repo.FindStuck(ctx, now.Add(-24*time.Hour))
 
-	cutoff := now.Add(-24 * time.Hour)
-	stuck, err := repo.FindStuck(ctx, cutoff)
-	if err != nil {
-		t.Fatalf("FindStuck: %v", err)
-	}
-	if len(stuck) != 1 || stuck[0].PRNumber != 1 {
-		t.Fatalf("FindStuck = %+v; want only the stale open PR (1)", stuck)
-	}
+	require.NoError(t, err)
+	require.Len(t, stuck, 1)
+	assert.Equal(t, 1, stuck[0].PRNumber, "only the stale open PR is stuck")
 }
 
 func TestPullRequests_FindStuck_Empty(t *testing.T) {
 	repo := persistence.NewPullRequests(persistence.NewTestDB(t))
+
 	stuck, err := repo.FindStuck(context.Background(), time.Now())
-	if err != nil {
-		t.Fatalf("FindStuck on empty: %v", err)
-	}
-	if len(stuck) != 0 {
-		t.Fatalf("FindStuck on empty returned %d rows; want 0", len(stuck))
-	}
+
+	require.NoError(t, err)
+	assert.Empty(t, stuck)
 }
 
 func TestPullRequests_ListOpen_ExcludesClosed(t *testing.T) {
 	db := persistence.NewTestDB(t)
 	repo := persistence.NewPullRequests(db)
-	ctx := context.Background()
-
 	now := time.Now().UTC().Truncate(time.Second)
 	closedAt := now.Add(-1 * time.Hour)
-	seed := []persistence.PullRequest{
-		{PRNumber: 2, Repository: "o/r", UpdatedAt: now},
-		{PRNumber: 1, Repository: "o/r", UpdatedAt: now},
-		{PRNumber: 9, Repository: "o/r", UpdatedAt: now, ClosedAt: &closedAt},
-	}
-	for _, pr := range seed {
-		if err := persistence.RawCreateForTest(db, pr); err != nil {
-			t.Fatalf("seed: %v", err)
-		}
-	}
+	seedPullRequests(t, db,
+		persistence.PullRequest{PRNumber: 2, Repository: "o/r", UpdatedAt: now},
+		persistence.PullRequest{PRNumber: 1, Repository: "o/r", UpdatedAt: now},
+		persistence.PullRequest{PRNumber: 9, Repository: "o/r", UpdatedAt: now, ClosedAt: &closedAt},
+	)
 
-	open, err := repo.ListOpen(ctx)
-	if err != nil {
-		t.Fatalf("ListOpen: %v", err)
-	}
-	if len(open) != 2 {
-		t.Fatalf("ListOpen returned %d rows; want 2 open", len(open))
-	}
-	// Ordered by (gh_repository, pr_number).
-	if open[0].PRNumber != 1 || open[1].PRNumber != 2 {
-		t.Fatalf("ListOpen order = %d,%d; want 1,2", open[0].PRNumber, open[1].PRNumber)
-	}
+	open, err := repo.ListOpen(context.Background())
+
+	require.NoError(t, err)
+	require.Len(t, open, 2)
+	assert.Equal(t, 1, open[0].PRNumber, "rows come back ordered by (repository, pr_number)")
+	assert.Equal(t, 2, open[1].PRNumber)
 }
 
 func TestPullRequests_DeleteStaleBefore_RemovesOldRows(t *testing.T) {
 	db := persistence.NewTestDB(t)
 	repo := persistence.NewPullRequests(db)
 	ctx := context.Background()
-
 	now := time.Now().UTC().Truncate(time.Second)
-	seed := []persistence.PullRequest{
-		{PRNumber: 1, Repository: "o/r", UpdatedAt: now.Add(-72 * time.Hour)},
-		{PRNumber: 2, Repository: "o/r", UpdatedAt: now.Add(-48 * time.Hour)},
-		{PRNumber: 3, Repository: "o/r", UpdatedAt: now.Add(-1 * time.Hour)},
-	}
-	for _, pr := range seed {
-		if err := persistence.RawCreateForTest(db, pr); err != nil {
-			t.Fatalf("seed: %v", err)
-		}
-	}
+	seedPullRequests(t, db,
+		persistence.PullRequest{PRNumber: 1, Repository: "o/r", UpdatedAt: now.Add(-72 * time.Hour)},
+		persistence.PullRequest{PRNumber: 2, Repository: "o/r", UpdatedAt: now.Add(-48 * time.Hour)},
+		persistence.PullRequest{PRNumber: 3, Repository: "o/r", UpdatedAt: now.Add(-1 * time.Hour)},
+	)
 
 	deleted, err := repo.DeleteStaleBefore(ctx, now.Add(-24*time.Hour))
-	if err != nil {
-		t.Fatalf("DeleteStaleBefore: %v", err)
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), deleted)
+	for _, prNumber := range []int{1, 2} {
+		_, err := repo.Messages(ctx, "o/r", prNumber)
+		assert.ErrorIs(t, err, persistence.ErrNotFound, "stale PR %d should be gone", prNumber)
 	}
-	if deleted != 2 {
-		t.Fatalf("DeleteStaleBefore returned %d; want 2", deleted)
-	}
-	for _, pr := range []int{1, 2} {
-		if !prAbsent(t, repo, "o/r", pr) {
-			t.Errorf("PR %d still present after delete", pr)
-		}
-	}
-	if prAbsent(t, repo, "o/r", 3) {
-		t.Errorf("fresh PR 3 removed unexpectedly")
-	}
+	_, err = repo.Messages(ctx, "o/r", 3)
+	assert.NoError(t, err, "the fresh PR survives")
 }
 
 func TestPullRequests_DeleteStaleBefore_Empty(t *testing.T) {
 	repo := persistence.NewPullRequests(persistence.NewTestDB(t))
+
 	deleted, err := repo.DeleteStaleBefore(context.Background(), time.Now())
-	if err != nil {
-		t.Fatalf("DeleteStaleBefore on empty: %v", err)
-	}
-	if deleted != 0 {
-		t.Fatalf("DeleteStaleBefore on empty returned %d; want 0", deleted)
-	}
+
+	require.NoError(t, err)
+	assert.Zero(t, deleted)
 }
 
 func TestMigrate_CreatesPullRequestsAndMessages(t *testing.T) {
 	db := persistence.NewTestDB(t)
+
 	for _, table := range []string{"pull_requests", "messages"} {
-		var name string
-		err := db.Raw(
-			"SELECT name FROM sqlite_master WHERE type='table' AND name=?", table,
-		).Scan(&name).Error
-		if err != nil || name != table {
-			t.Fatalf("table %q missing after migrate (got %q, err %v)", table, name, err)
-		}
+		t.Run(table, func(t *testing.T) {
+			var name string
+			err := db.Raw("SELECT name FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&name).Error
+
+			require.NoError(t, err)
+			assert.Equal(t, table, name)
+		})
 	}
 }

@@ -3,30 +3,27 @@ package persistence_test
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/mptooling/notifycat/internal/platform/persistence"
 )
 
-func TestPullRequestTableName(t *testing.T) {
-	if (persistence.PullRequest{}).TableName() != "pull_requests" {
-		t.Errorf("PullRequest.TableName = %q; want pull_requests", (persistence.PullRequest{}).TableName())
-	}
-	if (persistence.Message{}).TableName() != "messages" {
-		t.Errorf("Message.TableName = %q; want messages", (persistence.Message{}).TableName())
-	}
+func TestTableNames(t *testing.T) {
+	assert.Equal(t, "pull_requests", persistence.PullRequest{}.TableName())
+	assert.Equal(t, "messages", persistence.Message{}.TableName())
 }
 
 func TestRepoMapping_CarriesBehavioralConfig(t *testing.T) {
-	m := persistence.RepoMapping{
+	mapping := persistence.RepoMapping{
 		Repository:       "o/r",
 		SlackChannel:     "C0",
 		Reactions:        persistence.Reactions{Enabled: true, NewPR: "eyes", Approved: "shipit"},
 		IgnoreAIReviews:  true,
 		DependabotFormat: false,
 	}
-	if !m.Reactions.Enabled || m.Reactions.Approved != "shipit" {
-		t.Errorf("reactions not carried: %+v", m.Reactions)
-	}
-	if !m.IgnoreAIReviews || m.DependabotFormat {
-		t.Errorf("toggles not carried: ignore=%v dependabot=%v", m.IgnoreAIReviews, m.DependabotFormat)
-	}
+
+	assert.True(t, mapping.Reactions.Enabled)
+	assert.Equal(t, "shipit", mapping.Reactions.Approved)
+	assert.True(t, mapping.IgnoreAIReviews)
+	assert.False(t, mapping.DependabotFormat)
 }

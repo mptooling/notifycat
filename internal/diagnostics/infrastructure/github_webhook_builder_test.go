@@ -4,207 +4,107 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	diagnosticsdomain "github.com/mptooling/notifycat/internal/diagnostics/domain"
 	"github.com/mptooling/notifycat/internal/diagnostics/infrastructure"
 )
 
-func TestGitHubWebhookBuilder_Opened(t *testing.T) {
-	builder := infrastructure.NewGitHubWebhookBuilder()
-	forged, err := builder.Build("org/repo", 42, "My PR", diagnosticsdomain.SmokeEvent{Kind: diagnosticsdomain.SmokeOpened})
-	if err != nil {
-		t.Fatalf("Forge returned %v; want nil", err)
-	}
-	if forged.EventHeader != "X-GitHub-Event" {
-		t.Errorf("EventHeader = %q; want X-GitHub-Event", forged.EventHeader)
-	}
-	if forged.EventValue != "pull_request" {
-		t.Errorf("EventValue = %q; want pull_request", forged.EventValue)
-	}
-	var p struct {
-		Action      string `json:"action"`
-		PullRequest struct {
-			Number  int    `json:"number"`
-			Title   string `json:"title"`
-			HTMLURL string `json:"html_url"`
-			Merged  bool   `json:"merged"`
-			Draft   bool   `json:"draft"`
-		} `json:"pull_request"`
-		Sender struct {
+// githubForgedPayload is the union of every field the forged GitHub bodies carry.
+type githubForgedPayload struct {
+	Action      string `json:"action"`
+	PullRequest struct {
+		Number  int    `json:"number"`
+		Title   string `json:"title"`
+		HTMLURL string `json:"html_url"`
+		Merged  bool   `json:"merged"`
+		Draft   bool   `json:"draft"`
+		User    struct {
 			Login string `json:"login"`
-			Type  string `json:"type"`
-		} `json:"sender"`
-		Repository struct {
-			FullName string `json:"full_name"`
-		} `json:"repository"`
-	}
-	if err := json.Unmarshal(forged.Body, &p); err != nil {
-		t.Fatalf("body is not valid JSON: %v", err)
-	}
-	if p.Action != "opened" {
-		t.Errorf("action = %q; want opened", p.Action)
-	}
-	if p.PullRequest.Number != 42 {
-		t.Errorf("pull_request.number = %d; want 42", p.PullRequest.Number)
-	}
-	if p.PullRequest.Title != "My PR" {
-		t.Errorf("pull_request.title = %q; want My PR", p.PullRequest.Title)
-	}
-	if p.PullRequest.HTMLURL != "https://github.com/org/repo/pull/42" {
-		t.Errorf("pull_request.html_url = %q; want https://github.com/org/repo/pull/42", p.PullRequest.HTMLURL)
-	}
-	if p.PullRequest.Merged {
-		t.Error("pull_request.merged = true; want false for opened")
-	}
-	if p.PullRequest.Draft {
-		t.Error("pull_request.draft = true; want false for opened")
-	}
-	if p.Sender.Type != "User" {
-		t.Errorf("sender.type = %q; want User", p.Sender.Type)
-	}
-	if p.Repository.FullName != "org/repo" {
-		t.Errorf("repository.full_name = %q; want org/repo", p.Repository.FullName)
-	}
+		} `json:"user"`
+	} `json:"pull_request"`
+	Review struct {
+		State string `json:"state"`
+	} `json:"review"`
+	Sender struct {
+		Login string `json:"login"`
+		Type  string `json:"type"`
+	} `json:"sender"`
+	Repository struct {
+		FullName string `json:"full_name"`
+	} `json:"repository"`
+}
+
+// buildGitHubWebhook forges a webhook for the given smoke event and decodes its body.
+func buildGitHubWebhook(t *testing.T, repository string, prNumber int, title string, event diagnosticsdomain.SmokeEvent) (diagnosticsdomain.ForgedWebhook, githubForgedPayload) {
+	t.Helper()
+
+	forged, err := infrastructure.NewGitHubWebhookBuilder().Build(repository, prNumber, title, event)
+	require.NoError(t, err)
+
+	var payload githubForgedPayload
+	require.NoError(t, json.Unmarshal(forged.Body, &payload), "body = %s", forged.Body)
+	return forged, payload
+}
+
+func TestGitHubWebhookBuilder_Opened(t *testing.T) {
+	forged, payload := buildGitHubWebhook(t, "org/repo", 42, "My PR",
+		diagnosticsdomain.SmokeEvent{Kind: diagnosticsdomain.SmokeOpened})
+
+	assert.Equal(t, "X-GitHub-Event", forged.EventHeader)
+	assert.Equal(t, "pull_request", forged.EventValue)
+	assert.Equal(t, "opened", payload.Action)
+	assert.Equal(t, 42, payload.PullRequest.Number)
+	assert.Equal(t, "My PR", payload.PullRequest.Title)
+	assert.Equal(t, "https://github.com/org/repo/pull/42", payload.PullRequest.HTMLURL)
+	assert.False(t, payload.PullRequest.Merged)
+	assert.False(t, payload.PullRequest.Draft)
+	assert.Equal(t, "User", payload.Sender.Type)
+	assert.Equal(t, "org/repo", payload.Repository.FullName)
 }
 
 func TestGitHubWebhookBuilder_CommentedHuman(t *testing.T) {
-	builder := infrastructure.NewGitHubWebhookBuilder()
-	forged, err := builder.Build("org/repo", 42, "My PR", diagnosticsdomain.SmokeEvent{Kind: diagnosticsdomain.SmokeCommented, IsBot: false})
-	if err != nil {
-		t.Fatalf("Forge returned %v; want nil", err)
-	}
-	if forged.EventValue != "pull_request_review" {
-		t.Errorf("EventValue = %q; want pull_request_review", forged.EventValue)
-	}
-	var p struct {
-		Action string `json:"action"`
-		Review struct {
-			State string `json:"state"`
-		} `json:"review"`
-		Sender struct {
-			Type string `json:"type"`
-		} `json:"sender"`
-	}
-	if err := json.Unmarshal(forged.Body, &p); err != nil {
-		t.Fatalf("body is not valid JSON: %v", err)
-	}
-	if p.Action != "submitted" {
-		t.Errorf("action = %q; want submitted", p.Action)
-	}
-	if p.Review.State != "commented" {
-		t.Errorf("review.state = %q; want commented", p.Review.State)
-	}
-	if p.Sender.Type != "User" {
-		t.Errorf("sender.type = %q; want User", p.Sender.Type)
-	}
+	forged, payload := buildGitHubWebhook(t, "org/repo", 42, "My PR",
+		diagnosticsdomain.SmokeEvent{Kind: diagnosticsdomain.SmokeCommented, IsBot: false})
+
+	assert.Equal(t, "pull_request_review", forged.EventValue)
+	assert.Equal(t, "submitted", payload.Action)
+	assert.Equal(t, "commented", payload.Review.State)
+	assert.Equal(t, "User", payload.Sender.Type)
 }
 
 func TestGitHubWebhookBuilder_CommentedBot(t *testing.T) {
-	builder := infrastructure.NewGitHubWebhookBuilder()
-	forged, err := builder.Build("org/repo", 42, "My PR", diagnosticsdomain.SmokeEvent{Kind: diagnosticsdomain.SmokeCommented, IsBot: true})
-	if err != nil {
-		t.Fatalf("Forge returned %v; want nil", err)
-	}
-	var p struct {
-		Sender struct {
-			Type string `json:"type"`
-		} `json:"sender"`
-	}
-	if err := json.Unmarshal(forged.Body, &p); err != nil {
-		t.Fatalf("body is not valid JSON: %v", err)
-	}
-	if p.Sender.Type != "Bot" {
-		t.Errorf("sender.type = %q; want Bot", p.Sender.Type)
-	}
+	_, payload := buildGitHubWebhook(t, "org/repo", 42, "My PR",
+		diagnosticsdomain.SmokeEvent{Kind: diagnosticsdomain.SmokeCommented, IsBot: true})
+
+	assert.Equal(t, "Bot", payload.Sender.Type)
 }
 
 func TestGitHubWebhookBuilder_Approved(t *testing.T) {
-	builder := infrastructure.NewGitHubWebhookBuilder()
-	forged, err := builder.Build("org/repo", 42, "My PR", diagnosticsdomain.SmokeEvent{Kind: diagnosticsdomain.SmokeApproved})
-	if err != nil {
-		t.Fatalf("Forge returned %v; want nil", err)
-	}
-	if forged.EventValue != "pull_request_review" {
-		t.Errorf("EventValue = %q; want pull_request_review", forged.EventValue)
-	}
-	var p struct {
-		Review struct {
-			State string `json:"state"`
-		} `json:"review"`
-		Sender struct {
-			Type string `json:"type"`
-		} `json:"sender"`
-	}
-	if err := json.Unmarshal(forged.Body, &p); err != nil {
-		t.Fatalf("body is not valid JSON: %v", err)
-	}
-	if p.Review.State != "approved" {
-		t.Errorf("review.state = %q; want approved", p.Review.State)
-	}
-	if p.Sender.Type != "User" {
-		t.Errorf("sender.type = %q; want User", p.Sender.Type)
-	}
+	forged, payload := buildGitHubWebhook(t, "org/repo", 42, "My PR",
+		diagnosticsdomain.SmokeEvent{Kind: diagnosticsdomain.SmokeApproved})
+
+	assert.Equal(t, "pull_request_review", forged.EventValue)
+	assert.Equal(t, "approved", payload.Review.State)
+	assert.Equal(t, "User", payload.Sender.Type)
 }
 
 func TestGitHubWebhookBuilder_Merged(t *testing.T) {
-	builder := infrastructure.NewGitHubWebhookBuilder()
-	forged, err := builder.Build("org/repo", 42, "My PR", diagnosticsdomain.SmokeEvent{Kind: diagnosticsdomain.SmokeMerged})
-	if err != nil {
-		t.Fatalf("Forge returned %v; want nil", err)
-	}
-	if forged.EventValue != "pull_request" {
-		t.Errorf("EventValue = %q; want pull_request", forged.EventValue)
-	}
-	var p struct {
-		Action      string `json:"action"`
-		PullRequest struct {
-			Merged bool `json:"merged"`
-		} `json:"pull_request"`
-		Sender struct {
-			Type string `json:"type"`
-		} `json:"sender"`
-	}
-	if err := json.Unmarshal(forged.Body, &p); err != nil {
-		t.Fatalf("body is not valid JSON: %v", err)
-	}
-	if p.Action != "closed" {
-		t.Errorf("action = %q; want closed", p.Action)
-	}
-	if !p.PullRequest.Merged {
-		t.Error("pull_request.merged = false; want true for merged")
-	}
-	if p.Sender.Type != "User" {
-		t.Errorf("sender.type = %q; want User", p.Sender.Type)
-	}
+	forged, payload := buildGitHubWebhook(t, "org/repo", 42, "My PR",
+		diagnosticsdomain.SmokeEvent{Kind: diagnosticsdomain.SmokeMerged})
+
+	assert.Equal(t, "pull_request", forged.EventValue)
+	assert.Equal(t, "closed", payload.Action)
+	assert.True(t, payload.PullRequest.Merged)
+	assert.Equal(t, "User", payload.Sender.Type)
 }
 
 func TestGitHubWebhookBuilder_HTMLURLFormat(t *testing.T) {
-	builder := infrastructure.NewGitHubWebhookBuilder()
-	forged, err := builder.Build("owner/name", 99, "title", diagnosticsdomain.SmokeEvent{Kind: diagnosticsdomain.SmokeOpened})
-	if err != nil {
-		t.Fatalf("Forge returned %v; want nil", err)
-	}
-	var p struct {
-		PullRequest struct {
-			HTMLURL string `json:"html_url"`
-			User    struct {
-				Login string `json:"login"`
-			} `json:"user"`
-		} `json:"pull_request"`
-		Sender struct {
-			Login string `json:"login"`
-		} `json:"sender"`
-	}
-	if err := json.Unmarshal(forged.Body, &p); err != nil {
-		t.Fatalf("body is not valid JSON: %v", err)
-	}
-	want := "https://github.com/owner/name/pull/99"
-	if p.PullRequest.HTMLURL != want {
-		t.Errorf("html_url = %q; want %q", p.PullRequest.HTMLURL, want)
-	}
-	if p.PullRequest.User.Login != "notifycat-smoke" {
-		t.Errorf("user.login = %q; want notifycat-smoke", p.PullRequest.User.Login)
-	}
-	if p.Sender.Login != "notifycat-smoke" {
-		t.Errorf("sender.login = %q; want notifycat-smoke", p.Sender.Login)
-	}
+	_, payload := buildGitHubWebhook(t, "owner/name", 99, "title",
+		diagnosticsdomain.SmokeEvent{Kind: diagnosticsdomain.SmokeOpened})
+
+	assert.Equal(t, "https://github.com/owner/name/pull/99", payload.PullRequest.HTMLURL)
+	assert.Equal(t, "notifycat-smoke", payload.PullRequest.User.Login)
+	assert.Equal(t, "notifycat-smoke", payload.Sender.Login)
 }

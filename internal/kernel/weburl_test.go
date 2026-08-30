@@ -3,11 +3,13 @@ package kernel_test
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/mptooling/notifycat/internal/kernel"
 )
 
 func TestProviderPullRequestWebURL(t *testing.T) {
-	cases := []struct {
+	testCases := []struct {
 		name       string
 		provider   kernel.Provider
 		repository string
@@ -37,12 +39,11 @@ func TestProviderPullRequestWebURL(t *testing.T) {
 		},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := tc.provider.PullRequestWebURL(tc.repository, tc.number)
-			if got != tc.want {
-				t.Errorf("PullRequestWebURL(%q, %d) = %q; want %q", tc.repository, tc.number, got, tc.want)
-			}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			got := testCase.provider.PullRequestWebURL(testCase.repository, testCase.number)
+
+			assert.Equal(t, testCase.want, got)
 		})
 	}
 }

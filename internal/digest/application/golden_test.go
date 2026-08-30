@@ -1,9 +1,11 @@
 package application
 
 import (
-	"sort"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/mptooling/notifycat/internal/digest/domain"
 )
@@ -284,41 +286,20 @@ var golden2027 = map[domain.CountryCode]map[string]string{
 // regression net under roughly 230 hand-written rules — a typo in a month, day,
 // or Easter offset shows up here as a concrete date diff.
 func TestGolden2027(t *testing.T) {
-	if len(golden2027) != len(domain.SupportedCountries()) {
-		t.Fatalf("golden covers %d countries; %d are supported", len(golden2027), len(domain.SupportedCountries()))
-	}
+	require.Len(t, golden2027, len(domain.SupportedCountries()), "the golden set must cover every supported country")
+
 	for _, code := range domain.SupportedCountries() {
-		want, ok := golden2027[code]
-		if !ok {
-			t.Errorf("%s: no golden set", code)
-			continue
-		}
 		t.Run(string(code), func(t *testing.T) {
-			calendar := newTestCalendar(t, string(code))
-			got := calendar.holidaysIn(2027)
+			want, ok := golden2027[code]
+			require.True(t, ok, "no golden set for %s", code)
 
-			for day, name := range want {
-				parsed := date(t, day, time.UTC)
-				gotName, isHoliday := got[civil(parsed)]
-				if !isHoliday {
-					t.Errorf("%s: expected holiday %q, got a working day", day, name)
-					continue
-				}
-				if gotName != name {
-					t.Errorf("%s: holiday = %q; want %q", day, gotName, name)
-				}
-			}
+			expanded := newTestCalendar(t, string(code)).holidaysIn(2027)
 
-			var unexpected []string
-			for day, name := range got {
-				if _, expected := want[day.time().Format(time.DateOnly)]; !expected {
-					unexpected = append(unexpected, day.time().Format(time.DateOnly)+" "+name)
-				}
+			got := make(map[string]string, len(expanded))
+			for day, name := range expanded {
+				got[day.time().Format(time.DateOnly)] = name
 			}
-			sort.Strings(unexpected)
-			for _, entry := range unexpected {
-				t.Errorf("unexpected holiday: %s", entry)
-			}
+			assert.Equal(t, want, got)
 		})
 	}
 }

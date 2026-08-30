@@ -5,6 +5,9 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 	"github.com/mptooling/notifycat/internal/validation/application"
 	"github.com/mptooling/notifycat/internal/validation/domain"
@@ -21,105 +24,92 @@ func (s *stubLister) ListOrgRepos(_ context.Context, _ string) ([]string, error)
 
 type stubValidator struct {
 	calls []string
-	err   func(string) bool
+	fails func(repository string) bool
 }
 
 func (s *stubValidator) Validate(_ context.Context, repository string) domain.Report {
 	s.calls = append(s.calls, repository)
-	if s.err != nil && s.err(repository) {
-		return domain.Report{Repository: repository, Checks: []domain.CheckResult{{Name: "x", Status: domain.StatusFail, Detail: "boom"}}}
+	status := domain.StatusOK
+	detail := "ok"
+	if s.fails != nil && s.fails(repository) {
+		status, detail = domain.StatusFail, "boom"
 	}
-	return domain.Report{Repository: repository, Checks: []domain.CheckResult{{Name: "x", Status: domain.StatusOK, Detail: "ok"}}}
+	return domain.Report{Repository: repository, Checks: []domain.CheckResult{{Name: "x", Status: status, Detail: detail}}}
+}
+
+func explicitEntries(repos ...string) []routingdomain.Entry {
+	entries := make([]routingdomain.Entry, len(repos))
+	for i, repo := range repos {
+		entries[i] = routingdomain.Entry{Org: "acme", Repo: repo, Channel: "C1", Mentions: []string{}}
+	}
+	return entries
+}
+
+func wildcardEntry(org string) routingdomain.Entry {
+	return routingdomain.Entry{Org: org, Wildcard: true, Channel: "C2", Mentions: []string{}}
 }
 
 func TestRunForEntries_ExplicitOnly(t *testing.T) {
-	entries := []routingdomain.Entry{
-		{Org: "acme", Repo: "api", Channel: "C1", Mentions: []string{}},
-		{Org: "acme", Repo: "web", Channel: "C1", Mentions: []string{}},
-	}
-	sv := &stubValidator{}
-	results := application.RunForEntries(context.Background(), entries, nil, sv)
-	if len(results) != 2 || len(results[0].Reports) != 1 || len(results[1].Reports) != 1 {
-		t.Fatalf("results=%d reports=%d/%d; want 2/1/1", len(results), len(results[0].Reports), len(results[1].Reports))
-	}
-	if sv.calls[0] != "acme/api" || sv.calls[1] != "acme/web" {
-		t.Errorf("calls = %v", sv.calls)
-	}
-	if !results[0].OK() || !results[1].OK() {
-		t.Errorf("expected both OK; got %+v", results)
-	}
+	validator := &stubValidator{}
+
+	results := application.RunForEntries(context.Background(), explicitEntries("api", "web"), nil, validator)
+
+	require.Len(t, results, 2)
+	assert.Equal(t, []string{"acme/api", "acme/web"}, validator.calls)
+	assert.Len(t, results[0].Reports, 1)
+	assert.Len(t, results[1].Reports, 1)
+	assert.True(t, results[0].OK())
+	assert.True(t, results[1].OK())
 }
 
 func TestRunForEntries_WildcardExpansion(t *testing.T) {
-	entries := []routingdomain.Entry{{Org: "beta", Wildcard: true, Channel: "C2", Mentions: []string{}}}
 	lister := &stubLister{repos: []string{"r1", "r2", "r3"}}
-	sv := &stubValidator{}
-	results := application.RunForEntries(context.Background(), entries, lister, sv)
-	if len(results) != 1 || len(results[0].Reports) != 3 {
-		t.Fatalf("results=%d reports[0]=%d; want 1/3", len(results), len(results[0].Reports))
-	}
-	want := []string{"beta/r1", "beta/r2", "beta/r3"}
-	for i, w := range want {
-		if sv.calls[i] != w {
-			t.Errorf("call[%d] = %q; want %q", i, sv.calls[i], w)
-		}
-	}
-	if !results[0].OK() {
-		t.Errorf("expected OK on full expansion; got %+v", results[0])
-	}
+	validator := &stubValidator{}
+
+	results := application.RunForEntries(context.Background(), []routingdomain.Entry{wildcardEntry("beta")}, lister, validator)
+
+	require.Len(t, results, 1)
+	assert.Len(t, results[0].Reports, 3, "one report per expanded repo")
+	assert.Equal(t, []string{"beta/r1", "beta/r2", "beta/r3"}, validator.calls)
+	assert.True(t, results[0].OK())
 }
 
 func TestRunForEntries_WildcardWithoutLister_SkipsButReports(t *testing.T) {
-	entries := []routingdomain.Entry{{Org: "beta", Wildcard: true, Channel: "C2", Mentions: []string{}}}
-	results := application.RunForEntries(context.Background(), entries, nil, &stubValidator{})
-	if len(results) != 1 || len(results[0].Reports) != 1 {
-		t.Fatalf("results=%d reports=%d; want 1/1", len(results), len(results[0].Reports))
-	}
-	r := results[0].Reports[0]
-	if r.Repository != "beta/*" || r.Checks[0].Status != domain.StatusSkip {
-		t.Errorf("expected single skip on beta/*; got %+v", r)
-	}
-	if !results[0].OK() {
-		t.Errorf("a skip is not a failure; OK() should be true; got %+v", results[0])
-	}
+	results := application.RunForEntries(context.Background(), []routingdomain.Entry{wildcardEntry("beta")}, nil, &stubValidator{})
+
+	require.Len(t, results, 1)
+	require.Len(t, results[0].Reports, 1)
+	assert.Equal(t, "beta/*", results[0].Reports[0].Repository)
+	assert.Equal(t, domain.StatusSkip, results[0].Reports[0].Checks[0].Status)
+	assert.True(t, results[0].OK(), "a skip is not a failure")
 }
 
-// TestRunForEntries_ListerError_WarnsAndContinues: failing to list an org's
-// repositories is external state (token scope, rate limit), so it warns rather
-// than failing the entry — but the entry stays out of the lock via Cacheable.
+// Failing to list an org's repositories is external state (token scope, rate
+// limit), so it warns rather than failing the entry — but the entry stays out of
+// the lock via Cacheable.
 func TestRunForEntries_ListerError_WarnsAndContinues(t *testing.T) {
-	entries := []routingdomain.Entry{
-		{Org: "beta", Wildcard: true, Channel: "C2", Mentions: []string{}},
-		{Org: "acme", Repo: "api", Channel: "C1", Mentions: []string{}},
-	}
+	entries := append([]routingdomain.Entry{wildcardEntry("beta")}, explicitEntries("api")...)
 	lister := &stubLister{err: errors.New("rate-limited")}
-	sv := &stubValidator{}
-	results := application.RunForEntries(context.Background(), entries, lister, sv)
-	if len(results) != 2 {
-		t.Fatalf("results = %d; want 2", len(results))
-	}
-	if !results[0].OK() || !results[0].HasWarnings() || results[0].Cacheable() {
-		t.Errorf("first result should be a warned, uncacheable beta/*; got %+v", results[0])
-	}
-	if c := results[0].Reports[0].Checks[0]; c.Name != "org-repos" || c.Status != domain.StatusWarn {
-		t.Errorf("org-repos check = %+v; want WARN", c)
-	}
-	if !results[1].OK() || results[1].Reports[0].Repository != "acme/api" {
-		t.Errorf("second result should be OK acme/api; got %+v", results[1])
-	}
+	validator := &stubValidator{}
+
+	results := application.RunForEntries(context.Background(), entries, lister, validator)
+
+	require.Len(t, results, 2)
+	assert.True(t, results[0].OK())
+	assert.True(t, results[0].HasWarnings())
+	assert.False(t, results[0].Cacheable(), "a warned entry is re-probed on the next boot")
+	assert.Equal(t, "org-repos", results[0].Reports[0].Checks[0].Name)
+	assert.Equal(t, domain.StatusWarn, results[0].Reports[0].Checks[0].Status)
+	assert.True(t, results[1].OK(), "the next entry is still validated")
+	assert.Equal(t, "acme/api", results[1].Reports[0].Repository)
 }
 
 func TestRunForEntries_PerRepoFailureDoesNotAbort(t *testing.T) {
-	entries := []routingdomain.Entry{
-		{Org: "acme", Repo: "api", Channel: "C1", Mentions: []string{}},
-		{Org: "acme", Repo: "web", Channel: "C1", Mentions: []string{}},
-	}
-	sv := &stubValidator{err: func(r string) bool { return r == "acme/api" }}
-	results := application.RunForEntries(context.Background(), entries, nil, sv)
-	if len(results) != 2 {
-		t.Fatalf("results = %d; want 2", len(results))
-	}
-	if results[0].OK() || !results[1].OK() {
-		t.Errorf("expected first fail, second ok: %+v", results)
-	}
+	validator := &stubValidator{fails: func(repository string) bool { return repository == "acme/api" }}
+
+	results := application.RunForEntries(context.Background(), explicitEntries("api", "web"), nil, validator)
+
+	require.Len(t, results, 2)
+	assert.False(t, results[0].OK())
+	assert.True(t, results[1].OK())
 }

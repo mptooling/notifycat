@@ -2,168 +2,92 @@ package infrastructure
 
 import (
 	"context"
-	"errors"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
 	notificationdomain "github.com/mptooling/notifycat/internal/notification/domain"
 	"github.com/mptooling/notifycat/internal/platform/persistence"
 	reviewdomain "github.com/mptooling/notifycat/internal/review/domain"
 )
 
-func TestCodeReviewsRepo_HasActiveReview_FalseWhenNone(t *testing.T) {
-	db := persistence.NewTestDB(t)
-	ctx := context.Background()
+// seedTrackedPR gives a PR a stored message so a code review can reference it.
+func seedTrackedPR(t *testing.T, db *gorm.DB, repository string, prNumber int) {
+	t.Helper()
 
-	pullRequests := persistence.NewPullRequests(db)
+	err := persistence.NewPullRequests(db).AddMessage(context.Background(), repository, prNumber, "C001", "ts-1")
+	require.NoError(t, err)
+}
+
+func TestCodeReviewsRepo_HasActiveReview_FalseWhenNone(t *testing.T) {
+	ctx := context.Background()
+	db := persistence.NewTestDB(t)
 	codeReviews := persistence.NewCodeReviews(db)
 	repo := NewCodeReviewsRepo(codeReviews)
+	seedTrackedPR(t, db, "octo/widget", 1)
 
-	const (
-		repository  = "octo/widget"
-		prNumber    = 1
-		slackUserID = "U001"
-	)
+	beforeStart, err := repo.HasActiveReview(ctx, "octo/widget", 1, "U001")
+	require.NoError(t, err)
+	require.NoError(t, codeReviews.Start(ctx, "octo/widget", 1, "U001", "alice"))
+	afterStart, err := repo.HasActiveReview(ctx, "octo/widget", 1, "U001")
 
-	if err := pullRequests.AddMessage(ctx, repository, prNumber, "C001", "ts-1"); err != nil {
-		t.Fatalf("seed pull request: %v", err)
-	}
-
-	hasActive, err := repo.HasActiveReview(ctx, repository, prNumber, slackUserID)
-	if err != nil {
-		t.Fatalf("HasActiveReview: %v", err)
-	}
-	if hasActive {
-		t.Error("HasActiveReview = true; want false before any Start")
-	}
-
-	if err := codeReviews.Start(ctx, repository, prNumber, slackUserID, "alice"); err != nil {
-		t.Fatalf("Start: %v", err)
-	}
-
-	hasActive, err = repo.HasActiveReview(ctx, repository, prNumber, slackUserID)
-	if err != nil {
-		t.Fatalf("HasActiveReview after Start: %v", err)
-	}
-	if !hasActive {
-		t.Error("HasActiveReview = false after Start; want true")
-	}
+	require.NoError(t, err)
+	assert.False(t, beforeStart)
+	assert.True(t, afterStart)
 }
 
 func TestCodeReviewsRepo_Start_DuplicateReturnsErrActiveReviewExists(t *testing.T) {
-	db := persistence.NewTestDB(t)
 	ctx := context.Background()
+	db := persistence.NewTestDB(t)
+	repo := NewCodeReviewsRepo(persistence.NewCodeReviews(db))
+	seedTrackedPR(t, db, "octo/widget", 2)
+	require.NoError(t, repo.Start(ctx, "octo/widget", 2, "U002", "bob"))
 
-	pullRequests := persistence.NewPullRequests(db)
-	codeReviews := persistence.NewCodeReviews(db)
-	repo := NewCodeReviewsRepo(codeReviews)
+	err := repo.Start(ctx, "octo/widget", 2, "U002", "bob")
 
-	const (
-		repository    = "octo/widget"
-		prNumber      = 2
-		slackUserID   = "U002"
-		slackUserName = "bob"
-	)
-
-	if err := pullRequests.AddMessage(ctx, repository, prNumber, "C001", "ts-2"); err != nil {
-		t.Fatalf("seed pull request: %v", err)
-	}
-
-	if err := repo.Start(ctx, repository, prNumber, slackUserID, slackUserName); err != nil {
-		t.Fatalf("first Start: %v", err)
-	}
-
-	err := repo.Start(ctx, repository, prNumber, slackUserID, slackUserName)
-	if !errors.Is(err, reviewdomain.ErrActiveReviewExists) {
-		t.Fatalf("second Start error = %v; want reviewdomain.ErrActiveReviewExists", err)
-	}
+	assert.ErrorIs(t, err, reviewdomain.ErrActiveReviewExists)
 }
 
 func TestCodeReviewsRepo_GetActive_ReturnsSessionAndErrNoActiveReview(t *testing.T) {
-	db := persistence.NewTestDB(t)
 	ctx := context.Background()
-
-	pullRequests := persistence.NewPullRequests(db)
+	db := persistence.NewTestDB(t)
 	codeReviews := persistence.NewCodeReviews(db)
 	repo := NewCodeReviewsRepo(codeReviews)
 
-	const (
-		repository    = "octo/widget"
-		prNumber      = 3
-		slackUserID   = "U003"
-		slackUserName = "carol"
-	)
+	_, err := repo.GetActive(ctx, "octo/widget", 3)
+	assert.ErrorIs(t, err, notificationdomain.ErrNoActiveReview, "no session yet")
 
-	_, err := repo.GetActive(ctx, repository, prNumber)
-	if !errors.Is(err, notificationdomain.ErrNoActiveReview) {
-		t.Fatalf("GetActive with no session: error = %v; want notificationdomain.ErrNoActiveReview", err)
-	}
+	seedTrackedPR(t, db, "octo/widget", 3)
+	require.NoError(t, codeReviews.Start(ctx, "octo/widget", 3, "U003", "carol"))
+	session, err := repo.GetActive(ctx, "octo/widget", 3)
 
-	if err := pullRequests.AddMessage(ctx, repository, prNumber, "C001", "ts-3"); err != nil {
-		t.Fatalf("seed pull request: %v", err)
-	}
-	if err := codeReviews.Start(ctx, repository, prNumber, slackUserID, slackUserName); err != nil {
-		t.Fatalf("Start: %v", err)
-	}
-
-	session, err := repo.GetActive(ctx, repository, prNumber)
-	if err != nil {
-		t.Fatalf("GetActive: %v", err)
-	}
-	if session.SlackUserID != slackUserID {
-		t.Errorf("SlackUserID = %q; want %q", session.SlackUserID, slackUserID)
-	}
-	if session.SlackUserName != slackUserName {
-		t.Errorf("SlackUserName = %q; want %q", session.SlackUserName, slackUserName)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "U003", session.SlackUserID)
+	assert.Equal(t, "carol", session.SlackUserName)
 }
 
 func TestCodeReviewsRepo_Reviewers_MapsAllSessions(t *testing.T) {
-	db := persistence.NewTestDB(t)
 	ctx := context.Background()
-
-	pullRequests := persistence.NewPullRequests(db)
+	db := persistence.NewTestDB(t)
 	codeReviews := persistence.NewCodeReviews(db)
 	repo := NewCodeReviewsRepo(codeReviews)
-
-	const (
-		repository = "octo/widget"
-		prNumber   = 4
-	)
-
-	if err := pullRequests.AddMessage(ctx, repository, prNumber, "C001", "ts-4"); err != nil {
-		t.Fatalf("seed pull request: %v", err)
+	seedTrackedPR(t, db, "octo/widget", 4)
+	for _, reviewer := range []notificationdomain.ReviewSession{
+		{SlackUserID: "U111", SlackUserName: "alice"},
+		{SlackUserID: "U222", SlackUserName: "bob"},
+	} {
+		require.NoError(t, codeReviews.Start(ctx, "octo/widget", 4, reviewer.SlackUserID, reviewer.SlackUserName))
+		require.NoError(t, codeReviews.Finish(ctx, "octo/widget", 4))
 	}
 
-	reviewers := []struct {
-		slackUserID   string
-		slackUserName string
-	}{
-		{"U111", "alice"},
-		{"U222", "bob"},
-	}
+	sessions, err := repo.Reviewers(ctx, "octo/widget", 4)
 
-	for _, reviewer := range reviewers {
-		if err := codeReviews.Start(ctx, repository, prNumber, reviewer.slackUserID, reviewer.slackUserName); err != nil {
-			t.Fatalf("Start %s: %v", reviewer.slackUserID, err)
-		}
-		if err := codeReviews.Finish(ctx, repository, prNumber); err != nil {
-			t.Fatalf("Finish %s: %v", reviewer.slackUserID, err)
-		}
-	}
-
-	sessions, err := repo.Reviewers(ctx, repository, prNumber)
-	if err != nil {
-		t.Fatalf("Reviewers: %v", err)
-	}
-	if len(sessions) != len(reviewers) {
-		t.Fatalf("Reviewers returned %d sessions; want %d", len(sessions), len(reviewers))
-	}
-	for i, reviewer := range reviewers {
-		if sessions[i].SlackUserID != reviewer.slackUserID {
-			t.Errorf("sessions[%d].SlackUserID = %q; want %q", i, sessions[i].SlackUserID, reviewer.slackUserID)
-		}
-		if sessions[i].SlackUserName != reviewer.slackUserName {
-			t.Errorf("sessions[%d].SlackUserName = %q; want %q", i, sessions[i].SlackUserName, reviewer.slackUserName)
-		}
-	}
+	require.NoError(t, err)
+	require.Len(t, sessions, 2)
+	assert.Equal(t, "U111", sessions[0].SlackUserID)
+	assert.Equal(t, "alice", sessions[0].SlackUserName)
+	assert.Equal(t, "U222", sessions[1].SlackUserID)
+	assert.Equal(t, "bob", sessions[1].SlackUserName)
 }

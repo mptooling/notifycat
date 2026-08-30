@@ -3,8 +3,11 @@ package infrastructure_test
 import (
 	"context"
 	"errors"
-	"strings"
+	"net/http"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/mptooling/notifycat/internal/maintenance/domain"
 	"github.com/mptooling/notifycat/internal/maintenance/infrastructure"
@@ -28,91 +31,79 @@ func (f *fakePRGetter) GetPullRequest(_ context.Context, owner, repo string, num
 }
 
 func TestGitHubChecker_SplitsRepoAndMapsState(t *testing.T) {
-	g := &fakePRGetter{state: "closed"}
-	c := infrastructure.NewGitHubChecker(g)
+	getter := &fakePRGetter{state: "closed"}
+	checker := infrastructure.NewGitHubChecker(getter)
 
-	open, err := c.IsOpen(context.Background(), "acme/web", 42)
-	if err != nil {
-		t.Fatalf("IsOpen: %v", err)
-	}
-	if open {
-		t.Errorf("closed PR reported open")
-	}
-	if g.gotOwner != "acme" || g.gotRepo != "web" || g.gotNumber != 42 {
-		t.Errorf("split = %q/%q#%d; want acme/web#42", g.gotOwner, g.gotRepo, g.gotNumber)
-	}
+	open, err := checker.IsOpen(context.Background(), "acme/web", 42)
+
+	require.NoError(t, err)
+	assert.False(t, open)
+	assert.Equal(t, "acme", getter.gotOwner)
+	assert.Equal(t, "web", getter.gotRepo)
+	assert.Equal(t, 42, getter.gotNumber)
 }
 
 func TestGitHubChecker_OpenState(t *testing.T) {
-	c := infrastructure.NewGitHubChecker(&fakePRGetter{state: "open"})
-	open, err := c.IsOpen(context.Background(), "acme/web", 1)
-	if err != nil || !open {
-		t.Fatalf("open=%v err=%v; want open,nil", open, err)
-	}
+	checker := infrastructure.NewGitHubChecker(&fakePRGetter{state: "open"})
+
+	open, err := checker.IsOpen(context.Background(), "acme/web", 1)
+
+	require.NoError(t, err)
+	assert.True(t, open)
 }
 
 func TestGitHubChecker_PropagatesError(t *testing.T) {
-	c := infrastructure.NewGitHubChecker(&fakePRGetter{err: errors.New("boom")})
-	_, err := c.IsOpen(context.Background(), "acme/web", 1)
-	if err == nil {
-		t.Fatal("expected error to propagate (so the row is left untouched)")
-	}
-	if errors.Is(err, domain.ErrPRNotFound) {
-		t.Fatal("a plain (non-404) error must not be treated as not-found")
-	}
+	checker := infrastructure.NewGitHubChecker(&fakePRGetter{err: errors.New("boom")})
+
+	_, err := checker.IsOpen(context.Background(), "acme/web", 1)
+
+	require.Error(t, err, "the row is left untouched when the check fails")
+	assert.NotErrorIs(t, err, domain.ErrPRNotFound)
 }
 
 func TestGitHubChecker_NotFoundMapsToErrPRNotFound(t *testing.T) {
-	apiErr := &github.APIError{Method: "get-pull-request", Status: 404, Message: "Not Found"}
-	c := infrastructure.NewGitHubChecker(&fakePRGetter{err: apiErr})
+	apiErr := &github.APIError{Method: "get-pull-request", Status: http.StatusNotFound, Message: "Not Found"}
+	checker := infrastructure.NewGitHubChecker(&fakePRGetter{err: apiErr})
 
-	_, err := c.IsOpen(context.Background(), "acme/web", 1)
-	if !errors.Is(err, domain.ErrPRNotFound) {
-		t.Fatalf("err = %v; want it to match ErrPRNotFound", err)
-	}
-	if !strings.Contains(err.Error(), "404") {
-		t.Errorf("err = %q; want it to preserve the underlying 404 detail", err)
-	}
+	_, err := checker.IsOpen(context.Background(), "acme/web", 1)
+
+	assert.ErrorIs(t, err, domain.ErrPRNotFound)
+	assert.ErrorContains(t, err, "404", "the underlying detail survives the wrap")
 }
 
 func TestGitHubChecker_Non404APIErrorPropagates(t *testing.T) {
-	apiErr := &github.APIError{Method: "get-pull-request", Status: 500, Message: "boom"}
-	c := infrastructure.NewGitHubChecker(&fakePRGetter{err: apiErr})
+	apiErr := &github.APIError{Method: "get-pull-request", Status: http.StatusInternalServerError, Message: "boom"}
+	checker := infrastructure.NewGitHubChecker(&fakePRGetter{err: apiErr})
 
-	_, err := c.IsOpen(context.Background(), "acme/web", 1)
-	if err == nil {
-		t.Fatal("expected error to propagate")
-	}
-	if errors.Is(err, domain.ErrPRNotFound) {
-		t.Fatal("a non-404 API error must not be treated as not-found")
-	}
+	_, err := checker.IsOpen(context.Background(), "acme/web", 1)
+
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, domain.ErrPRNotFound)
 }
 
 func TestGitHubChecker_OpenDraftMapsToErrPRDraft(t *testing.T) {
-	c := infrastructure.NewGitHubChecker(&fakePRGetter{state: "open", draft: true})
+	checker := infrastructure.NewGitHubChecker(&fakePRGetter{state: "open", draft: true})
 
-	open, err := c.IsOpen(context.Background(), "acme/web", 1)
-	if open {
-		t.Error("a draft PR must not be reported open")
-	}
-	if !errors.Is(err, domain.ErrPRDraft) {
-		t.Fatalf("err = %v; want it to match ErrPRDraft", err)
-	}
+	open, err := checker.IsOpen(context.Background(), "acme/web", 1)
+
+	assert.False(t, open)
+	assert.ErrorIs(t, err, domain.ErrPRDraft)
 }
 
 func TestGitHubChecker_ClosedDraftStillMapsToErrPRDraft(t *testing.T) {
 	// A draft must never stay in the database even when GitHub also reports it
 	// closed — the draft flag wins over the closed disposition.
-	c := infrastructure.NewGitHubChecker(&fakePRGetter{state: "closed", draft: true})
+	checker := infrastructure.NewGitHubChecker(&fakePRGetter{state: "closed", draft: true})
 
-	if _, err := c.IsOpen(context.Background(), "acme/web", 1); !errors.Is(err, domain.ErrPRDraft) {
-		t.Fatalf("err = %v; want it to match ErrPRDraft", err)
-	}
+	_, err := checker.IsOpen(context.Background(), "acme/web", 1)
+
+	assert.ErrorIs(t, err, domain.ErrPRDraft)
 }
 
 func TestGitHubChecker_RejectsBadRepository(t *testing.T) {
-	c := infrastructure.NewGitHubChecker(&fakePRGetter{state: "open"})
-	if _, err := c.IsOpen(context.Background(), "no-slash", 1); err == nil {
-		t.Fatal("expected error for malformed repository")
-	}
+	checker := infrastructure.NewGitHubChecker(&fakePRGetter{state: "open"})
+
+	_, err := checker.IsOpen(context.Background(), "no-slash", 1)
+
+	assert.Error(t, err)
 }

@@ -7,6 +7,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/mptooling/notifycat/internal/platform/slack"
 	"github.com/mptooling/notifycat/internal/validation/domain"
 )
@@ -16,80 +19,64 @@ func newProbe(url string) *SlackProbe {
 	return NewSlackProbe(slack.NewClient(http.DefaultClient, "xoxb-test", slack.WithBaseURL(url)))
 }
 
-func jsonServer(body string, header map[string]string) *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+// jsonServerProbe serves one canned Slack response and returns a probe for it.
+func jsonServerProbe(t *testing.T, body string, header map[string]string) *SlackProbe {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		for k, v := range header {
-			w.Header().Set(k, v)
+		for name, value := range header {
+			w.Header().Set(name, value)
 		}
 		_, _ = w.Write([]byte(body))
 	}))
+	t.Cleanup(server.Close)
+	return newProbe(server.URL)
 }
 
 func TestSlackProbe_ConversationsInfo_MapsFields(t *testing.T) {
-	srv := jsonServer(`{"ok":true,"channel":{"id":"C1","name":"general","is_member":true,"is_archived":true}}`, nil)
-	defer srv.Close()
+	probe := jsonServerProbe(t, `{"ok":true,"channel":{"id":"C1","name":"general","is_member":true,"is_archived":true}}`, nil)
 
-	info, err := newProbe(srv.URL).ConversationsInfo(context.Background(), "C1")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	want := domain.ChannelInfo{ID: "C1", Name: "general", IsMember: true, IsArchived: true}
-	if info != want {
-		t.Fatalf("ChannelInfo = %+v; want %+v", info, want)
-	}
+	info, err := probe.ConversationsInfo(context.Background(), "C1")
+
+	require.NoError(t, err)
+	assert.Equal(t, domain.ChannelInfo{ID: "C1", Name: "general", IsMember: true, IsArchived: true}, info)
 }
 
 func TestSlackProbe_ConversationsInfo_TranslatesAPIError(t *testing.T) {
-	srv := jsonServer(`{"ok":false,"error":"channel_not_found"}`, nil)
-	defer srv.Close()
+	probe := jsonServerProbe(t, `{"ok":false,"error":"channel_not_found"}`, nil)
 
-	_, err := newProbe(srv.URL).ConversationsInfo(context.Background(), "C1")
+	_, err := probe.ConversationsInfo(context.Background(), "C1")
+
 	var apiErr *domain.SlackAPIError
-	if !errors.As(err, &apiErr) {
-		t.Fatalf("error is not *domain.SlackAPIError: %v", err)
-	}
-	if apiErr.Code != "channel_not_found" || apiErr.Method != "conversations.info" {
-		t.Fatalf("SlackAPIError = %+v; want code=channel_not_found method=conversations.info", apiErr)
-	}
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, "channel_not_found", apiErr.Code)
+	assert.Equal(t, "conversations.info", apiErr.Method)
 }
 
 func TestSlackProbe_AuthTest_TranslatesAPIError(t *testing.T) {
-	srv := jsonServer(`{"ok":false,"error":"invalid_auth"}`, nil)
-	defer srv.Close()
+	probe := jsonServerProbe(t, `{"ok":false,"error":"invalid_auth"}`, nil)
 
-	_, _, err := newProbe(srv.URL).AuthTest(context.Background())
+	_, _, err := probe.AuthTest(context.Background())
+
 	var apiErr *domain.SlackAPIError
-	if !errors.As(err, &apiErr) {
-		t.Fatalf("error is not *domain.SlackAPIError: %v", err)
-	}
-	if apiErr.Code != "invalid_auth" {
-		t.Fatalf("code = %q; want invalid_auth", apiErr.Code)
-	}
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, "invalid_auth", apiErr.Code)
 }
 
 func TestSlackProbe_AuthTest_ReturnsScopes(t *testing.T) {
-	srv := jsonServer(`{"ok":true,"user_id":"UBOT"}`, map[string]string{"X-OAuth-Scopes": "chat:write, reactions:write"})
-	defer srv.Close()
+	probe := jsonServerProbe(t, `{"ok":true,"user_id":"UBOT"}`, map[string]string{"X-OAuth-Scopes": "chat:write, reactions:write"})
 
-	userID, scopes, err := newProbe(srv.URL).AuthTest(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if userID != "UBOT" {
-		t.Fatalf("userID = %q; want UBOT", userID)
-	}
-	if len(scopes) != 2 || scopes[0] != "chat:write" || scopes[1] != "reactions:write" {
-		t.Fatalf("scopes = %v; want [chat:write reactions:write]", scopes)
-	}
+	userID, scopes, err := probe.AuthTest(context.Background())
+
+	require.NoError(t, err)
+	assert.Equal(t, "UBOT", userID)
+	assert.Equal(t, []string{"chat:write", "reactions:write"}, scopes)
 }
 
 func TestTranslateSlackError_PassThrough(t *testing.T) {
-	sentinel := errors.New("dial tcp: connection refused")
-	if got := translateSlackError(sentinel); !errors.Is(got, sentinel) {
-		t.Fatalf("translateSlackError(transport) = %v; want pass-through %v", got, sentinel)
-	}
-	if got := translateSlackError(nil); got != nil {
-		t.Fatalf("translateSlackError(nil) = %v; want nil", got)
-	}
+	transportErr := errors.New("dial tcp: connection refused")
+
+	assert.ErrorIs(t, translateSlackError(transportErr), transportErr, "a non-API error passes through untouched")
+	assert.NoError(t, translateSlackError(nil))
 }

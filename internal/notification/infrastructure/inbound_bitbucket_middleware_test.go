@@ -2,100 +2,65 @@ package infrastructure_test
 
 import (
 	"bytes"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/mptooling/notifycat/internal/notification/infrastructure"
 	"github.com/mptooling/notifycat/internal/platform/security"
 )
 
-func signBitbucketBody(body []byte) string {
-	mac := hmac.New(sha256.New, []byte(middlewareTestSecret))
-	mac.Write(body)
-	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
-}
-
 func TestBitbucketSignatureMiddleware_PassesValid(t *testing.T) {
-	verifier := security.NewBitbucketVerifier(middlewareTestSecret)
-	called := false
 	var seenBody []byte
-
+	called := false
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
 		seenBody, _ = io.ReadAll(r.Body)
 		w.WriteHeader(http.StatusOK)
 	})
-
 	body := []byte(`{"foo":"bar"}`)
-	req := httptest.NewRequest(http.MethodPost, "/webhook/bitbucket", bytes.NewReader(body))
-	req.Header.Set(security.SignatureHeaderBitbucket, signBitbucketBody(body))
-	rec := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/webhook/bitbucket", bytes.NewReader(body))
+	request.Header.Set(security.SignatureHeaderBitbucket, security.Sign(middlewareTestSecret, body))
+	recorder := httptest.NewRecorder()
 
-	infrastructure.BitbucketSignatureMiddleware(verifier)(next).ServeHTTP(rec, req)
+	infrastructure.BitbucketSignatureMiddleware(security.NewBitbucketVerifier(middlewareTestSecret))(next).ServeHTTP(recorder, request)
 
-	if !called {
-		t.Fatal("next handler not invoked on valid signature")
-	}
-	if rec.Code != http.StatusOK {
-		t.Errorf("status = %d; want 200", rec.Code)
-	}
-	if !bytes.Equal(seenBody, body) {
-		t.Errorf("downstream body = %q; want %q", seenBody, body)
-	}
+	require.True(t, called, "a valid signature must reach the handler")
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Equal(t, body, seenBody, "the body is replayed intact downstream")
 }
 
 func TestBitbucketSignatureMiddleware_Rejects401OnInvalid(t *testing.T) {
-	verifier := security.NewBitbucketVerifier(middlewareTestSecret)
-	next := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
-		t.Fatal("next handler must not be called for invalid signature")
-	})
+	request := httptest.NewRequest(http.MethodPost, "/webhook/bitbucket", strings.NewReader(`{"foo":"bar"}`))
+	request.Header.Set(security.SignatureHeaderBitbucket, "sha256=deadbeef")
+	recorder := httptest.NewRecorder()
 
-	body := []byte(`{"foo":"bar"}`)
-	req := httptest.NewRequest(http.MethodPost, "/webhook/bitbucket", bytes.NewReader(body))
-	req.Header.Set(security.SignatureHeaderBitbucket, "sha256=deadbeef")
-	rec := httptest.NewRecorder()
+	infrastructure.BitbucketSignatureMiddleware(security.NewBitbucketVerifier(middlewareTestSecret))(rejectingHandler(t)).ServeHTTP(recorder, request)
 
-	infrastructure.BitbucketSignatureMiddleware(verifier)(next).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d; want 401", rec.Code)
-	}
+	assert.Equal(t, http.StatusUnauthorized, recorder.Code)
 }
 
 func TestBitbucketSignatureMiddleware_RejectsMissingSignature(t *testing.T) {
-	verifier := security.NewBitbucketVerifier(middlewareTestSecret)
-	next := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
-		t.Fatal("next handler must not be called when signature is missing")
-	})
+	request := httptest.NewRequest(http.MethodPost, "/webhook/bitbucket", strings.NewReader("{}"))
+	recorder := httptest.NewRecorder()
 
-	req := httptest.NewRequest(http.MethodPost, "/webhook/bitbucket", strings.NewReader("{}"))
-	rec := httptest.NewRecorder()
-	infrastructure.BitbucketSignatureMiddleware(verifier)(next).ServeHTTP(rec, req)
+	infrastructure.BitbucketSignatureMiddleware(security.NewBitbucketVerifier(middlewareTestSecret))(rejectingHandler(t)).ServeHTTP(recorder, request)
 
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d; want 401", rec.Code)
-	}
+	assert.Equal(t, http.StatusUnauthorized, recorder.Code)
 }
 
 func TestBitbucketSignatureMiddleware_BodyTooLargeReturns413(t *testing.T) {
-	verifier := security.NewBitbucketVerifier(middlewareTestSecret)
-	next := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
-		t.Fatal("next handler must not be called when body is too large")
-	})
+	oversized := bytes.Repeat([]byte("a"), int(infrastructure.MaxBodyBytes)+1)
+	request := httptest.NewRequest(http.MethodPost, "/webhook/bitbucket", bytes.NewReader(oversized))
+	request.Header.Set(security.SignatureHeaderBitbucket, security.Sign(middlewareTestSecret, oversized))
+	recorder := httptest.NewRecorder()
 
-	big := bytes.Repeat([]byte("a"), int(infrastructure.MaxBodyBytes)+1)
-	req := httptest.NewRequest(http.MethodPost, "/webhook/bitbucket", bytes.NewReader(big))
-	req.Header.Set(security.SignatureHeaderBitbucket, signBitbucketBody(big))
-	rec := httptest.NewRecorder()
-	infrastructure.BitbucketSignatureMiddleware(verifier)(next).ServeHTTP(rec, req)
+	infrastructure.BitbucketSignatureMiddleware(security.NewBitbucketVerifier(middlewareTestSecret))(rejectingHandler(t)).ServeHTTP(recorder, request)
 
-	if rec.Code != http.StatusRequestEntityTooLarge {
-		t.Errorf("status = %d; want 413", rec.Code)
-	}
+	assert.Equal(t, http.StatusRequestEntityTooLarge, recorder.Code)
 }

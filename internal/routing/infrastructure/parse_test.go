@@ -4,11 +4,19 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	domain "github.com/mptooling/notifycat/internal/routing/domain"
 	infrastructure "github.com/mptooling/notifycat/internal/routing/infrastructure"
 )
 
+func parseMappings(body string) (domain.File, error) {
+	return infrastructure.Parse(strings.NewReader(body))
+}
+
 func TestParse_PerRepoTiers_OK(t *testing.T) {
-	f, err := infrastructure.Parse(strings.NewReader(`
+	file, err := parseMappings(`
 mappings:
   acme:
     api:
@@ -17,72 +25,70 @@ mappings:
       channel: C0WEB
     "*":
       channel: C0DEFAULT
-`))
-	if err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
-	if f.Mappings["acme"]["api"].Channel != "C0API" {
-		t.Errorf("api channel = %q", f.Mappings["acme"]["api"].Channel)
-	}
+`)
+
+	require.NoError(t, err)
+	assert.Equal(t, "C0API", file.Mappings["acme"]["api"].Channel)
+	assert.Equal(t, "C0WEB", file.Mappings["acme"]["web"].Channel)
+	assert.Equal(t, "C0DEFAULT", file.Mappings["acme"]["*"].Channel)
 }
 
 func TestParse_InheritsChannelFromStar(t *testing.T) {
-	// api sets no channel but org/* does — valid (api inherits at resolve).
-	if _, err := infrastructure.Parse(strings.NewReader(`
+	_, err := parseMappings(`
 mappings:
   acme:
     api:
       mentions: ["<@U1>"]
     "*":
       channel: C0DEFAULT
-`)); err != nil {
-		t.Fatalf("Parse should accept channel inherited from *: %v", err)
-	}
+`)
+
+	require.NoError(t, err, "api carries no channel but inherits org/* at resolve time")
 }
 
 func TestParse_RepoWithoutChannelAndNoStarRejected(t *testing.T) {
-	if _, err := infrastructure.Parse(strings.NewReader(`
+	_, err := parseMappings(`
 mappings:
   acme:
     api:
       mentions: ["<@U1>"]
-`)); err == nil {
-		t.Fatal("expected error: api has no channel and no org/* to inherit from")
-	}
+`)
+
+	require.Error(t, err, "api has no channel and no org/* to inherit from")
 }
 
 func TestParse_BadChannelRejected(t *testing.T) {
-	if _, err := infrastructure.Parse(strings.NewReader("mappings:\n  acme:\n    api:\n      channel: not-a-channel\n")); err == nil {
-		t.Fatal("expected error for malformed channel")
-	}
+	_, err := parseMappings("mappings:\n  acme:\n    api:\n      channel: not-a-channel\n")
+
+	require.Error(t, err)
 }
 
 func TestParse_BadRepoKeyRejected(t *testing.T) {
-	if _, err := infrastructure.Parse(strings.NewReader("mappings:\n  acme:\n    \"a/b\":\n      channel: C0API\n")); err == nil {
-		t.Fatal("expected error for repo key containing /")
-	}
+	_, err := parseMappings("mappings:\n  acme:\n    \"a/b\":\n      channel: C0API\n")
+
+	require.Error(t, err, "a repo key must not contain a slash")
 }
 
 func TestParse_EmptyOrgRejected(t *testing.T) {
-	if _, err := infrastructure.Parse(strings.NewReader("mappings:\n  acme: {}\n")); err == nil {
-		t.Fatal("expected error for org with no tiers")
-	}
+	_, err := parseMappings("mappings:\n  acme: {}\n")
+
+	require.Error(t, err)
 }
 
 func TestParse_ListChannelInvalidID(t *testing.T) {
-	if _, err := infrastructure.Parse(strings.NewReader("mappings:\n  acme:\n    api:\n      channels:\n        - channel: not-a-channel\n")); err == nil {
-		t.Fatal("want error: invalid channel id in channels list")
-	}
+	_, err := parseMappings("mappings:\n  acme:\n    api:\n      channels:\n        - channel: not-a-channel\n")
+
+	require.Error(t, err)
 }
 
 func TestParse_ListSatisfiesChannelRequirement(t *testing.T) {
-	if _, err := infrastructure.Parse(strings.NewReader("mappings:\n  acme:\n    api:\n      channels:\n        - channel: C0API1\n")); err != nil {
-		t.Fatalf("a channels: list should satisfy the channel requirement: %v", err)
-	}
+	_, err := parseMappings("mappings:\n  acme:\n    api:\n      channels:\n        - channel: C0API1\n")
+
+	require.NoError(t, err, "a channels: list stands in for channel:")
 }
 
 func TestParse_PathListChannelInvalidID(t *testing.T) {
-	if _, err := infrastructure.Parse(strings.NewReader("mappings:\n  acme:\n    monorepo:\n      channel: C0BASE\n      paths:\n        services/pay:\n          channels:\n            - channel: bad\n")); err == nil {
-		t.Fatal("want error: invalid path channel id in channels list")
-	}
+	_, err := parseMappings("mappings:\n  acme:\n    monorepo:\n      channel: C0BASE\n      paths:\n        services/pay:\n          channels:\n            - channel: bad\n")
+
+	require.Error(t, err)
 }

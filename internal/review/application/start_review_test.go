@@ -6,6 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/mptooling/notifycat/internal/review/application"
 	"github.com/mptooling/notifycat/internal/review/domain"
 )
@@ -32,77 +35,61 @@ func newHandler(recorder *fakeRecorder, messages *fakeMessageChecker, decorator 
 func TestHandle_HappyPath_RecordsAndAppendsMarker(t *testing.T) {
 	recorder := &fakeRecorder{}
 	decorator := &fakeDecorator{}
-	h := newHandler(recorder, &fakeMessageChecker{has: true}, decorator)
+	handler := newHandler(recorder, &fakeMessageChecker{has: true}, decorator)
 
-	if err := h.Handle(context.Background(), sampleCommand()); err != nil {
-		t.Fatalf("Handle: %v", err)
-	}
-	if len(recorder.started) != 1 {
-		t.Fatalf("recorded %d reviews; want 1", len(recorder.started))
-	}
-	got := recorder.started[0]
-	if got.repository != "octo/web" || got.prNumber != 42 || got.userID != "U1" || got.userName != "alice" {
-		t.Errorf("Start = %+v; want octo/web #42 U1 alice", got)
-	}
-	if len(decorator.calls) != 1 {
-		t.Fatalf("decorated %d times; want 1", len(decorator.calls))
-	}
-	if decorator.calls[0].reviewer.UserID != "U1" || decorator.calls[0].message.Channel != "C1" || decorator.calls[0].message.TS != "111.222" {
-		t.Errorf("decorate call = %+v; want reviewer U1 on C1/111.222", decorator.calls[0])
-	}
+	err := handler.Handle(context.Background(), sampleCommand())
+
+	require.NoError(t, err)
+	require.Len(t, recorder.started, 1)
+	assert.Equal(t, startCall{repository: "octo/web", prNumber: 42, userID: "U1", userName: "alice"}, recorder.started[0])
+	require.Len(t, decorator.calls, 1)
+	assert.Equal(t, "U1", decorator.calls[0].reviewer.UserID)
+	assert.Equal(t, "C1", decorator.calls[0].message.Channel)
+	assert.Equal(t, "111.222", decorator.calls[0].message.TS)
 }
 
 func TestHandle_DuplicateAppLevel_NoOp(t *testing.T) {
 	recorder := &fakeRecorder{active: true}
 	decorator := &fakeDecorator{}
-	h := newHandler(recorder, &fakeMessageChecker{has: true}, decorator)
+	handler := newHandler(recorder, &fakeMessageChecker{has: true}, decorator)
 
-	if err := h.Handle(context.Background(), sampleCommand()); err != nil {
-		t.Fatalf("Handle: %v", err)
-	}
-	if len(recorder.started) != 0 {
-		t.Errorf("recorded %d reviews on a duplicate; want 0", len(recorder.started))
-	}
-	if len(decorator.calls) != 0 {
-		t.Errorf("decorated %d times on a duplicate; want 0", len(decorator.calls))
-	}
+	err := handler.Handle(context.Background(), sampleCommand())
+
+	require.NoError(t, err)
+	assert.Empty(t, recorder.started, "the same reviewer clicking twice records nothing new")
+	assert.Empty(t, decorator.calls)
 }
 
 func TestHandle_DuplicateDBRace_NoOp(t *testing.T) {
 	recorder := &fakeRecorder{startErr: domain.ErrActiveReviewExists}
 	decorator := &fakeDecorator{}
-	h := newHandler(recorder, &fakeMessageChecker{has: true}, decorator)
+	handler := newHandler(recorder, &fakeMessageChecker{has: true}, decorator)
 
-	if err := h.Handle(context.Background(), sampleCommand()); err != nil {
-		t.Fatalf("Handle: %v", err)
-	}
-	if len(decorator.calls) != 0 {
-		t.Errorf("decorated %d times on a DB race; want 0", len(decorator.calls))
-	}
+	err := handler.Handle(context.Background(), sampleCommand())
+
+	require.NoError(t, err)
+	assert.Empty(t, decorator.calls, "the unique index caught the race, so the message stays as it is")
 }
 
 func TestHandle_UnknownMessage_Ignored(t *testing.T) {
 	recorder := &fakeRecorder{}
 	decorator := &fakeDecorator{}
-	h := newHandler(recorder, &fakeMessageChecker{has: false}, decorator)
+	handler := newHandler(recorder, &fakeMessageChecker{has: false}, decorator)
 
-	if err := h.Handle(context.Background(), sampleCommand()); err != nil {
-		t.Fatalf("Handle: %v", err)
-	}
-	if len(recorder.started) != 0 || len(decorator.calls) != 0 {
-		t.Errorf("acted on an untracked PR: started=%d decorated=%d; want 0/0", len(recorder.started), len(decorator.calls))
-	}
+	err := handler.Handle(context.Background(), sampleCommand())
+
+	require.NoError(t, err)
+	assert.Empty(t, recorder.started, "an untracked PR is never acted on")
+	assert.Empty(t, decorator.calls)
 }
 
 func TestHandle_UpdateFailure_Swallowed(t *testing.T) {
 	recorder := &fakeRecorder{}
 	decorator := &fakeDecorator{err: errors.New("slack down")}
-	h := newHandler(recorder, &fakeMessageChecker{has: true}, decorator)
+	handler := newHandler(recorder, &fakeMessageChecker{has: true}, decorator)
 
-	if err := h.Handle(context.Background(), sampleCommand()); err != nil {
-		t.Fatalf("Handle should swallow a decorate failure; got %v", err)
-	}
-	if len(recorder.started) != 1 {
-		t.Errorf("review should still be recorded despite decorate failure; started=%d", len(recorder.started))
-	}
+	err := handler.Handle(context.Background(), sampleCommand())
+
+	require.NoError(t, err, "a decorate failure must not fail the interaction")
+	assert.Len(t, recorder.started, 1, "the review is still recorded")
 }

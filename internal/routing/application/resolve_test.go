@@ -1,57 +1,55 @@
 package application
 
 import (
-	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	domain "github.com/mptooling/notifycat/internal/routing/domain"
 )
 
+func boolPtr(value bool) *bool { return &value }
+
 func TestResolveRouting_RepoOverridesStar(t *testing.T) {
 	star := &domain.RepoConfig{Channel: "C0STAR", Mentions: []string{"<@S>"}, MentionsPresent: true}
 	repo := &domain.RepoConfig{Channel: "C0REPO"}
+
 	got := resolveRouting(star, repo)
-	// channel: repo wins; mentions: repo absent → inherit star's
-	if got.Channel != "C0REPO" {
-		t.Errorf("Channel = %q; want C0REPO", got.Channel)
-	}
-	if !reflect.DeepEqual(got.Mentions, []string{"<@S>"}) {
-		t.Errorf("Mentions = %v; want star's [<@S>]", got.Mentions)
-	}
+
+	assert.Equal(t, "C0REPO", got.Channel)
+	assert.Equal(t, []string{"<@S>"}, got.Mentions, "repo omits mentions, so the star tier's survive")
 }
 
 func TestResolveRouting_RepoInheritsChannel(t *testing.T) {
 	star := &domain.RepoConfig{Channel: "C0STAR"}
 	repo := &domain.RepoConfig{Mentions: []string{"<@U>"}, MentionsPresent: true}
+
 	got := resolveRouting(star, repo)
-	if got.Channel != "C0STAR" {
-		t.Errorf("Channel = %q; want inherited C0STAR", got.Channel)
-	}
-	if !reflect.DeepEqual(got.Mentions, []string{"<@U>"}) {
-		t.Errorf("Mentions = %v; want repo's", got.Mentions)
-	}
+
+	assert.Equal(t, "C0STAR", got.Channel)
+	assert.Equal(t, []string{"<@U>"}, got.Mentions)
 }
 
 func TestResolveRouting_NoMentionsAnywhere_DefaultsChannelPing(t *testing.T) {
 	got := resolveRouting(nil, &domain.RepoConfig{Channel: "C0REPO"})
-	if !reflect.DeepEqual(got.Mentions, []string{domain.ChannelMention}) {
-		t.Errorf("Mentions = %v; want [%s]", got.Mentions, domain.ChannelMention)
-	}
+
+	assert.Equal(t, []string{domain.ChannelMention}, got.Mentions)
 }
 
 func TestResolveRouting_EmptyMentionsPresent_PingsNobody(t *testing.T) {
 	repo := &domain.RepoConfig{Channel: "C0REPO", Mentions: []string{}, MentionsPresent: true}
+
 	got := resolveRouting(nil, repo)
-	if len(got.Mentions) != 0 {
-		t.Errorf("Mentions = %v; want empty (ping nobody)", got.Mentions)
-	}
+
+	assert.Empty(t, got.Mentions)
 }
 
 func TestResolveRouting_StarOnly(t *testing.T) {
 	got := resolveRouting(&domain.RepoConfig{Channel: "C0STAR"}, nil)
-	if got.Channel != "C0STAR" || !reflect.DeepEqual(got.Mentions, []string{domain.ChannelMention}) {
-		t.Errorf("got %+v; want channel C0STAR + @channel", got)
-	}
+
+	assert.Equal(t, "C0STAR", got.Channel)
+	assert.Equal(t, []string{domain.ChannelMention}, got.Mentions)
 }
 
 func TestResolveBehavior_RepoOverridesStarOverridesGlobal(t *testing.T) {
@@ -67,74 +65,70 @@ func TestResolveBehavior_RepoOverridesStarOverridesGlobal(t *testing.T) {
 		Reactions:       &domain.ReactionsOverride{Enabled: &disabled},
 		IgnoreAIReviews: boolPtr(true),
 	}
-	rx, ignoreAI, dependabot := resolveBehavior(global, star, repo)
-	if rx.Approved != "shipit" {
-		t.Errorf("approved = %q; want star's shipit", rx.Approved)
-	}
-	if rx.NewPR != "eyes" {
-		t.Errorf("new_pr = %q; want global eyes", rx.NewPR)
-	}
-	if rx.Enabled != false {
-		t.Errorf("enabled = %v; want repo's false", rx.Enabled)
-	}
-	if ignoreAI != true {
-		t.Errorf("ignoreAI = %v; want repo's true", ignoreAI)
-	}
-	if dependabot != true {
-		t.Errorf("dependabot = %v; want global true (nobody overrode)", dependabot)
-	}
+
+	reactions, ignoreAIReviews, dependabotFormat := resolveBehavior(global, star, repo)
+
+	assert.Equal(t, "shipit", reactions.Approved, "star tier wins over global")
+	assert.Equal(t, "eyes", reactions.NewPR, "nobody overrode new_pr")
+	assert.False(t, reactions.Enabled, "repo tier wins over star and global")
+	assert.True(t, ignoreAIReviews)
+	assert.True(t, dependabotFormat)
 }
 
 func TestResolveBehavior_AllGlobalWhenNoTiers(t *testing.T) {
 	global := domain.Defaults{Reactions: domain.Reactions{Enabled: true, NewPR: "eyes"}, DependabotFormat: true}
-	rx, ignoreAI, dependabot := resolveBehavior(global, nil, nil)
-	if rx.NewPR != "eyes" || !rx.Enabled || ignoreAI != false || dependabot != true {
-		t.Errorf("got %+v ignoreAI=%v dependabot=%v; want all global", rx, ignoreAI, dependabot)
-	}
-}
 
-func boolPtr(b bool) *bool { return &b }
+	reactions, ignoreAIReviews, dependabotFormat := resolveBehavior(global, nil, nil)
+
+	assert.Equal(t, "eyes", reactions.NewPR)
+	assert.True(t, reactions.Enabled)
+	assert.False(t, ignoreAIReviews)
+	assert.True(t, dependabotFormat)
+}
 
 func TestResolveBaseTargets_SingleForm(t *testing.T) {
 	repo := &domain.RepoConfig{Channel: "C0WEB", Mentions: []string{"<@U0A>"}, MentionsPresent: true}
+
 	got := resolveBaseTargets(nil, repo)
-	if len(got) != 1 || got[0].Channel != "C0WEB" || got[0].Mentions[0] != "<@U0A>" {
-		t.Fatalf("single form wrong: %+v", got)
-	}
+
+	require.Len(t, got, 1)
+	assert.Equal(t, "C0WEB", got[0].Channel)
+	assert.Equal(t, []string{"<@U0A>"}, got[0].Mentions)
 }
 
 func TestResolveBaseTargets_ListForm(t *testing.T) {
 	repo := &domain.RepoConfig{Channels: []domain.ChannelSpec{
 		{Channel: "C0API1", Mentions: []string{"<@U0A>"}, MentionsPresent: true},
-		{Channel: "C0API2"}, // absent mentions → ChannelMention
+		{Channel: "C0API2"},
 	}}
+
 	got := resolveBaseTargets(nil, repo)
-	if len(got) != 2 {
-		t.Fatalf("want 2 targets, got %d", len(got))
-	}
-	if got[0].Channel != "C0API1" || got[0].Mentions[0] != "<@U0A>" {
-		t.Fatalf("target 0 wrong: %+v", got[0])
-	}
-	if got[1].Channel != "C0API2" || len(got[1].Mentions) != 1 || got[1].Mentions[0] != domain.ChannelMention {
-		t.Fatalf("target 1 should default to @channel: %+v", got[1])
-	}
+
+	require.Len(t, got, 2)
+	assert.Equal(t, "C0API1", got[0].Channel)
+	assert.Equal(t, []string{"<@U0A>"}, got[0].Mentions)
+	assert.Equal(t, "C0API2", got[1].Channel)
+	assert.Equal(t, []string{domain.ChannelMention}, got[1].Mentions, "absent mentions fall back to @channel")
 }
 
 func TestResolveBaseTargets_RepoListReplacesStarSingle(t *testing.T) {
 	star := &domain.RepoConfig{Channel: "C0STAR"}
 	repo := &domain.RepoConfig{Channels: []domain.ChannelSpec{{Channel: "C0R1"}, {Channel: "C0R2"}}}
+
 	got := resolveBaseTargets(star, repo)
-	if len(got) != 2 || got[0].Channel != "C0R1" || got[1].Channel != "C0R2" {
-		t.Fatalf("repo list should wholly replace star single: %+v", got)
-	}
+
+	require.Len(t, got, 2)
+	assert.Equal(t, "C0R1", got[0].Channel)
+	assert.Equal(t, "C0R2", got[1].Channel)
 }
 
 func TestResolveBaseTargets_ExplicitEmptyMentionsListForm(t *testing.T) {
 	repo := &domain.RepoConfig{Channels: []domain.ChannelSpec{
 		{Channel: "C0API2", Mentions: []string{}, MentionsPresent: true},
 	}}
+
 	got := resolveBaseTargets(nil, repo)
-	if len(got[0].Mentions) != 0 {
-		t.Fatalf("explicit [] should ping nobody: %+v", got[0])
-	}
+
+	require.Len(t, got, 1)
+	assert.Empty(t, got[0].Mentions)
 }
