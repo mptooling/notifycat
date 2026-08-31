@@ -243,6 +243,14 @@ linters:
         linters:
           - gosec
           - unparam
+      # revive reports the stdlib name clash once per package, on whichever file
+      # of internal/runtime it happens to visit first, so a //nolint pinned to
+      # one file passes locally and fails in CI. The composition root's name is
+      # deliberate: it mirrors cmd/notifycat-server's runtime wiring.
+      - path: internal/runtime/
+        linters:
+          - revive
+        text: avoid package names that conflict with Go standard library
 
 formatters:
   enable:
