@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.24.1](https://github.com/mptooling/notifycat/compare/v0.24.0...v0.24.1) (2026-08-31)
+
+
+### 🐛 Bug fixes
+
+* **cli:** show every channel in notifycat-config list ([#195](https://github.com/mptooling/notifycat/issues/195)) ([64c6953](https://github.com/mptooling/notifycat/commit/64c69538492f1c7a3a40f4c9469c8acb0a9a0b30))
+
+
+### 🧹 Maintenance
+
+* stop revive package-name lint from flaking on internal/runtime ([#198](https://github.com/mptooling/notifycat/issues/198)) ([bc5f563](https://github.com/mptooling/notifycat/commit/bc5f5635e209bdb2e0cbacc97acadd1a371c1961))
+
+
+### ✅ Tests
+
+* convert the whole suite to testify assertions ([#197](https://github.com/mptooling/notifycat/issues/197)) ([5c7d155](https://github.com/mptooling/notifycat/commit/5c7d15526a1d7192a16405e22faea400578c1186))
+
 ## [0.24.0](https://github.com/mptooling/notifycat/compare/v0.23.1...v0.24.0) (2026-08-27)
 
 
