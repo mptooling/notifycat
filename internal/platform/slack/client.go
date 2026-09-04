@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Defaults.
@@ -16,6 +19,21 @@ const (
 	defaultBaseURL    = "https://slack.com"
 	defaultMaxRespMiB = 1 // we never expect a large Slack response
 )
+
+// Rate-limit retry bounds. Slack answers a throttled call with
+// error "ratelimited" and a Retry-After header; a bulk run (relocating a
+// backlog of messages) hits Tier 3 legitimately, so the call waits and retries
+// instead of failing the caller. The wait is capped so a hostile or mistaken
+// header cannot stall a run indefinitely.
+const (
+	maxRateLimitAttempts = 3
+	defaultRetryAfter    = time.Second
+	maxRetryAfter        = 60 * time.Second
+)
+
+// ErrMessageNotFound reports that the channel/ts pair addresses no message —
+// it was deleted, or the bot cannot see it.
+var ErrMessageNotFound = errors.New("slack: message not found")
 
 // Client is a thin Slack Web API client covering only the endpoints needed by
 // the notifier. It is safe for concurrent use.
@@ -47,10 +65,12 @@ func NewClient(hc *http.Client, token string, opts ...Option) *Client {
 	return c
 }
 
-// APIError represents a non-ok Slack API response.
+// APIError represents a non-ok Slack API response. header carries the response
+// headers so a rate-limited call can read Retry-After.
 type APIError struct {
 	Method string
 	Code   string
+	header http.Header
 }
 
 func (e *APIError) Error() string {
@@ -114,6 +134,56 @@ func (c *Client) UpdateMessageRawBlocks(ctx context.Context, channel, ts string,
 		"text":    fallback,
 		"blocks":  blocks,
 	}, nil, nil)
+}
+
+// RawMessageContent is a message as Slack stored it: its Block Kit blocks
+// verbatim, plus the top-level text Slack uses for the push preview.
+type RawMessageContent struct {
+	Blocks   []json.RawMessage
+	Fallback string
+}
+
+// MessageContent reads a single message by its ts, returning its blocks
+// unparsed so a caller can repost them elsewhere without re-composing. A
+// channel/ts pair that addresses nothing yields ErrMessageNotFound.
+func (c *Client) MessageContent(ctx context.Context, channel, ts string) (RawMessageContent, error) {
+	var resp struct {
+		Messages []struct {
+			Text   string            `json:"text"`
+			Blocks []json.RawMessage `json:"blocks"`
+		} `json:"messages"`
+	}
+	query := url.Values{
+		"channel":   {channel},
+		"latest":    {ts},
+		"oldest":    {ts},
+		"inclusive": {"true"},
+		"limit":     {"1"},
+	}
+	if err := c.getJSON(ctx, "conversations.history", query, &resp, nil); err != nil {
+		return RawMessageContent{}, err
+	}
+	if len(resp.Messages) == 0 {
+		return RawMessageContent{}, fmt.Errorf("%w: %s/%s", ErrMessageNotFound, channel, ts)
+	}
+	return RawMessageContent{Blocks: resp.Messages[0].Blocks, Fallback: resp.Messages[0].Text}, nil
+}
+
+// PostMessageRawBlocks posts a new message from pre-rendered blocks and returns
+// its ts. It is PostMessage for blocks that were not built by the Composer —
+// the write counterpart of MessageContent.
+func (c *Client) PostMessageRawBlocks(ctx context.Context, channel string, blocks []json.RawMessage, fallback string) (string, error) {
+	var resp struct {
+		TS string `json:"ts"`
+	}
+	if err := c.postJSON(ctx, "chat.postMessage", map[string]any{
+		"channel": channel,
+		"text":    fallback,
+		"blocks":  blocks,
+	}, &resp, nil); err != nil {
+		return "", err
+	}
+	return resp.TS, nil
 }
 
 // DeleteMessage removes an existing message by ts.
@@ -267,7 +337,73 @@ func (c *Client) getJSON(
 	return c.do(req, method, out, nil, outHeader)
 }
 
+// do issues the request, retrying a rate-limited call up to
+// maxRateLimitAttempts times, honouring Slack's Retry-After.
 func (c *Client) do(req *http.Request, method string, out any, allowErrCodes []string, outHeader *http.Header) error {
+	for attempt := 1; ; attempt++ {
+		throttled, retryAfter, err := c.attempt(req, method, out, allowErrCodes, outHeader)
+		if !throttled || attempt == maxRateLimitAttempts {
+			return err
+		}
+		if err := sleepCtx(req.Context(), retryAfter); err != nil {
+			return err
+		}
+		if err := rewind(req); err != nil {
+			return err
+		}
+	}
+}
+
+// sleepCtx waits for d unless the context ends first.
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+// rewind restores a request body so the request can be sent again.
+func rewind(req *http.Request) error {
+	if req.GetBody == nil {
+		return nil
+	}
+	body, err := req.GetBody()
+	if err != nil {
+		return fmt.Errorf("slack: rewind request body: %w", err)
+	}
+	req.Body = body
+	return nil
+}
+
+// retryAfterDelay reads Slack's Retry-After header, falling back to
+// defaultRetryAfter and capping absurd values.
+func retryAfterDelay(header http.Header) time.Duration {
+	seconds, err := strconv.Atoi(strings.TrimSpace(header.Get("Retry-After")))
+	if err != nil || seconds < 0 {
+		return defaultRetryAfter
+	}
+	return min(time.Duration(seconds)*time.Second, maxRetryAfter)
+}
+
+// attempt performs one request, reporting whether the call was rate-limited and
+// how long Slack asked us to wait before trying again.
+func (c *Client) attempt(req *http.Request, method string, out any, allowErrCodes []string, outHeader *http.Header) (bool, time.Duration, error) {
+	err := c.send(req, method, out, allowErrCodes, outHeader)
+	var apiErr *APIError
+	if errors.As(err, &apiErr) && apiErr.Code == errRateLimited {
+		return true, retryAfterDelay(apiErr.header), err
+	}
+	return false, 0, err
+}
+
+// errRateLimited is Slack's error code for a throttled call.
+const errRateLimited = "ratelimited"
+
+func (c *Client) send(req *http.Request, method string, out any, allowErrCodes []string, outHeader *http.Header) error {
 	// The URL is composed from c.baseURL (operator-configured) and a hard-coded
 	// method name; there is no user-controlled taint, so gosec G107/G704 do
 	// not apply here.
@@ -299,7 +435,7 @@ func (c *Client) do(req *http.Request, method string, out any, allowErrCodes []s
 				return nil
 			}
 		}
-		return &APIError{Method: method, Code: envelope.Error}
+		return &APIError{Method: method, Code: envelope.Error, header: resp.Header.Clone()}
 	}
 
 	if out == nil {

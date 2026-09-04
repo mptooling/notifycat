@@ -50,3 +50,52 @@ type ReconcilerParams struct {
 	// per-PR log lines are reconstructed in. The zero value builds github.com URLs.
 	Provider kernel.Provider
 }
+
+// TrackedMessage is one posted message: the channel it lives in and the
+// messenger's id for the post.
+type TrackedMessage struct {
+	Channel   string
+	MessageID string
+}
+
+// TrackedPR is one open PR with every message posted for it. Mapped from the
+// store's persistence model at the repository boundary.
+type TrackedPR struct {
+	Repository string
+	PRNumber   int
+	Messages   []TrackedMessage
+}
+
+// StaleMessage is one audit finding: a stored message sitting in a channel the
+// repository is no longer configured to post to.
+type StaleMessage struct {
+	Repository string
+	PRNumber   int
+	Channel    string
+}
+
+// RelocateSummary tallies one relocate run.
+type RelocateSummary struct {
+	Scanned int // open PRs holding a message in the source channel
+	Moved   int // reposted in the destination and retargeted (would be, in dry-run)
+	Merged  int // destination already had a message; only the original was removed
+	Dropped int // no destination given; the original was removed
+	Errors  int
+}
+
+// RelocatorParams bundles everything the relocate use case needs. From is the
+// channel to move messages out of; To is the destination, and an empty To means
+// drop the messages instead of moving them. Repository, when set, narrows the
+// run to one "org/repo". DryRun reports what would change without writing.
+type RelocatorParams struct {
+	Lister     TrackedLister
+	Rows       MessageRows
+	Courier    MessageCourier
+	Reactions  ReactionPolicy
+	Channels   ChannelConfig
+	Logger     *slog.Logger
+	From       string
+	To         string
+	Repository string
+	DryRun     bool
+}

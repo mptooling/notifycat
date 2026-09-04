@@ -89,5 +89,4 @@ func TestStuckRepo_FindStuck_MapsRows(t *testing.T) {
 	assert.Equal(t, "acme/api", got[0].Repository)
 	assert.Equal(t, 42, got[0].PRNumber)
 	assert.True(t, got[0].UpdatedAt.Before(cutoff))
-	assert.Equal(t, []domain.MessageRef{{Channel: "C_ACME", MessageID: "ts1"}}, got[0].Messages)
 }

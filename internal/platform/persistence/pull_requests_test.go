@@ -46,18 +46,17 @@ func TestPullRequests_DeleteCascadesMessages(t *testing.T) {
 	assert.Zero(t, count)
 }
 
-func TestPullRequests_FindStuckPreloadsMessages(t *testing.T) {
+// The digest routes from config, so FindStuck deliberately does not preload a
+// PR's messages — the query stays a single table read.
+func TestPullRequests_FindStuckDoesNotPreloadMessages(t *testing.T) {
 	repo := persistence.NewPullRequests(persistence.NewTestDB(t))
 	ctx := context.Background()
 	require.NoError(t, repo.AddMessage(ctx, "acme/web", 7, "C0A", "100.1"))
 	require.NoError(t, repo.Touch(ctx, "acme/web", 7))
 
-	// A far-future cutoff returns the (recently-touched) PR so we can assert its
-	// messages were preloaded.
 	stuck, err := repo.FindStuck(ctx, time.Now().Add(time.Hour))
 
 	require.NoError(t, err)
 	require.Len(t, stuck, 1)
-	require.Len(t, stuck[0].Messages, 1)
-	assert.Equal(t, "C0A", stuck[0].Messages[0].Channel)
+	assert.Empty(t, stuck[0].Messages)
 }

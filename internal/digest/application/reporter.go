@@ -2,14 +2,12 @@ package application
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/mptooling/notifycat/internal/digest/domain"
 	"github.com/mptooling/notifycat/internal/kernel"
-	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 )
 
 // Reporter builds and posts the stuck-PR digest for every channel that owns at
@@ -17,7 +15,7 @@ import (
 // ReportSchedule, its ScheduleJob.
 type Reporter struct {
 	finder   domain.StuckFinder
-	mappings domain.MappingLookup
+	targets  domain.DigestTargets
 	poster   domain.DigestPoster
 	composer domain.DigestComposer
 	digests  domain.DigestResolver
@@ -40,7 +38,7 @@ func NewReporter(params domain.ReporterParams) *Reporter {
 	}
 	return &Reporter{
 		finder:   params.Finder,
-		mappings: params.Mappings,
+		targets:  params.Targets,
 		poster:   params.Poster,
 		composer: params.Composer,
 		digests:  params.Digests,
@@ -89,7 +87,7 @@ func (r *Reporter) report(ctx context.Context, include func(repo string) bool) e
 		return nil
 	}
 
-	for _, group := range r.groupByChannel(ctx, prs, now, include) {
+	for _, group := range r.groupByChannel(prs, now, include) {
 		ts, err := r.poster.PostMessage(ctx, group.channel, r.composer.StuckDigestParent(group.mentions, len(group.prs)))
 		if err != nil {
 			r.logger.Error("stuck-pr digest: parent post failed",
@@ -118,54 +116,50 @@ type channelGroup struct {
 	prs      []domain.StuckPR
 }
 
-// groupByChannel buckets stuck PRs by their stored message channels, preserving
-// first-seen channel order for stable output. Base mentions are added to a
-// channel group only when that channel equals the repo's base SlackChannel;
-// messages living in path (fan-out) channels get no @-ping. PRs whose repo has
-// no mapping, or for which include returns false, are skipped.
-func (r *Reporter) groupByChannel(ctx context.Context, prs []domain.PullRequest, now time.Time, include func(repo string) bool) []channelGroup {
+// groupByChannel buckets stuck PRs by the channels their repository is
+// configured to post to, preserving first-seen channel order for stable output.
+// Each channel carries its own configured mentions, so a `channels:` fan-out
+// pings every channel's own group. PRs whose repo resolves to no channel, or for
+// which include returns false, are skipped.
+//
+// Destinations come from config, never from the PR's stored messages: after an
+// operator repoints a repo at a new channel the reminder has to follow the
+// config, not the channel the original message happens to live in.
+func (r *Reporter) groupByChannel(prs []domain.PullRequest, now time.Time, include func(repo string) bool) []channelGroup {
 	var order []string
 	byChannel := map[string]*channelGroup{}
 	mentionSeen := map[string]map[string]bool{}
 
-	for _, pr := range prs {
-		if !include(pr.Repository) {
+	for _, pullRequest := range prs {
+		if !include(pullRequest.Repository) {
 			r.logger.Debug("stuck-pr digest: skipping repo by schedule filter",
-				slog.String("repository", pr.Repository),
-				slog.Int("pr", pr.PRNumber))
+				slog.String("repository", pullRequest.Repository),
+				slog.Int("pr", pullRequest.PRNumber))
 			continue
 		}
-		mapping, err := r.mappings.Get(ctx, pr.Repository)
-		if errors.Is(err, routingdomain.ErrNotFound) {
-			continue
-		}
-		if err != nil {
-			r.logger.Error("stuck-pr digest: mapping lookup failed",
-				slog.String("repository", pr.Repository), slog.Any("err", err))
-			continue
-		}
-		for _, message := range pr.Messages {
-			group := byChannel[message.Channel]
-			if group == nil {
-				group = &channelGroup{channel: message.Channel}
-				byChannel[message.Channel] = group
-				mentionSeen[message.Channel] = map[string]bool{}
-				order = append(order, message.Channel)
+		for _, target := range r.targets.BaseTargets(pullRequest.Repository) {
+			// An unmapped repo resolves to one target with an empty channel.
+			if target.Channel == "" {
+				continue
 			}
-			// Base mentions only when the stored channel is the repo's base channel.
-			if message.Channel == mapping.SlackChannel {
-				for _, mention := range mapping.Mentions {
-					if !mentionSeen[message.Channel][mention] {
-						mentionSeen[message.Channel][mention] = true
-						group.mentions = append(group.mentions, mention)
-					}
+			group := byChannel[target.Channel]
+			if group == nil {
+				group = &channelGroup{channel: target.Channel}
+				byChannel[target.Channel] = group
+				mentionSeen[target.Channel] = map[string]bool{}
+				order = append(order, target.Channel)
+			}
+			for _, mention := range target.Mentions {
+				if !mentionSeen[target.Channel][mention] {
+					mentionSeen[target.Channel][mention] = true
+					group.mentions = append(group.mentions, mention)
 				}
 			}
 			group.prs = append(group.prs, domain.StuckPR{
-				Repository: pr.Repository,
-				Number:     pr.PRNumber,
-				URL:        r.provider.PullRequestWebURL(pr.Repository, pr.PRNumber),
-				IdleDays:   idleDays(now, pr.UpdatedAt),
+				Repository: pullRequest.Repository,
+				Number:     pullRequest.PRNumber,
+				URL:        r.provider.PullRequestWebURL(pullRequest.Repository, pullRequest.PRNumber),
+				IdleDays:   idleDays(now, pullRequest.UpdatedAt),
 			})
 		}
 	}

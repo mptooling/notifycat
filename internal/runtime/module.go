@@ -175,7 +175,7 @@ func buildDigestScheduler(cfg config.Config, provider *routingapp.Provider, pull
 	}
 	reporter := digestapp.NewReporter(digestdomain.ReporterParams{
 		Finder:   digestinfra.NewStuckRepo(pullRequests),
-		Mappings: provider,
+		Targets:  provider,
 		Poster:   digestinfra.NewSlackPoster(slackClient),
 		Composer: digestinfra.NewSlackComposer(composer),
 		Digests:  provider,

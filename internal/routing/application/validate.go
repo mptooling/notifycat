@@ -8,9 +8,8 @@ import (
 )
 
 var (
-	orgPattern     = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
-	repoPattern    = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
-	channelPattern = regexp.MustCompile(`^[CGD][A-Z0-9]{2,}$`)
+	orgPattern  = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
+	repoPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 )
 
 // ValidateMappings runs the same per-org/per-tier structural checks as Parse
@@ -31,11 +30,11 @@ func ValidateMappings(m map[string]domain.Org) error {
 			if repo != domain.WildcardKey && !repoPattern.MatchString(repo) {
 				return fmt.Errorf("mappings: org %q: invalid repo key %q (use a bare repo name or \"*\")", org, repo)
 			}
-			if rc.Channel != "" && !channelPattern.MatchString(rc.Channel) {
+			if rc.Channel != "" && !domain.IsChannelID(rc.Channel) {
 				return fmt.Errorf("mappings: org %q repo %q: invalid channel %q", org, repo, rc.Channel)
 			}
 			for _, spec := range rc.Channels {
-				if !channelPattern.MatchString(spec.Channel) {
+				if !domain.IsChannelID(spec.Channel) {
 					return fmt.Errorf("mappings: org %q repo %q: invalid channel %q", org, repo, spec.Channel)
 				}
 			}
@@ -65,11 +64,11 @@ func validatePaths(org, repo string, paths []domain.PathRule) error {
 		return fmt.Errorf("mappings: org %q: paths are not allowed on the \"*\" tier (set them on a named repo)", org)
 	}
 	for _, p := range paths {
-		if p.Channel != "" && !channelPattern.MatchString(p.Channel) {
+		if p.Channel != "" && !domain.IsChannelID(p.Channel) {
 			return fmt.Errorf("mappings: org %q repo %q path %q: invalid channel %q", org, repo, p.Dir, p.Channel)
 		}
 		for _, spec := range p.Channels {
-			if !channelPattern.MatchString(spec.Channel) {
+			if !domain.IsChannelID(spec.Channel) {
 				return fmt.Errorf("mappings: org %q repo %q path %q: invalid channel %q", org, repo, p.Dir, spec.Channel)
 			}
 		}

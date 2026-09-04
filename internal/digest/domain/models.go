@@ -14,14 +14,6 @@ type PullRequest struct {
 	Repository string
 	PRNumber   int
 	UpdatedAt  time.Time
-	Messages   []MessageRef
-}
-
-// MessageRef is one posted message for a PR: the channel it lives in and the
-// messenger's id for the post.
-type MessageRef struct {
-	Channel   string
-	MessageID string
 }
 
 // StuckPR is one line of a channel's digest list: the PR, its web URL, and how
@@ -61,7 +53,7 @@ type TextObject struct {
 // the scheduler's timezone so a digest fires and cuts off in the same zone.
 type ReporterParams struct {
 	Finder   StuckFinder
-	Mappings MappingLookup
+	Targets  DigestTargets
 	Poster   DigestPoster
 	Composer DigestComposer
 	Digests  DigestResolver
