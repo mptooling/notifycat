@@ -95,8 +95,8 @@ func TestNewProvider_BehavesLikeLoad(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, "C0123ABCDE", got.SlackChannel)
-	assert.True(t, provider.Digest().Enabled, "a nil digest section leaves the feature on")
-	assert.Equal(t, domain.DefaultDigestSchedule, provider.Digest().Schedule)
+	assert.False(t, provider.Digest().Enabled, "a nil digest section leaves the feature off")
+	assert.Equal(t, domain.DefaultDigestSchedule, provider.Digest().Schedule, "the default schedule still resolves while off")
 	assert.Len(t, provider.Entries(), 1)
 }
 
@@ -150,15 +150,15 @@ func TestDigestFor_RepoOverridesGlobal(t *testing.T) {
 			"web": {Channel: "C0WEB", Digest: &domain.DigestConfig{Enabled: true, Schedule: weekdays}},
 			"*":   {Channel: "C0DEFAULT"},
 		},
-	}, nil)
+	}, nil) // global digest absent → default off, 9am schedule
 
 	overridden := provider.DigestFor("acme/web")
 	inherited := provider.DigestFor("acme/other")
 
 	assert.True(t, overridden.Enabled)
 	assert.Equal(t, weekdays, overridden.Schedule)
-	assert.True(t, inherited.Enabled)
-	assert.Equal(t, domain.DefaultDigestSchedule, inherited.Schedule, "the wildcard tier keeps the global default")
+	assert.False(t, inherited.Enabled, "the wildcard tier inherits the global default (off)")
+	assert.Equal(t, domain.DefaultDigestSchedule, inherited.Schedule, "the wildcard tier keeps the global default schedule")
 }
 
 func TestSchedules_DistinctEnabledOnly(t *testing.T) {
@@ -166,9 +166,9 @@ func TestSchedules_DistinctEnabledOnly(t *testing.T) {
 	provider := application.NewProvider(domain.Defaults{}, map[string]domain.Org{
 		"acme": {
 			"web":  {Channel: "C0WEB", Digest: &domain.DigestConfig{Enabled: true, Schedule: weekdays}},
-			"api":  {Channel: "C0API"},
+			"api":  {Channel: "C0API", Digest: &domain.DigestConfig{Enabled: true}}, // enabled → global default schedule
 			"mute": {Channel: "C0MUTE", Digest: &domain.DigestConfig{Enabled: false}},
-			"*":    {Channel: "C0DEFAULT"},
+			"*":    {Channel: "C0DEFAULT"}, // no digest override → global default (off)
 		},
 	}, nil)
 

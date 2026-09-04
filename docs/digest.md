@@ -1,6 +1,6 @@
 # Stuck-PR digest
 
-Once a day, Notifycat reminds each channel about the open PRs nobody has touched since the previous day. It's the safety net under the quiet: a PR that got buried yesterday resurfaces this morning, every morning, until someone deals with it.
+Once a day — when you turn it on — Notifycat reminds each channel about the open PRs nobody has touched since the previous day. It's the safety net under the quiet: a PR that got buried yesterday resurfaces this morning, every morning, until someone deals with it.
 
 <div class="nc-diagram-wrap">
 --8<-- "docs/assets/images/diagrams/digest-timeline.svg"
@@ -14,14 +14,16 @@ Two items per channel with stuck PRs: a parent message carrying the count and pi
 
 Mentions sit on the parent because Slack thread replies don't notify the channel.
 
-## It's on by default
+## It's off by default
 
-With no `digest:` section in `config.yaml`, the digest runs at **9am UTC on weekdays**. This is deliberate — the digest is the "nothing slips through" half of the product. To opt out:
+The digest is opt-in. With no `digest:` section in `config.yaml` — or a section that sets only `schedule:`/`timezone:` — nothing is posted. Turn it on explicitly:
 
 ```yaml
 digest:
-  enabled: false
+  enabled: true
 ```
+
+Once enabled, it runs at **9am UTC on weekdays** unless you override the schedule or timezone below.
 
 ## Schedule and timezone
 
@@ -105,7 +107,7 @@ A monorepo PR that [fanned out](monorepo.md) to several channels appears in each
 
 ## Per-repository overrides
 
-A repository tier (or org `"*"` tier) can set its own `digest.enabled` and `digest.schedule` — `timezone` and `country` are global only, since the server runs a single clock and serves a single team calendar. Note that two repositories posting to the same channel on different schedules produce two digests a day in that channel; each tier's schedule runs independently.
+A repository tier (or org `"*"` tier) can set its own `digest.enabled` and `digest.schedule` — `timezone` and `country` are global only, since the server runs a single clock and serves a single team calendar. The digest is opt-in per tier too: a tier's `digest:` block must carry `enabled: true` to post; a bare `schedule:` on its own leaves that repo off. Note that two repositories posting to the same channel on different schedules produce two digests a day in that channel; each tier's schedule runs independently.
 
 ## First run after an upgrade
 
