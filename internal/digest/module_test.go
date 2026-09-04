@@ -19,11 +19,13 @@ import (
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 )
 
-// stubMappingLookup and stubDigestResolver stand in for the routing provider so
+// stubTargets and stubDigestResolver stand in for the routing provider so
 // the module graph can be built without loading a config.
-type stubMappingLookup struct{}
+type stubTargets struct{}
 
-func (stubMappingLookup) Get(context.Context, string) (routingdomain.RepoMapping, error) {
+func (stubTargets) BaseTargets(string) []routingdomain.Target { return nil }
+
+func (stubTargets) Get(context.Context, string) (routingdomain.RepoMapping, error) {
 	return routingdomain.RepoMapping{}, routingdomain.ErrNotFound
 }
 
@@ -46,7 +48,7 @@ func TestModule_GraphResolves(t *testing.T) {
 			func() *persistence.PullRequests { return persistence.NewPullRequests(db) },
 			func() *slack.Composer { return slack.NewComposer("eyes") },
 			func() *slack.Client { return slack.NewClient(http.DefaultClient, "xoxb-test") },
-			func() domain.MappingLookup { return stubMappingLookup{} },
+			func() domain.DigestTargets { return stubTargets{} },
 			func() domain.DigestResolver { return stubDigestResolver{} },
 			func() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) },
 		),
@@ -66,7 +68,7 @@ func digestGraphDeps(t *testing.T) fx.Option {
 		func() *persistence.PullRequests { return persistence.NewPullRequests(db) },
 		func() *slack.Composer { return slack.NewComposer("eyes") },
 		func() *slack.Client { return slack.NewClient(http.DefaultClient, "xoxb-test") },
-		func() domain.MappingLookup { return stubMappingLookup{} },
+		func() domain.DigestTargets { return stubTargets{} },
 		func() domain.DigestResolver { return stubDigestResolver{} },
 		func() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) },
 	)

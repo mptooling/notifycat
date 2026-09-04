@@ -99,11 +99,12 @@ func (r *PullRequests) Delete(ctx context.Context, repository string, prNumber i
 	return nil
 }
 
-// FindStuck returns open PRs idle since before cutoff, messages preloaded,
-// oldest first.
+// FindStuck returns open PRs idle since before cutoff, oldest first. Messages
+// are deliberately not preloaded: the digest routes from config, not from where
+// a PR's message happens to live.
 func (r *PullRequests) FindStuck(ctx context.Context, cutoff time.Time) ([]PullRequest, error) {
 	var rows []PullRequest
-	err := r.db.WithContext(ctx).Preload("Messages").
+	err := r.db.WithContext(ctx).
 		Where("closed_at IS NULL AND updated_at < ?", cutoff).
 		Order("updated_at asc").
 		Find(&rows).Error
