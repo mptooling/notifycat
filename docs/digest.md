@@ -101,7 +101,13 @@ A PR is stuck when its last activity predates the start of the current day (in t
 - **Suppressed bot reviews don't count.** With `reviews.ignore_ai_reviews: true`, an AI-only review pass leaves the PR stuck — it still needs a human.
 - **Merged, closed, and drafted PRs drop out.** Merge/close marks the row; converting to draft removes it entirely.
 
-A monorepo PR that [fanned out](monorepo.md) to several channels appears in each of those channels' digests until it's done.
+## Which channels get it
+
+The reminder follows `config.yaml`, not the channel a PR's message was posted to. Each repository's digest goes to its configured base channels — the tier's `channel:`, or every entry of its `channels:` list, each pinging that entry's own `mentions`.
+
+Per-directory [`paths:`](monorepo.md) channels get no digest. Which path rule applied to a given PR isn't knowable without re-reading the PR's changed files, so a monorepo's stuck PRs are nagged in the repo's base channel even when the original announcement fanned out to a path channel.
+
+Repointing a repository at a new channel therefore moves its digest immediately. The messages of PRs that were already open keep living in the old channel until you move them with [`notifycat-relocate`](cli.md#notifycat-relocate).
 
 ## Per-repository overrides
 

@@ -66,3 +66,59 @@ type PRChecker interface {
 type Reconciler interface {
 	Run(ctx context.Context) (Summary, error)
 }
+
+// TrackedLister lists open PRs together with the channels their messages
+// currently live in. It is the relocate use case's read port.
+type TrackedLister interface {
+	ListOpenWithMessages(ctx context.Context) ([]TrackedPR, error)
+}
+
+// MessageRows retargets or drops a PR's stored message row. It never touches
+// the messenger — only the database row that records where a message lives.
+type MessageRows interface {
+	MoveMessage(ctx context.Context, repository string, prNumber int, fromChannel, toChannel, messageID string) error
+	RemoveMessage(ctx context.Context, repository string, prNumber int, channel string) error
+}
+
+// MessageCourier carries a posted message between channels. Repost reads the
+// original, rewrites it as a mention-free "moved" message and posts it to
+// toChannel, returning the new message id; it reports ErrMessageGone when the
+// original is no longer there. CopyReactions re-adds the source message's
+// reactions, restricted to allowed, so a relocated message keeps its review
+// state without inheriting ad-hoc human reactions the bot cannot attribute.
+type MessageCourier interface {
+	Repost(ctx context.Context, from TrackedMessage, toChannel string) (string, error)
+	CopyReactions(ctx context.Context, from, to TrackedMessage, allowed []string) error
+	Delete(ctx context.Context, message TrackedMessage) error
+}
+
+// ReactionPolicy lists the reaction emoji a repository's notifications use, so
+// a relocated message carries those and nothing else.
+type ReactionPolicy interface {
+	AllowedReactions(ctx context.Context, repository string) ([]string, error)
+}
+
+// ChannelConfig reports every channel a repository is currently configured to
+// post to — its base fan-out plus any `paths:` channels. A stored message in a
+// channel absent from this set is stale routing.
+type ChannelConfig interface {
+	ConfiguredChannels(repository string) []string
+}
+
+// ErrMessageGone marks an original message the messenger no longer has: it was
+// deleted by hand, or the bot lost sight of the channel. There is nothing to
+// carry over, so the relocator drops the row instead of failing the run.
+var ErrMessageGone = errors.New("relocate: message no longer exists")
+
+// Relocator moves stored messages from one channel to another after an
+// operator repoints a repository. Per PR it either moves the message (repost in
+// the new channel, retarget the row, carry the reactions over, delete the
+// original), merges (the PR already has a message in the destination, so only
+// the original goes), or drops (no destination given). A per-PR failure is
+// logged and counted, never fatal, and the run is idempotent: the row is
+// retargeted immediately after the repost, so a re-run skips what already
+// moved. Audit reports rows sitting in channels the config no longer mentions.
+type Relocator interface {
+	Run(ctx context.Context) (RelocateSummary, error)
+	Audit(ctx context.Context) ([]StaleMessage, error)
+}

@@ -71,6 +71,10 @@ migrate-status:
 reconcile *args:
   go run ./cmd/notifycat-reconcile {{args}}
 
+# Move open PRs' Slack messages to another channel (-audit first, then -dry-run)
+relocate *args:
+  go run ./cmd/notifycat-relocate {{args}}
+
 # List config entries
 config-list:
   go run ./cmd/notifycat-config list
@@ -90,6 +94,10 @@ docker-migrate-status:
 # One-time reconcile in Docker (pass -dry-run to preview); needs GITHUB_TOKEN in .env
 docker-reconcile *args:
   docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/app" --env-file .env {{app}}:test /usr/local/bin/notifycat-reconcile {{args}}
+
+# Relocate messages in Docker (pass -audit or -dry-run to preview)
+docker-relocate *args:
+  docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/app" --env-file .env {{app}}:test /usr/local/bin/notifycat-relocate {{args}}
 
 # List config entries in Docker
 docker-config-list:
