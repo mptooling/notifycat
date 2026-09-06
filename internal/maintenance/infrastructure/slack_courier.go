@@ -15,8 +15,8 @@ const slackMessageGone = "message_not_found"
 
 // SlackCourier implements domain.MessageCourier over the Slack Web API: it
 // reads a posted message's blocks, reposts them in another channel as a
-// mention-free "moved" message, carries the reactions over, and deletes the
-// original.
+// mention-free "moved" message, carries the reactions over, and edits the
+// original into a pointer at its new home.
 type SlackCourier struct {
 	client *slack.Client
 }
@@ -62,10 +62,24 @@ func (c *SlackCourier) CopyReactions(ctx context.Context, from, to domain.Tracke
 	return nil
 }
 
-// Delete implements domain.MessageCourier. A message that is already gone is
-// success — the outcome the caller wanted is the state of the world.
-func (c *SlackCourier) Delete(ctx context.Context, message domain.TrackedMessage) error {
-	err := c.client.DeleteMessage(ctx, message.Channel, message.MessageID)
+// MarkMoved implements domain.MessageCourier: it edits the original in place
+// into a pointer at its new channel. The message is never deleted, so the
+// thread hanging off it stays readable in the old channel. A message that is
+// already gone is success — the state the caller wanted is the state of the
+// world.
+func (c *SlackCourier) MarkMoved(ctx context.Context, from domain.TrackedMessage, toChannel string) error {
+	content, err := c.client.MessageContent(ctx, from.Channel, from.MessageID)
+	if err != nil {
+		if errors.Is(asGone(err), domain.ErrMessageGone) {
+			return nil
+		}
+		return err
+	}
+	pointer, err := slack.MovedPointer(content, toChannel)
+	if err != nil {
+		return err
+	}
+	err = c.client.UpdateMessage(ctx, from.Channel, from.MessageID, pointer)
 	if errors.Is(asGone(err), domain.ErrMessageGone) {
 		return nil
 	}

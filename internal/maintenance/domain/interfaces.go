@@ -86,10 +86,12 @@ type MessageRows interface {
 // original is no longer there. CopyReactions re-adds the source message's
 // reactions, restricted to allowed, so a relocated message keeps its review
 // state without inheriting ad-hoc human reactions the bot cannot attribute.
+// MarkMoved edits the original in place into a pointer at toChannel: the
+// message is never deleted, so the thread hanging off it survives the move.
 type MessageCourier interface {
 	Repost(ctx context.Context, from TrackedMessage, toChannel string) (string, error)
 	CopyReactions(ctx context.Context, from, to TrackedMessage, allowed []string) error
-	Delete(ctx context.Context, message TrackedMessage) error
+	MarkMoved(ctx context.Context, from TrackedMessage, toChannel string) error
 }
 
 // ReactionPolicy lists the reaction emoji a repository's notifications use, so
@@ -112,9 +114,10 @@ var ErrMessageGone = errors.New("relocate: message no longer exists")
 
 // Relocator moves stored messages from one channel to another after an
 // operator repoints a repository. Per PR it either moves the message (repost in
-// the new channel, retarget the row, carry the reactions over, delete the
-// original), merges (the PR already has a message in the destination, so only
-// the original goes), or drops (no destination given). A per-PR failure is
+// the new channel, retarget the row, carry the reactions over, leave the
+// original behind as a pointer), merges (the PR already has a message in the
+// destination, so the original becomes a pointer and its row goes), or forgets
+// it (no destination given: the row goes, the message is left alone). A per-PR failure is
 // logged and counted, never fatal, and the run is idempotent: the row is
 // retargeted immediately after the repost, so a re-run skips what already
 // moved. Audit reports rows sitting in channels the config no longer mentions.

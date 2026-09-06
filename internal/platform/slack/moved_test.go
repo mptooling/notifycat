@@ -117,3 +117,29 @@ func TestMovedMessage_RefusesUnexpectedShape(t *testing.T) {
 		})
 	}
 }
+
+func TestMovedPointer_LeavesAStruckThroughPointer(t *testing.T) {
+	content := slack.RawMessageContent{
+		Blocks: rawBlocks(t,
+			`{"type":"section","text":{"type":"mrkdwn","text":":new: <!channel> please review <https://github.com/acme/api/pull/7|PR #7: Add widgets>"}}`,
+			`{"type":"actions","elements":[{"type":"button","action_id":"start_review"}]}`,
+		),
+		Fallback: "<!channel> please review PR #7: Add widgets",
+	}
+
+	pointer, err := slack.MovedPointer(content, "C0NEW")
+
+	require.NoError(t, err)
+	require.Len(t, pointer.Blocks, 1, "the pointer keeps no context line and no button")
+	assert.Equal(t,
+		":truck: [moved to <#C0NEW>] ~<https://github.com/acme/api/pull/7|PR #7: Add widgets>~",
+		pointer.Blocks[0].Text.Text)
+	assert.NotContains(t, pointer.Blocks[0].Text.Text, "!channel", "the pointer pings nobody")
+	assert.Equal(t, "[moved from another channel] PR #7: Add widgets", pointer.Fallback)
+}
+
+func TestMovedPointer_RefusesUnexpectedShape(t *testing.T) {
+	_, err := slack.MovedPointer(slack.RawMessageContent{}, "C0NEW")
+
+	require.ErrorIs(t, err, slack.ErrUnexpectedMessageShape)
+}

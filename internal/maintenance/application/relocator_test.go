@@ -65,13 +65,19 @@ type reactionCall struct {
 	allowed  []string
 }
 
+type markCall struct {
+	from      domain.TrackedMessage
+	toChannel string
+}
+
 type fakeCourier struct {
 	reposts      []repostCall
 	reactions    []reactionCall
-	deletions    []domain.TrackedMessage
+	marks        []markCall
 	postedID     string
 	repostErr    error
 	reactionsErr error
+	markErr      error
 }
 
 func (f *fakeCourier) Repost(_ context.Context, from domain.TrackedMessage, toChannel string) (string, error) {
@@ -87,8 +93,11 @@ func (f *fakeCourier) CopyReactions(_ context.Context, from, to domain.TrackedMe
 	return f.reactionsErr
 }
 
-func (f *fakeCourier) Delete(_ context.Context, message domain.TrackedMessage) error {
-	f.deletions = append(f.deletions, message)
+func (f *fakeCourier) MarkMoved(_ context.Context, from domain.TrackedMessage, toChannel string) error {
+	if f.markErr != nil {
+		return f.markErr
+	}
+	f.marks = append(f.marks, markCall{from: from, toChannel: toChannel})
 	return nil
 }
 
@@ -150,7 +159,8 @@ func TestRelocator_Run_MovesMessageToDestination(t *testing.T) {
 	require.Len(t, courier.reactions, 1)
 	assert.Equal(t, []string{"eyes", "white_check_mark"}, courier.reactions[0].allowed)
 	assert.Equal(t, domain.TrackedMessage{Channel: "C_NEW", MessageID: "200.2"}, courier.reactions[0].to)
-	assert.Equal(t, []domain.TrackedMessage{{Channel: "C_OLD", MessageID: "100.1"}}, courier.deletions)
+	assert.Equal(t, []markCall{{from: domain.TrackedMessage{Channel: "C_OLD", MessageID: "100.1"}, toChannel: "C_NEW"}}, courier.marks,
+		"the original is pointed at its new home, never deleted")
 }
 
 // A PR that already has a message in the destination (a fan-out overlap) must
@@ -173,10 +183,12 @@ func TestRelocator_Run_MergesWhenDestinationAlreadyHasMessage(t *testing.T) {
 	assert.Equal(t, domain.RelocateSummary{Scanned: 1, Merged: 1}, summary)
 	assert.Empty(t, courier.reposts, "the destination already has this PR")
 	assert.Equal(t, []removeCall{{repository: "acme/api", prNumber: 7, channel: "C_OLD"}}, rows.removals)
-	assert.Equal(t, []domain.TrackedMessage{{Channel: "C_OLD", MessageID: "100.1"}}, courier.deletions)
+	assert.Len(t, courier.marks, 1, "the original still points at the destination")
 }
 
-func TestRelocator_Run_DropsWhenNoDestinationGiven(t *testing.T) {
+// With no destination there is nothing to point at, so the row is forgotten and
+// the message is left exactly as it is.
+func TestRelocator_Run_ForgetsRowWhenNoDestinationGiven(t *testing.T) {
 	rows := &fakeRows{}
 	courier := &fakeCourier{}
 	relocator := newRelocator(domain.RelocatorParams{Lister: onePR(), Rows: rows, Courier: courier, From: "C_OLD"})
@@ -184,10 +196,10 @@ func TestRelocator_Run_DropsWhenNoDestinationGiven(t *testing.T) {
 	summary, err := relocator.Run(context.Background())
 
 	require.NoError(t, err)
-	assert.Equal(t, domain.RelocateSummary{Scanned: 1, Dropped: 1}, summary)
+	assert.Equal(t, domain.RelocateSummary{Scanned: 1, Forgotten: 1}, summary)
 	assert.Empty(t, courier.reposts)
+	assert.Empty(t, courier.marks)
 	assert.Equal(t, []removeCall{{repository: "acme/api", prNumber: 7, channel: "C_OLD"}}, rows.removals)
-	assert.Equal(t, []domain.TrackedMessage{{Channel: "C_OLD", MessageID: "100.1"}}, courier.deletions)
 }
 
 func TestRelocator_Run_IgnoresPRsWithoutAMessageInSource(t *testing.T) {
@@ -239,14 +251,14 @@ func TestRelocator_Run_DryRunWritesNothing(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, domain.RelocateSummary{Scanned: 1, Moved: 1}, summary)
 	assert.Empty(t, courier.reposts)
-	assert.Empty(t, courier.deletions)
+	assert.Empty(t, courier.marks)
 	assert.Empty(t, rows.moves)
 }
 
 // The row is retargeted straight after the repost, so a failure there must
-// leave the original message in place: a re-run then moves the PR again rather
-// than leaving it with no message anywhere.
-func TestRelocator_Run_KeepsOriginalWhenRetargetingFails(t *testing.T) {
+// leave the original message untouched: a re-run then moves the PR again rather
+// than leaving it pointing at a channel it never reached.
+func TestRelocator_Run_LeavesOriginalUnmarkedWhenRetargetingFails(t *testing.T) {
 	rows := &fakeRows{moveErr: errors.New("database is locked")}
 	courier := &fakeCourier{postedID: "200.2"}
 	relocator := newRelocator(domain.RelocatorParams{Lister: onePR(), Rows: rows, Courier: courier, From: "C_OLD", To: "C_NEW"})
@@ -255,7 +267,7 @@ func TestRelocator_Run_KeepsOriginalWhenRetargetingFails(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, domain.RelocateSummary{Scanned: 1, Errors: 1}, summary)
-	assert.Empty(t, courier.deletions, "the original survives a failed retarget")
+	assert.Empty(t, courier.marks, "the original is left as it was after a failed retarget")
 }
 
 // Reactions are decoration: failing to carry them over must not abandon a move
@@ -269,7 +281,7 @@ func TestRelocator_Run_ReactionFailureDoesNotFailTheMove(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, domain.RelocateSummary{Scanned: 1, Moved: 1}, summary)
-	assert.Len(t, courier.deletions, 1, "the original is still cleared away")
+	assert.Len(t, courier.marks, 1, "the original is still pointed at its new home")
 }
 
 func TestRelocator_Run_RepostFailureLeavesEverythingAlone(t *testing.T) {
@@ -282,12 +294,12 @@ func TestRelocator_Run_RepostFailureLeavesEverythingAlone(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, domain.RelocateSummary{Scanned: 1, Errors: 1}, summary)
 	assert.Empty(t, rows.moves)
-	assert.Empty(t, courier.deletions)
+	assert.Empty(t, courier.marks)
 }
 
 // A message the messenger no longer has cannot be carried anywhere, so the row
-// is dropped rather than counted as a failure that a re-run would repeat.
-func TestRelocator_Run_MissingOriginalDropsTheRow(t *testing.T) {
+// is forgotten rather than counted as a failure that a re-run would repeat.
+func TestRelocator_Run_MissingOriginalForgetsTheRow(t *testing.T) {
 	rows := &fakeRows{}
 	courier := &fakeCourier{repostErr: domain.ErrMessageGone}
 	relocator := newRelocator(domain.RelocatorParams{Lister: onePR(), Rows: rows, Courier: courier, From: "C_OLD", To: "C_NEW"})
@@ -295,9 +307,24 @@ func TestRelocator_Run_MissingOriginalDropsTheRow(t *testing.T) {
 	summary, err := relocator.Run(context.Background())
 
 	require.NoError(t, err)
-	assert.Equal(t, domain.RelocateSummary{Scanned: 1, Dropped: 1}, summary)
+	assert.Equal(t, domain.RelocateSummary{Scanned: 1, Forgotten: 1}, summary)
 	assert.Equal(t, []removeCall{{repository: "acme/api", prNumber: 7, channel: "C_OLD"}}, rows.removals)
-	assert.Empty(t, courier.deletions, "there is nothing left to delete")
+	assert.Empty(t, courier.marks, "there is nothing left to mark")
+}
+
+// The move is already recorded when the pointer edit fails, so it is reported
+// as an error the operator can chase — the message in the old channel is simply
+// left unmarked, and no re-run will touch it.
+func TestRelocator_Run_ReportsAFailedPointerEdit(t *testing.T) {
+	rows := &fakeRows{}
+	courier := &fakeCourier{postedID: "200.2", markErr: errors.New("cant_update_message")}
+	relocator := newRelocator(domain.RelocatorParams{Lister: onePR(), Rows: rows, Courier: courier, From: "C_OLD", To: "C_NEW"})
+
+	summary, err := relocator.Run(context.Background())
+
+	require.NoError(t, err)
+	assert.Equal(t, domain.RelocateSummary{Scanned: 1, Errors: 1}, summary)
+	assert.Len(t, rows.moves, 1, "the row still moved: the message is posted in the destination")
 }
 
 func TestRelocator_Audit_ReportsRowsInUnconfiguredChannels(t *testing.T) {

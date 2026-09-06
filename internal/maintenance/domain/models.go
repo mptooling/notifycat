@@ -76,16 +76,16 @@ type StaleMessage struct {
 
 // RelocateSummary tallies one relocate run.
 type RelocateSummary struct {
-	Scanned int // open PRs holding a message in the source channel
-	Moved   int // reposted in the destination and retargeted (would be, in dry-run)
-	Merged  int // destination already had a message; only the original was removed
-	Dropped int // no destination given; the original was removed
-	Errors  int
+	Scanned   int // open PRs holding a message in the source channel
+	Moved     int // reposted in the destination and retargeted (would be, in dry-run)
+	Merged    int // destination already had a message; the original became a pointer
+	Forgotten int // the row was dropped; the Slack message itself was left alone
+	Errors    int
 }
 
 // RelocatorParams bundles everything the relocate use case needs. From is the
 // channel to move messages out of; To is the destination, and an empty To means
-// drop the messages instead of moving them. Repository, when set, narrows the
+// stop tracking the messages instead of moving them. Repository, when set, narrows the
 // run to one "org/repo". DryRun reports what would change without writing.
 type RelocatorParams struct {
 	Lister     TrackedLister

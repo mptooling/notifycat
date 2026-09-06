@@ -32,16 +32,9 @@ var prLink = regexp.MustCompile(`<https?://[^>]+>`)
 // link, and every other block (context line, review markers, the Start review
 // button) is carried over verbatim.
 func MovedMessage(content RawMessageContent) (RawMessageContent, error) {
-	if len(content.Blocks) == 0 {
-		return RawMessageContent{}, fmt.Errorf("%w: no blocks", ErrUnexpectedMessageShape)
-	}
-	headline, err := sectionText(content.Blocks[0])
+	link, err := headlineLink(content)
 	if err != nil {
 		return RawMessageContent{}, err
-	}
-	link := prLink.FindString(headline)
-	if link == "" {
-		return RawMessageContent{}, fmt.Errorf("%w: headline carries no pull request link", ErrUnexpectedMessageShape)
 	}
 
 	moved, err := json.Marshal(Block{
@@ -58,17 +51,34 @@ func MovedMessage(content RawMessageContent) (RawMessageContent, error) {
 	blocks := make([]json.RawMessage, 0, len(content.Blocks))
 	blocks = append(blocks, moved)
 	blocks = append(blocks, content.Blocks[1:]...)
-	return RawMessageContent{Blocks: blocks, Fallback: movedFallback(link)}, nil
+	fallback := fmt.Sprintf("%s please review %s", movedNote, linkLabel(link))
+	return RawMessageContent{Blocks: blocks, Fallback: fallback}, nil
 }
 
-// movedFallback builds the push-preview text from the link's label ("PR #7:
-// Add widgets"), so it stays mention-free like the headline.
-func movedFallback(link string) string {
+// headlineLink returns the pull request link from a message's headline section.
+func headlineLink(content RawMessageContent) (string, error) {
+	if len(content.Blocks) == 0 {
+		return "", fmt.Errorf("%w: no blocks", ErrUnexpectedMessageShape)
+	}
+	headline, err := sectionText(content.Blocks[0])
+	if err != nil {
+		return "", err
+	}
+	link := prLink.FindString(headline)
+	if link == "" {
+		return "", fmt.Errorf("%w: headline carries no pull request link", ErrUnexpectedMessageShape)
+	}
+	return link, nil
+}
+
+// linkLabel is a link's display text ("PR #7: Add widgets"), used for the
+// mention-free push-preview text.
+func linkLabel(link string) string {
 	label := strings.Trim(link, "<>")
 	if _, after, found := strings.Cut(label, "|"); found {
 		label = after
 	}
-	return fmt.Sprintf("%s please review %s", movedNote, label)
+	return label
 }
 
 // sectionText returns a section block's mrkdwn text.
@@ -84,4 +94,20 @@ func sectionText(block json.RawMessage) (string, error) {
 		return "", fmt.Errorf("%w: headline is a %q block", ErrUnexpectedMessageShape, decoded.Type)
 	}
 	return decoded.Text.Text, nil
+}
+
+// MovedPointer rewrites the original message into a one-line pointer at the
+// channel its replacement now lives in: the PR link struck through, the
+// destination linked, and nothing else. The context line, review markers and
+// the Start review button are dropped — the button would decorate a message
+// that is no longer the PR's, and the detail now lives in the new channel.
+func MovedPointer(content RawMessageContent, toChannel string) (Message, error) {
+	link, err := headlineLink(content)
+	if err != nil {
+		return Message{}, err
+	}
+	return Message{
+		Blocks:   []Block{section(fmt.Sprintf(":%s: [moved to <#%s>] ~%s~", movedEmoji, toChannel, link))},
+		Fallback: fmt.Sprintf("%s %s", movedNote, linkLabel(link)),
+	}, nil
 }

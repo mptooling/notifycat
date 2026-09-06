@@ -5,15 +5,16 @@
 // that were already open keep living in the old channel, because the database
 // records where each message was posted. This tool carries them over — it
 // reposts each message in the new channel as a mention-free "moved" notice,
-// retargets the stored row, carries the repo's own reactions across, and
-// deletes the original.
+// retargets the stored row, carries the repo's own reactions across, and edits
+// the original into a one-line pointer at the new channel. Nothing is deleted,
+// so a thread hanging off the original stays readable where it is.
 //
 // Usage:
 //
 //	notifycat-relocate -audit                        — list messages sitting in channels config no longer mentions
 //	notifycat-relocate -from C_OLD -to C_NEW          — move every open PR's message
 //	notifycat-relocate -from C_OLD -to C_NEW -repo org/repo
-//	notifycat-relocate -from C_OLD                    — delete the messages, no replacement
+//	notifycat-relocate -from C_OLD                    — stop tracking the messages, leaving them in place
 //	notifycat-relocate -from C_OLD -to C_NEW -dry-run — report what would change, write nothing
 //
 // A PR that already has a message in the destination keeps that one and only
@@ -150,7 +151,7 @@ func parseOptions(args []string) (options, error) {
 	fs := flag.NewFlagSet("notifycat-relocate", flag.ContinueOnError)
 	var opts options
 	fs.StringVar(&opts.from, "from", "", "Slack channel id to move messages out of")
-	fs.StringVar(&opts.to, "to", "", "Slack channel id to move messages into; empty deletes them instead")
+	fs.StringVar(&opts.to, "to", "", "Slack channel id to move messages into; empty stops tracking them instead")
 	fs.StringVar(&opts.repository, "repo", "", `narrow the run to one "org/repo"`)
 	fs.BoolVar(&opts.dryRun, "dry-run", false, "report what would change without writing")
 	fs.BoolVar(&opts.audit, "audit", false, "list messages in channels the config no longer mentions, then exit")
@@ -244,8 +245,8 @@ func relocate(ctx context.Context, relocator *maintenanceapp.Relocator, opts opt
 	if opts.dryRun {
 		mode = "dry-run"
 	}
-	fmt.Printf("relocate (%s): scanned=%d moved=%d merged=%d dropped=%d errors=%d\n",
-		mode, summary.Scanned, summary.Moved, summary.Merged, summary.Dropped, summary.Errors)
+	fmt.Printf("relocate (%s): scanned=%d moved=%d merged=%d forgotten=%d errors=%d\n",
+		mode, summary.Scanned, summary.Moved, summary.Merged, summary.Forgotten, summary.Errors)
 	if summary.Errors > 0 {
 		return fmt.Errorf("%d message(s) could not be relocated; resolve the logged cause and re-run — it is idempotent", summary.Errors)
 	}

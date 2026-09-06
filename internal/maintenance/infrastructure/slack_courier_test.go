@@ -104,12 +104,46 @@ func TestSlackCourier_CopyReactions_CarriesOnlyAllowedEmoji(t *testing.T) {
 	assert.Contains(t, fake.bodies["reactions.add"][1], `"name":"white_check_mark"`)
 }
 
-func TestSlackCourier_Delete_TreatsAlreadyGoneAsDone(t *testing.T) {
+func TestSlackCourier_MarkMoved_EditsTheOriginalIntoAPointer(t *testing.T) {
 	fake := newFakeSlackAPI(t, map[string]string{
-		"chat.delete": `{"ok":false,"error":"message_not_found"}`,
+		"conversations.history": `{"ok":true,"messages":[{"text":"<!channel> please review PR #7","blocks":[{"type":"section","text":{"type":"mrkdwn","text":":new: <!channel> please review <https://github.com/acme/api/pull/7|PR #7: Add widgets>"}},{"type":"actions","elements":[]}]}]}`,
 	})
 
-	err := fake.courier().Delete(context.Background(), domain.TrackedMessage{Channel: "C_OLD", MessageID: "100.1"})
+	err := fake.courier().MarkMoved(context.Background(),
+		domain.TrackedMessage{Channel: "C_OLD", MessageID: "100.1"}, "C_NEW")
 
 	require.NoError(t, err)
+	assert.Empty(t, fake.bodies["chat.delete"], "the original is edited, never deleted")
+	require.Len(t, fake.bodies["chat.update"], 1)
+
+	var edited struct {
+		Channel string            `json:"channel"`
+		TS      string            `json:"ts"`
+		Text    string            `json:"text"`
+		Blocks  []json.RawMessage `json:"blocks"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(fake.bodies["chat.update"][0]), &edited))
+	assert.Equal(t, "C_OLD", edited.Channel)
+	assert.Equal(t, "100.1", edited.TS)
+	require.Len(t, edited.Blocks, 1, "the pointer keeps no button")
+	var pointer struct {
+		Text struct {
+			Text string `json:"text"`
+		} `json:"text"`
+	}
+	require.NoError(t, json.Unmarshal(edited.Blocks[0], &pointer))
+	assert.Contains(t, pointer.Text.Text, "moved to <#C_NEW>")
+	assert.NotContains(t, pointer.Text.Text, "!channel", "the pointer pings nobody")
+}
+
+func TestSlackCourier_MarkMoved_TreatsAlreadyGoneAsDone(t *testing.T) {
+	fake := newFakeSlackAPI(t, map[string]string{
+		"conversations.history": `{"ok":true,"messages":[]}`,
+	})
+
+	err := fake.courier().MarkMoved(context.Background(),
+		domain.TrackedMessage{Channel: "C_OLD", MessageID: "100.1"}, "C_NEW")
+
+	require.NoError(t, err)
+	assert.Empty(t, fake.bodies["chat.update"])
 }

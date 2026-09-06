@@ -107,7 +107,7 @@ The reminder follows `config.yaml`, not the channel a PR's message was posted to
 
 Per-directory [`paths:`](monorepo.md) channels get no digest. Which path rule applied to a given PR isn't knowable without re-reading the PR's changed files, so a monorepo's stuck PRs are nagged in the repo's base channel even when the original announcement fanned out to a path channel.
 
-Repointing a repository at a new channel therefore moves its digest immediately. The messages of PRs that were already open keep living in the old channel until you move them with [`notifycat-relocate`](cli.md#notifycat-relocate).
+Repointing a repository at a new channel therefore moves its digest immediately. The messages of PRs that were already open keep living in the old channel — and keep collecting reviews and merges there — until you carry them over with [`notifycat-relocate`](cli.md#notifycat-relocate).
 
 ## Per-repository overrides
 

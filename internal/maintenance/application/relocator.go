@@ -85,12 +85,12 @@ func (r *Relocator) Audit(ctx context.Context) ([]domain.StaleMessage, error) {
 	return stale, nil
 }
 
-// relocate resolves one PR's source message: dropped when there is no
+// relocate resolves one PR's source message: forgotten when there is no
 // destination, merged when the destination already holds a message for this PR,
 // moved otherwise.
 func (r *Relocator) relocate(ctx context.Context, pullRequest domain.TrackedPR, source domain.TrackedMessage, summary *domain.RelocateSummary) {
 	if r.to == "" {
-		r.drop(ctx, pullRequest, source, summary, "dropping message")
+		r.forget(ctx, pullRequest, source, summary, "relocate: row dropped; the message is left where it is")
 		return
 	}
 	if _, exists := messageIn(pullRequest, r.to); exists {
@@ -101,9 +101,10 @@ func (r *Relocator) relocate(ctx context.Context, pullRequest domain.TrackedPR, 
 }
 
 // move reposts the message in the destination, retargets the row, carries the
-// reactions over and removes the original. The row is retargeted immediately
-// after the repost so a crash can only ever orphan a message in the source
-// channel — never leave the row pointing at a message that was never posted.
+// reactions over and leaves the original behind as a pointer. The row is
+// retargeted immediately after the repost so a crash can only ever leave an
+// unmarked message in the source channel — never a row pointing at a message
+// that was never posted.
 func (r *Relocator) move(ctx context.Context, pullRequest domain.TrackedPR, source domain.TrackedMessage, summary *domain.RelocateSummary) {
 	if r.dryRun {
 		summary.Moved++
@@ -113,7 +114,10 @@ func (r *Relocator) move(ctx context.Context, pullRequest domain.TrackedPR, sour
 
 	messageID, err := r.courier.Repost(ctx, source, r.to)
 	if errors.Is(err, domain.ErrMessageGone) {
-		r.dropRow(ctx, pullRequest, source, summary, "relocate: original message is gone; dropping its row")
+		if r.forgetRow(ctx, pullRequest, source, summary) {
+			summary.Forgotten++
+			r.log("relocate: original message is gone; dropping its row", pullRequest, source)
+		}
 		return
 	}
 	if err != nil {
@@ -130,63 +134,53 @@ func (r *Relocator) move(ctx context.Context, pullRequest domain.TrackedPR, sour
 
 	posted := domain.TrackedMessage{Channel: r.to, MessageID: messageID}
 	r.carryReactions(ctx, pullRequest, source, posted)
-	if err := r.courier.Delete(ctx, source); err != nil {
+	if err := r.courier.MarkMoved(ctx, source, r.to); err != nil {
 		summary.Errors++
-		r.logFailure("relocate: message moved but the original could not be deleted", pullRequest, source, err)
+		r.logFailure("relocate: message moved but the original could not be marked", pullRequest, source, err)
 		return
 	}
 	summary.Moved++
 	r.log("relocate: message moved", pullRequest, source)
 }
 
-// merge clears the source message away for a PR the destination already holds.
+// merge marks the source message as moved for a PR the destination already
+// holds, then forgets its row. Nothing is reposted — the destination has the
+// PR already.
 func (r *Relocator) merge(ctx context.Context, pullRequest domain.TrackedPR, source domain.TrackedMessage, summary *domain.RelocateSummary) {
 	if r.dryRun {
 		summary.Merged++
-		r.log("relocate: would remove the source message; the destination already has this PR (dry-run)", pullRequest, source)
+		r.log("relocate: would point the source message at the destination, which already has this PR (dry-run)", pullRequest, source)
 		return
 	}
-	if !r.removeSource(ctx, pullRequest, source, summary) {
+	if err := r.courier.MarkMoved(ctx, source, r.to); err != nil {
+		summary.Errors++
+		r.logFailure("relocate: marking the source message failed", pullRequest, source, err)
+		return
+	}
+	if !r.forgetRow(ctx, pullRequest, source, summary) {
 		return
 	}
 	summary.Merged++
-	r.log("relocate: source message removed; the destination already had this PR", pullRequest, source)
+	r.log("relocate: source message pointed at the destination, which already had this PR", pullRequest, source)
 }
 
-// drop removes the source message with no replacement.
-func (r *Relocator) drop(ctx context.Context, pullRequest domain.TrackedPR, source domain.TrackedMessage, summary *domain.RelocateSummary, action string) {
+// forget drops the row and leaves the message alone: with no destination there
+// is nothing to point at, and the message itself is never deleted.
+func (r *Relocator) forget(ctx context.Context, pullRequest domain.TrackedPR, source domain.TrackedMessage, summary *domain.RelocateSummary, message string) {
 	if r.dryRun {
-		summary.Dropped++
-		r.log("relocate: would drop message (dry-run)", pullRequest, source)
+		summary.Forgotten++
+		r.log("relocate: would drop the row and leave the message in place (dry-run)", pullRequest, source)
 		return
 	}
-	if !r.removeSource(ctx, pullRequest, source, summary) {
+	if !r.forgetRow(ctx, pullRequest, source, summary) {
 		return
 	}
-	summary.Dropped++
-	r.log("relocate: "+action, pullRequest, source)
-}
-
-// dropRow forgets a row whose message the messenger no longer has.
-func (r *Relocator) dropRow(ctx context.Context, pullRequest domain.TrackedPR, source domain.TrackedMessage, summary *domain.RelocateSummary, message string) {
-	if err := r.rows.RemoveMessage(ctx, pullRequest.Repository, pullRequest.PRNumber, source.Channel); err != nil {
-		summary.Errors++
-		r.logFailure("relocate: dropping the row failed", pullRequest, source, err)
-		return
-	}
-	summary.Dropped++
+	summary.Forgotten++
 	r.log(message, pullRequest, source)
 }
 
-// removeSource deletes the source message and its row, reporting whether both
-// succeeded. The message goes first: a surviving row for a deleted message
-// would make the next PR event update nothing.
-func (r *Relocator) removeSource(ctx context.Context, pullRequest domain.TrackedPR, source domain.TrackedMessage, summary *domain.RelocateSummary) bool {
-	if err := r.courier.Delete(ctx, source); err != nil {
-		summary.Errors++
-		r.logFailure("relocate: deleting the source message failed", pullRequest, source, err)
-		return false
-	}
+// forgetRow removes the stored row, reporting whether it succeeded.
+func (r *Relocator) forgetRow(ctx context.Context, pullRequest domain.TrackedPR, source domain.TrackedMessage, summary *domain.RelocateSummary) bool {
 	if err := r.rows.RemoveMessage(ctx, pullRequest.Repository, pullRequest.PRNumber, source.Channel); err != nil {
 		summary.Errors++
 		r.logFailure("relocate: removing the row failed", pullRequest, source, err)

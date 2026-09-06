@@ -84,21 +84,27 @@ notifycat-relocate -audit                          # what sits in channels confi
 notifycat-relocate -from C0OLD -to C0NEW -dry-run  # preview
 notifycat-relocate -from C0OLD -to C0NEW           # move them
 notifycat-relocate -from C0OLD -to C0NEW -repo acme/api
-notifycat-relocate -from C0OLD                     # delete them, no replacement
+notifycat-relocate -from C0OLD                     # stop tracking them, leave them in place
 ```
 
 Start with `-audit`: it lists every stored message whose channel is absent from the repository's current configuration, which is exactly the set that needs moving. It cannot tell you *where* each should go — a `paths:`-routed PR legitimately has a message in only one of several possible channels — so the destination stays yours to name.
 
+**Nothing is ever deleted.** The original message stays in the old channel, edited down to a single struck-through line pointing at its new home:
+
+```
+:truck: [moved to #new-channel] ~PR #7: Add widgets~
+```
+
+so any thread hanging off it stays readable where it is. The pointer keeps no context line and no **Start review** button — the button would decorate a message that is no longer the PR's.
+
 Per PR, one of three things happens:
 
-- **Moved** — the message is reposted in the destination, the stored row is retargeted, the repo's own reactions are carried over, and the original is deleted.
-- **Merged** — the PR already has a message in the destination (a `channels:` overlap), so it keeps that one and only the original goes. No duplicate is ever posted.
-- **Dropped** — no `-to` given, or the original is already gone from Slack: the message and its row are removed.
+- **Moved** — the message is reposted in the destination, the stored row is retargeted, the repo's own reactions are carried over, and the original becomes a pointer.
+- **Merged** — the PR already has a message in the destination (a `channels:` overlap), so it keeps that one; the original becomes a pointer and its row is dropped. No duplicate is ever posted.
+- **Forgotten** — no `-to` given, or the original is already gone from Slack: the row is dropped and the message is left exactly as it is.
 
 The reposted message announces itself: `:truck: [moved from another channel] please review …`. It **pings nobody** — you changed a routing target, which isn't news worth a notification, and the original mentions belonged to the old channel. Everything else survives: the context line, accumulated "reviewing" / "reviewed by" markers, and a working **Start review** button. Reactions come across too, filtered to the emoji the repo's own notifications use, since the bot can't re-add a human's reaction as that human.
 
-Thread replies do not survive — deleting a message deletes its thread.
-
-Runs are idempotent: the row is retargeted immediately after the repost, so a re-run skips whatever already moved, and a failure mid-run can only leave an orphaned message in the source channel (which `-audit` will show you), never a row pointing at a message that was never posted.
+Runs are idempotent: the row is retargeted immediately after the repost, so a re-run skips whatever already moved, and it can never leave a row pointing at a message that was never posted. If the pointer edit is the step that fails, the move is already recorded — the run reports the error, and the only trace is an un-marked message in the old channel.
 
 `SLACK_BOT_TOKEN` needs two scopes beyond the server's own — `reactions:read` and the history scopes `channels:history` / `groups:history` — because reading a posted message is the one thing the server never does. The run refuses to start without them, and refuses a destination the bot isn't a member of, rather than failing partway. Only this tool needs them; the server's required scopes are unchanged.
