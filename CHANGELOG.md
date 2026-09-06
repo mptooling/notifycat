@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.25.0](https://github.com/mptooling/notifycat/compare/v0.24.1...v0.25.0) (2026-09-06)
+
+
+### 🚀 Features
+
+* route the digest by config and add notifycat-relocate ([#199](https://github.com/mptooling/notifycat/issues/199)) ([3c3c728](https://github.com/mptooling/notifycat/commit/3c3c728bebd707c880c73e9477d36f59550b8642))
+
+
+### 🐛 Bug fixes
+
+* **config:** make the stuck-PR digest opt-in (off by default) ([#193](https://github.com/mptooling/notifycat/issues/193)) ([89c92a2](https://github.com/mptooling/notifycat/commit/89c92a25fb9fe67adc3b09aa8a62634394322e16))
+* **docs:** point troubleshooting link at the MkDocs anchor slug ([#201](https://github.com/mptooling/notifycat/issues/201)) ([2d28b72](https://github.com/mptooling/notifycat/commit/2d28b726dd1c86fbeb1740088df4a9ae36d3c336))
+
 ## [0.24.1](https://github.com/mptooling/notifycat/compare/v0.24.0...v0.24.1) (2026-08-31)
 
 
