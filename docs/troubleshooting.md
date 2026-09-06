@@ -102,7 +102,7 @@ A warning means functionality is limited **for that entry only** — every other
 | --- | --- | --- |
 | `no active webhook on … points at notifycat` | No hook on that repository targets `/webhook/<provider>`, so its PR events never arrive. On GitHub, an organization-level webhook also looks like this — delivery works anyway ([caveat](github-webhook.md)). | Create the webhook: [GitHub](github-webhook.md) · [Bitbucket](bitbucket-webhook.md) |
 | `webhook on … is missing event(s) …` | The hook exists but doesn't subscribe to every event the dispatcher consumes, so some transitions are silent. | Edit the webhook and add the named events. |
-| `listing … hooks failed: … 403 …` | Coverage is unconfirmed: the read token's identity may read the repository but not list its hooks. Delivery is unaffected. | Grant the identity write/admin on the repository ([Bitbucket](bitbucket-webhook.md#access-token--scopes)), or accept the warning. |
+| `listing … hooks failed: … 403 …` | Coverage is unconfirmed: the read token's identity may read the repository but not list its hooks. Delivery is unaffected. | Grant the identity write/admin on the repository ([Bitbucket](bitbucket-webhook.md#access-token-scopes)), or accept the warning. |
 | `list repos in <org>: …` | A `"*"` tier could not be expanded, so **none** of that org's repositories were validated this boot. Routing still works from `config.yaml`. | Grant the read token access to the org's repositories, or retry if it was a rate limit. |
 
 Warned entries are excluded from `config.lock` on purpose, so the same warning reappears on every boot until it turns `OK` — an unfixed warning is never silently cached away.
