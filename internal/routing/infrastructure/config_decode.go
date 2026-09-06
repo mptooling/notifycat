@@ -12,7 +12,7 @@ import (
 )
 
 // digestConfigWire is the YAML wire type for the `digest:` section. It is
-// decoded by hand so Enabled defaults to true when the key is absent.
+// decoded by hand so typos are rejected with KnownFields-style errors.
 type digestConfigWire struct {
 	Enabled  bool
 	Schedule string
@@ -20,9 +20,9 @@ type digestConfigWire struct {
 	Country  string
 }
 
-// UnmarshalYAML walks the mapping node by hand (like Org) so we can default
-// Enabled to true — distinguishing a missing `enabled:` key from an explicit
-// `enabled: false` — while keeping KnownFields-style rejection of typos.
+// UnmarshalYAML walks the mapping node by hand (like Org) so unknown keys are
+// rejected as typos. The digest is opt-in: Enabled stays false unless the
+// operator writes `enabled: true`.
 func (d *digestConfigWire) UnmarshalYAML(node *yaml.Node) error {
 	if node.Kind != yaml.MappingNode {
 		return fmt.Errorf("digest: expected mapping; got node kind %d", node.Kind)
@@ -30,7 +30,6 @@ func (d *digestConfigWire) UnmarshalYAML(node *yaml.Node) error {
 	if len(node.Content)%2 != 0 {
 		return fmt.Errorf("digest: malformed mapping")
 	}
-	d.Enabled = true // on by default; an explicit `enabled: false` overrides
 	seen := map[string]bool{}
 	for i := 0; i < len(node.Content); i += 2 {
 		keyNode := node.Content[i]

@@ -17,17 +17,17 @@ type Provider struct {
 
 // NewProvider builds a Provider from already-decoded sections (config.yaml's
 // `mappings:` map and `digest:` block), the in-memory counterpart to Load.
-// A nil digest leaves the feature on by default (see Digest).
+// A nil digest leaves the feature off by default (see Digest).
 func NewProvider(defaults domain.Defaults, m map[string]domain.Org, digest *domain.DigestConfig) *Provider {
 	return &Provider{defaults: defaults, file: domain.File{Mappings: m, Digest: digest}}
 }
 
 // Digest returns the effective stuck-PR digest configuration. The feature is
-// enabled by default, so an absent `digest:` section yields {Enabled: true,
-// Schedule: DefaultDigestSchedule}. An explicit section may disable it or
-// override the schedule.
+// opt-in, so an absent `digest:` section yields {Enabled: false,
+// Schedule: DefaultDigestSchedule}. An explicit section turns it on with
+// `enabled: true` and may override the schedule.
 func (p *Provider) Digest() domain.DigestConfig {
-	cfg := domain.DigestConfig{Enabled: true, Schedule: domain.DefaultDigestSchedule}
+	cfg := domain.DigestConfig{Enabled: false, Schedule: domain.DefaultDigestSchedule}
 	if p.file.Digest != nil {
 		cfg.Enabled = p.file.Digest.Enabled
 		if s := strings.TrimSpace(p.file.Digest.Schedule); s != "" {
@@ -129,7 +129,7 @@ func (p *Provider) Entries() []domain.Entry {
 // Digest() merged with the org/* and org/repo tiers (most-specific tier that
 // sets enabled/schedule wins). An unmapped repo yields the global digest.
 func (p *Provider) DigestFor(repository string) domain.DigestConfig {
-	digest := p.Digest() // global default (enabled + DefaultDigestSchedule)
+	digest := p.Digest() // global default (off + DefaultDigestSchedule)
 	org, repo, ok := splitRepo(repository)
 	if !ok {
 		return digest

@@ -26,17 +26,26 @@ func loadDigestProvider(t *testing.T, body string) *application.Provider {
 	return provider
 }
 
-func TestProvider_Digest_AbsentDefaultsToEnabled(t *testing.T) {
+func TestProvider_Digest_AbsentDefaultsToDisabled(t *testing.T) {
 	provider := loadDigestProvider(t, digestMappingsTail)
 
 	digest := provider.Digest()
 
-	assert.True(t, digest.Enabled, "digest is on unless the operator turns it off")
-	assert.Equal(t, domain.DefaultDigestSchedule, digest.Schedule)
+	assert.False(t, digest.Enabled, "digest is off unless the operator opts in")
+	assert.Equal(t, domain.DefaultDigestSchedule, digest.Schedule, "the schedule still resolves while off")
+}
+
+func TestProvider_Digest_ScheduleWithoutEnabledStaysOff(t *testing.T) {
+	provider := loadDigestProvider(t, "digest:\n  schedule: \"0 8 * * 1-5\"\n"+digestMappingsTail)
+
+	digest := provider.Digest()
+
+	assert.False(t, digest.Enabled, "a bare schedule does not opt in")
+	assert.Equal(t, "0 8 * * 1-5", digest.Schedule, "the custom schedule is parsed even while off")
 }
 
 func TestProvider_Digest_CustomSchedule(t *testing.T) {
-	provider := loadDigestProvider(t, "digest:\n  schedule: \"0 8 * * 1-5\"\n"+digestMappingsTail)
+	provider := loadDigestProvider(t, "digest:\n  enabled: true\n  schedule: \"0 8 * * 1-5\"\n"+digestMappingsTail)
 
 	digest := provider.Digest()
 
