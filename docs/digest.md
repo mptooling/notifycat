@@ -20,7 +20,7 @@ The digest is opt-in. With no `digest:` section in `config.yaml` — or a sectio
 
 ```yaml
 digest:
-  enabled: true
+  enabled: false
 ```
 
 Once enabled, it runs at **9am UTC on weekdays** unless you override the schedule or timezone below.
