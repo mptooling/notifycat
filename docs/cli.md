@@ -10,6 +10,7 @@ The image (and a source build) ships six binaries. `notifycat-server` is the lon
 | `notifycat-smoke` | Forge a signed PR event end-to-end to prove Slack delivery |
 | `notifycat-migrate` | Apply or inspect the embedded SQLite migrations |
 | `notifycat-reconcile` | One-time backfill: mark long-closed PRs closed in the database |
+| `notifycat-relocate` | Move open PRs' Slack messages to another channel after repointing a repo |
 
 Under Docker, pass the binary name as the command; the Compose install wraps the common ones (`./notifycat doctor`, `./notifycat smoke`):
 
@@ -73,3 +74,37 @@ notifycat-migrate status    # show migration state
 ## notifycat-reconcile
 
 One-time repair after enabling the [digest](digest.md) on an older deployment: walks every row the database believes is open, asks the git host, and marks the merged/closed ones. Idempotent; needs a read token; a PR it can't read is left alone. Usage and the summary format: [digest → first run](digest.md#reconcile).
+
+## notifycat-relocate
+
+Changing a repository's `channel:` only redirects *new* PRs. The messages of PRs that were already open stay where they were posted — the database records the channel each one lives in — so reviews and merges keep updating the old channel until those PRs close. This tool carries them over.
+
+```sh
+notifycat-relocate -audit                          # what sits in channels config no longer mentions
+notifycat-relocate -from C0OLD -to C0NEW -dry-run  # preview
+notifycat-relocate -from C0OLD -to C0NEW           # move them
+notifycat-relocate -from C0OLD -to C0NEW -repo acme/api
+notifycat-relocate -from C0OLD                     # stop tracking them, leave them in place
+```
+
+Start with `-audit`: it lists every stored message whose channel is absent from the repository's current configuration, which is exactly the set that needs moving. It cannot tell you *where* each should go — a `paths:`-routed PR legitimately has a message in only one of several possible channels — so the destination stays yours to name.
+
+**Nothing is ever deleted.** The original message stays in the old channel, edited down to a single struck-through line pointing at its new home:
+
+```
+:truck: [moved to #new-channel] ~PR #7: Add widgets~
+```
+
+so any thread hanging off it stays readable where it is. The pointer keeps no context line and no **Start review** button — the button would decorate a message that is no longer the PR's.
+
+Per PR, one of three things happens:
+
+- **Moved** — the message is reposted in the destination, the stored row is retargeted, the repo's own reactions are carried over, and the original becomes a pointer.
+- **Merged** — the PR already has a message in the destination (a `channels:` overlap), so it keeps that one; the original becomes a pointer and its row is dropped. No duplicate is ever posted.
+- **Forgotten** — no `-to` given, or the original is already gone from Slack: the row is dropped and the message is left exactly as it is.
+
+The reposted message announces itself: `:truck: [moved from another channel] please review …`. It **pings nobody** — you changed a routing target, which isn't news worth a notification, and the original mentions belonged to the old channel. Everything else survives: the context line, accumulated "reviewing" / "reviewed by" markers, and a working **Start review** button. Reactions come across too, filtered to the emoji the repo's own notifications use, since the bot can't re-add a human's reaction as that human.
+
+Runs are idempotent: the row is retargeted immediately after the repost, so a re-run skips whatever already moved, and it can never leave a row pointing at a message that was never posted. If the pointer edit is the step that fails, the move is already recorded — the run reports the error, and the only trace is an un-marked message in the old channel.
+
+`SLACK_BOT_TOKEN` needs two scopes beyond the server's own — `reactions:read` and the history scopes `channels:history` / `groups:history` — because reading a posted message is the one thing the server never does. The run refuses to start without them, and refuses a destination the bot isn't a member of, rather than failing partway. Only this tool needs them; the server's required scopes are unchanged.

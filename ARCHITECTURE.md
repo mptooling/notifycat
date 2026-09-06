@@ -64,7 +64,7 @@ flowchart TB
     routing["routing<br/>repo/PR → channels + behavior"]
     validation["validation<br/>mapping ⇄ Slack/GitHub checks"]
     digest["digest<br/>stuck-PR digest"]
-    maintenance["maintenance<br/>cleanup + reconcile"]
+    maintenance["maintenance<br/>cleanup + reconcile + relocate"]
     diagnostics["diagnostics<br/>doctor · config CLI · smoke"]
   end
   subgraph kernel["internal/kernel (shared model)"]
@@ -91,7 +91,7 @@ flowchart TB
 | **routing** | Resolve a repo (and optionally a PR's changed files) to the Slack channel(s) and behavioral config that apply, across global/org/repo tiers and monorepo path rules. | `mappings` (provider, parsing, tiers, defaults, lock), the per-PR `Router` from `pullrequest`, the changed-files reader over `platform/github` |
 | **validation** | Validate mapping entries against Slack (channel exists, bot present) and GitHub (repo exists); cache results in `config.lock`. Powers the startup gate, the doctor, and `notifycat-config validate`. | `validate` |
 | **digest** | Periodically post a digest of stuck (stale) PRs per the enabled cron schedules. | `digest` |
-| **maintenance** | Background housekeeping: delete stale message rows past their TTL; reconcile closed PRs. | `cleanup`, `reconcile` |
+| **maintenance** | Background housekeeping: delete stale message rows past their TTL; reconcile closed PRs; relocate messages after a channel change. | `cleanup`, `reconcile`, `relocate` |
 | **diagnostics** | Operator tooling: the preflight doctor, the `notifycat-config` CLI (list/validate), and the smoke-test delivery. | `doctor`, `mappingcli`, `smoke` |
 
 `internal/app` (the old hand-written composition root) has been deleted: its wiring is per-domain fx modules, and its lifecycle orchestration is `fx.Lifecycle` hooks composed in `internal/runtime` and each `cmd/*/main.go`.
@@ -142,6 +142,7 @@ Binary → module composition:
 | `notifycat-doctor` | platform, kernel, routing, validation, diagnostics |
 | `notifycat-migrate` | platform (persistence only) |
 | `notifycat-reconcile` | platform, kernel, maintenance |
+| `notifycat-relocate` | platform, kernel, routing, maintenance |
 | `notifycat-smoke` | platform, kernel, diagnostics |
 
 ## Cross-cutting conventions
