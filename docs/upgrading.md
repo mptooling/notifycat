@@ -2,6 +2,19 @@
 
 Notifycat applies its database migrations automatically on server startup (see [Operations → Startup](operations.md#startup-and-shutdown)), so most upgrades are "pull the new image and restart" — for Compose, `docker compose pull && ./notifycat up`. This page calls out the releases that need an operator action beyond that.
 
+## The stuck-PR digest is now off by default
+
+The digest is now opt-in. Previously it ran with no `digest:` section at all (9am UTC on weekdays); now nothing is posted unless you set `enabled: true`. A `digest:` block that carries only `schedule:` or `timezone:` no longer turns the feature on either.
+
+**What changes on upgrade:** a deployment that relied on the implicit digest — no `digest:` section, or one without `enabled:` — stops posting. To keep it running, add the key:
+
+```yaml
+digest:
+  enabled: true
+```
+
+The same applies to per-repository tiers: a tier's `digest:` block must carry `enabled: true` to post. Deployments that already set `digest.enabled: true` (or `false`) are unaffected.
+
 ## Weekends and holidays are now skipped
 
 The stuck-PR digest no longer posts on Saturday or Sunday. This is a **deliberate behavior change with no opt-out** — there is no config key to restore weekend digests. Nobody acts on a Saturday reminder, and the same PRs are still stuck on Monday, when they get announced anyway.
