@@ -19,9 +19,12 @@ import (
 // methods we use and answers with canned JSON.
 type fakeSlack struct {
 	*httptest.Server
-	mu       sync.Mutex
-	calls    []recordedCall
-	response func(path string, requestBody []byte, query map[string][]string) (statusCode int, responseBody string)
+	mu    sync.Mutex
+	calls []recordedCall
+	// retryAfter, when set, is sent as the Retry-After header on every response
+	// so a rate-limit test does not have to wait out a real interval.
+	retryAfter string
+	response   func(path string, requestBody []byte, query map[string][]string) (statusCode int, responseBody string)
 }
 
 type recordedCall struct {
@@ -52,6 +55,9 @@ func newFakeSlack(t *testing.T, response func(path string, requestBody []byte, q
 
 		status, responseBody := fake.response(r.URL.Path, body, r.URL.Query())
 		w.Header().Set("Content-Type", "application/json")
+		if fake.retryAfter != "" {
+			w.Header().Set("Retry-After", fake.retryAfter)
+		}
 		w.WriteHeader(status)
 		_, _ = io.WriteString(w, responseBody)
 	}))
@@ -86,6 +92,15 @@ func decodedBody(t *testing.T, call recordedCall) map[string]any {
 	var payload map[string]any
 	require.NoError(t, json.Unmarshal([]byte(call.Body), &payload), "body = %s", call.Body)
 	return payload
+}
+
+// mustJSON re-encodes a decoded payload field so it can be compared with JSONEq.
+func mustJSON(t *testing.T, value any) string {
+	t.Helper()
+
+	encoded, err := json.Marshal(value)
+	require.NoError(t, err)
+	return string(encoded)
 }
 
 func TestClient_PostMessage_Success(t *testing.T) {
@@ -285,4 +300,85 @@ func TestClient_NetworkError(t *testing.T) {
 	_, err := client.PostMessage(context.Background(), "C1", slack.Message{Fallback: "x"})
 
 	assert.Error(t, err)
+}
+
+func TestClient_MessageContent_ReadsBlocksAndText(t *testing.T) {
+	fake := newFakeSlack(t, okJSON(`{"ok":true,"messages":[{"ts":"100.1","text":"please review PR #7","blocks":[{"type":"section","text":{"type":"mrkdwn","text":"hi"}},{"type":"context","elements":[]}]}]}`))
+
+	content, err := fake.client().MessageContent(context.Background(), "C123", "100.1")
+
+	require.NoError(t, err)
+	require.Len(t, content.Blocks, 2)
+	assert.JSONEq(t, `{"type":"section","text":{"type":"mrkdwn","text":"hi"}}`, string(content.Blocks[0]))
+	assert.Equal(t, "please review PR #7", content.Fallback)
+
+	call := fake.lastCall(t)
+	assert.Equal(t, http.MethodGet, call.Method)
+	assert.Equal(t, "/api/conversations.history", call.Path)
+	assert.Equal(t, []string{"C123"}, call.Query["channel"])
+	assert.Equal(t, []string{"100.1"}, call.Query["latest"])
+	assert.Equal(t, []string{"100.1"}, call.Query["oldest"])
+	assert.Equal(t, []string{"true"}, call.Query["inclusive"])
+	assert.Equal(t, []string{"1"}, call.Query["limit"])
+}
+
+func TestClient_MessageContent_MissingMessageIsSentinel(t *testing.T) {
+	fake := newFakeSlack(t, okJSON(`{"ok":true,"messages":[]}`))
+
+	_, err := fake.client().MessageContent(context.Background(), "C123", "100.1")
+
+	require.ErrorIs(t, err, slack.ErrMessageNotFound)
+}
+
+func TestClient_PostMessageRawBlocks_SendsBlocksVerbatim(t *testing.T) {
+	fake := newFakeSlack(t, okJSON(`{"ok":true,"ts":"200.2"}`))
+	blocks := []json.RawMessage{json.RawMessage(`{"type":"section","text":{"type":"mrkdwn","text":"moved"}}`)}
+
+	timestamp, err := fake.client().PostMessageRawBlocks(context.Background(), "C999", blocks, "moved")
+
+	require.NoError(t, err)
+	assert.Equal(t, "200.2", timestamp)
+
+	call := fake.lastCall(t)
+	assert.Equal(t, "/api/chat.postMessage", call.Path)
+	payload := decodedBody(t, call)
+	assert.Equal(t, "C999", payload["channel"])
+	assert.Equal(t, "moved", payload["text"])
+	assert.JSONEq(t, `[{"type":"section","text":{"type":"mrkdwn","text":"moved"}}]`, mustJSON(t, payload["blocks"]))
+}
+
+// A bulk relocate run legitimately hits Tier 3, so a ratelimited response is
+// retried after the interval Slack asks for instead of failing the caller.
+func TestClient_RetriesRateLimitedCall(t *testing.T) {
+	var attempts int
+	fake := newFakeSlack(t, func(string, []byte, map[string][]string) (int, string) {
+		attempts++
+		if attempts == 1 {
+			return http.StatusTooManyRequests, `{"ok":false,"error":"ratelimited"}`
+		}
+		return http.StatusOK, `{"ok":true,"ts":"300.3"}`
+	})
+	fake.retryAfter = "0"
+
+	timestamp, err := fake.client().PostMessage(context.Background(), "C1", slack.Message{Fallback: "hi"})
+
+	require.NoError(t, err)
+	assert.Equal(t, "300.3", timestamp)
+	assert.Equal(t, 2, attempts, "the call is retried once, not abandoned")
+}
+
+func TestClient_RateLimitedGivesUpAfterMaxAttempts(t *testing.T) {
+	var attempts int
+	fake := newFakeSlack(t, func(string, []byte, map[string][]string) (int, string) {
+		attempts++
+		return http.StatusTooManyRequests, `{"ok":false,"error":"ratelimited"}`
+	})
+	fake.retryAfter = "0"
+
+	_, err := fake.client().PostMessage(context.Background(), "C1", slack.Message{Fallback: "hi"})
+
+	var apiErr *slack.APIError
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, "ratelimited", apiErr.Code)
+	assert.Equal(t, 3, attempts, "three attempts, then the error surfaces")
 }

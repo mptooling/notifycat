@@ -85,11 +85,20 @@ The manifest includes these scopes. If you create the app manually, add the same
 ### Optional: `reactions:read`
 
 The running server never reads reactions back, so this scope is **not** required for normal operation. It is used by
-exactly one optional command: `notifycat-smoke --reactions`, which calls `reactions.get` to *verify* that the
-lifecycle emoji it triggered actually landed on the message. Without `reactions:read`, the reactions are still posted
-(that only needs `reactions:write`) but the smoke test reports `? could not verify … missing_scope` instead of `✓`,
-and exits successfully. Grant `reactions:read` only if you want that readback verification — leaving it off keeps the
-bot at least privilege.
+two optional commands: `notifycat-smoke --reactions`, which calls `reactions.get` to *verify* that the
+lifecycle emoji it triggered actually landed on the message, and [`notifycat-relocate`](cli.md#notifycat-relocate),
+which carries a message's reactions over when it moves it to another channel. Without `reactions:read`, the reactions
+are still posted (that only needs `reactions:write`) but the smoke test reports `? could not verify … missing_scope`
+instead of `✓` and exits successfully. Grant `reactions:read` only if you want that readback verification — leaving it
+off keeps the bot at least privilege.
+
+### Optional: `channels:history` / `groups:history`
+
+Also **not** required for normal operation — the server never reads a posted message back. They are needed by
+[`notifycat-relocate`](cli.md#notifycat-relocate) alone, which reads a message's blocks (`conversations.history`) in
+order to repost them in another channel. `channels:history` covers public channels, `groups:history` private ones. The
+command refuses to start without them rather than failing partway, and it is the only thing that asks for them: grant
+them when you need to move messages, and leave them off otherwise.
 
 ## Channel access
 

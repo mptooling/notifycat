@@ -35,21 +35,26 @@ func (f *recordingFinder) FindStuck(_ context.Context, cutoff time.Time) ([]doma
 	return nil, nil
 }
 
-type fakeMappings struct {
-	byRepo map[string]routingdomain.RepoMapping
+// fakeTargets stands in for the routing provider's base fan-out. An absent
+// repository yields no targets, which is how an unmapped repo reaches the
+// reporter.
+type fakeTargets struct {
+	byRepo map[string][]routingdomain.Target
 	// base is returned for every repository when byRepo is nil.
-	base routingdomain.RepoMapping
+	base []routingdomain.Target
 }
 
-func (f fakeMappings) Get(_ context.Context, repository string) (routingdomain.RepoMapping, error) {
+func (f fakeTargets) BaseTargets(repository string) []routingdomain.Target {
 	if f.byRepo != nil {
-		mapping, ok := f.byRepo[repository]
-		if !ok {
-			return routingdomain.RepoMapping{}, routingdomain.ErrNotFound
-		}
-		return mapping, nil
+		return f.byRepo[repository]
 	}
-	return f.base, nil
+	return f.base
+}
+
+// channelTargets builds a single-channel target set, the shape a repo tier with
+// one `channel:` resolves to.
+func channelTargets(channel string, mentions ...string) []routingdomain.Target {
+	return []routingdomain.Target{{Channel: channel, Mentions: mentions}}
 }
 
 type fakeDigestResolver struct {
@@ -160,7 +165,7 @@ func listedRepositories(prs []domain.StuckPR) []string {
 
 func newTestReporter(
 	finder domain.StuckFinder,
-	mappings domain.MappingLookup,
+	targets domain.DigestTargets,
 	poster domain.DigestPoster,
 	composer domain.DigestComposer,
 	digests domain.DigestResolver,
@@ -169,7 +174,7 @@ func newTestReporter(
 ) *application.Reporter {
 	return application.NewReporter(domain.ReporterParams{
 		Finder:   finder,
-		Mappings: mappings,
+		Targets:  targets,
 		Poster:   poster,
 		Composer: composer,
 		Digests:  digests,
@@ -194,15 +199,15 @@ func dailyDigest(repositories ...string) fakeDigestResolver {
 
 func TestReporter_Report_BitbucketProviderBuildsBitbucketURLs(t *testing.T) {
 	finder := fakeFinder{prs: []domain.PullRequest{
-		{PRNumber: 42, Repository: "acme/api", UpdatedAt: twoDaysAgo, Messages: []domain.MessageRef{{Channel: "C_ACME", MessageID: "t1"}}},
+		{PRNumber: 42, Repository: "acme/api", UpdatedAt: twoDaysAgo},
 	}}
-	mappings := fakeMappings{byRepo: map[string]routingdomain.RepoMapping{
-		"acme/api": {Repository: "acme/api", SlackChannel: "C_ACME"},
+	targets := fakeTargets{byRepo: map[string][]routingdomain.Target{
+		"acme/api": channelTargets("C_ACME"),
 	}}
 	composer := &fakeComposer{}
 	reporter := application.NewReporter(domain.ReporterParams{
 		Finder:   finder,
-		Mappings: mappings,
+		Targets:  targets,
 		Poster:   &fakePoster{},
 		Composer: composer,
 		Digests:  dailyDigest("acme/api"),
@@ -223,19 +228,19 @@ func TestReporter_Report_BitbucketProviderBuildsBitbucketURLs(t *testing.T) {
 
 func TestReporter_Report_PostsParentThenThreadedListPerChannel(t *testing.T) {
 	finder := fakeFinder{prs: []domain.PullRequest{
-		{PRNumber: 42, Repository: "acme/api", UpdatedAt: twoDaysAgo, Messages: []domain.MessageRef{{Channel: "C_ACME", MessageID: "t1"}}},
-		{PRNumber: 51, Repository: "acme/web", UpdatedAt: twoDaysAgo, Messages: []domain.MessageRef{{Channel: "C_ACME", MessageID: "t2"}}},
-		{PRNumber: 88, Repository: "beta/x", UpdatedAt: twoDaysAgo, Messages: []domain.MessageRef{{Channel: "C_BETA", MessageID: "t3"}}},
-		{PRNumber: 99, Repository: "ghost/unmapped", UpdatedAt: twoDaysAgo, Messages: []domain.MessageRef{{Channel: "C_GHOST", MessageID: "t4"}}},
+		{PRNumber: 42, Repository: "acme/api", UpdatedAt: twoDaysAgo},
+		{PRNumber: 51, Repository: "acme/web", UpdatedAt: twoDaysAgo},
+		{PRNumber: 88, Repository: "beta/x", UpdatedAt: twoDaysAgo},
+		{PRNumber: 99, Repository: "ghost/unmapped", UpdatedAt: twoDaysAgo},
 	}}
-	mappings := fakeMappings{byRepo: map[string]routingdomain.RepoMapping{
-		"acme/api": {Repository: "acme/api", SlackChannel: "C_ACME", Mentions: []string{"<!channel>"}},
-		"acme/web": {Repository: "acme/web", SlackChannel: "C_ACME", Mentions: []string{"<!channel>"}},
-		"beta/x":   {Repository: "beta/x", SlackChannel: "C_BETA", Mentions: []string{"<@U1>"}},
+	targets := fakeTargets{byRepo: map[string][]routingdomain.Target{
+		"acme/api": channelTargets("C_ACME", "<!channel>"),
+		"acme/web": channelTargets("C_ACME", "<!channel>"),
+		"beta/x":   channelTargets("C_BETA", "<@U1>"),
 	}}
 	composer := &fakeComposer{}
 	poster := &fakePoster{}
-	reporter := newTestReporter(finder, mappings, poster, composer, dailyDigest("acme/api", "acme/web", "beta/x"), time.Local, func() time.Time { return reportNow })
+	reporter := newTestReporter(finder, targets, poster, composer, dailyDigest("acme/api", "acme/web", "beta/x"), time.Local, func() time.Time { return reportNow })
 
 	err := reporter.Report(context.Background())
 
@@ -267,16 +272,16 @@ func TestReporter_Report_PostsParentThenThreadedListPerChannel(t *testing.T) {
 // own repo's channel — the identity is (repo, number), never the number alone.
 func TestReporter_Report_NoPRDuplicatedAcrossChannels(t *testing.T) {
 	finder := fakeFinder{prs: []domain.PullRequest{
-		{PRNumber: 42, Repository: "acme/api", UpdatedAt: twoDaysAgo, Messages: []domain.MessageRef{{Channel: "C_ACME", MessageID: "t1"}}},
-		{PRNumber: 42, Repository: "beta/web", UpdatedAt: twoDaysAgo, Messages: []domain.MessageRef{{Channel: "C_BETA", MessageID: "t2"}}},
+		{PRNumber: 42, Repository: "acme/api", UpdatedAt: twoDaysAgo},
+		{PRNumber: 42, Repository: "beta/web", UpdatedAt: twoDaysAgo},
 	}}
-	mappings := fakeMappings{byRepo: map[string]routingdomain.RepoMapping{
-		"acme/api": {Repository: "acme/api", SlackChannel: "C_ACME"},
-		"beta/web": {Repository: "beta/web", SlackChannel: "C_BETA"},
+	targets := fakeTargets{byRepo: map[string][]routingdomain.Target{
+		"acme/api": channelTargets("C_ACME"),
+		"beta/web": channelTargets("C_BETA"),
 	}}
 	composer := &fakeComposer{}
 	poster := &fakePoster{}
-	reporter := newTestReporter(finder, mappings, poster, composer, dailyDigest("acme/api", "beta/web"), time.Local, func() time.Time { return reportNow })
+	reporter := newTestReporter(finder, targets, poster, composer, dailyDigest("acme/api", "beta/web"), time.Local, func() time.Time { return reportNow })
 
 	err := reporter.Report(context.Background())
 
@@ -293,7 +298,7 @@ func TestReporter_Report_NoPRDuplicatedAcrossChannels(t *testing.T) {
 func TestReporter_Report_NoStuckPRsPostsNothing(t *testing.T) {
 	composer := &fakeComposer{}
 	poster := &fakePoster{}
-	reporter := newTestReporter(fakeFinder{}, fakeMappings{byRepo: map[string]routingdomain.RepoMapping{}}, poster, composer, fakeDigestResolver{}, time.Local, time.Now)
+	reporter := newTestReporter(fakeFinder{}, fakeTargets{byRepo: map[string][]routingdomain.Target{}}, poster, composer, fakeDigestResolver{}, time.Local, time.Now)
 
 	err := reporter.Report(context.Background())
 
@@ -305,14 +310,14 @@ func TestReporter_Report_NoStuckPRsPostsNothing(t *testing.T) {
 
 func TestReporter_ReportSchedule_FiltersReposBySchedule(t *testing.T) {
 	finder := fakeFinder{prs: []domain.PullRequest{
-		{PRNumber: 42, Repository: "acme/api", UpdatedAt: twoDaysAgo, Messages: []domain.MessageRef{{Channel: "C_ACME", MessageID: "t1"}}},
-		{PRNumber: 51, Repository: "acme/web", UpdatedAt: twoDaysAgo, Messages: []domain.MessageRef{{Channel: "C_ACME", MessageID: "t2"}}},
-		{PRNumber: 88, Repository: "beta/disabled", UpdatedAt: twoDaysAgo, Messages: []domain.MessageRef{{Channel: "C_BETA", MessageID: "t3"}}},
+		{PRNumber: 42, Repository: "acme/api", UpdatedAt: twoDaysAgo},
+		{PRNumber: 51, Repository: "acme/web", UpdatedAt: twoDaysAgo},
+		{PRNumber: 88, Repository: "beta/disabled", UpdatedAt: twoDaysAgo},
 	}}
-	mappings := fakeMappings{byRepo: map[string]routingdomain.RepoMapping{
-		"acme/api":      {Repository: "acme/api", SlackChannel: "C_ACME", Mentions: []string{"<!channel>"}},
-		"acme/web":      {Repository: "acme/web", SlackChannel: "C_ACME", Mentions: []string{"<!channel>"}},
-		"beta/disabled": {Repository: "beta/disabled", SlackChannel: "C_BETA", Mentions: []string{"<@U1>"}},
+	targets := fakeTargets{byRepo: map[string][]routingdomain.Target{
+		"acme/api":      channelTargets("C_ACME", "<!channel>"),
+		"acme/web":      channelTargets("C_ACME", "<!channel>"),
+		"beta/disabled": channelTargets("C_BETA", "<@U1>"),
 	}}
 	digests := fakeDigestResolver{digests: map[string]routingdomain.DigestConfig{
 		"acme/api":      {Enabled: true, Schedule: "0 9 * * *"},
@@ -321,7 +326,7 @@ func TestReporter_ReportSchedule_FiltersReposBySchedule(t *testing.T) {
 	}}
 	composer := &fakeComposer{}
 	poster := &fakePoster{}
-	reporter := newTestReporter(finder, mappings, poster, composer, digests, time.Local, func() time.Time { return reportNow })
+	reporter := newTestReporter(finder, targets, poster, composer, digests, time.Local, func() time.Time { return reportNow })
 
 	require.NoError(t, reporter.ReportSchedule(context.Background(), "0 9 * * *"))
 
@@ -345,7 +350,7 @@ func TestReporter_CutoffHonorsTimezone(t *testing.T) {
 	newYork, err := time.LoadLocation("America/New_York")
 	require.NoError(t, err)
 	finder := &recordingFinder{}
-	reporter := newTestReporter(finder, fakeMappings{byRepo: map[string]routingdomain.RepoMapping{}}, &fakePoster{}, &fakeComposer{}, fakeDigestResolver{}, newYork, func() time.Time {
+	reporter := newTestReporter(finder, fakeTargets{byRepo: map[string][]routingdomain.Target{}}, &fakePoster{}, &fakeComposer{}, fakeDigestResolver{}, newYork, func() time.Time {
 		return time.Date(2026, 6, 8, 2, 0, 0, 0, time.UTC)
 	})
 
@@ -358,28 +363,65 @@ func TestReporter_CutoffHonorsTimezone(t *testing.T) {
 	assert.Equal(t, "America/New_York", finder.cutoff.Location().String())
 }
 
-// A PR with messages in several channels produces a reminder in each stored
-// channel, and the base mentions only ping the repo's base channel.
-func TestDigest_GroupsByStoredMessageChannel(t *testing.T) {
+// A repo with a `channels:` fan-out gets one reminder per configured channel,
+// each carrying that channel's own mentions.
+func TestReporter_Report_FansOutToEveryConfiguredChannel(t *testing.T) {
 	longAgo := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
-	finder := fakeFinder{prs: []domain.PullRequest{{
-		Repository: "acme/mono", PRNumber: 7, UpdatedAt: longAgo,
-		Messages: []domain.MessageRef{
-			{Channel: "C0BASE", MessageID: "1"},
-			{Channel: "C0AUTH", MessageID: "2"},
+	finder := fakeFinder{prs: []domain.PullRequest{
+		{Repository: "acme/mono", PRNumber: 7, UpdatedAt: longAgo},
+	}}
+	targets := fakeTargets{byRepo: map[string][]routingdomain.Target{
+		"acme/mono": {
+			{Channel: "C0BASE", Mentions: []string{"<!subteam^S0ENG>"}},
+			{Channel: "C0AUTH", Mentions: []string{"<@U9>"}},
 		},
-	}}}
-	mappings := fakeMappings{base: routingdomain.RepoMapping{SlackChannel: "C0BASE", Mentions: []string{"<!subteam^S0ENG>"}}}
+	}}
 	composer := &fakeComposer{}
 	poster := &fakePoster{}
-	reporter := newTestReporter(finder, mappings, poster, composer, fakeDigestResolver{}, time.UTC, time.Now)
+	reporter := newTestReporter(finder, targets, poster, composer, fakeDigestResolver{}, time.UTC, time.Now)
 
 	err := reporter.Report(context.Background())
 
 	require.NoError(t, err)
-	assert.Subset(t, poster.channels(), []string{"C0BASE", "C0AUTH"}, "every stored channel gets a reminder")
+	assert.Equal(t, []string{"C0BASE", "C0BASE", "C0AUTH", "C0AUTH"}, poster.channels())
 
 	mentions := mentionsByChannel(poster, composer)
-	assert.Empty(t, mentions["C0AUTH"], "a path channel carries no ping without stored mentions")
-	assert.NotEmpty(t, mentions["C0BASE"], "the base channel carries the base mentions")
+	assert.Equal(t, []string{"<!subteam^S0ENG>"}, mentions["C0BASE"])
+	assert.Equal(t, []string{"<@U9>"}, mentions["C0AUTH"], "each fan-out channel pings its own mentions")
+}
+
+// The reminder follows config, not the channel the PR's message was posted to:
+// after an operator repoints a repo at a new channel, the digest must nag only
+// there, even while the stored message still lives in the old channel.
+func TestReporter_Report_IgnoresTheChannelTheMessageLivesIn(t *testing.T) {
+	finder := fakeFinder{prs: []domain.PullRequest{
+		{Repository: "acme/api", PRNumber: 42, UpdatedAt: twoDaysAgo},
+	}}
+	targets := fakeTargets{byRepo: map[string][]routingdomain.Target{
+		"acme/api": channelTargets("C_NEW"),
+	}}
+	composer := &fakeComposer{}
+	poster := &fakePoster{}
+	reporter := newTestReporter(finder, targets, poster, composer, dailyDigest("acme/api"), time.Local, func() time.Time { return reportNow })
+
+	err := reporter.Report(context.Background())
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"C_NEW", "C_NEW"}, poster.channels())
+}
+
+// An unmapped repository resolves to a single target with an empty channel
+// (internal/routing/application/resolve.go), which must never reach Slack.
+func TestReporter_Report_SkipsEmptyChannelTarget(t *testing.T) {
+	finder := fakeFinder{prs: []domain.PullRequest{
+		{Repository: "ghost/unmapped", PRNumber: 1, UpdatedAt: twoDaysAgo},
+	}}
+	targets := fakeTargets{base: []routingdomain.Target{{Channel: "", Mentions: []string{"<!channel>"}}}}
+	poster := &fakePoster{}
+	reporter := newTestReporter(finder, targets, poster, &fakeComposer{}, dailyDigest("ghost/unmapped"), time.Local, func() time.Time { return reportNow })
+
+	err := reporter.Report(context.Background())
+
+	require.NoError(t, err)
+	assert.Empty(t, poster.calls)
 }

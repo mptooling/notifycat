@@ -12,9 +12,14 @@ type StuckFinder interface {
 	FindStuck(ctx context.Context, cutoff time.Time) ([]PullRequest, error)
 }
 
-// MappingLookup resolves a repository to its Slack channel and mentions.
-type MappingLookup interface {
-	Get(ctx context.Context, repository string) (routingdomain.RepoMapping, error)
+// DigestTargets returns the channels a repository's digest is delivered to,
+// with the mentions to ping in each. The routing provider's base fan-out
+// satisfies it: the digest is a repo-level reminder, so it goes to the
+// repository's configured base channels, never to a `paths:` channel — which
+// path rule applied to a given PR is not knowable without re-reading the PR's
+// changed files.
+type DigestTargets interface {
+	BaseTargets(repository string) []routingdomain.Target
 }
 
 // DigestResolver looks up the effective digest configuration for a repository.

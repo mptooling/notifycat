@@ -30,7 +30,7 @@ type Config struct {
 // Module binds the digest ports to their adapters and use cases. It expects the
 // composition root to supply the external inputs it cannot build itself: the
 // store's *store.PullRequests, a *slack.Composer, a *slack.Client, the routing
-// provider (as domain.MappingLookup and domain.DigestResolver), a *slog.Logger,
+// provider (as domain.DigestTargets and domain.DigestResolver), a *slog.Logger,
 // and a Config.
 var Module = fx.Module("digest",
 	fx.Provide(
@@ -47,10 +47,10 @@ var Module = fx.Module("digest",
 
 // provideReporterParams assembles the reporter's domain params from the graph.
 // The clock is time.Now; the timezone comes from Config.
-func provideReporterParams(finder domain.StuckFinder, mappings domain.MappingLookup, poster domain.DigestPoster, composer domain.DigestComposer, digests domain.DigestResolver, logger *slog.Logger, cfg Config) domain.ReporterParams {
+func provideReporterParams(finder domain.StuckFinder, targets domain.DigestTargets, poster domain.DigestPoster, composer domain.DigestComposer, digests domain.DigestResolver, logger *slog.Logger, cfg Config) domain.ReporterParams {
 	return domain.ReporterParams{
 		Finder:   finder,
-		Mappings: mappings,
+		Targets:  targets,
 		Poster:   poster,
 		Composer: composer,
 		Digests:  digests,
