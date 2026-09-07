@@ -24,7 +24,15 @@ container image built from `main`.
   workspace.
 - Run unattended on every merge to `main` and nightly, and report failures
   without blocking releases.
-- Stay under a 15-minute wall-clock budget for a full run.
+- Stay under a 15-minute wall-clock budget for a typical full run.
+
+  As built, the *ceilings* are far higher — summing every timeout constant
+  gives roughly 48 minutes, so the test binary allows 55 and the CI job 60.
+  Those are failure ceilings, not targets: blowing the test binary's own
+  timeout is precisely what skips teardown and leaks a container, a tunnel,
+  open pull requests and Slack messages. Nothing currently enforces the
+  15-minute expectation, so a suite that silently degrades from five minutes
+  to thirty would still report green.
 - Fail honestly: a scenario whose credentials are missing skips with a named
   reason; a scenario whose infrastructure broke fails loudly.
 
@@ -99,6 +107,19 @@ implementation and thereafter treated as immutable infrastructure.
 `notifycat-it-nohook` never receives a permanent webhook. That is the point of
 it: the validation checks probe for a hook, find none, and must report `WARN`
 rather than `FAIL`, and must leave the lock untouched.
+
+`notifycat-it-alpha` and `notifycat-it-mono`, by contrast, each need a
+**permanent** webhook — created by `scripts/create-fixtures.sh`, carrying all
+four of notifycat's `RequiredGitHubEvents`. Without one, they warn exactly like
+`notifycat-it-nohook` and never enter `config.lock`, which makes the
+"warned entries are never cached" scenario unprovable: nothing would ever be
+cached to contrast against. The per-scenario tunnel webhooks cannot serve this
+purpose, because they are deleted at the end of each scenario.
+
+Those permanent hooks point at an unreachable placeholder host, so their
+deliveries always fail and GitHub will eventually auto-disable them. The
+bootstrap script therefore re-activates a disabled hook rather than skipping it,
+and is safe to re-run at any time.
 
 ### Slack
 
@@ -217,7 +238,10 @@ obviously broken image fails fast before any repository is touched.
    assert the `new_pr` reaction is present.
 2. **Comment review.** Submit a `COMMENT` review. Assert the `commented`
    reaction lands on the same message timestamp.
-3. **Approve.** Requires the reviewer identity; skips without it. Assert the
+3. **Approve.** NOT IMPLEMENTED — the suite ships an unconditional skip
+   recording the gap, because the GitHub App reviewer identity does not exist
+   yet and GitHub forbids approving your own pull request. `request_change` is
+   likewise uncovered. When the App is installed, assert the
    `approved` reaction.
 4. **Merge.** Assert the `merged_pr` reaction and that the message text
    changed — the same timestamp, updated in place, not a new post.
