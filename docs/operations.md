@@ -40,6 +40,8 @@ Back up the SQLite file if losing notification state would hurt. If it's lost, w
 
 A background cleanup removes `slack_messages` rows untouched for longer than `cleanup.message_ttl_days` (default 30), once at startup and then every 24 hours. It deletes only the database row — never the Slack message.
 
+That sweep is separate from `cleanup.delete_on_close`, which does delete Slack messages — but only for a PR that has just been merged or declined, and only where the flag is on. See [Remove messages on close](delete-on-close.md).
+
 !!! warning "Changing `git_provider` requires a fresh database"
     Stale rows keyed by the old provider collide with the new one and silently suppress posts — details in [Upgrading](upgrading.md#git_provider-is-now-required).
 

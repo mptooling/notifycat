@@ -44,6 +44,7 @@ type Config struct {
 	Domain           string
 
 	MessageTTLDays   int
+	DeleteOnClose    bool
 	IgnoreAIReviews  bool
 	DependabotFormat bool
 
@@ -131,7 +132,8 @@ type fileSchema struct {
 		BaseURL string `yaml:"base_url"`
 	} `yaml:"bitbucket"`
 	Cleanup struct {
-		MessageTTLDays *int `yaml:"message_ttl_days"`
+		MessageTTLDays *int  `yaml:"message_ttl_days"`
+		DeleteOnClose  *bool `yaml:"delete_on_close"`
 	} `yaml:"cleanup"`
 	Reviews struct {
 		IgnoreAIReviews  *bool `yaml:"ignore_ai_reviews"`
@@ -156,6 +158,7 @@ func defaults() Config {
 		GitHubBaseURL:    "https://api.github.com",
 		BitbucketBaseURL: "https://api.bitbucket.org/2.0",
 		MessageTTLDays:   30,
+		DeleteOnClose:    false,
 		IgnoreAIReviews:  false,
 		DependabotFormat: true,
 		Reactions: Reactions{
@@ -272,6 +275,9 @@ func applyFileSchema(cfg *Config, fs fileSchema) {
 
 	if fs.Cleanup.MessageTTLDays != nil {
 		cfg.MessageTTLDays = *fs.Cleanup.MessageTTLDays
+	}
+	if fs.Cleanup.DeleteOnClose != nil {
+		cfg.DeleteOnClose = *fs.Cleanup.DeleteOnClose
 	}
 	if fs.Reviews.IgnoreAIReviews != nil {
 		cfg.IgnoreAIReviews = *fs.Reviews.IgnoreAIReviews

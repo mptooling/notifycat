@@ -66,6 +66,12 @@ bitbucket:
 # ── Cleanup ───────────────────────────────────────────────────────────────────────────────────────
 cleanup:
   message_ttl_days: 30                # days a slack_messages row may go without update before deletion; must be > 0
+                                      # global only — a per-repo tier may not set it
+  delete_on_close: false              # OFF BY DEFAULT. When true, a merged or declined PR has its Slack message
+                                      # DELETED instead of updated with the [Merged]/[Closed] tag, and its row is
+                                      # dropped. Every channel the PR fanned out to loses its message and no closing
+                                      # reaction is added. Deletion is permanent — Slack has no undo. Overridable
+                                      # per repo tier below.
 
 # ── Reviews ───────────────────────────────────────────────────────────────────────────────────────
 reviews:
@@ -138,7 +144,7 @@ mappings:
       mentions: []                             # explicit: ping nobody on gamma/platform
 
   # ── Per-repo behavioral overrides (0.18+) ──────────────────────────────────────────────────────
-  # Each repo tier can override behavioral settings: reactions, reviews, and digest schedule. Overrides inherit from org/* then fall back to the global section; most-specific tier wins. For example, delta/premium may use a different approval emoji or post its digest on a custom schedule while delta/standard uses the global defaults.
+  # Each repo tier can override behavioral settings: reactions, reviews, cleanup, and digest schedule. Overrides inherit from org/* then fall back to the global section; most-specific tier wins. For example, delta/premium may use a different approval emoji or post its digest on a custom schedule while delta/standard uses the global defaults.
   delta:
     premium:
       channel: C0PREMIUM00
@@ -149,6 +155,10 @@ mappings:
       # Optional: override review behavior (ignore_ai_reviews and dependabot_format) for this repo.
       reviews:
         ignore_ai_reviews: true               # suppress bot reviews on this repo specifically
+      # Optional: remove this repo's Slack message when a PR is merged or declined, whatever the global
+      # cleanup.delete_on_close says. message_ttl_days is global only and is rejected here.
+      cleanup:
+        delete_on_close: true
       # Optional: turn the digest on for this repo and override its schedule. The digest is opt-in per
       # tier: `enabled: true` is required here — a bare `schedule:` leaves this repo off.
       digest:

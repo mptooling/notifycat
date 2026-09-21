@@ -215,6 +215,7 @@ type repoConfigWire struct {
 	Reactions        *reactionsOverrideWire
 	IgnoreAIReviews  *bool
 	DependabotFormat *bool
+	DeleteOnClose    *bool
 	Digest           *digestConfigWire
 	Paths            []domain.PathRule
 	Channels         []domain.ChannelSpec
@@ -271,6 +272,10 @@ func (rc *repoConfigWire) UnmarshalYAML(node *yaml.Node) error {
 			rc.Reactions = r
 		case "reviews":
 			if err := decodeReviews(rc, valNode); err != nil {
+				return err
+			}
+		case "cleanup":
+			if err := decodeCleanup(rc, valNode); err != nil {
 				return err
 			}
 		case "digest":
@@ -334,6 +339,37 @@ func decodeReviews(rc *repoConfigWire, node *yaml.Node) error {
 		}
 		if err := val.Decode(dst); err != nil {
 			return fmt.Errorf("reviews.%s: %w", key.Value, err)
+		}
+	}
+	return nil
+}
+
+// decodeCleanup parses a tier's `cleanup:` block. delete_on_close is the only
+// per-repo key: message_ttl_days sweeps the whole database on one schedule, so
+// it stays global and is rejected here rather than silently ignored.
+func decodeCleanup(rc *repoConfigWire, node *yaml.Node) error {
+	if node.Kind != yaml.MappingNode {
+		return fmt.Errorf("cleanup: expected mapping; got node kind %d", node.Kind)
+	}
+	if len(node.Content)%2 != 0 {
+		return fmt.Errorf("cleanup: malformed mapping")
+	}
+	seen := map[string]bool{}
+	for i := 0; i < len(node.Content); i += 2 {
+		key, val := node.Content[i], node.Content[i+1]
+		if err := markSeen(seen, key.Value); err != nil {
+			return fmt.Errorf("cleanup: %w", err)
+		}
+		switch key.Value {
+		case "delete_on_close":
+			rc.DeleteOnClose = new(bool)
+			if err := val.Decode(rc.DeleteOnClose); err != nil {
+				return fmt.Errorf("cleanup.delete_on_close: %w", err)
+			}
+		case "message_ttl_days":
+			return fmt.Errorf("cleanup: message_ttl_days is only valid in the global cleanup section, not per-repo")
+		default:
+			return fmt.Errorf("cleanup: unknown field %q", key.Value)
 		}
 	}
 	return nil
@@ -504,6 +540,7 @@ func (rc repoConfigWire) toDomain() domain.RepoConfig {
 		MentionsPresent:  rc.MentionsPresent,
 		IgnoreAIReviews:  rc.IgnoreAIReviews,
 		DependabotFormat: rc.DependabotFormat,
+		DeleteOnClose:    rc.DeleteOnClose,
 		Paths:            rc.Paths,
 		Channels:         rc.Channels,
 	}

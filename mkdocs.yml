@@ -90,6 +90,7 @@ nav:
       - Route repositories to channels: routing.md
       - Monorepos: monorepo.md
       - Reactions & bot reviews: bots-and-reactions.md
+      - Remove messages on close: delete-on-close.md
       - Stuck-PR digest: digest.md
   - Troubleshoot:
       - Start here: troubleshooting.md

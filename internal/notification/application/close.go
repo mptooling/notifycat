@@ -10,9 +10,10 @@ import (
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 )
 
-// CloseHandler reacts to a PR being closed (merged or not). It updates every
-// stored message with a [Merged]/[Closed] decoration and, if enabled, adds the
-// corresponding reaction to each.
+// CloseHandler reacts to a PR being closed (merged or not). By default it
+// updates every stored message with a [Merged]/[Closed] decoration and, if
+// enabled, adds the corresponding reaction to each. When the repo's
+// DeleteOnClose behavior is on it removes the messages instead.
 type CloseHandler struct {
 	store     domain.MessageStore
 	behavior  domain.RepoBehavior
@@ -33,7 +34,8 @@ func (h *CloseHandler) Applicable(event kernel.Event) bool {
 	return event.Kind == kernel.KindClosed || event.Kind == kernel.KindMerged
 }
 
-// Handle updates every stored message and optionally adds a reaction to each.
+// Handle removes or decorates every stored message, depending on the repo's
+// DeleteOnClose behavior.
 func (h *CloseHandler) Handle(ctx context.Context, event kernel.Event) error {
 	messages, err := h.store.Messages(ctx, event.Repository, event.PR.Number)
 	if errors.Is(err, routingdomain.ErrNotFound) {
@@ -51,6 +53,10 @@ func (h *CloseHandler) Handle(ctx context.Context, event kernel.Event) error {
 	}
 	if err != nil {
 		return err
+	}
+
+	if behavior.DeleteOnClose {
+		return h.deleteMessages(ctx, event, messages)
 	}
 
 	emoji := behavior.Reactions.ClosedPR
@@ -88,6 +94,21 @@ func (h *CloseHandler) Handle(ctx context.Context, event kernel.Event) error {
 		return err
 	}
 	return h.store.MarkClosed(ctx, event.Repository, event.PR.Number)
+}
+
+// deleteMessages is the DeleteOnClose branch: every fanned-out message is
+// removed and the PR row is dropped. Nothing is left to update or react to, so
+// the PR also leaves the digest immediately.
+func (h *CloseHandler) deleteMessages(ctx context.Context, event kernel.Event, messages []domain.Message) error {
+	for _, message := range messages {
+		if err := h.messenger.Delete(ctx, message.Channel, message.MessageID); err != nil {
+			return err
+		}
+	}
+	if err := h.reviews.Finish(ctx, event.Repository, event.PR.Number); err != nil {
+		return err
+	}
+	return h.store.Delete(ctx, event.Repository, event.PR.Number)
 }
 
 // distinctReviewerIDs returns the reviewers' Slack user IDs in first-seen order,

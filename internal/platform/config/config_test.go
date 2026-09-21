@@ -301,3 +301,17 @@ func TestLoad_SecretsAreSecretType(t *testing.T) {
 	assert.Equal(t, "xoxb-x", cfg.SlackBotToken.Reveal())
 	assert.NotEqual(t, "shh", cfg.GitHubWebhookSecret.String(), "String() must redact")
 }
+
+func TestLoad_DeleteOnClose_DefaultsOff(t *testing.T) {
+	cfg, err := loadConfigured(t, minimalConfig)
+
+	require.NoError(t, err)
+	assert.False(t, cfg.DeleteOnClose, "removing merged messages is opt-in")
+}
+
+func TestLoad_DeleteOnClose_Enabled(t *testing.T) {
+	cfg, err := loadConfigured(t, "git_provider: github\ncleanup:\n  delete_on_close: true\n")
+
+	require.NoError(t, err)
+	assert.True(t, cfg.DeleteOnClose)
+}

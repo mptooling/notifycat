@@ -186,12 +186,14 @@ func (c *Client) PostMessageRawBlocks(ctx context.Context, channel string, block
 	return resp.TS, nil
 }
 
-// DeleteMessage removes an existing message by ts.
+// DeleteMessage removes an existing message by ts. "message_not_found" is
+// treated as success — somebody removed the message by hand and the outcome we
+// wanted already holds.
 func (c *Client) DeleteMessage(ctx context.Context, channel, ts string) error {
 	return c.postJSON(ctx, "chat.delete", map[string]any{
 		"channel": channel,
 		"ts":      ts,
-	}, nil, nil)
+	}, nil, []string{"message_not_found"})
 }
 
 // AddReaction adds a reaction emoji to a message. "already_reacted" is

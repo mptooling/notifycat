@@ -64,6 +64,12 @@ Dependency PRs don't deserve a "please review" ceremony. PRs opened by `dependab
 
 Set `reviews.dependabot_format: false` to give bot PRs the standard format instead.
 
+## Removing finished PRs from the channel
+
+A merged or declined PR normally keeps its message, tagged `[Merged]` or `[Closed]`. Teams who want the channel to show only live work can flip that: with `cleanup.delete_on_close: true` the message is deleted when the PR finishes, so what's left in the channel is exactly what still needs attention.
+
+It's off by default, works per repository, and is permanent — deleted Slack messages don't come back. Details and the trade-off: [Remove messages on close](delete-on-close.md).
+
 ## The morning digest
 
 Once a day (9am UTC by default), each channel with stuck PRs gets a two-part reminder: a parent message with the count that pings the channel's configured mentions, and a single threaded reply listing the PRs. The list lives in the thread, so the channel feed pays exactly one line per day.

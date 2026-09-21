@@ -44,6 +44,7 @@ type RepoConfig struct {
 	Reactions        *ReactionsOverride
 	IgnoreAIReviews  *bool
 	DependabotFormat *bool
+	DeleteOnClose    *bool
 	Digest           *DigestConfig
 
 	// Paths is the optional per-directory routing for a monorepo, in
@@ -133,6 +134,9 @@ type RepoMapping struct {
 	Reactions        Reactions
 	IgnoreAIReviews  bool
 	DependabotFormat bool
+	// DeleteOnClose removes the Slack message when the PR is merged or declined
+	// instead of updating it with the [Merged]/[Closed] decoration.
+	DeleteOnClose bool
 }
 
 // Resolved is the effective routing config for one repository after merging
@@ -148,6 +152,7 @@ type Defaults struct {
 	Reactions        Reactions
 	IgnoreAIReviews  bool
 	DependabotFormat bool
+	DeleteOnClose    bool
 	// GitProvider is the deployment's single git_provider; the Provider stamps it
 	// on every entry so it hashes into the lock (see Entry.Provider).
 	GitProvider kernel.Provider

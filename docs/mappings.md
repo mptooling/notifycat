@@ -92,6 +92,7 @@ A repository tier (and the `"*"` tier) may override behavioral settings that oth
 
 - **Reactions:** `reactions.enabled`, `reactions.new_pr`, `reactions.merged_pr`, `reactions.closed_pr`, `reactions.approved`, `reactions.commented`, `reactions.request_change`, `reactions.bot_review`
 - **Reviews:** `reviews.ignore_ai_reviews`, `reviews.dependabot_format`
+- **Cleanup:** `cleanup.delete_on_close` — but **not** `cleanup.message_ttl_days`, which is global only and rejected on a tier
 - **Digest:** `digest.enabled`, `digest.schedule` — but **not** `digest.timezone`, which is global only and rejected on a tier
 
 Inheritance, most-specific wins: repository tier → org `"*"` tier → global section → built-in default. Not overridable per repository: `server.*`, `database.url`, `slack.base_url`, `github.base_url` / `bitbucket.base_url`, `cleanup.message_ttl_days`.
