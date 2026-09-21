@@ -66,24 +66,24 @@ func TestResolveBehavior_RepoOverridesStarOverridesGlobal(t *testing.T) {
 		IgnoreAIReviews: boolPtr(true),
 	}
 
-	reactions, ignoreAIReviews, dependabotFormat := resolveBehavior(global, star, repo)
+	resolved := resolveBehavior(global, star, repo)
 
-	assert.Equal(t, "shipit", reactions.Approved, "star tier wins over global")
-	assert.Equal(t, "eyes", reactions.NewPR, "nobody overrode new_pr")
-	assert.False(t, reactions.Enabled, "repo tier wins over star and global")
-	assert.True(t, ignoreAIReviews)
-	assert.True(t, dependabotFormat)
+	assert.Equal(t, "shipit", resolved.reactions.Approved, "star tier wins over global")
+	assert.Equal(t, "eyes", resolved.reactions.NewPR, "nobody overrode new_pr")
+	assert.False(t, resolved.reactions.Enabled, "repo tier wins over star and global")
+	assert.True(t, resolved.ignoreAIReviews)
+	assert.True(t, resolved.dependabotFormat)
 }
 
 func TestResolveBehavior_AllGlobalWhenNoTiers(t *testing.T) {
 	global := domain.Defaults{Reactions: domain.Reactions{Enabled: true, NewPR: "eyes"}, DependabotFormat: true}
 
-	reactions, ignoreAIReviews, dependabotFormat := resolveBehavior(global, nil, nil)
+	resolved := resolveBehavior(global, nil, nil)
 
-	assert.Equal(t, "eyes", reactions.NewPR)
-	assert.True(t, reactions.Enabled)
-	assert.False(t, ignoreAIReviews)
-	assert.True(t, dependabotFormat)
+	assert.Equal(t, "eyes", resolved.reactions.NewPR)
+	assert.True(t, resolved.reactions.Enabled)
+	assert.False(t, resolved.ignoreAIReviews)
+	assert.True(t, resolved.dependabotFormat)
 }
 
 func TestResolveBaseTargets_SingleForm(t *testing.T) {

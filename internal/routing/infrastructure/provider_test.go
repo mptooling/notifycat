@@ -176,3 +176,33 @@ func TestSchedules_DistinctEnabledOnly(t *testing.T) {
 
 	assert.ElementsMatch(t, []string{weekdays, domain.DefaultDigestSchedule}, got, "a disabled tier contributes no schedule")
 }
+
+func TestGet_DeleteOnCloseMostSpecificTierWins(t *testing.T) {
+	enabled, disabled := true, false
+	provider := application.NewProvider(domain.Defaults{}, map[string]domain.Org{
+		"acme": {
+			"api": {Channel: "C0API", DeleteOnClose: &disabled},
+			"web": {Channel: "C0WEB"},
+			"*":   {Channel: "C0DEFAULT", DeleteOnClose: &enabled},
+		},
+	}, nil) // global default off
+
+	api, err := provider.Get(context.Background(), "acme/api")
+	require.NoError(t, err)
+	web, err := provider.Get(context.Background(), "acme/web")
+	require.NoError(t, err)
+
+	assert.False(t, api.DeleteOnClose, "the repo tier opts back out of the org-wide setting")
+	assert.True(t, web.DeleteOnClose, "a repo with no override inherits org/*")
+}
+
+func TestGet_DeleteOnCloseInheritsGlobal(t *testing.T) {
+	provider := application.NewProvider(domain.Defaults{DeleteOnClose: true}, map[string]domain.Org{
+		"acme": {"api": {Channel: "C0API"}},
+	}, nil)
+
+	got, err := provider.Get(context.Background(), "acme/api")
+
+	require.NoError(t, err)
+	assert.True(t, got.DeleteOnClose, "no tier sets the key, so the global value applies")
+}

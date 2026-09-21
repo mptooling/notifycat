@@ -109,6 +109,7 @@ func buildProvider(cfg config.Config, logger *slog.Logger) *routingapp.Provider 
 		},
 		IgnoreAIReviews:  cfg.IgnoreAIReviews,
 		DependabotFormat: cfg.DependabotFormat,
+		DeleteOnClose:    cfg.DeleteOnClose,
 		GitProvider:      cfg.GitProvider,
 	}
 	provider := routingapp.NewProvider(defaults, cfg.Mappings, cfg.Digest)

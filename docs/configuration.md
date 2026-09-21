@@ -101,6 +101,7 @@ Use Slack emoji names without surrounding colons. For example, set `approved: sh
 | Key | Default | Notes |
 | --- | --- | --- |
 | `cleanup.message_ttl_days` | `30` | Days a `slack_messages` row may go without an update before the in-process cleanup removes it. Must be `> 0`. The cleanup runs once at startup and then once every 24 hours; it only deletes the DB row, never the actual Slack message. |
+| `cleanup.delete_on_close` | `false` | When `true`, a merged or declined PR has its Slack message **deleted** instead of updated with the `[Merged]`/`[Closed]` tag, and its database row is dropped. Every channel the PR fanned out to loses its message; no closing reaction is added. Overridable per repository tier. Deletion is permanent — Slack has no undo. See [Remove messages on close](delete-on-close.md). |
 
 ### reviews
 

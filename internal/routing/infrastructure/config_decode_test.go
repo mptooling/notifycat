@@ -209,3 +209,31 @@ func TestRepoConfig_DigestCountryRejected(t *testing.T) {
 
 	require.Error(t, err)
 }
+
+func TestRepoConfig_DeleteOnCloseOverride(t *testing.T) {
+	org := decodeOrg(t, "api:\n  channel: C0API\n  cleanup:\n    delete_on_close: true\n")
+
+	api := org["api"]
+	require.NotNil(t, api.DeleteOnClose)
+	assert.True(t, *api.DeleteOnClose)
+}
+
+func TestRepoConfig_DeleteOnCloseAbsentMeansNil(t *testing.T) {
+	api := decodeOrg(t, "api:\n  channel: C0API\n")["api"]
+
+	assert.Nil(t, api.DeleteOnClose, "an absent cleanup block leaves the tier inheriting")
+}
+
+func TestRepoConfig_UnknownCleanupKeyRejected(t *testing.T) {
+	err := decodeOrgError("api:\n  channel: C0API\n  cleanup:\n    bogus: x\n")
+
+	require.Error(t, err)
+}
+
+func TestRepoConfig_CleanupMessageTTLRejected(t *testing.T) {
+	// message_ttl_days is a global-only knob (one sweep for the whole database);
+	// setting it on a per-repo tier must fail rather than be silently ignored.
+	err := decodeOrgError("api:\n  channel: C0API\n  cleanup:\n    message_ttl_days: 7\n")
+
+	require.Error(t, err)
+}

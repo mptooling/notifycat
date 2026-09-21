@@ -65,13 +65,25 @@ func resolveRouting(star, repo *domain.RepoConfig) domain.Resolved {
 	return domain.Resolved(primary)
 }
 
+// behavior is the effective behavioral config for one repository after merging
+// the global, org/*, and org/repo tiers.
+type behavior struct {
+	reactions        domain.Reactions
+	ignoreAIReviews  bool
+	dependabotFormat bool
+	deleteOnClose    bool
+}
+
 // resolveBehavior merges the global, org/*, and org/repo tiers for the
 // behavioral keys. For each key the most specific tier that set it wins; the
 // global value is the base. star/repo may be nil.
-func resolveBehavior(global domain.Defaults, star, repo *domain.RepoConfig) (domain.Reactions, bool, bool) {
-	rx := global.Reactions
-	ignoreAI := global.IgnoreAIReviews
-	dependabot := global.DependabotFormat
+func resolveBehavior(global domain.Defaults, star, repo *domain.RepoConfig) behavior {
+	resolved := behavior{
+		reactions:        global.Reactions,
+		ignoreAIReviews:  global.IgnoreAIReviews,
+		dependabotFormat: global.DependabotFormat,
+		deleteOnClose:    global.DeleteOnClose,
+	}
 
 	apply := func(rc *domain.RepoConfig) {
 		if rc == nil {
@@ -79,29 +91,32 @@ func resolveBehavior(global domain.Defaults, star, repo *domain.RepoConfig) (dom
 		}
 		if o := rc.Reactions; o != nil {
 			if o.Enabled != nil {
-				rx.Enabled = *o.Enabled
+				resolved.reactions.Enabled = *o.Enabled
 			}
-			setStr(&rx.NewPR, o.NewPR)
-			setStr(&rx.MergedPR, o.MergedPR)
-			setStr(&rx.ClosedPR, o.ClosedPR)
-			setStr(&rx.Approved, o.Approved)
-			setStr(&rx.Commented, o.Commented)
-			setStr(&rx.RequestChange, o.RequestChange)
-			setStr(&rx.BotReview, o.BotReview)
+			setStr(&resolved.reactions.NewPR, o.NewPR)
+			setStr(&resolved.reactions.MergedPR, o.MergedPR)
+			setStr(&resolved.reactions.ClosedPR, o.ClosedPR)
+			setStr(&resolved.reactions.Approved, o.Approved)
+			setStr(&resolved.reactions.Commented, o.Commented)
+			setStr(&resolved.reactions.RequestChange, o.RequestChange)
+			setStr(&resolved.reactions.BotReview, o.BotReview)
 		}
-		if rc.IgnoreAIReviews != nil {
-			ignoreAI = *rc.IgnoreAIReviews
-		}
-		if rc.DependabotFormat != nil {
-			dependabot = *rc.DependabotFormat
-		}
+		setBool(&resolved.ignoreAIReviews, rc.IgnoreAIReviews)
+		setBool(&resolved.dependabotFormat, rc.DependabotFormat)
+		setBool(&resolved.deleteOnClose, rc.DeleteOnClose)
 	}
 	apply(star)
 	apply(repo)
-	return rx, ignoreAI, dependabot
+	return resolved
 }
 
 func setStr(dst *string, v *string) {
+	if v != nil {
+		*dst = *v
+	}
+}
+
+func setBool(dst *bool, v *bool) {
 	if v != nil {
 		*dst = *v
 	}

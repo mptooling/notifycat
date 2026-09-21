@@ -382,3 +382,11 @@ func TestClient_RateLimitedGivesUpAfterMaxAttempts(t *testing.T) {
 	assert.Equal(t, "ratelimited", apiErr.Code)
 	assert.Equal(t, 3, attempts, "three attempts, then the error surfaces")
 }
+
+func TestClient_DeleteMessage_MessageNotFoundIsNotError(t *testing.T) {
+	fake := newFakeSlack(t, okJSON(`{"ok":false,"error":"message_not_found"}`))
+
+	err := fake.client().DeleteMessage(context.Background(), "C1", "ts1")
+
+	assert.NoError(t, err, "a message someone already removed by hand is the state we wanted")
+}

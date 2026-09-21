@@ -640,3 +640,89 @@ func TestIntegration_IgnoreAIReviewsDisabled_BotReviewerStillReacts(t *testing.T
 	require.Equal(t, http.StatusOK, status)
 	assert.Contains(t, fixture.slack.paths(), "/api/reactions.add")
 }
+
+// closeMergedPayload is the merged-PR webhook body the delete-on-close tests post.
+const closeMergedPayload = `{
+	"action": "closed",
+	"repository": {"full_name": "octo/widget"},
+	"pull_request": {
+		"number": 42, "title": "fix", "html_url": "u",
+		"user": {"login": "bob"}, "merged": true
+	}
+}`
+
+func TestIntegration_DeleteOnClose_MergedRemovesMessage(t *testing.T) {
+	fixture := newIntegrationFixtureCfg(t,
+		func(cfg *config.Config) { cfg.DeleteOnClose = true },
+		mappingSeed{repository: "octo/widget", channel: "C123ABCDE"},
+	)
+	fixture.seedMessage(t, "octo/widget", 42, "prev-ts")
+
+	status := fixture.post(t, closeMergedPayload)
+
+	require.Equal(t, http.StatusOK, status)
+	assert.Contains(t, fixture.slack.paths(), "/api/chat.delete")
+	assert.NotContains(t, fixture.slack.paths(), "/api/chat.update", "a removed message is never decorated")
+	_, err := fixture.loadMessage(t, "octo/widget", 42)
+	assert.Error(t, err, "the stored row goes with the Slack message")
+}
+
+func TestIntegration_DeleteOnClose_DeclinedRemovesMessage(t *testing.T) {
+	fixture := newIntegrationFixtureCfg(t,
+		func(cfg *config.Config) { cfg.DeleteOnClose = true },
+		mappingSeed{repository: "octo/widget", channel: "C123ABCDE"},
+	)
+	fixture.seedMessage(t, "octo/widget", 42, "prev-ts")
+
+	status := fixture.post(t, `{
+		"action": "closed",
+		"repository": {"full_name": "octo/widget"},
+		"pull_request": {
+			"number": 42, "title": "fix", "html_url": "u",
+			"user": {"login": "bob"}, "merged": false
+		}
+	}`)
+
+	require.Equal(t, http.StatusOK, status)
+	assert.Contains(t, fixture.slack.paths(), "/api/chat.delete")
+	assert.NotContains(t, fixture.slack.paths(), "/api/chat.update")
+}
+
+func TestIntegration_DeleteOnClose_RepoTierOptsIn(t *testing.T) {
+	enabled := true
+	fixture := newIntegrationFixtureCfg(t,
+		func(cfg *config.Config) {
+			cfg.DeleteOnClose = false // global default stays off
+			tier := cfg.Mappings["octo"]["widget"]
+			tier.DeleteOnClose = &enabled
+			cfg.Mappings["octo"]["widget"] = tier
+		},
+		mappingSeed{repository: "octo/widget", channel: "C123ABCDE"},
+	)
+	fixture.seedMessage(t, "octo/widget", 42, "prev-ts")
+
+	status := fixture.post(t, closeMergedPayload)
+
+	require.Equal(t, http.StatusOK, status)
+	assert.Contains(t, fixture.slack.paths(), "/api/chat.delete", "the repo tier overrides the global default")
+}
+
+func TestIntegration_DeleteOnClose_RepoTierOptsOut(t *testing.T) {
+	disabled := false
+	fixture := newIntegrationFixtureCfg(t,
+		func(cfg *config.Config) {
+			cfg.DeleteOnClose = true // global default on
+			tier := cfg.Mappings["octo"]["widget"]
+			tier.DeleteOnClose = &disabled
+			cfg.Mappings["octo"]["widget"] = tier
+		},
+		mappingSeed{repository: "octo/widget", channel: "C123ABCDE"},
+	)
+	fixture.seedMessage(t, "octo/widget", 42, "prev-ts")
+
+	status := fixture.post(t, closeMergedPayload)
+
+	require.Equal(t, http.StatusOK, status)
+	assert.Contains(t, fixture.slack.paths(), "/api/chat.update", "the repo tier keeps the [Merged] update")
+	assert.NotContains(t, fixture.slack.paths(), "/api/chat.delete")
+}

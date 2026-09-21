@@ -220,3 +220,93 @@ func TestCloseHandler_ReviewersLoadFailureSoftDegrades(t *testing.T) {
 	assert.Empty(t, messenger.closes[0].req.ReviewerIDs)
 	assert.True(t, store.closed[storeKey("octo/widget", 42)])
 }
+
+// deleteOnCloseBehavior is the repo behavior for the delete-on-close branch:
+// the flag is on and reactions stay enabled, so a test that sees no reaction
+// proves the branch skipped it rather than inheriting a disabled set.
+func deleteOnCloseBehavior() *fakeBehavior {
+	return &fakeBehavior{mapping: routingdomain.RepoMapping{
+		DeleteOnClose: true,
+		Reactions: routingdomain.Reactions{
+			Enabled:  true,
+			MergedPR: "twisted_rightwards_arrows",
+			ClosedPR: "x",
+		},
+	}}
+}
+
+func TestCloseHandler_DeleteOnClose_MergedDeletesMessage(t *testing.T) {
+	store := storeWithMessage("octo/widget", 42)
+	messenger := &fakeMessenger{}
+	handler := newCloseHandler(store, deleteOnCloseBehavior(), messenger, &fakeReviewSessions{})
+
+	err := handler.Handle(context.Background(), closedMergedEvent("octo/widget", 42))
+
+	require.NoError(t, err)
+	assert.Equal(t, []deleteCall{{channel: "C123", messageID: "ts1"}}, messenger.deletes)
+	assert.Empty(t, messenger.closes, "a deleted message is never decorated with [Merged]")
+	assert.Empty(t, messenger.reactions, "a deleted message cannot carry a reaction")
+}
+
+func TestCloseHandler_DeleteOnClose_DeclinedDeletesMessage(t *testing.T) {
+	store := storeWithMessage("octo/widget", 42)
+	messenger := &fakeMessenger{}
+	handler := newCloseHandler(store, deleteOnCloseBehavior(), messenger, &fakeReviewSessions{})
+
+	err := handler.Handle(context.Background(), closedNotMergedEvent("octo/widget", 42))
+
+	require.NoError(t, err)
+	assert.Equal(t, []deleteCall{{channel: "C123", messageID: "ts1"}}, messenger.deletes)
+	assert.Empty(t, messenger.closes, "a deleted message is never decorated with [Closed]")
+}
+
+func TestCloseHandler_DeleteOnClose_DeletesEveryChannelsMessage(t *testing.T) {
+	store := newFakeMessageStore()
+	store.seed("acme/web", 7,
+		domain.Message{Channel: "C0A", MessageID: "100.1"},
+		domain.Message{Channel: "C0B", MessageID: "200.1"},
+	)
+	messenger := &fakeMessenger{}
+	handler := newCloseHandler(store, deleteOnCloseBehavior(), messenger, &fakeReviewSessions{})
+
+	err := handler.Handle(context.Background(), closedMergedEvent("acme/web", 7))
+
+	require.NoError(t, err)
+	assert.Equal(t, []deleteCall{
+		{channel: "C0A", messageID: "100.1"},
+		{channel: "C0B", messageID: "200.1"},
+	}, messenger.deletes, "every channel the PR fanned out to loses its message")
+}
+
+func TestCloseHandler_DeleteOnClose_DropsPRRow(t *testing.T) {
+	store := storeWithMessage("octo/widget", 42)
+	handler := newCloseHandler(store, deleteOnCloseBehavior(), &fakeMessenger{}, &fakeReviewSessions{})
+
+	err := handler.Handle(context.Background(), closedMergedEvent("octo/widget", 42))
+
+	require.NoError(t, err)
+	assert.True(t, store.deleted[storeKey("octo/widget", 42)])
+	assert.False(t, store.closed[storeKey("octo/widget", 42)], "a dropped row is never also marked closed")
+}
+
+func TestCloseHandler_DeleteOnClose_FinishesReviewSession(t *testing.T) {
+	store := storeWithMessage("octo/widget", 42)
+	reviews := &fakeReviewSessions{}
+	handler := newCloseHandler(store, deleteOnCloseBehavior(), &fakeMessenger{}, reviews)
+
+	err := handler.Handle(context.Background(), closedMergedEvent("octo/widget", 42))
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, reviews.finished, "deleting the message still ends any active review session")
+}
+
+func TestCloseHandler_DeleteOnClose_DeleteFailureAborts(t *testing.T) {
+	store := storeWithMessage("octo/widget", 42)
+	messenger := &fakeMessenger{deleteErr: errInjected}
+	handler := newCloseHandler(store, deleteOnCloseBehavior(), messenger, &fakeReviewSessions{})
+
+	err := handler.Handle(context.Background(), closedMergedEvent("octo/widget", 42))
+
+	require.ErrorIs(t, err, errInjected)
+	assert.False(t, store.deleted[storeKey("octo/widget", 42)], "the row survives a failed delete so a retry can find it")
+}
