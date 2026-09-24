@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.26.0](https://github.com/mptooling/notifycat/compare/v0.25.0...v0.26.0) (2026-09-24)
+
+
+### 🚀 Features
+
+* **notification:** keep a message that has thread replies on delete-on-close ([#207](https://github.com/mptooling/notifycat/issues/207)) ([6b694fb](https://github.com/mptooling/notifycat/commit/6b694fb2b705b1ad1d282eba98e42171d6202818))
+
+
+### 📝 Documentation
+
+* add the integration-testing design and implementation plan ([#203](https://github.com/mptooling/notifycat/issues/203)) ([8095a4f](https://github.com/mptooling/notifycat/commit/8095a4fbf2d26c382edd851cf97bab9b9ef8c92e))
+
 ## [0.25.0](https://github.com/mptooling/notifycat/compare/v0.24.1...v0.25.0) (2026-09-21)
 
 
