@@ -3,6 +3,7 @@ package runtime_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -38,6 +39,9 @@ type slackFake struct {
 	*httptest.Server
 	mu    sync.Mutex
 	calls []fakeCall
+	// historyReplyCount is the reply_count conversations.history reports for
+	// the requested message.
+	historyReplyCount int
 }
 
 type fakeCall struct {
@@ -73,6 +77,11 @@ func newSlackFake(t *testing.T) *slackFake {
 			_, _ = io.WriteString(w, `{"ok":true,"message":{"reactions":[]}}`)
 		case "/api/auth.test":
 			_, _ = io.WriteString(w, `{"ok":true,"user_id":"UBOTTEST"}`)
+		case "/api/conversations.history":
+			fake.mu.Lock()
+			replyCount := fake.historyReplyCount
+			fake.mu.Unlock()
+			_, _ = fmt.Fprintf(w, `{"ok":true,"messages":[{"ts":%q,"reply_count":%d}]}`, r.URL.Query().Get("latest"), replyCount)
 		default:
 			_, _ = io.WriteString(w, `{"ok":true}`)
 		}
@@ -146,11 +155,10 @@ func newIntegrationFixtureCfg(t *testing.T, mutate func(*config.Config), seeds .
 			RequestChange: "exclamation",
 		},
 	}
-	primeLock(t, configPath, routingapp.NewProvider(routingdomain.Defaults{}, cfg.Mappings, cfg.Digest))
-
 	if mutate != nil {
 		mutate(&cfg)
 	}
+	primeLock(t, configPath, routingapp.NewProvider(routingdomain.Defaults{DeleteOnClose: cfg.DeleteOnClose}, cfg.Mappings, cfg.Digest))
 
 	server := httptest.NewServer(buildTestServer(t, cfg).Handler)
 	t.Cleanup(server.Close)
@@ -665,6 +673,23 @@ func TestIntegration_DeleteOnClose_MergedRemovesMessage(t *testing.T) {
 	assert.NotContains(t, fixture.slack.paths(), "/api/chat.update", "a removed message is never decorated")
 	_, err := fixture.loadMessage(t, "octo/widget", 42)
 	assert.Error(t, err, "the stored row goes with the Slack message")
+}
+
+func TestIntegration_DeleteOnClose_KeepsMessageWithThreadReplies(t *testing.T) {
+	fixture := newIntegrationFixtureCfg(t,
+		func(cfg *config.Config) { cfg.DeleteOnClose = true },
+		mappingSeed{repository: "octo/widget", channel: "C123ABCDE"},
+	)
+	fixture.slack.mu.Lock()
+	fixture.slack.historyReplyCount = 2
+	fixture.slack.mu.Unlock()
+	fixture.seedMessage(t, "octo/widget", 42, "prev-ts")
+
+	status := fixture.post(t, closeMergedPayload)
+
+	require.Equal(t, http.StatusOK, status)
+	assert.NotContains(t, fixture.slack.paths(), "/api/chat.delete", "the thread discussion survives the merge")
+	assert.Contains(t, fixture.slack.paths(), "/api/chat.update", "the kept message still gets the [Merged] tag")
 }
 
 func TestIntegration_DeleteOnClose_DeclinedRemovesMessage(t *testing.T) {

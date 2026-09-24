@@ -2,6 +2,7 @@ package infrastructure
 
 import (
 	"context"
+	"errors"
 
 	"github.com/mptooling/notifycat/internal/kernel"
 	"github.com/mptooling/notifycat/internal/notification/domain"
@@ -75,6 +76,19 @@ func (m *SlackMessenger) AddReaction(ctx context.Context, channel, messageID, em
 // Delete implements domain.Messenger.
 func (m *SlackMessenger) Delete(ctx context.Context, channel, messageID string) error {
 	return m.client.DeleteMessage(ctx, channel, messageID)
+}
+
+// HasThreadReplies implements domain.Messenger. A message that is already gone
+// has no thread left to protect.
+func (m *SlackMessenger) HasThreadReplies(ctx context.Context, channel, messageID string) (bool, error) {
+	replyCount, err := m.client.ReplyCount(ctx, channel, messageID)
+	if errors.Is(err, slack.ErrMessageNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return replyCount > 0, nil
 }
 
 // prDetails adapts a repository + kernel.PR to the composer's PRDetails shape.

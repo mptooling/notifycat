@@ -26,6 +26,10 @@ type Entry struct {
 	// every entry so flipping the provider — under which the same org/repo names
 	// point at different remote objects — revalidates the whole lock.
 	Provider kernel.Provider
+	// DeleteOnClose is the entry's resolved cleanup.delete_on_close. It hashes
+	// into the entry because it adds required Slack scopes; omitted when false so
+	// existing lock hashes stay valid.
+	DeleteOnClose bool
 }
 
 // Key returns the lock-file key for the entry: "org/repo" or "org/*".
@@ -47,12 +51,13 @@ func (e Entry) Hash() string {
 		repo = "*"
 	}
 	payload := struct {
-		Provider     kernel.Provider `json:"provider"`
-		Org          string          `json:"org"`
-		Repo         string          `json:"repo"`
-		Channel      string          `json:"channel"`
-		PathChannels []string        `json:"path_channels,omitempty"`
-	}{e.Provider, e.Org, repo, e.Channel, e.ExtraChannels}
+		Provider      kernel.Provider `json:"provider"`
+		Org           string          `json:"org"`
+		Repo          string          `json:"repo"`
+		Channel       string          `json:"channel"`
+		PathChannels  []string        `json:"path_channels,omitempty"`
+		DeleteOnClose bool            `json:"delete_on_close,omitempty"`
+	}{e.Provider, e.Org, repo, e.Channel, e.ExtraChannels, e.DeleteOnClose}
 	// json.Marshal cannot fail for a fixed struct of supported types.
 	b, _ := json.Marshal(payload)
 	sum := sha256.Sum256(b)

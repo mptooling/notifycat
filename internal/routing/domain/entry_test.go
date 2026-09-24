@@ -65,3 +65,10 @@ func TestEntryHash_ChangesWhenExtraChannelAdded(t *testing.T) {
 
 	assert.NotEqual(t, before.Hash(), after.Hash())
 }
+
+func TestEntry_Hash_DiffersOnDeleteOnClose(t *testing.T) {
+	keeps := Entry{Org: "acme", Repo: "api", Channel: "C1", Provider: kernel.ProviderGitHub}
+	deletes := Entry{Org: "acme", Repo: "api", Channel: "C1", Provider: kernel.ProviderGitHub, DeleteOnClose: true}
+
+	assert.NotEqual(t, keeps.Hash(), deletes.Hash(), "turning on delete_on_close adds required Slack scopes, so it must re-run validation")
+}

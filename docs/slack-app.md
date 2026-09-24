@@ -94,11 +94,16 @@ off keeps the bot at least privilege.
 
 ### Optional: `channels:history` / `groups:history`
 
-Also **not** required for normal operation — the server never reads a posted message back. They are needed by
-[`notifycat-relocate`](cli.md#notifycat-relocate) alone, which reads a message's blocks (`conversations.history`) in
-order to repost them in another channel. `channels:history` covers public channels, `groups:history` private ones. The
-command refuses to start without them rather than failing partway, and it is the only thing that asks for them: grant
-them when you need to move messages, and leave them off otherwise.
+Not required for normal operation. Two features read a posted message back with `conversations.history`, and only
+they need these scopes. `channels:history` covers public channels, `groups:history` private ones.
+
+- [`cleanup.delete_on_close`](delete-on-close.md) reads the message before it deletes it, to keep a message that has a
+  thread discussion. Startup validation (and `notifycat-config validate`) fails an entry that has the flag on while
+  either scope is missing. Both are required because a channel ID does not tell a public channel from a private one.
+- [`notifycat-relocate`](cli.md#notifycat-relocate) reads a message's blocks in order to repost them in another
+  channel. The command refuses to start without the scopes rather than failing partway.
+
+Grant them when you use one of these features, and leave them off otherwise.
 
 ## Channel access
 

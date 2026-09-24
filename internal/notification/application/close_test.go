@@ -310,3 +310,47 @@ func TestCloseHandler_DeleteOnClose_DeleteFailureAborts(t *testing.T) {
 	require.ErrorIs(t, err, errInjected)
 	assert.False(t, store.deleted[storeKey("octo/widget", 42)], "the row survives a failed delete so a retry can find it")
 }
+
+func TestCloseHandler_DeleteOnClose_KeepsMessageWithThreadReplies(t *testing.T) {
+	store := storeWithMessage("octo/widget", 42)
+	messenger := &fakeMessenger{threadedMessageIDs: map[string]bool{"ts1": true}}
+	handler := newCloseHandler(store, deleteOnCloseBehavior(), messenger, &fakeReviewSessions{})
+
+	err := handler.Handle(context.Background(), closedMergedEvent("octo/widget", 42))
+
+	require.NoError(t, err)
+	assert.Empty(t, messenger.deletes, "deleting the parent would lose the thread discussion")
+	require.Len(t, messenger.closes, 1)
+	assert.True(t, messenger.closes[0].req.Merged)
+	assert.Equal(t, []string{"twisted_rightwards_arrows"}, messenger.reactionEmojis())
+}
+
+func TestCloseHandler_DeleteOnClose_DeletesOnlyMessagesWithoutThread(t *testing.T) {
+	store := newFakeMessageStore()
+	store.seed("acme/web", 7,
+		domain.Message{Channel: "C0A", MessageID: "100.1"},
+		domain.Message{Channel: "C0B", MessageID: "200.1"},
+	)
+	messenger := &fakeMessenger{threadedMessageIDs: map[string]bool{"200.1": true}}
+	handler := newCloseHandler(store, deleteOnCloseBehavior(), messenger, &fakeReviewSessions{})
+
+	err := handler.Handle(context.Background(), closedMergedEvent("acme/web", 7))
+
+	require.NoError(t, err)
+	assert.Equal(t, []deleteCall{{channel: "C0A", messageID: "100.1"}}, messenger.deletes)
+	require.Len(t, messenger.closes, 1)
+	assert.Equal(t, "C0B", messenger.closes[0].channel)
+}
+
+func TestCloseHandler_DeleteOnClose_ThreadCheckFailureKeepsMessage(t *testing.T) {
+	store := storeWithMessage("octo/widget", 42)
+	messenger := &fakeMessenger{threadErr: errInjected}
+	handler := newCloseHandler(store, deleteOnCloseBehavior(), messenger, &fakeReviewSessions{})
+
+	err := handler.Handle(context.Background(), closedMergedEvent("octo/widget", 42))
+
+	require.NoError(t, err)
+	assert.Empty(t, messenger.deletes, "an unknown thread state never risks a delete")
+	assert.Len(t, messenger.closes, 1)
+	assert.True(t, store.deleted[storeKey("octo/widget", 42)])
+}

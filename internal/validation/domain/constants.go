@@ -17,6 +17,12 @@ const WebhookURLPathBitbucket = "/webhook/bitbucket"
 // separate scope check.
 var RequiredSlackScopes = []string{"chat:write", "reactions:write"}
 
+// DeleteOnCloseSlackScopes are required on top of RequiredSlackScopes when an
+// entry deletes its message on close: the close handler reads the message
+// (conversations.history) to keep one that has a thread discussion. Both are
+// required because a channel ID does not tell a public channel from a private one.
+var DeleteOnCloseSlackScopes = []string{"channels:history", "groups:history"}
+
 // RequiredGitHubEvents are the webhook event types the dispatcher consumes.
 var RequiredGitHubEvents = []string{
 	"pull_request",

@@ -11,12 +11,12 @@ import (
 
 // slackAuthCheck verifies the token works and folds any missing required scopes
 // into the same CheckResult so operators see one clear failure line.
-func (v *Validator) slackAuthCheck(ctx context.Context) domain.CheckResult {
+func (v *Validator) slackAuthCheck(ctx context.Context, requiredScopes []string) domain.CheckResult {
 	_, scopes, err := v.slack.AuthTest(ctx)
 	if err != nil {
 		return slackAuthErrorResult(err)
 	}
-	if missing := missingScopes(scopes, domain.RequiredSlackScopes); len(missing) > 0 {
+	if missing := missingScopes(scopes, requiredScopes); len(missing) > 0 {
 		return domain.CheckResult{
 			Name:   "slack-auth",
 			Status: domain.StatusFail,
@@ -26,7 +26,7 @@ func (v *Validator) slackAuthCheck(ctx context.Context) domain.CheckResult {
 	return domain.CheckResult{
 		Name:   "slack-auth",
 		Status: domain.StatusOK,
-		Detail: fmt.Sprintf("token valid; granted scopes include %s", strings.Join(domain.RequiredSlackScopes, ", ")),
+		Detail: fmt.Sprintf("token valid; granted scopes include %s", strings.Join(requiredScopes, ", ")),
 	}
 }
 

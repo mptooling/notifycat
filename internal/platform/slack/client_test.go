@@ -390,3 +390,37 @@ func TestClient_DeleteMessage_MessageNotFoundIsNotError(t *testing.T) {
 
 	assert.NoError(t, err, "a message someone already removed by hand is the state we wanted")
 }
+
+func TestClient_ReplyCount_ReadsThreadReplyCount(t *testing.T) {
+	fake := newFakeSlack(t, okJSON(`{"ok":true,"messages":[{"ts":"100.1","thread_ts":"100.1","reply_count":3}]}`))
+
+	replyCount, err := fake.client().ReplyCount(context.Background(), "C123", "100.1")
+
+	require.NoError(t, err)
+	assert.Equal(t, 3, replyCount)
+
+	call := fake.lastCall(t)
+	assert.Equal(t, "/api/conversations.history", call.Path)
+	assert.Equal(t, []string{"C123"}, call.Query["channel"])
+	assert.Equal(t, []string{"100.1"}, call.Query["latest"])
+	assert.Equal(t, []string{"100.1"}, call.Query["oldest"])
+	assert.Equal(t, []string{"true"}, call.Query["inclusive"])
+	assert.Equal(t, []string{"1"}, call.Query["limit"])
+}
+
+func TestClient_ReplyCount_MessageWithoutThreadIsZero(t *testing.T) {
+	fake := newFakeSlack(t, okJSON(`{"ok":true,"messages":[{"ts":"100.1","text":"hi"}]}`))
+
+	replyCount, err := fake.client().ReplyCount(context.Background(), "C123", "100.1")
+
+	require.NoError(t, err)
+	assert.Zero(t, replyCount)
+}
+
+func TestClient_ReplyCount_MissingMessageIsSentinel(t *testing.T) {
+	fake := newFakeSlack(t, okJSON(`{"ok":true,"messages":[]}`))
+
+	_, err := fake.client().ReplyCount(context.Background(), "C123", "100.1")
+
+	require.ErrorIs(t, err, slack.ErrMessageNotFound)
+}

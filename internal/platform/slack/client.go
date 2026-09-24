@@ -153,20 +153,40 @@ func (c *Client) MessageContent(ctx context.Context, channel, ts string) (RawMes
 			Blocks []json.RawMessage `json:"blocks"`
 		} `json:"messages"`
 	}
-	query := url.Values{
-		"channel":   {channel},
-		"latest":    {ts},
-		"oldest":    {ts},
-		"inclusive": {"true"},
-		"limit":     {"1"},
-	}
-	if err := c.getJSON(ctx, "conversations.history", query, &resp, nil); err != nil {
+	if err := c.getJSON(ctx, "conversations.history", singleMessageQuery(channel, ts), &resp, nil); err != nil {
 		return RawMessageContent{}, err
 	}
 	if len(resp.Messages) == 0 {
 		return RawMessageContent{}, fmt.Errorf("%w: %s/%s", ErrMessageNotFound, channel, ts)
 	}
 	return RawMessageContent{Blocks: resp.Messages[0].Blocks, Fallback: resp.Messages[0].Text}, nil
+}
+
+// ReplyCount reads how many replies sit in the thread under the message at ts.
+func (c *Client) ReplyCount(ctx context.Context, channel, ts string) (int, error) {
+	var resp struct {
+		Messages []struct {
+			ReplyCount int `json:"reply_count"`
+		} `json:"messages"`
+	}
+	if err := c.getJSON(ctx, "conversations.history", singleMessageQuery(channel, ts), &resp, nil); err != nil {
+		return 0, err
+	}
+	if len(resp.Messages) == 0 {
+		return 0, fmt.Errorf("%w: %s/%s", ErrMessageNotFound, channel, ts)
+	}
+	return resp.Messages[0].ReplyCount, nil
+}
+
+// singleMessageQuery narrows conversations.history to exactly the message at ts.
+func singleMessageQuery(channel, ts string) url.Values {
+	return url.Values{
+		"channel":   {channel},
+		"latest":    {ts},
+		"oldest":    {ts},
+		"inclusive": {"true"},
+		"limit":     {"1"},
+	}
 }
 
 // PostMessageRawBlocks posts a new message from pre-rendered blocks and returns
