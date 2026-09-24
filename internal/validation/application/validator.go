@@ -61,7 +61,7 @@ func (v *Validator) validateMapping(ctx context.Context, m routingdomain.RepoMap
 		)
 		return r
 	}
-	r.Checks = append(r.Checks, v.slackChecks(ctx, m.SlackChannel, v.mappings.AdditionalChannels(m.Repository))...)
+	r.Checks = append(r.Checks, v.slackChecks(ctx, m, v.mappings.AdditionalChannels(m.Repository))...)
 	r.Checks = append(r.Checks, v.hookCheck(ctx, m.Repository))
 	return r
 }
@@ -70,8 +70,8 @@ func (v *Validator) validateMapping(ctx context.Context, m routingdomain.RepoMap
 // channel and each additional channel, short-circuiting every probe when auth
 // itself failed. Additional channels are checked so a channel the bot isn't in
 // fails at validation, not at post time.
-func (v *Validator) slackChecks(ctx context.Context, channel string, additionalChannels []string) []domain.CheckResult {
-	auth := v.slackAuthCheck(ctx)
+func (v *Validator) slackChecks(ctx context.Context, m routingdomain.RepoMapping, additionalChannels []string) []domain.CheckResult {
+	auth := v.slackAuthCheck(ctx, requiredSlackScopes(m))
 	if auth.Status != domain.StatusOK {
 		checks := []domain.CheckResult{auth, skip("slack-channel", "slack auth failed; skipping channel probe")}
 		for _, pc := range additionalChannels {
@@ -79,11 +79,18 @@ func (v *Validator) slackChecks(ctx context.Context, channel string, additionalC
 		}
 		return checks
 	}
-	checks := []domain.CheckResult{auth, v.slackChannelCheck(ctx, channel)}
+	checks := []domain.CheckResult{auth, v.slackChannelCheck(ctx, m.SlackChannel)}
 	for _, pc := range additionalChannels {
 		checks = append(checks, named("slack-channel "+pc, v.slackChannelCheck(ctx, pc)))
 	}
 	return checks
+}
+
+func requiredSlackScopes(m routingdomain.RepoMapping) []string {
+	if !m.DeleteOnClose {
+		return domain.RequiredSlackScopes
+	}
+	return append(append([]string(nil), domain.RequiredSlackScopes...), domain.DeleteOnCloseSlackScopes...)
 }
 
 // named overrides a CheckResult's Name, used to disambiguate the per-path

@@ -55,10 +55,23 @@ func (h *CloseHandler) Handle(ctx context.Context, event kernel.Event) error {
 		return err
 	}
 
+	request := h.closedRequest(ctx, event, behavior)
 	if behavior.DeleteOnClose {
-		return h.deleteMessages(ctx, event, messages)
+		return h.deleteMessages(ctx, event, messages, behavior, request)
 	}
 
+	for _, message := range messages {
+		if err := h.decorateClosed(ctx, message, behavior, request); err != nil {
+			return err
+		}
+	}
+	if err := h.reviews.Finish(ctx, event.Repository, event.PR.Number); err != nil {
+		return err
+	}
+	return h.store.MarkClosed(ctx, event.Repository, event.PR.Number)
+}
+
+func (h *CloseHandler) closedRequest(ctx context.Context, event kernel.Event, behavior routingdomain.RepoMapping) domain.ClosedRequest {
 	emoji := behavior.Reactions.ClosedPR
 	if event.PR.Merged {
 		emoji = behavior.Reactions.MergedPR
@@ -73,34 +86,37 @@ func (h *CloseHandler) Handle(ctx context.Context, event kernel.Event) error {
 		reviewers = nil
 	}
 
-	request := domain.ClosedRequest{
+	return domain.ClosedRequest{
 		Repository:  event.Repository,
 		PR:          event.PR,
 		Merged:      event.PR.Merged,
 		Emoji:       emoji,
 		ReviewerIDs: distinctReviewerIDs(reviewers),
 	}
-	for _, message := range messages {
-		if err := h.messenger.UpdateClosed(ctx, message.Channel, message.MessageID, request); err != nil {
-			return err
-		}
-		if behavior.Reactions.Enabled {
-			if err := h.messenger.AddReaction(ctx, message.Channel, message.MessageID, emoji); err != nil {
-				return err
-			}
-		}
-	}
-	if err := h.reviews.Finish(ctx, event.Repository, event.PR.Number); err != nil {
+}
+
+func (h *CloseHandler) decorateClosed(ctx context.Context, message domain.Message, behavior routingdomain.RepoMapping, request domain.ClosedRequest) error {
+	if err := h.messenger.UpdateClosed(ctx, message.Channel, message.MessageID, request); err != nil {
 		return err
 	}
-	return h.store.MarkClosed(ctx, event.Repository, event.PR.Number)
+	if behavior.Reactions.Enabled {
+		return h.messenger.AddReaction(ctx, message.Channel, message.MessageID, request.Emoji)
+	}
+	return nil
 }
 
 // deleteMessages is the DeleteOnClose branch: every fanned-out message is
-// removed and the PR row is dropped. Nothing is left to update or react to, so
-// the PR also leaves the digest immediately.
-func (h *CloseHandler) deleteMessages(ctx context.Context, event kernel.Event, messages []domain.Message) error {
+// removed and the PR row is dropped, so the PR also leaves the digest
+// immediately. A message with a thread discussion is decorated instead, since
+// deleting the parent would take the replies with it.
+func (h *CloseHandler) deleteMessages(ctx context.Context, event kernel.Event, messages []domain.Message, behavior routingdomain.RepoMapping, request domain.ClosedRequest) error {
 	for _, message := range messages {
+		if h.hasThreadReplies(ctx, event, message) {
+			if err := h.decorateClosed(ctx, message, behavior, request); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := h.messenger.Delete(ctx, message.Channel, message.MessageID); err != nil {
 			return err
 		}
@@ -109,6 +125,24 @@ func (h *CloseHandler) deleteMessages(ctx context.Context, event kernel.Event, m
 		return err
 	}
 	return h.store.Delete(ctx, event.Repository, event.PR.Number)
+}
+
+// hasThreadReplies treats a failed lookup as "has replies": an unknown thread
+// state must never risk deleting a discussion.
+func (h *CloseHandler) hasThreadReplies(ctx context.Context, event kernel.Event, message domain.Message) bool {
+	threaded, err := h.messenger.HasThreadReplies(ctx, message.Channel, message.MessageID)
+	if err != nil {
+		h.logger.Warn("could not read thread replies; keeping message",
+			slog.String("repository", event.Repository), slog.Int("pr", event.PR.Number),
+			slog.String("channel", message.Channel), slog.Any("err", err))
+		return true
+	}
+	if threaded {
+		h.logger.Info("kept message with thread replies",
+			slog.String("repository", event.Repository), slog.Int("pr", event.PR.Number),
+			slog.String("channel", message.Channel))
+	}
+	return threaded
 }
 
 // distinctReviewerIDs returns the reviewers' Slack user IDs in first-seen order,

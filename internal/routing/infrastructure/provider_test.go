@@ -206,3 +206,21 @@ func TestGet_DeleteOnCloseInheritsGlobal(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, got.DeleteOnClose, "no tier sets the key, so the global value applies")
 }
+
+func TestEntries_CarryResolvedDeleteOnClose(t *testing.T) {
+	keep := false
+	provider := application.NewProvider(domain.Defaults{DeleteOnClose: true}, map[string]domain.Org{
+		"acme": {
+			"api":     {Channel: "C0API"},
+			"archive": {Channel: "C0ARCHIVE", DeleteOnClose: &keep},
+			"*":       {Channel: "C0DEFAULT"},
+		},
+	}, nil)
+
+	entries := provider.Entries()
+
+	require.Len(t, entries, 3)
+	assert.True(t, entries[0].DeleteOnClose, "acme/api inherits the global setting")
+	assert.False(t, entries[1].DeleteOnClose, "acme/archive overrides it")
+	assert.True(t, entries[2].DeleteOnClose, "acme/* inherits the global setting")
+}

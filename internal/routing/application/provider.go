@@ -116,11 +116,20 @@ func (p *Provider) Entries() []domain.Entry {
 				Mentions:      res.Mentions,
 				ExtraChannels: additionalChannels(starPtr, &rc),
 				Provider:      p.defaults.GitProvider,
+				DeleteOnClose: resolveBehavior(p.defaults, starPtr, &rc).deleteOnClose,
 			})
 		}
 		if starPtr != nil {
 			res := resolveRouting(starPtr, nil)
-			out = append(out, domain.Entry{Org: org, Wildcard: true, Channel: res.Channel, Mentions: res.Mentions, ExtraChannels: additionalChannels(starPtr, nil), Provider: p.defaults.GitProvider})
+			out = append(out, domain.Entry{
+				Org:           org,
+				Wildcard:      true,
+				Channel:       res.Channel,
+				Mentions:      res.Mentions,
+				ExtraChannels: additionalChannels(starPtr, nil),
+				Provider:      p.defaults.GitProvider,
+				DeleteOnClose: resolveBehavior(p.defaults, starPtr, nil).deleteOnClose,
+			})
 		}
 	}
 	return out

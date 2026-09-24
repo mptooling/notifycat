@@ -44,13 +44,21 @@ Inheritance is the usual most-specific-wins chain: repository tier → org `"*"`
 
 With the flag **on**, for a PR that Notifycat is tracking:
 
-1. Every Slack message for that PR is deleted — one per channel the PR fanned out to, including [per-path](monorepo.md) channels.
+1. Every Slack message for that PR is deleted — one per channel the PR fanned out to, including [per-path](monorepo.md) channels. A message with a thread discussion is the exception: see [Messages with a thread](#messages-with-a-thread).
 2. Any open review session is closed.
 3. The PR row is dropped from the database, so the PR also leaves the [stuck-PR digest](digest.md) immediately.
 
 No `[Merged]` update and no closing reaction are sent: there is no message left to carry them. A repository's `reactions` settings are untouched — they still apply to reviews while the PR is open.
 
 Merged and declined PRs behave identically. There is no way to delete on one and keep the other.
+
+## Messages with a thread
+
+Before it deletes a message, Notifycat checks whether anyone replied in Slack its thread (`reply_count` on `conversations.history`). A message with at least one reply is **kept**, because deleting the parent would take the discussion with it. It gets the normal `[Merged]` / `[Closed]` tag and closing reaction instead, as if the flag were off for that one message.
+
+The decision is per message. A PR that fanned out to two channels can lose its message in one channel and keep the threaded one in the other.
+
+If the lookup fails — a missing scope, a Slack outage — Notifycat keeps the message and logs `could not read thread replies; keeping message`. An unknown thread state never risks a delete. A kept message logs `kept message with thread replies`.
 
 ## What does not change
 
@@ -61,9 +69,9 @@ Merged and declined PRs behave identically. There is no way to delete on one and
 ## Requirements and limits
 
 - The bot needs `chat:write`, which it already has — Slack lets an app delete **its own** messages with no extra scope.
+- The bot also needs `channels:history` and `groups:history`, to read the thread before a delete. Startup validation fails an entry that has the flag on while either scope is missing. See [Bot scopes](slack-app.md#optional-channelshistory-groupshistory).
 - A message somebody already deleted by hand is not an error. Slack answers `message_not_found` and Notifycat treats that as the outcome it wanted.
-- **Deleting is permanent.** Slack has no undo, and Notifycat keeps no copy of the message. If your team refers back to merged PR threads, leave this off.
-- Threaded replies under a deleted parent message are removed by Slack along with it. A "Start review" thread on a merged PR goes with the message.
+- **Deleting is permanent.** Slack has no undo, and Notifycat keeps no copy of the message. A message with no thread replies is gone for good.
 - There is no reopen flow in Notifycat. A PR reopened after its message was deleted is not re-announced.
 
 ## Which one should you pick?

@@ -87,3 +87,32 @@ func TestValidate_ChannelArchived(t *testing.T) {
 
 	assertCheckFails(t, report, "slack-channel", "archived")
 }
+
+func deleteOnCloseMappingLookup() *mockMappingLookup {
+	return &mockMappingLookup{
+		get: func(_ context.Context, repository string) (routingdomain.RepoMapping, error) {
+			return routingdomain.RepoMapping{Repository: repository, SlackChannel: "C1234567", DeleteOnClose: true}, nil
+		},
+	}
+}
+
+func TestValidate_DeleteOnClose_RequiresHistoryScopes(t *testing.T) {
+	_, slack, hooks := happy()
+	validator := application.NewValidator(deleteOnCloseMappingLookup(), slack, githubProbe(hooks))
+
+	report := validator.Validate(context.Background(), "acme/widgets")
+
+	assertCheckFails(t, report, "slack-auth", `"channels:history", "groups:history"`)
+}
+
+func TestValidate_DeleteOnClose_PassesWithHistoryScopes(t *testing.T) {
+	_, slack, hooks := happy()
+	slack.authTest = func(context.Context) (string, []string, error) {
+		return "UBOT", []string{"chat:write", "reactions:write", "channels:history", "groups:history"}, nil
+	}
+	validator := application.NewValidator(deleteOnCloseMappingLookup(), slack, githubProbe(hooks))
+
+	report := validator.Validate(context.Background(), "acme/widgets")
+
+	assert.True(t, report.OK(), "checks: %+v", report.Checks)
+}

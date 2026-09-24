@@ -74,6 +74,9 @@ type fakeMessenger struct {
 	reactErr  error
 	deleteErr error
 
+	threadedMessageIDs map[string]bool
+	threadErr          error
+
 	postedTS int
 }
 
@@ -100,6 +103,10 @@ func (f *fakeMessenger) AddReaction(_ context.Context, channel, messageID, emoji
 func (f *fakeMessenger) Delete(_ context.Context, channel, messageID string) error {
 	f.deletes = append(f.deletes, deleteCall{channel: channel, messageID: messageID})
 	return f.deleteErr
+}
+
+func (f *fakeMessenger) HasThreadReplies(_ context.Context, _, messageID string) (bool, error) {
+	return f.threadedMessageIDs[messageID], f.threadErr
 }
 
 // reactionEmojis returns the emoji of every AddReaction call, in order.

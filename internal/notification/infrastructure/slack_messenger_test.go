@@ -1,7 +1,10 @@
 package infrastructure
 
 import (
+	"context"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -72,4 +75,46 @@ func TestSlackMessenger_ComposeReviewFinished_RebuildsWithReviewers(t *testing.T
 	require.Len(t, got.Blocks, len(base.Blocks)+1)
 	assert.Equal(t, base.Blocks, got.Blocks[:len(base.Blocks)], "the message is rebuilt from the standard template")
 	assert.Equal(t, composer.ReviewedByMarker([]string{"U1"}), got.Blocks[len(base.Blocks)])
+}
+
+func messengerAgainst(t *testing.T, historyResponse string) *SlackMessenger {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, historyResponse)
+	}))
+	t.Cleanup(server.Close)
+	client := slack.NewClient(server.Client(), "xoxb-test", slack.WithBaseURL(server.URL))
+	return NewSlackMessenger(client, slack.NewComposer("eyes"))
+}
+
+func TestSlackMessenger_HasThreadReplies(t *testing.T) {
+	testCases := []struct {
+		name            string
+		historyResponse string
+		want            bool
+	}{
+		{name: "replied thread", historyResponse: `{"ok":true,"messages":[{"ts":"100.1","reply_count":2}]}`, want: true},
+		{name: "no thread", historyResponse: `{"ok":true,"messages":[{"ts":"100.1"}]}`, want: false},
+		{name: "message already gone", historyResponse: `{"ok":true,"messages":[]}`, want: false},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			messenger := messengerAgainst(t, testCase.historyResponse)
+
+			threaded, err := messenger.HasThreadReplies(context.Background(), "C123", "100.1")
+
+			require.NoError(t, err)
+			assert.Equal(t, testCase.want, threaded)
+		})
+	}
+}
+
+func TestSlackMessenger_HasThreadReplies_MissingScopeIsError(t *testing.T) {
+	messenger := messengerAgainst(t, `{"ok":false,"error":"missing_scope"}`)
+
+	_, err := messenger.HasThreadReplies(context.Background(), "C123", "100.1")
+
+	require.Error(t, err)
 }

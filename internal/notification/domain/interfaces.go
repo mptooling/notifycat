@@ -17,6 +17,9 @@ type Messenger interface {
 	UpdateReviewFinished(ctx context.Context, channel, messageID string, req ReviewFinishedRequest) error
 	AddReaction(ctx context.Context, channel, messageID, emoji string) error
 	Delete(ctx context.Context, channel, messageID string) error
+	// HasThreadReplies reports whether anyone has replied in the message's
+	// thread — the discussion a Delete would take with it.
+	HasThreadReplies(ctx context.Context, channel, messageID string) (bool, error)
 }
 
 // MessageStore persists tracked PRs and their per-channel chat messages.
