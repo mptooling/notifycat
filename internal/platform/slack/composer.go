@@ -104,6 +104,22 @@ type TextObject struct {
 	Text string `json:"text"`
 }
 
+// mrkdwnEscaper escapes the three characters Slack reserves in message text.
+// Slack unescapes them on render, so a title stays readable as "host:<hostname>"
+// while no longer closing the headline's <url|label> link early. The replacer
+// scans the input once, so an escaped "&" is not re-escaped.
+var mrkdwnEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
+
+// escapeDisplayText escapes the PR fields that carry free-form, author-written
+// text into mrkdwn. The URL is left alone — it is a link target, not display
+// text — and so is Repository, which both forges constrain to a slug and which
+// doubles as the Start review button's machine-readable key.
+func escapeDisplayText(pr PRDetails) PRDetails {
+	pr.Title = mrkdwnEscaper.Replace(pr.Title)
+	pr.Author = mrkdwnEscaper.Replace(pr.Author)
+	return pr
+}
+
 // Composer renders Slack-formatted notification messages.
 type Composer struct {
 	newPREmoji string
@@ -125,6 +141,7 @@ func NewComposer(newPREmoji string) *Composer {
 // newPREmoji is the per-repo reaction emoji name (without colons). If empty,
 // falls back to the composer's default emoji.
 func (c *Composer) NewMessage(pr PRDetails, mentions []string, newPREmoji string) Message {
+	pr = escapeDisplayText(pr)
 	if newPREmoji == "" {
 		newPREmoji = c.newPREmoji
 	}
@@ -172,6 +189,7 @@ func (c *Composer) ReviewedByMarker(userIDs []string) Block {
 // empty-list rule as NewMessage; the PR author is omitted because the bot name
 // carries it.
 func (c *Composer) BotMessage(pr PRDetails, mentions []string, bot string, security bool) Message {
+	pr = escapeDisplayText(pr)
 	emoji, verb := "package", "bumped"
 	if security {
 		emoji, verb = "rotating_light", "security update"
@@ -193,6 +211,7 @@ func (c *Composer) BotMessage(pr PRDetails, mentions []string, bot string, secur
 // section, the leading emoji is swapped to the merged/closed reaction emoji,
 // and a [Merged]/[Closed] label is prepended. The context line is preserved.
 func (c *Composer) UpdatedMessage(pr PRDetails, merged bool, emoji string) Message {
+	pr = escapeDisplayText(pr)
 	label := "Closed"
 	if merged {
 		label = "Merged"
