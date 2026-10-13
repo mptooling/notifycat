@@ -345,3 +345,71 @@ func TestComposer_ReviewedByMarker(t *testing.T) {
 	require.Len(t, block.Elements, 1)
 	assert.Equal(t, "reviewed by <@U1>, <@U2>", block.Elements[0].Text)
 }
+
+// reservedCharsPR is the real-world regression case: a PR title carrying all
+// three characters Slack reserves in mrkdwn, plus an author name with an
+// ampersand. Left unescaped, the "<" in the title closes the headline's
+// <url|label> link early and Slack renders the rest as literal text.
+func reservedCharsPR() slack.PRDetails {
+	return slack.PRDetails{
+		Repository: "cover42/sam-apigateway",
+		Number:     55,
+		Title:      "release: host pinning via Cognito groups host:<hostname> & co > staging",
+		URL:        "https://bitbucket.org/cover42/sam-apigateway/pull-requests/55",
+		Author:     "Ann & Bob",
+		CreatedAt:  created,
+	}
+}
+
+const escapedTitle = "release: host pinning via Cognito groups host:&lt;hostname&gt; &amp; co &gt; staging"
+
+func TestComposer_NewMessage_EscapesReservedChars(t *testing.T) {
+	composer := slack.NewComposer("eyes")
+
+	got := composer.NewMessage(reservedCharsPR(), []string{"<!subteam^S0ENG>"}, "rocket")
+
+	assert.Equal(t,
+		":rocket: <!subteam^S0ENG>, please review <https://bitbucket.org/cover42/sam-apigateway/pull-requests/55|PR #55: "+escapedTitle+">",
+		sectionText(t, got))
+	assert.Equal(t, wantContext("cover42/sam-apigateway", "Ann &amp; Bob"), contextText(t, got))
+	assert.Equal(t, "<!subteam^S0ENG>, please review PR #55: "+escapedTitle+" by Ann &amp; Bob", got.Fallback)
+}
+
+func TestComposer_BotMessage_EscapesReservedChars(t *testing.T) {
+	composer := slack.NewComposer("eyes")
+
+	got := composer.BotMessage(reservedCharsPR(), nil, "dependabot", false)
+
+	assert.Equal(t,
+		":package: dependabot bumped <https://bitbucket.org/cover42/sam-apigateway/pull-requests/55|PR #55: "+escapedTitle+">",
+		sectionText(t, got))
+	assert.Equal(t, "dependabot bumped PR #55: "+escapedTitle, got.Fallback)
+}
+
+func TestComposer_UpdatedMessage_EscapesReservedChars(t *testing.T) {
+	composer := slack.NewComposer("eyes")
+
+	got := composer.UpdatedMessage(reservedCharsPR(), true, "merged")
+
+	assert.Equal(t,
+		":merged: [Merged] ~<https://bitbucket.org/cover42/sam-apigateway/pull-requests/55|PR #55: "+escapedTitle+">~",
+		sectionText(t, got))
+	assert.Equal(t, "[Merged] PR #55: "+escapedTitle+" by Ann &amp; Bob", got.Fallback)
+}
+
+// A headline whose title escaped its reserved characters still exposes exactly
+// one <…> link, so relocating the message can find it.
+func TestMovedMessage_FindsLinkInEscapedHeadline(t *testing.T) {
+	composer := slack.NewComposer("eyes")
+	headline, err := json.Marshal(composer.NewMessage(reservedCharsPR(), nil, "rocket").Blocks[0])
+	require.NoError(t, err)
+
+	moved, err := slack.MovedMessage(slack.RawMessageContent{Blocks: []json.RawMessage{headline}})
+	require.NoError(t, err)
+
+	var block slack.Block
+	require.NoError(t, json.Unmarshal(moved.Blocks[0], &block))
+	assert.Equal(t,
+		":truck: [moved from another channel] please review <https://bitbucket.org/cover42/sam-apigateway/pull-requests/55|PR #55: "+escapedTitle+">",
+		block.Text.Text)
+}
