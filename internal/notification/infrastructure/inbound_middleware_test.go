@@ -35,7 +35,7 @@ func TestSignatureMiddleware_PassesValid(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 	body := []byte(`{"foo":"bar"}`)
-	request := httptest.NewRequest(http.MethodPost, "/webhook/github", bytes.NewReader(body))
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/github", bytes.NewReader(body))
 	request.Header.Set(security.SignatureHeader, security.Sign(middlewareTestSecret, body))
 	recorder := httptest.NewRecorder()
 
@@ -47,7 +47,7 @@ func TestSignatureMiddleware_PassesValid(t *testing.T) {
 }
 
 func TestSignatureMiddleware_Rejects401OnInvalid(t *testing.T) {
-	request := httptest.NewRequest(http.MethodPost, "/webhook/github", strings.NewReader(`{"foo":"bar"}`))
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/github", strings.NewReader(`{"foo":"bar"}`))
 	request.Header.Set(security.SignatureHeader, "sha256=deadbeef")
 	recorder := httptest.NewRecorder()
 
@@ -57,7 +57,7 @@ func TestSignatureMiddleware_Rejects401OnInvalid(t *testing.T) {
 }
 
 func TestSignatureMiddleware_RejectsMissingSignature(t *testing.T) {
-	request := httptest.NewRequest(http.MethodPost, "/webhook/github", strings.NewReader("{}"))
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/github", strings.NewReader("{}"))
 	recorder := httptest.NewRecorder()
 
 	infrastructure.SignatureMiddleware(security.NewGitHubVerifier(middlewareTestSecret))(rejectingHandler(t)).ServeHTTP(recorder, request)
@@ -67,7 +67,7 @@ func TestSignatureMiddleware_RejectsMissingSignature(t *testing.T) {
 
 func TestSignatureMiddleware_BodyTooLargeReturns413(t *testing.T) {
 	oversized := bytes.Repeat([]byte("a"), int(infrastructure.MaxBodyBytes)+1)
-	request := httptest.NewRequest(http.MethodPost, "/webhook/github", bytes.NewReader(oversized))
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/github", bytes.NewReader(oversized))
 	request.Header.Set(security.SignatureHeader, security.Sign(middlewareTestSecret, oversized))
 	recorder := httptest.NewRecorder()
 

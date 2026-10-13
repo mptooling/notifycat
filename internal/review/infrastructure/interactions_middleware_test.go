@@ -37,9 +37,11 @@ func sign(timestamp string, body []byte) string {
 	return "v0=" + hex.EncodeToString(mac.Sum(nil))
 }
 
-func signedRequest(body []byte) *http.Request {
+func signedRequest(t *testing.T, body []byte) *http.Request {
+	t.Helper()
+
 	timestamp := strconv.FormatInt(fixedClock.Unix(), 10)
-	request := httptest.NewRequest(http.MethodPost, "/webhook/slack/interactions", bytes.NewReader(body))
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/slack/interactions", bytes.NewReader(body))
 	request.Header.Set(security.SlackSignatureHeader, sign(timestamp, body))
 	request.Header.Set(security.SlackTimestampHeader, timestamp)
 	return request
@@ -65,7 +67,7 @@ func TestSignatureMiddleware_PassesValid(t *testing.T) {
 	body := []byte(`payload=%7B%22type%22%3A%22block_actions%22%7D`)
 	recorder := httptest.NewRecorder()
 
-	SignatureMiddleware(verifierAt(fixedClock))(next).ServeHTTP(recorder, signedRequest(body))
+	SignatureMiddleware(verifierAt(fixedClock))(next).ServeHTTP(recorder, signedRequest(t, body))
 
 	require.True(t, called, "a valid signature must reach the handler")
 	assert.Equal(t, http.StatusOK, recorder.Code)
@@ -73,7 +75,7 @@ func TestSignatureMiddleware_PassesValid(t *testing.T) {
 }
 
 func TestSignatureMiddleware_RejectsForged(t *testing.T) {
-	request := signedRequest([]byte("payload=x"))
+	request := signedRequest(t, []byte("payload=x"))
 	request.Header.Set(security.SlackSignatureHeader, "v0=deadbeef")
 	recorder := httptest.NewRecorder()
 
@@ -83,7 +85,7 @@ func TestSignatureMiddleware_RejectsForged(t *testing.T) {
 }
 
 func TestSignatureMiddleware_RejectsMissingSignature(t *testing.T) {
-	request := signedRequest([]byte("payload=x"))
+	request := signedRequest(t, []byte("payload=x"))
 	request.Header.Del(security.SlackSignatureHeader)
 	recorder := httptest.NewRecorder()
 
@@ -93,7 +95,7 @@ func TestSignatureMiddleware_RejectsMissingSignature(t *testing.T) {
 }
 
 func TestSignatureMiddleware_RejectsMissingTimestamp(t *testing.T) {
-	request := signedRequest([]byte("payload=x"))
+	request := signedRequest(t, []byte("payload=x"))
 	request.Header.Del(security.SlackTimestampHeader)
 	recorder := httptest.NewRecorder()
 
@@ -106,7 +108,7 @@ func TestSignatureMiddleware_RejectsStaleTimestamp(t *testing.T) {
 	// The verifier's clock sits six minutes past the signed timestamp.
 	recorder := httptest.NewRecorder()
 
-	SignatureMiddleware(verifierAt(fixedClock.Add(6*time.Minute)))(rejectingHandler(t)).ServeHTTP(recorder, signedRequest([]byte("payload=x")))
+	SignatureMiddleware(verifierAt(fixedClock.Add(6*time.Minute)))(rejectingHandler(t)).ServeHTTP(recorder, signedRequest(t, []byte("payload=x")))
 
 	assert.Equal(t, http.StatusUnauthorized, recorder.Code)
 }
@@ -115,7 +117,7 @@ func TestSignatureMiddleware_BodyTooLargeReturns413(t *testing.T) {
 	oversized := bytes.Repeat([]byte("a"), int(MaxBodyBytes)+1)
 	recorder := httptest.NewRecorder()
 
-	SignatureMiddleware(verifierAt(fixedClock))(rejectingHandler(t)).ServeHTTP(recorder, signedRequest(oversized))
+	SignatureMiddleware(verifierAt(fixedClock))(rejectingHandler(t)).ServeHTTP(recorder, signedRequest(t, oversized))
 
 	assert.Equal(t, http.StatusRequestEntityTooLarge, recorder.Code)
 }

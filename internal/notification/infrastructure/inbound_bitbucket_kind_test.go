@@ -19,7 +19,7 @@ func dispatchBitbucketKind(t *testing.T, eventKey, body string) kernel.Event {
 	t.Helper()
 
 	dispatcher := &fakeDispatcher{}
-	recorder := postBitbucketWebhook(infrastructure.NewBitbucketHandler(dispatcher), eventKey, body)
+	recorder := postBitbucketWebhook(t, infrastructure.NewBitbucketHandler(dispatcher), eventKey, body)
 
 	require.Equal(t, http.StatusOK, recorder.Code, "a body with a valid id dispatches rather than erroring")
 	require.True(t, dispatcher.called)

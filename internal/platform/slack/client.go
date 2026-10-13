@@ -429,7 +429,7 @@ func (c *Client) send(req *http.Request, method string, out any, allowErrCodes [
 	// The URL is composed from c.baseURL (operator-configured) and a hard-coded
 	// method name; there is no user-controlled taint, so gosec G107/G704 do
 	// not apply here.
-	resp, err := c.httpClient.Do(req) //nolint:gosec // baseURL is operator-controlled, method is internal constant
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("slack: %s: %w", method, err)
 	}

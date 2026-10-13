@@ -18,8 +18,10 @@ func discardLogger() *slog.Logger {
 }
 
 // postInteraction drives the interactions handler with an already-encoded body.
-func postInteraction(handler http.Handler, body string) *httptest.ResponseRecorder {
-	request := httptest.NewRequest(http.MethodPost, "/webhook/slack/interactions", strings.NewReader(body))
+func postInteraction(t *testing.T, handler http.Handler, body string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/slack/interactions", strings.NewReader(body))
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 	return recorder
@@ -37,7 +39,7 @@ func TestInteractionsHandler_ParsesAndForwardsToSink(t *testing.T) {
 		"actions": [{"action_id": "start_review", "value": "octo/widget#42"}]
 	}`)
 
-	recorder := postInteraction(NewInteractionsHandler(sink, discardLogger()), string(body))
+	recorder := postInteraction(t, NewInteractionsHandler(sink, discardLogger()), string(body))
 
 	assert.Equal(t, http.StatusOK, recorder.Code)
 	assert.Equal(t, "block_actions", got.Type)
@@ -55,7 +57,7 @@ func TestInteractionsHandler_MalformedPayloadReturns200(t *testing.T) {
 		return nil
 	}
 
-	recorder := postInteraction(NewInteractionsHandler(sink, discardLogger()), "payload=not-json")
+	recorder := postInteraction(t, NewInteractionsHandler(sink, discardLogger()), "payload=not-json")
 
 	assert.Equal(t, http.StatusOK, recorder.Code)
 	assert.False(t, called, "a malformed payload never reaches the sink")
@@ -64,7 +66,7 @@ func TestInteractionsHandler_MalformedPayloadReturns200(t *testing.T) {
 func TestInteractionsHandler_NilSinkStillReturns200(t *testing.T) {
 	body := formEncode(`{"type": "block_actions"}`)
 
-	recorder := postInteraction(NewInteractionsHandler(nil, discardLogger()), string(body))
+	recorder := postInteraction(t, NewInteractionsHandler(nil, discardLogger()), string(body))
 
 	assert.Equal(t, http.StatusOK, recorder.Code)
 }

@@ -19,7 +19,7 @@ func dispatchKind(t *testing.T, githubEvent, body string) kernel.Event {
 	t.Helper()
 
 	dispatcher := &fakeDispatcher{}
-	recorder := postGitHubWebhook(infrastructure.NewGitHubHandler(dispatcher), githubEvent, body)
+	recorder := postGitHubWebhook(t, infrastructure.NewGitHubHandler(dispatcher), githubEvent, body)
 
 	require.Equal(t, http.StatusOK, recorder.Code, "a recognised body dispatches rather than erroring")
 	require.True(t, dispatcher.called)
