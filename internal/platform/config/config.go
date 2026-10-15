@@ -330,6 +330,12 @@ func readSecrets(cfg *Config) error {
 	return requireProviderSecret(cfg)
 }
 
+// SlackInteractivityEnabled reports whether the inbound Slack interactions
+// endpoint is served — the switch for every interactive element notifycat posts.
+func (c Config) SlackInteractivityEnabled() bool {
+	return c.SlackSigningSecret.Reveal() != ""
+}
+
 // ProviderToken returns the optional read token for the selected git provider
 // (GitHubToken for github, BitbucketToken for bitbucket). Empty when unset; an
 // empty token degrades path routing and validation probes identically for both

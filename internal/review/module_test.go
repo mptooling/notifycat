@@ -27,7 +27,7 @@ func TestModule_GraphResolves(t *testing.T) {
 		fx.Provide(
 			func() *persistence.CodeReviews { return persistence.NewCodeReviews(db) },
 			func() *persistence.PullRequests { return persistence.NewPullRequests(db) },
-			func() *slack.Composer { return slack.NewComposer("eyes") },
+			func() *slack.Composer { return slack.NewComposer("eyes", false) },
 			func() *slack.Client { return slack.NewClient(http.DefaultClient, "xoxb-test") },
 			func() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) },
 		),

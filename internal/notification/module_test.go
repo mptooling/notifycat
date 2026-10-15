@@ -51,7 +51,7 @@ func TestModule_GraphResolves(t *testing.T) {
 			func() *persistence.PullRequests { return persistence.NewPullRequests(db) },
 			func() *persistence.CodeReviews { return persistence.NewCodeReviews(db) },
 			func() *slack.Client { return slack.NewClient(http.DefaultClient, "xoxb-test") },
-			func() *slack.Composer { return slack.NewComposer("eyes") },
+			func() *slack.Composer { return slack.NewComposer("eyes", false) },
 			func() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) },
 			func() domain.RepoBehavior { return stubBehavior{} },
 			func() domain.TargetResolver { return stubResolver{} },

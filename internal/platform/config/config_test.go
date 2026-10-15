@@ -141,6 +141,26 @@ func TestLoad_SlackSigningSecretRead(t *testing.T) {
 	assert.Equal(t, "v0-signing", cfg.SlackSigningSecret.Reveal())
 }
 
+func TestConfig_SlackInteractivityEnabled(t *testing.T) {
+	testCases := []struct {
+		name          string
+		signingSecret config.Secret
+		want          bool
+	}{
+		{name: "off without a signing secret", signingSecret: "", want: false},
+		{name: "on with a signing secret", signingSecret: "v0-signing", want: true},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			cfg := config.Config{SlackSigningSecret: testCase.signingSecret}
+
+			got := cfg.SlackInteractivityEnabled()
+
+			assert.Equal(t, testCase.want, got)
+		})
+	}
+}
+
 func TestLoad_AppliesDefaultsForAbsentKeys(t *testing.T) {
 	cfg, err := loadConfigured(t, minimalConfig)
 
