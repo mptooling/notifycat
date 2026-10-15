@@ -26,19 +26,9 @@ func NewPullRequests(db *gorm.DB) *PullRequests {
 // replay after a partial failure or GitHub redelivery.
 func (r *PullRequests) AddMessage(ctx context.Context, repository string, prNumber int, channel, messageID string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		now := time.Now()
-		pr := PullRequest{Repository: repository, PRNumber: prNumber, CreatedAt: now, UpdatedAt: now}
-		if err := tx.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "gh_repository"}, {Name: "pr_number"}},
-			DoNothing: true,
-		}).Create(&pr).Error; err != nil {
-			return fmt.Errorf("store: ensure pull request: %w", err)
-		}
-		if pr.ID == 0 { // conflict path: load the existing row's id
-			if err := tx.Where("gh_repository = ? AND pr_number = ?", repository, prNumber).
-				First(&pr).Error; err != nil {
-				return fmt.Errorf("store: load pull request: %w", err)
-			}
+		pr, err := ensurePullRequest(tx, repository, prNumber)
+		if err != nil {
+			return err
 		}
 		msg := Message{PullRequestID: pr.ID, Channel: channel, MessageID: messageID}
 		if err := tx.Clauses(clause.OnConflict{
@@ -49,6 +39,25 @@ func (r *PullRequests) AddMessage(ctx context.Context, repository string, prNumb
 		}
 		return nil
 	})
+}
+
+// ensurePullRequest returns the PR row, creating it on first sight.
+func ensurePullRequest(tx *gorm.DB, repository string, prNumber int) (PullRequest, error) {
+	now := time.Now()
+	pr := PullRequest{Repository: repository, PRNumber: prNumber, CreatedAt: now, UpdatedAt: now}
+	if err := tx.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "gh_repository"}, {Name: "pr_number"}},
+		DoNothing: true,
+	}).Create(&pr).Error; err != nil {
+		return PullRequest{}, fmt.Errorf("store: ensure pull request: %w", err)
+	}
+	if pr.ID == 0 { // conflict path: load the existing row's id
+		if err := tx.Where("gh_repository = ? AND pr_number = ?", repository, prNumber).
+			First(&pr).Error; err != nil {
+			return PullRequest{}, fmt.Errorf("store: load pull request: %w", err)
+		}
+	}
+	return pr, nil
 }
 
 // Messages returns the PR's messages, or ErrNotFound when the PR is unknown.

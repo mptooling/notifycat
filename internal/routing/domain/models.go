@@ -1,6 +1,11 @@
 package domain
 
-import "github.com/mptooling/notifycat/internal/kernel"
+import (
+	"fmt"
+	"slices"
+
+	"github.com/mptooling/notifycat/internal/kernel"
+)
 
 // File is the parsed mappings.yaml document.
 type File struct {
@@ -46,6 +51,10 @@ type RepoConfig struct {
 	DependabotFormat *bool
 	DeleteOnClose    *bool
 	Digest           *DigestConfig
+	// Notifications is the tier's `notifications:` block. It is atomic: the
+	// most specific tier that sets it wins whole, so a half-set schedule
+	// cannot be inherited. Nil inherits.
+	Notifications *NotificationsConfig
 
 	// Paths is the optional per-directory routing for a monorepo, in
 	// declaration order (order is significant for tie-breaking). Only valid on
@@ -137,6 +146,52 @@ type RepoMapping struct {
 	// DeleteOnClose removes the Slack message when the PR is merged or declined
 	// instead of updating it with the [Merged]/[Closed] decoration.
 	DeleteOnClose bool
+	// Notifications is the resolved strategy: per-event, or scheduled with its
+	// send times.
+	Notifications NotificationsConfig
+}
+
+// NotificationsConfig is a tier's `notifications:` block. The per-event
+// strategy (also the zero value) posts as each event arrives; the scheduled
+// strategy queues new PRs and sends one list per channel at the times its Mode
+// describes. Send times run in the digest timezone.
+type NotificationsConfig struct {
+	Strategy NotificationStrategy
+	Mode     ScheduleMode
+	At       []TimeOfDay
+	Cron     []string
+}
+
+// TimeOfDay is one `at:` send time.
+type TimeOfDay struct {
+	Hour   int
+	Minute int
+}
+
+// Scheduled reports whether PR events are queued for a scheduled send.
+func (c NotificationsConfig) Scheduled() bool {
+	return c.Strategy == StrategyScheduled
+}
+
+// Specs returns the cron specs the scheduled strategy sends on, or nil for
+// the per-event strategy.
+func (c NotificationsConfig) Specs() []string {
+	if !c.Scheduled() {
+		return nil
+	}
+	switch c.Mode {
+	case ScheduleModeHourly:
+		return []string{HourlyCronSpec}
+	case ScheduleModeAt:
+		specs := make([]string, 0, len(c.At))
+		for _, sendTime := range c.At {
+			specs = append(specs, fmt.Sprintf(atCronFormat, sendTime.Minute, sendTime.Hour))
+		}
+		return specs
+	case ScheduleModeCron:
+		return slices.Clone(c.Cron)
+	}
+	return nil
 }
 
 // Resolved is the effective routing config for one repository after merging

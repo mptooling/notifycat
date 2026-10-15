@@ -270,23 +270,71 @@ func (c *Composer) StuckDigestParent(mentions []string, count int) Message {
 // caps section text at 3000 chars), so the lines are packed into successive
 // section blocks, each kept under maxSectionChars.
 func (c *Composer) StuckDigestList(prs []StuckPR) Message {
+	lines := make([]string, 0, len(prs))
+	for _, pr := range prs {
+		lines = append(lines, fmt.Sprintf("• <%s|%s #%d> · idle %s", pr.URL, pr.Repository, pr.Number, idlePhrase(pr.IdleDays)))
+	}
+	blocks, _ := packSections(lines, len(lines))
+
+	fallback := fmt.Sprintf("%d PR%s waiting for review", len(prs), pluralSuffix(len(prs)))
+	return Message{Blocks: blocks, Fallback: fallback}
+}
+
+// scheduledListEmoji leads every scheduled-strategy list. Fixed, like the
+// digest's: the list mixes repos, so no per-repo new-PR emoji applies.
+const scheduledListEmoji = "eyes"
+
+// maxMessageBlocks is Slack's cap on the blocks of one message.
+const maxMessageBlocks = 50
+
+// ScheduledList renders one channel's list of PRs queued under the scheduled
+// notification strategy: a headline with the mentions and the count, then one
+// line per PR. The list holds many PRs, so it carries no Start review button.
+// Lines past Slack's block cap collapse into a final "…and N more" line.
+func (c *Composer) ScheduledList(mentions []string, prs []PRDetails) Message {
+	headline := fmt.Sprintf(":%s: %s%d PR%s ready for review:",
+		scheduledListEmoji, mentionsPrefix(mentions), len(prs), pluralSuffix(len(prs)))
+	lines := make([]string, 0, len(prs))
+	for _, pr := range prs {
+		pr = escapeDisplayText(pr)
+		lines = append(lines, fmt.Sprintf("• <%s|%s #%d: %s> · by %s", pr.URL, pr.Repository, pr.Number, pr.Title, pr.Author))
+	}
+
+	// One block for the headline and one kept free for the overflow line.
+	listBlocks, packed := packSections(lines, maxMessageBlocks-2)
+	blocks := append([]Block{section(headline)}, listBlocks...)
+	if hidden := len(lines) - packed; hidden > 0 {
+		blocks = append(blocks, section(fmt.Sprintf("…and %d more", hidden)))
+	}
+
+	fallback := fmt.Sprintf("%d PR%s ready for review", len(prs), pluralSuffix(len(prs)))
+	return Message{Blocks: blocks, Fallback: fallback}
+}
+
+// packSections packs lines into at most maxSections section blocks, each kept
+// under maxSectionChars, and returns how many lines fit.
+func packSections(lines []string, maxSections int) ([]Block, int) {
 	var blocks []Block
 	var b strings.Builder
-	for _, pr := range prs {
-		line := fmt.Sprintf("• <%s|%s #%d> · idle %s", pr.URL, pr.Repository, pr.Number, idlePhrase(pr.IdleDays))
+	packed := 0
+	for _, line := range lines {
 		if b.Len() > 0 && b.Len()+len("\n")+len(line) > maxSectionChars {
 			blocks = append(blocks, section(b.String()))
 			b.Reset()
+			if len(blocks) == maxSections {
+				return blocks, packed
+			}
 		}
 		if b.Len() > 0 {
 			b.WriteByte('\n')
 		}
 		b.WriteString(line)
+		packed++
 	}
-	blocks = append(blocks, section(b.String()))
-
-	fallback := fmt.Sprintf("%d PR%s waiting for review", len(prs), pluralSuffix(len(prs)))
-	return Message{Blocks: blocks, Fallback: fallback}
+	if b.Len() > 0 || len(blocks) == 0 {
+		blocks = append(blocks, section(b.String()))
+	}
+	return blocks, packed
 }
 
 // idlePhrase renders a whole-day idle duration ("1 day" / "3 days").

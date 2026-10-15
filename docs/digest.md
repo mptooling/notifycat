@@ -34,7 +34,7 @@ digest:
   timezone: "Europe/Kyiv"    # IANA zone; default UTC
 ```
 
-Both the firing time and the "stuck since before today" cutoff are evaluated in `timezone`. An invalid cron expression or an unrecognized zone fails server startup — same fail-fast contract as the rest of the config. Setting the container's `TZ` variable does nothing; use this key.
+Both the firing time and the "stuck since before today" cutoff are evaluated in `timezone`. The [`scheduled` notification strategy](notification-strategies.md) uses the same `timezone` and `country`, even when the digest itself is off. An invalid cron expression or an unrecognized zone fails server startup — same fail-fast contract as the rest of the config. Setting the container's `TZ` variable does nothing; use this key.
 
 ## Weekends and holidays
 
@@ -102,6 +102,8 @@ A PR is stuck when its last activity predates the start of the current day (in t
 
 - **Suppressed bot reviews don't count.** With `reviews.ignore_ai_reviews: true`, an AI-only review pass leaves the PR stuck — it still needs a human.
 - **Merged, closed, and drafted PRs drop out.** Merge/close marks the row; converting to draft removes it entirely.
+
+A PR from a repository on the [`scheduled` notification strategy](notification-strategies.md) is also left out of a channel's digest when, in that channel, it is still queued for a list or was sent in a list since the start of today. So one PR never shows in both messages on the same day.
 
 ## Which channels get it
 

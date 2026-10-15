@@ -12,17 +12,25 @@ import (
 
 // OpenHandler reacts to a PR being opened (non-draft) or marked
 // ready_for_review. It fans out one notification per resolved target channel and
-// records each for later updates.
+// records each for later updates — or, for a repo on the scheduled strategy,
+// queues the PR per channel for the next scheduled list.
 type OpenHandler struct {
 	store     domain.MessageStore
 	resolver  domain.TargetResolver
 	messenger domain.Messenger
+	queue     domain.ScheduledQueue
 	logger    *slog.Logger
 }
 
 // NewOpenHandler builds an OpenHandler.
-func NewOpenHandler(store domain.MessageStore, resolver domain.TargetResolver, messenger domain.Messenger, logger *slog.Logger) *OpenHandler {
-	return &OpenHandler{store: store, resolver: resolver, messenger: messenger, logger: logger}
+func NewOpenHandler(params domain.OpenHandlerParams) *OpenHandler {
+	return &OpenHandler{
+		store:     params.Store,
+		resolver:  params.Resolver,
+		messenger: params.Messenger,
+		queue:     params.Queue,
+		logger:    params.Logger,
+	}
 }
 
 // Applicable returns true for a freshly opened or ready-for-review PR. The
@@ -43,6 +51,9 @@ func (h *OpenHandler) Handle(ctx context.Context, event kernel.Event) error {
 	}
 	if err != nil {
 		return err
+	}
+	if behavior.Notifications.Scheduled() {
+		return h.enqueue(ctx, event, targets)
 	}
 
 	existing, err := h.store.Messages(ctx, event.Repository, event.PR.Number)
@@ -66,6 +77,27 @@ func (h *OpenHandler) Handle(ctx context.Context, event kernel.Event) error {
 			return err
 		}
 	}
+	return nil
+}
+
+func (h *OpenHandler) enqueue(ctx context.Context, event kernel.Event, targets []routingdomain.Target) error {
+	for _, target := range targets {
+		entry := domain.ScheduledEntry{
+			Repository: event.Repository,
+			PR:         event.PR,
+			Channel:    target.Channel,
+			Mentions:   target.Mentions,
+		}
+		if err := h.queue.Enqueue(ctx, entry); err != nil {
+			return err
+		}
+	}
+	h.logger.Info("queued scheduled notification",
+		slog.String("provider", event.Provider.String()),
+		slog.String("repository", event.Repository),
+		slog.Int("pr", event.PR.Number),
+		slog.Int("channels", len(targets)),
+	)
 	return nil
 }
 

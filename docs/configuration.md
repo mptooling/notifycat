@@ -122,9 +122,11 @@ Use Slack emoji names without surrounding colons. For example, set `approved: sh
 
 **Weekends are always skipped** and there is no key for it: Saturday and Sunday never get a digest, whatever `digest.schedule` says.
 
+`digest.timezone` and `digest.country` also drive the sends of the [`scheduled` notification strategy](notification-strategies.md), even when `digest.enabled` is `false`.
+
 ### mappings
 
-Routing from repositories to Slack channels lives in the `mappings:` section of `config.yaml`. The per-repository-tier schema (0.18+) organizes each org into named repository tiers plus an optional `"*"` catch-all tier. Each tier sets its own channel and optional mentions; repository tiers inherit from the `"*"` tier. Behavioral settings (`reactions`, `reviews`, `digest`) can also be overridden per-repository tier; when omitted they inherit from the `"*"` tier or fall back to the global values. See [Mappings](mappings.md) for the full schema reference and examples.
+Routing from repositories to Slack channels lives in the `mappings:` section of `config.yaml`. The per-repository-tier schema (0.18+) organizes each org into named repository tiers plus an optional `"*"` catch-all tier. Each tier sets its own channel and optional mentions; repository tiers inherit from the `"*"` tier. Behavioral settings (`reactions`, `reviews`, `digest`) can also be overridden per-repository tier; when omitted they inherit from the `"*"` tier or fall back to the global values. A tier's `notifications:` block picks the [notification strategy](notification-strategies.md): `per-event` (default) or `scheduled`. See [Mappings](mappings.md) for the full schema reference and examples.
 
 ## Config CLI
 

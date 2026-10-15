@@ -7,6 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
+
+	domain "github.com/mptooling/notifycat/internal/routing/domain"
 )
 
 func decodeOrg(t *testing.T, body string) map[string]repoConfigWire {
@@ -236,4 +238,87 @@ func TestRepoConfig_CleanupMessageTTLRejected(t *testing.T) {
 	err := decodeOrgError("api:\n  channel: C0API\n  cleanup:\n    message_ttl_days: 7\n")
 
 	require.Error(t, err)
+}
+
+func TestRepoConfig_NotificationsAbsentMeansNil(t *testing.T) {
+	api := decodeOrg(t, "api:\n  channel: C0API\n")["api"]
+
+	assert.Nil(t, api.Notifications, "an absent notifications block leaves the tier inheriting")
+}
+
+func TestRepoConfig_Notifications(t *testing.T) {
+	testCases := []struct {
+		name  string
+		block string
+		want  domain.NotificationsConfig
+	}{
+		{
+			name:  "per-event",
+			block: "    strategy: per-event\n",
+			want:  domain.NotificationsConfig{Strategy: domain.StrategyPerEvent},
+		},
+		{
+			name:  "hourly",
+			block: "    strategy: scheduled\n    mode: hourly\n",
+			want:  domain.NotificationsConfig{Strategy: domain.StrategyScheduled, Mode: domain.ScheduleModeHourly},
+		},
+		{
+			name:  "at",
+			block: "    strategy: scheduled\n    mode: at\n    at: [\"10:30\", \"9:05\"]\n",
+			want: domain.NotificationsConfig{
+				Strategy: domain.StrategyScheduled,
+				Mode:     domain.ScheduleModeAt,
+				At:       []domain.TimeOfDay{{Hour: 10, Minute: 30}, {Hour: 9, Minute: 5}},
+			},
+		},
+		{
+			name:  "cron",
+			block: "    strategy: scheduled\n    mode: cron\n    cron: [\"0 9 * * 1-5\", \"0 14 * * 1-5\"]\n",
+			want: domain.NotificationsConfig{
+				Strategy: domain.StrategyScheduled,
+				Mode:     domain.ScheduleModeCron,
+				Cron:     []string{"0 9 * * 1-5", "0 14 * * 1-5"},
+			},
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			api := decodeOrg(t, "api:\n  channel: C0API\n  notifications:\n"+testCase.block)["api"]
+
+			require.NotNil(t, api.Notifications)
+			assert.Equal(t, testCase.want, *api.Notifications)
+		})
+	}
+}
+
+func TestRepoConfig_NotificationsRejected(t *testing.T) {
+	testCases := []struct {
+		name    string
+		block   string
+		wantErr string
+	}{
+		{name: "missing strategy", block: "    mode: hourly\n", wantErr: "strategy is required"},
+		{name: "unknown strategy", block: "    strategy: batched\n", wantErr: `unknown strategy "batched"`},
+		{name: "per-event with mode", block: "    strategy: per-event\n    mode: hourly\n", wantErr: "only valid with strategy: scheduled"},
+		{name: "scheduled without mode", block: "    strategy: scheduled\n", wantErr: "mode is required"},
+		{name: "unknown mode", block: "    strategy: scheduled\n    mode: daily\n", wantErr: `unknown mode "daily"`},
+		{name: "hourly with at", block: "    strategy: scheduled\n    mode: hourly\n    at: [\"10:00\"]\n", wantErr: "at is only valid with mode: at"},
+		{name: "hourly with cron", block: "    strategy: scheduled\n    mode: hourly\n    cron: [\"0 9 * * *\"]\n", wantErr: "cron is only valid with mode: cron"},
+		{name: "at without times", block: "    strategy: scheduled\n    mode: at\n", wantErr: "mode: at needs at times"},
+		{name: "at empty list", block: "    strategy: scheduled\n    mode: at\n    at: []\n", wantErr: "mode: at needs at times"},
+		{name: "at not a list", block: "    strategy: scheduled\n    mode: at\n    at: \"10:30\"\n", wantErr: "at: must be a list"},
+		{name: "at bad time", block: "    strategy: scheduled\n    mode: at\n    at: [\"25:00\"]\n", wantErr: `at: "25:00"`},
+		{name: "at with cron", block: "    strategy: scheduled\n    mode: at\n    at: [\"10:00\"]\n    cron: [\"0 9 * * *\"]\n", wantErr: "cron is only valid with mode: cron"},
+		{name: "cron without specs", block: "    strategy: scheduled\n    mode: cron\n    cron: []\n", wantErr: "mode: cron needs cron specs"},
+		{name: "cron bad spec", block: "    strategy: scheduled\n    mode: cron\n    cron: [\"every morning\"]\n", wantErr: `cron: "every morning"`},
+		{name: "unknown key", block: "    strategy: scheduled\n    mode: hourly\n    timezone: UTC\n", wantErr: `unknown field "timezone"`},
+		{name: "duplicate key", block: "    strategy: scheduled\n    strategy: per-event\n", wantErr: `duplicate key "strategy"`},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			err := decodeOrgError("api:\n  channel: C0API\n  notifications:\n" + testCase.block)
+
+			require.ErrorContains(t, err, testCase.wantErr)
+		})
+	}
 }

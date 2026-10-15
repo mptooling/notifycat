@@ -11,6 +11,7 @@ import (
 func TestTableNames(t *testing.T) {
 	assert.Equal(t, "pull_requests", persistence.PullRequest{}.TableName())
 	assert.Equal(t, "messages", persistence.Message{}.TableName())
+	assert.Equal(t, "scheduled_notifications", persistence.ScheduledNotification{}.TableName())
 }
 
 func TestRepoMapping_CarriesBehavioralConfig(t *testing.T) {

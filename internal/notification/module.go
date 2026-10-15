@@ -17,14 +17,18 @@ import (
 // Module binds the notification ports to their adapters and use cases, and
 // assembles the six lifecycle handlers into a value group the dispatcher
 // consumes. It expects the composition root to supply the external inputs it
-// cannot build itself: the store's *store.PullRequests and *store.CodeReviews, a
-// *slack.Client and *slack.Composer, the routing provider (as domain.RepoBehavior
-// and domain.TargetResolver), and a *slog.Logger.
+// cannot build itself: the store's *store.PullRequests, *store.CodeReviews and
+// *store.ScheduledNotifications, a *slack.Client and *slack.Composer, the
+// routing provider (as domain.RepoBehavior and domain.TargetResolver), and a
+// *slog.Logger.
 var Module = fx.Module("notification",
 	fx.Provide(
 		fx.Annotate(infrastructure.NewMessageRepo, fx.As(new(domain.MessageStore))),
 		fx.Annotate(infrastructure.NewSlackMessenger, fx.As(new(domain.Messenger))),
-		fx.Annotate(application.NewOpenHandler, fx.As(new(domain.Handler)), fx.ResultTags(`group:"handlers"`)),
+		fx.Annotate(infrastructure.NewScheduledQueueRepo, fx.As(new(domain.ScheduledQueue))),
+		fx.Annotate(infrastructure.NewSlackScheduledPoster, fx.As(new(domain.ScheduledPoster))),
+		fx.Annotate(provideScheduledSender, fx.As(new(domain.ScheduledSender))),
+		fx.Annotate(provideOpenHandler, fx.As(new(domain.Handler)), fx.ResultTags(`group:"handlers"`)),
 		fx.Annotate(application.NewCloseHandler, fx.As(new(domain.Handler)), fx.ResultTags(`group:"handlers"`)),
 		fx.Annotate(application.NewDraftHandler, fx.As(new(domain.Handler)), fx.ResultTags(`group:"handlers"`)),
 		fx.Annotate(application.NewApproveHandler, fx.As(new(domain.Handler)), fx.ResultTags(`group:"handlers"`)),
@@ -33,6 +37,42 @@ var Module = fx.Module("notification",
 		fx.Annotate(provideDispatcher, fx.As(new(domain.EventDispatcher))),
 	),
 )
+
+type openHandlerParams struct {
+	fx.In
+	Store     domain.MessageStore
+	Resolver  domain.TargetResolver
+	Messenger domain.Messenger
+	Queue     domain.ScheduledQueue
+	Logger    *slog.Logger
+}
+
+func provideOpenHandler(params openHandlerParams) *application.OpenHandler {
+	return application.NewOpenHandler(domain.OpenHandlerParams{
+		Store:     params.Store,
+		Resolver:  params.Resolver,
+		Messenger: params.Messenger,
+		Queue:     params.Queue,
+		Logger:    params.Logger,
+	})
+}
+
+type scheduledSenderParams struct {
+	fx.In
+	Queue    domain.ScheduledQueue
+	Behavior domain.RepoBehavior
+	Poster   domain.ScheduledPoster
+	Logger   *slog.Logger
+}
+
+func provideScheduledSender(params scheduledSenderParams) *application.ScheduledSender {
+	return application.NewScheduledSender(domain.ScheduledSenderParams{
+		Queue:    params.Queue,
+		Behavior: params.Behavior,
+		Poster:   params.Poster,
+		Logger:   params.Logger,
+	})
+}
 
 // dispatcherParams collects the handler value group for the dispatcher.
 type dispatcherParams struct {

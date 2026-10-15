@@ -29,12 +29,13 @@ type Config struct {
 
 // Module binds the digest ports to their adapters and use cases. It expects the
 // composition root to supply the external inputs it cannot build itself: the
-// store's *store.PullRequests, a *slack.Composer, a *slack.Client, the routing
-// provider (as domain.DigestTargets and domain.DigestResolver), a *slog.Logger,
-// and a Config.
+// store's *store.PullRequests and *store.ScheduledNotifications, a
+// *slack.Composer, a *slack.Client, the routing provider (as
+// domain.DigestTargets and domain.DigestResolver), a *slog.Logger, and a Config.
 var Module = fx.Module("digest",
 	fx.Provide(
 		fx.Annotate(infrastructure.NewStuckRepo, fx.As(new(domain.StuckFinder))),
+		fx.Annotate(infrastructure.NewScheduledAnnouncementsRepo, fx.As(new(domain.ScheduledAnnouncements))),
 		fx.Annotate(infrastructure.NewSlackComposer, fx.As(new(domain.DigestComposer))),
 		fx.Annotate(infrastructure.NewSlackPoster, fx.As(new(domain.DigestPoster))),
 		provideReporterParams,
@@ -45,19 +46,32 @@ var Module = fx.Module("digest",
 	),
 )
 
+type reporterInputs struct {
+	fx.In
+	Finder        domain.StuckFinder
+	Targets       domain.DigestTargets
+	Poster        domain.DigestPoster
+	Composer      domain.DigestComposer
+	Digests       domain.DigestResolver
+	Announcements domain.ScheduledAnnouncements
+	Logger        *slog.Logger
+	Config        Config
+}
+
 // provideReporterParams assembles the reporter's domain params from the graph.
 // The clock is time.Now; the timezone comes from Config.
-func provideReporterParams(finder domain.StuckFinder, targets domain.DigestTargets, poster domain.DigestPoster, composer domain.DigestComposer, digests domain.DigestResolver, logger *slog.Logger, cfg Config) domain.ReporterParams {
+func provideReporterParams(inputs reporterInputs) domain.ReporterParams {
 	return domain.ReporterParams{
-		Finder:   finder,
-		Targets:  targets,
-		Poster:   poster,
-		Composer: composer,
-		Digests:  digests,
-		Logger:   logger,
-		TZ:       cfg.TZ,
-		Now:      time.Now,
-		Provider: cfg.Provider,
+		Finder:        inputs.Finder,
+		Targets:       inputs.Targets,
+		Poster:        inputs.Poster,
+		Composer:      inputs.Composer,
+		Digests:       inputs.Digests,
+		Announcements: inputs.Announcements,
+		Logger:        inputs.Logger,
+		TZ:            inputs.Config.TZ,
+		Now:           time.Now,
+		Provider:      inputs.Config.Provider,
 	}
 }
 

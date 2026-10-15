@@ -25,6 +25,14 @@ type StuckPR struct {
 	IdleDays   int
 }
 
+// AnnouncedPR is one PR the scheduled notification strategy announces (or
+// already announced) in a channel.
+type AnnouncedPR struct {
+	Repository string
+	PRNumber   int
+	Channel    string
+}
+
 // Message is a presentation-neutral rendered message that crosses the composer
 // and poster ports. The application treats it as opaque — it only carries a
 // composer's output to the poster; the Slack adapter maps it to and from the
@@ -52,14 +60,15 @@ type TextObject struct {
 // the "start of day" cutoff is computed in (nil defaults to UTC) and must match
 // the scheduler's timezone so a digest fires and cuts off in the same zone.
 type ReporterParams struct {
-	Finder   StuckFinder
-	Targets  DigestTargets
-	Poster   DigestPoster
-	Composer DigestComposer
-	Digests  DigestResolver
-	Logger   *slog.Logger
-	TZ       *time.Location
-	Now      func() time.Time
+	Finder        StuckFinder
+	Targets       DigestTargets
+	Poster        DigestPoster
+	Composer      DigestComposer
+	Digests       DigestResolver
+	Announcements ScheduledAnnouncements
+	Logger        *slog.Logger
+	TZ            *time.Location
+	Now           func() time.Time
 	// Provider is the deployment's git host; it selects the web-URL form each
 	// stuck PR's link is reconstructed in. The zero value builds github.com URLs.
 	Provider kernel.Provider

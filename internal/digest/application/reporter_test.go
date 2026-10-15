@@ -2,6 +2,7 @@ package application_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"testing"
@@ -97,6 +98,19 @@ func (c *fakeComposer) StuckDigestList(prs []domain.StuckPR) domain.Message {
 	return domain.Message{Fallback: "list"}
 }
 
+// fakeAnnouncements stands in for the scheduled-notification queue and records
+// the cutoff the reporter asked for.
+type fakeAnnouncements struct {
+	announced []domain.AnnouncedPR
+	err       error
+	cutoff    time.Time
+}
+
+func (f *fakeAnnouncements) AnnouncedSince(_ context.Context, cutoff time.Time) ([]domain.AnnouncedPR, error) {
+	f.cutoff = cutoff
+	return f.announced, f.err
+}
+
 type postCall struct {
 	channel  string
 	threadTS string // "" for a parent post, the parent ts for a reply
@@ -173,14 +187,15 @@ func newTestReporter(
 	now func() time.Time,
 ) *application.Reporter {
 	return application.NewReporter(domain.ReporterParams{
-		Finder:   finder,
-		Targets:  targets,
-		Poster:   poster,
-		Composer: composer,
-		Digests:  digests,
-		Logger:   discardLogger(),
-		TZ:       location,
-		Now:      now,
+		Finder:        finder,
+		Targets:       targets,
+		Poster:        poster,
+		Composer:      composer,
+		Digests:       digests,
+		Announcements: &fakeAnnouncements{},
+		Logger:        discardLogger(),
+		TZ:            location,
+		Now:           now,
 	})
 }
 
@@ -206,15 +221,16 @@ func TestReporter_Report_BitbucketProviderBuildsBitbucketURLs(t *testing.T) {
 	}}
 	composer := &fakeComposer{}
 	reporter := application.NewReporter(domain.ReporterParams{
-		Finder:   finder,
-		Targets:  targets,
-		Poster:   &fakePoster{},
-		Composer: composer,
-		Digests:  dailyDigest("acme/api"),
-		Logger:   discardLogger(),
-		TZ:       time.Local,
-		Now:      func() time.Time { return reportNow },
-		Provider: kernel.ProviderBitbucket,
+		Finder:        finder,
+		Targets:       targets,
+		Poster:        &fakePoster{},
+		Composer:      composer,
+		Digests:       dailyDigest("acme/api"),
+		Announcements: &fakeAnnouncements{},
+		Logger:        discardLogger(),
+		TZ:            time.Local,
+		Now:           func() time.Time { return reportNow },
+		Provider:      kernel.ProviderBitbucket,
 	})
 
 	err := reporter.Report(context.Background())
@@ -423,5 +439,82 @@ func TestReporter_Report_SkipsEmptyChannelTarget(t *testing.T) {
 	err := reporter.Report(context.Background())
 
 	require.NoError(t, err)
+	assert.Empty(t, poster.calls)
+}
+
+func newAnnouncingReporter(finder domain.StuckFinder, targets domain.DigestTargets, poster domain.DigestPoster, composer domain.DigestComposer, announcements domain.ScheduledAnnouncements) *application.Reporter {
+	return application.NewReporter(domain.ReporterParams{
+		Finder:        finder,
+		Targets:       targets,
+		Poster:        poster,
+		Composer:      composer,
+		Digests:       dailyDigest("acme/api", "acme/web"),
+		Announcements: announcements,
+		Logger:        discardLogger(),
+		TZ:            time.Local,
+		Now:           func() time.Time { return reportNow },
+	})
+}
+
+// A PR the scheduled list announced (or is about to) must not show again in the
+// same channel's digest that day; other channels still list it.
+func TestReporter_Report_SkipsPRsAnnouncedInTheSameChannel(t *testing.T) {
+	finder := fakeFinder{prs: []domain.PullRequest{
+		{PRNumber: 42, Repository: "acme/api", UpdatedAt: twoDaysAgo},
+		{PRNumber: 51, Repository: "acme/web", UpdatedAt: twoDaysAgo},
+	}}
+	targets := fakeTargets{byRepo: map[string][]routingdomain.Target{
+		"acme/api": {{Channel: "C_ACME"}, {Channel: "C_OPS"}},
+		"acme/web": channelTargets("C_ACME"),
+	}}
+	announcements := &fakeAnnouncements{announced: []domain.AnnouncedPR{
+		{Repository: "acme/api", PRNumber: 42, Channel: "C_ACME"},
+	}}
+	composer := &fakeComposer{}
+	poster := &fakePoster{}
+	reporter := newAnnouncingReporter(finder, targets, poster, composer, announcements)
+
+	err := reporter.Report(context.Background())
+
+	require.NoError(t, err)
+	lists := listsByChannel(poster, composer)
+	assert.Equal(t, []string{"acme/web"}, listedRepositories(lists["C_ACME"]))
+	assert.Equal(t, []string{"acme/api"}, listedRepositories(lists["C_OPS"]))
+	assert.Equal(t, time.Date(2026, 6, 8, 0, 0, 0, 0, time.Local), announcements.cutoff, "announcements are read from the digest's start of day")
+}
+
+func TestReporter_Report_ChannelWithOnlyAnnouncedPRsGetsNoDigest(t *testing.T) {
+	finder := fakeFinder{prs: []domain.PullRequest{
+		{PRNumber: 42, Repository: "acme/api", UpdatedAt: twoDaysAgo},
+	}}
+	targets := fakeTargets{byRepo: map[string][]routingdomain.Target{
+		"acme/api": channelTargets("C_ACME"),
+	}}
+	announcements := &fakeAnnouncements{announced: []domain.AnnouncedPR{
+		{Repository: "acme/api", PRNumber: 42, Channel: "C_ACME"},
+	}}
+	poster := &fakePoster{}
+	reporter := newAnnouncingReporter(finder, targets, poster, &fakeComposer{}, announcements)
+
+	err := reporter.Report(context.Background())
+
+	require.NoError(t, err)
+	assert.Empty(t, poster.calls)
+}
+
+func TestReporter_Report_AnnouncementLookupFailureFailsTheRun(t *testing.T) {
+	lookupErr := errors.New("db down")
+	finder := fakeFinder{prs: []domain.PullRequest{
+		{PRNumber: 42, Repository: "acme/api", UpdatedAt: twoDaysAgo},
+	}}
+	targets := fakeTargets{byRepo: map[string][]routingdomain.Target{
+		"acme/api": channelTargets("C_ACME"),
+	}}
+	poster := &fakePoster{}
+	reporter := newAnnouncingReporter(finder, targets, poster, &fakeComposer{}, &fakeAnnouncements{err: lookupErr})
+
+	err := reporter.Report(context.Background())
+
+	require.ErrorIs(t, err, lookupErr)
 	assert.Empty(t, poster.calls)
 }

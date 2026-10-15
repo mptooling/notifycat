@@ -93,9 +93,13 @@ Routing comes from the **`mappings:` section of the declarative `config.yaml`**,
 
 ### Persistence
 
-`internal/platform/persistence` is GORM over SQLite. Tables: `pull_requests` (one row per PR) and `slack_messages` (PR ↔ Slack message timestamp), plus `code_reviews` (review sessions). Migrations are embedded goose SQL applied at server startup (or via `notifycat-migrate`).
+`internal/platform/persistence` is GORM over SQLite. Tables: `pull_requests` (one row per PR) and `slack_messages` (PR ↔ Slack message timestamp), plus `code_reviews` (review sessions) and `scheduled_notifications` (the queue of the `scheduled` notification strategy, one row per (PR, channel)). Migrations are embedded goose SQL applied at server startup (or via `notifycat-migrate`).
 
 The `maintenance` domain deletes stale `slack_messages` rows older than `cleanup.message_ttl_days` (config.yaml) once at startup and every 24h. It only deletes the DB row — never the Slack message.
+
+### Notification strategies
+
+A mapping tier's atomic `notifications:` block picks `per-event` (default, today's per-PR message) or `scheduled`. For a scheduled repo the `OpenHandler` enqueues one `scheduled_notifications` row per target channel and makes no Slack call; the `ScheduledRunner` (cron, digest timezone + calendar) posts one list message per channel and marks rows sent. The stuck digest skips a (PR, channel) that is queued or was sent since its cutoff. See `docs/notification-strategies.md`.
 
 ### Bot-reviewer suppression
 

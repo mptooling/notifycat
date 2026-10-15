@@ -65,12 +65,14 @@ var Module = fx.Module("runtime",
 		openAndMigrate,
 		persistence.NewPullRequests,
 		persistence.NewCodeReviews,
+		persistence.NewScheduledNotifications,
 		buildProvider,
 		buildRouter,
 		buildDispatcher,
 		buildStartReviewSink,
 		buildCleanupScheduler,
 		buildDigestScheduler,
+		buildScheduledRunner,
 		buildMux,
 		buildServer,
 		newRunContext,
@@ -165,36 +167,48 @@ func buildCleanupScheduler(cfg config.Config, pullRequests *persistence.PullRequ
 	})
 }
 
+type digestSchedulerInputs struct {
+	fx.In
+	Config                 config.Config
+	Provider               *routingapp.Provider
+	PullRequests           *persistence.PullRequests
+	ScheduledNotifications *persistence.ScheduledNotifications
+	SlackClient            *slack.Client
+	Composer               *slack.Composer
+	Logger                 *slog.Logger
+}
+
 // buildDigestScheduler builds the stuck-PR digest scheduler, which fires on
 // every distinct cron spec across the enabled mappings. It returns a nil
 // scheduler (and nil error) when no mapping enables a digest; a bad cron spec
 // fails startup here rather than silently never firing. Because this provider
 // returns an error, fx fails App.Start on a bad spec.
-func buildDigestScheduler(cfg config.Config, provider *routingapp.Provider, pullRequests *persistence.PullRequests, slackClient *slack.Client, composer *slack.Composer, logger *slog.Logger) (*digestapp.Scheduler, error) {
-	specs := provider.Schedules()
+func buildDigestScheduler(inputs digestSchedulerInputs) (*digestapp.Scheduler, error) {
+	specs := inputs.Provider.Schedules()
 	if len(specs) == 0 {
 		return nil, nil
 	}
 	reporter := digestapp.NewReporter(digestdomain.ReporterParams{
-		Finder:   digestinfra.NewStuckRepo(pullRequests),
-		Targets:  provider,
-		Poster:   digestinfra.NewSlackPoster(slackClient),
-		Composer: digestinfra.NewSlackComposer(composer),
-		Digests:  provider,
-		Logger:   logger,
-		TZ:       cfg.DigestTimezone,
-		Now:      time.Now,
-		Provider: cfg.GitProvider,
+		Finder:        digestinfra.NewStuckRepo(inputs.PullRequests),
+		Targets:       inputs.Provider,
+		Poster:        digestinfra.NewSlackPoster(inputs.SlackClient),
+		Composer:      digestinfra.NewSlackComposer(inputs.Composer),
+		Digests:       inputs.Provider,
+		Announcements: digestinfra.NewScheduledAnnouncementsRepo(inputs.ScheduledNotifications),
+		Logger:        inputs.Logger,
+		TZ:            inputs.Config.DigestTimezone,
+		Now:           time.Now,
+		Provider:      inputs.Config.GitProvider,
 	})
 	calendar := digestapp.NewCalendar(digestdomain.CalendarParams{
-		Country: digestCountry(provider),
-		Logger:  logger,
+		Country: digestCountry(inputs.Provider),
+		Logger:  inputs.Logger,
 	})
 	scheduler, err := digestapp.NewScheduler(digestdomain.SchedulerParams{
 		Specs:    specs,
 		Job:      reporter,
-		Logger:   logger,
-		TZ:       cfg.DigestTimezone,
+		Logger:   inputs.Logger,
+		TZ:       inputs.Config.DigestTimezone,
 		Calendar: calendar,
 		Now:      time.Now,
 	})
@@ -202,6 +216,49 @@ func buildDigestScheduler(cfg config.Config, provider *routingapp.Provider, pull
 		return nil, fmt.Errorf("app: digest scheduler: %w", err)
 	}
 	return scheduler, nil
+}
+
+type scheduledRunnerInputs struct {
+	fx.In
+	Config                 config.Config
+	Provider               *routingapp.Provider
+	ScheduledNotifications *persistence.ScheduledNotifications
+	SlackClient            *slack.Client
+	Composer               *slack.Composer
+	Logger                 *slog.Logger
+}
+
+// buildScheduledRunner builds the runner that posts the queued lists of the
+// scheduled notification strategy. It returns nil when no mapping uses that
+// strategy. Sends share the digest's timezone and weekend/holiday calendar.
+func buildScheduledRunner(inputs scheduledRunnerInputs) (*notificationapp.ScheduledRunner, error) {
+	specs := inputs.Provider.NotificationSchedules()
+	if len(specs) == 0 {
+		return nil, nil
+	}
+	sender := notificationapp.NewScheduledSender(notificationdomain.ScheduledSenderParams{
+		Queue:    notificationinfra.NewScheduledQueueRepo(inputs.ScheduledNotifications),
+		Behavior: inputs.Provider,
+		Poster:   notificationinfra.NewSlackScheduledPoster(inputs.SlackClient, inputs.Composer),
+		Logger:   inputs.Logger,
+		Now:      time.Now,
+	})
+	calendar := digestapp.NewCalendar(digestdomain.CalendarParams{
+		Country: digestCountry(inputs.Provider),
+		Logger:  inputs.Logger,
+	})
+	runner, err := notificationapp.NewScheduledRunner(notificationdomain.ScheduledRunnerParams{
+		Specs:    specs,
+		Sender:   sender,
+		Calendar: calendar,
+		TZ:       inputs.Config.DigestTimezone,
+		Logger:   inputs.Logger,
+		Now:      time.Now,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("app: scheduled notifications: %w", err)
+	}
+	return runner, nil
 }
 
 // digestCountry is the global digest country. It is global-only by contract —
@@ -237,13 +294,32 @@ func providerFilesFetcher(httpClient *http.Client, cfg config.Config) routingdom
 	}
 }
 
+type dispatcherInputs struct {
+	fx.In
+	PullRequests           *persistence.PullRequests
+	CodeReviews            *persistence.CodeReviews
+	ScheduledNotifications *persistence.ScheduledNotifications
+	Provider               *routingapp.Provider
+	Router                 *routingapp.Router
+	SlackClient            *slack.Client
+	Composer               *slack.Composer
+	Logger                 *slog.Logger
+}
+
 // buildDispatcher wires the PR-event handlers behind the dispatcher.
-func buildDispatcher(pullRequests *persistence.PullRequests, codeReviews *persistence.CodeReviews, provider *routingapp.Provider, router *routingapp.Router, slackClient *slack.Client, composer *slack.Composer, logger *slog.Logger) *notificationapp.Dispatcher {
-	messageStore := notificationinfra.NewMessageRepo(pullRequests)
-	messenger := notificationinfra.NewSlackMessenger(slackClient, composer)
-	reviews := reviewinfra.NewCodeReviewsRepo(codeReviews)
+func buildDispatcher(inputs dispatcherInputs) *notificationapp.Dispatcher {
+	messageStore := notificationinfra.NewMessageRepo(inputs.PullRequests)
+	messenger := notificationinfra.NewSlackMessenger(inputs.SlackClient, inputs.Composer)
+	reviews := reviewinfra.NewCodeReviewsRepo(inputs.CodeReviews)
+	provider, logger := inputs.Provider, inputs.Logger
 	handlers := []notificationdomain.Handler{
-		notificationapp.NewOpenHandler(messageStore, router, messenger, logger),
+		notificationapp.NewOpenHandler(notificationdomain.OpenHandlerParams{
+			Store:     messageStore,
+			Resolver:  inputs.Router,
+			Messenger: messenger,
+			Queue:     notificationinfra.NewScheduledQueueRepo(inputs.ScheduledNotifications),
+			Logger:    logger,
+		}),
 		notificationapp.NewCloseHandler(messageStore, provider, messenger, logger, reviews),
 		notificationapp.NewDraftHandler(messageStore, messenger, logger),
 		notificationapp.NewApproveHandler(messageStore, provider, messenger, logger, reviews),
@@ -370,16 +446,29 @@ func registerServer(lc fx.Lifecycle, server *http.Server, logger *slog.Logger, s
 	})
 }
 
-// registerSchedulers wires the cleanup and digest schedulers into the
-// lifecycle: OnStart launches each Run under the shared cancellable runCtx,
-// OnStop cancels it. The digest scheduler is nil when no mapping enables a
-// digest, and is then skipped.
-func registerSchedulers(lc fx.Lifecycle, runCtx *runContext, cleaner *maintenanceapp.Cleaner, digestScheduler *digestapp.Scheduler) {
-	lc.Append(fx.Hook{
+type schedulerInputs struct {
+	fx.In
+	Lifecycle       fx.Lifecycle
+	RunContext      *runContext
+	Cleaner         *maintenanceapp.Cleaner
+	DigestScheduler *digestapp.Scheduler
+	ScheduledRunner *notificationapp.ScheduledRunner
+}
+
+// registerSchedulers wires the cleanup and digest schedulers and the scheduled
+// notification runner into the lifecycle: OnStart launches each Run under the
+// shared cancellable runCtx, OnStop cancels it. The digest scheduler and the
+// scheduled runner are nil when no mapping uses them, and are then skipped.
+func registerSchedulers(inputs schedulerInputs) {
+	runCtx := inputs.RunContext
+	inputs.Lifecycle.Append(fx.Hook{
 		OnStart: func(context.Context) error {
-			go func() { _ = cleaner.Run(runCtx.ctx) }()
-			if digestScheduler != nil {
-				go func() { _ = digestScheduler.Run(runCtx.ctx) }()
+			go func() { _ = inputs.Cleaner.Run(runCtx.ctx) }()
+			if inputs.DigestScheduler != nil {
+				go func() { _ = inputs.DigestScheduler.Run(runCtx.ctx) }()
+			}
+			if inputs.ScheduledRunner != nil {
+				go func() { _ = inputs.ScheduledRunner.Run(runCtx.ctx) }()
 			}
 			return nil
 		},
