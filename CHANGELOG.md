@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.26.1](https://github.com/mptooling/notifycat/compare/v0.26.0...v0.26.1) (2026-10-13)
+
+
+### 🐛 Bug fixes
+
+* **slack:** escape reserved characters in PR titles and author names ([#208](https://github.com/mptooling/notifycat/issues/208)) ([3c9898d](https://github.com/mptooling/notifycat/commit/3c9898de595cd2a011790a23c631ece9143ef55d))
+
+
+### 🧹 Maintenance
+
+* **deps:** bump github.com/pressly/goose/v3 from 3.27.3 to 3.28.0 in the go-modules group across 1 directory ([#204](https://github.com/mptooling/notifycat/issues/204)) ([86a857e](https://github.com/mptooling/notifycat/commit/86a857e92babf78bc9e764cf4939db325e61a6cb))
+* **deps:** bump Go toolchain to 1.26.9 and golang.org/x/text to v0.41.0 ([#209](https://github.com/mptooling/notifycat/issues/209)) ([a169bbc](https://github.com/mptooling/notifycat/commit/a169bbcef1ceeb18d084988dfbcd9a515bc94149))
+
 ## [0.26.0](https://github.com/mptooling/notifycat/compare/v0.25.0...v0.26.0) (2026-09-24)
 
 
