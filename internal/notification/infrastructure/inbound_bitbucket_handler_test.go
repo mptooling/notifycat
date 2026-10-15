@@ -23,8 +23,10 @@ const bitbucketOpenedBody = `{
 }`
 
 // postBitbucketWebhook drives the Bitbucket handler with body and returns the recorder.
-func postBitbucketWebhook(handler http.Handler, eventKey, body string) *httptest.ResponseRecorder {
-	request := httptest.NewRequest(http.MethodPost, "/webhook/bitbucket", strings.NewReader(body))
+func postBitbucketWebhook(t *testing.T, handler http.Handler, eventKey, body string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/bitbucket", strings.NewReader(body))
 	if eventKey != "" {
 		request.Header.Set("X-Event-Key", eventKey)
 	}
@@ -36,7 +38,7 @@ func postBitbucketWebhook(handler http.Handler, eventKey, body string) *httptest
 func TestBitbucketHandler_HappyPath(t *testing.T) {
 	dispatcher := &fakeDispatcher{}
 
-	recorder := postBitbucketWebhook(infrastructure.NewBitbucketHandler(dispatcher), "pullrequest:created", bitbucketOpenedBody)
+	recorder := postBitbucketWebhook(t, infrastructure.NewBitbucketHandler(dispatcher), "pullrequest:created", bitbucketOpenedBody)
 
 	assert.Equal(t, http.StatusOK, recorder.Code)
 	require.True(t, dispatcher.called)
@@ -49,7 +51,7 @@ func TestBitbucketHandler_HappyPath(t *testing.T) {
 func TestBitbucketHandler_MissingIDReturns400(t *testing.T) {
 	dispatcher := &fakeDispatcher{}
 
-	recorder := postBitbucketWebhook(infrastructure.NewBitbucketHandler(dispatcher), "pullrequest:created",
+	recorder := postBitbucketWebhook(t, infrastructure.NewBitbucketHandler(dispatcher), "pullrequest:created",
 		`{"repository":{"full_name":"w/r"},"pullrequest":{}}`)
 
 	assert.Equal(t, http.StatusBadRequest, recorder.Code)
@@ -59,7 +61,7 @@ func TestBitbucketHandler_MissingIDReturns400(t *testing.T) {
 func TestBitbucketHandler_InvalidJSONReturns400(t *testing.T) {
 	dispatcher := &fakeDispatcher{}
 
-	recorder := postBitbucketWebhook(infrastructure.NewBitbucketHandler(dispatcher), "pullrequest:created", "not-json")
+	recorder := postBitbucketWebhook(t, infrastructure.NewBitbucketHandler(dispatcher), "pullrequest:created", "not-json")
 
 	assert.Equal(t, http.StatusBadRequest, recorder.Code)
 	assert.False(t, dispatcher.called)
@@ -68,7 +70,7 @@ func TestBitbucketHandler_InvalidJSONReturns400(t *testing.T) {
 func TestBitbucketHandler_DispatchErrorReturns500(t *testing.T) {
 	dispatcher := &fakeDispatcher{err: context.DeadlineExceeded}
 
-	recorder := postBitbucketWebhook(infrastructure.NewBitbucketHandler(dispatcher), "pullrequest:created", bitbucketOpenedBody)
+	recorder := postBitbucketWebhook(t, infrastructure.NewBitbucketHandler(dispatcher), "pullrequest:created", bitbucketOpenedBody)
 
 	assert.Equal(t, http.StatusInternalServerError, recorder.Code)
 }
@@ -76,7 +78,7 @@ func TestBitbucketHandler_DispatchErrorReturns500(t *testing.T) {
 func TestBitbucketHandler_XEventKeyHeaderMapped(t *testing.T) {
 	dispatcher := &fakeDispatcher{}
 
-	recorder := postBitbucketWebhook(infrastructure.NewBitbucketHandler(dispatcher), "pullrequest:approved", bitbucketOpenedBody)
+	recorder := postBitbucketWebhook(t, infrastructure.NewBitbucketHandler(dispatcher), "pullrequest:approved", bitbucketOpenedBody)
 
 	assert.Equal(t, http.StatusOK, recorder.Code)
 	assert.Equal(t, kernel.KindApproved, dispatcher.event.Kind,

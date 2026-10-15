@@ -324,7 +324,7 @@ func (c *Client) get(ctx context.Context, path, method string, maxBytes int64) (
 
 	// baseURL is operator-controlled and path is internally composed from
 	// validated workspace/repo strings; gosec G107 does not apply.
-	resp, err := c.httpClient.Do(req) //nolint:gosec // baseURL operator-controlled
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("bitbucket: %s: %w", method, err)
 	}
@@ -363,7 +363,7 @@ func (c *Client) getPaginatedWith(ctx context.Context, doer *http.Client, target
 	req.Header.Set("Accept", "application/json")
 	c.applyAuth(req)
 
-	resp, err := doer.Do(req) //nolint:gosec // baseURL operator-controlled
+	resp, err := doer.Do(req)
 	if err != nil {
 		return nil, "", fmt.Errorf("bitbucket: %s: %w", method, err)
 	}

@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 env:
-  GO_VERSION: "1.26.9"
+  GO_VERSION: "1.27.2"
   GOVULNCHECK_VERSION: "v1.3.0"
 
 jobs:
@@ -37,7 +37,7 @@ jobs:
       - name: Lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.10.1
+          version: v2.14.0
           args: ./...
 
       - name: Install govulncheck

@@ -24,7 +24,7 @@ func TestBitbucketSignatureMiddleware_PassesValid(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 	body := []byte(`{"foo":"bar"}`)
-	request := httptest.NewRequest(http.MethodPost, "/webhook/bitbucket", bytes.NewReader(body))
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/bitbucket", bytes.NewReader(body))
 	request.Header.Set(security.SignatureHeaderBitbucket, security.Sign(middlewareTestSecret, body))
 	recorder := httptest.NewRecorder()
 
@@ -36,7 +36,7 @@ func TestBitbucketSignatureMiddleware_PassesValid(t *testing.T) {
 }
 
 func TestBitbucketSignatureMiddleware_Rejects401OnInvalid(t *testing.T) {
-	request := httptest.NewRequest(http.MethodPost, "/webhook/bitbucket", strings.NewReader(`{"foo":"bar"}`))
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/bitbucket", strings.NewReader(`{"foo":"bar"}`))
 	request.Header.Set(security.SignatureHeaderBitbucket, "sha256=deadbeef")
 	recorder := httptest.NewRecorder()
 
@@ -46,7 +46,7 @@ func TestBitbucketSignatureMiddleware_Rejects401OnInvalid(t *testing.T) {
 }
 
 func TestBitbucketSignatureMiddleware_RejectsMissingSignature(t *testing.T) {
-	request := httptest.NewRequest(http.MethodPost, "/webhook/bitbucket", strings.NewReader("{}"))
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/bitbucket", strings.NewReader("{}"))
 	recorder := httptest.NewRecorder()
 
 	infrastructure.BitbucketSignatureMiddleware(security.NewBitbucketVerifier(middlewareTestSecret))(rejectingHandler(t)).ServeHTTP(recorder, request)
@@ -56,7 +56,7 @@ func TestBitbucketSignatureMiddleware_RejectsMissingSignature(t *testing.T) {
 
 func TestBitbucketSignatureMiddleware_BodyTooLargeReturns413(t *testing.T) {
 	oversized := bytes.Repeat([]byte("a"), int(infrastructure.MaxBodyBytes)+1)
-	request := httptest.NewRequest(http.MethodPost, "/webhook/bitbucket", bytes.NewReader(oversized))
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/bitbucket", bytes.NewReader(oversized))
 	request.Header.Set(security.SignatureHeaderBitbucket, security.Sign(middlewareTestSecret, oversized))
 	recorder := httptest.NewRecorder()
 

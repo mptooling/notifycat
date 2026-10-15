@@ -2,7 +2,7 @@ set dotenv-load
 set shell := ["bash", "-uc"]
 
 app := "notifycat"
-go_image := "golang:1.26.9-alpine"
+go_image := "golang:1.27.2-alpine"
 
 # List available recipes
 default:

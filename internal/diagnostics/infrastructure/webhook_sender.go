@@ -28,7 +28,7 @@ func (s *HTTPWebhookSender) Send(ctx context.Context, url string, body []byte, h
 		req.Header.Set(key, val)
 	}
 
-	resp, err := s.client.Do(req) //nolint:gosec // url is operator-controlled (webhook endpoint from config)
+	resp, err := s.client.Do(req)
 	if err != nil {
 		return 0, err
 	}

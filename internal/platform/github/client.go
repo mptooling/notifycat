@@ -111,7 +111,7 @@ func (c *Client) listHooks(ctx context.Context, owner, repo string) ([]Hook, err
 
 	// baseURL is operator-controlled and path is internally composed from
 	// validated owner/repo strings; gosec G107 does not apply.
-	resp, err := c.httpClient.Do(req) //nolint:gosec // baseURL operator-controlled
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("github: list-hooks: %w", err)
 	}
@@ -151,7 +151,7 @@ func (c *Client) GetPullRequest(ctx context.Context, owner, repo string, number 
 		return PullRequestState{}, fmt.Errorf("github: get-pull-request: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(req) //nolint:gosec // baseURL operator-controlled
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return PullRequestState{}, fmt.Errorf("github: get-pull-request: %w", err)
 	}
@@ -296,7 +296,7 @@ func (c *Client) getPaginated(ctx context.Context, target, method string, maxByt
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 
-	resp, err := c.httpClient.Do(req) //nolint:gosec // baseURL operator-controlled
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, "", fmt.Errorf("github: %s: %w", method, err)
 	}

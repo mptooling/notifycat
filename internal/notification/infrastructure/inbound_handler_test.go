@@ -36,8 +36,10 @@ const openedPRBody = `{
 }`
 
 // postGitHubWebhook drives the GitHub handler with body and returns the recorder.
-func postGitHubWebhook(handler http.Handler, githubEvent, body string) *httptest.ResponseRecorder {
-	request := httptest.NewRequest(http.MethodPost, "/webhook/github", strings.NewReader(body))
+func postGitHubWebhook(t *testing.T, handler http.Handler, githubEvent, body string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/github", strings.NewReader(body))
 	if githubEvent != "" {
 		request.Header.Set("X-GitHub-Event", githubEvent)
 	}
@@ -49,7 +51,7 @@ func postGitHubWebhook(handler http.Handler, githubEvent, body string) *httptest
 func TestGitHubHandler_HappyPath(t *testing.T) {
 	dispatcher := &fakeDispatcher{}
 
-	recorder := postGitHubWebhook(infrastructure.NewGitHubHandler(dispatcher), "pull_request", openedPRBody)
+	recorder := postGitHubWebhook(t, infrastructure.NewGitHubHandler(dispatcher), "pull_request", openedPRBody)
 
 	assert.Equal(t, http.StatusOK, recorder.Code)
 	require.True(t, dispatcher.called)
@@ -62,7 +64,7 @@ func TestGitHubHandler_HappyPath(t *testing.T) {
 func TestGitHubHandler_MissingPRReturns400(t *testing.T) {
 	dispatcher := &fakeDispatcher{}
 
-	recorder := postGitHubWebhook(infrastructure.NewGitHubHandler(dispatcher), "",
+	recorder := postGitHubWebhook(t, infrastructure.NewGitHubHandler(dispatcher), "",
 		`{"action":"opened","repository":{"full_name":"o/r"},"pull_request":{}}`)
 
 	assert.Equal(t, http.StatusBadRequest, recorder.Code)
@@ -72,7 +74,7 @@ func TestGitHubHandler_MissingPRReturns400(t *testing.T) {
 func TestGitHubHandler_InvalidJSONReturns400(t *testing.T) {
 	dispatcher := &fakeDispatcher{}
 
-	recorder := postGitHubWebhook(infrastructure.NewGitHubHandler(dispatcher), "", "not-json")
+	recorder := postGitHubWebhook(t, infrastructure.NewGitHubHandler(dispatcher), "", "not-json")
 
 	assert.Equal(t, http.StatusBadRequest, recorder.Code)
 	assert.False(t, dispatcher.called)
@@ -81,7 +83,7 @@ func TestGitHubHandler_InvalidJSONReturns400(t *testing.T) {
 func TestGitHubHandler_DispatchErrorReturns500(t *testing.T) {
 	dispatcher := &fakeDispatcher{err: context.DeadlineExceeded}
 
-	recorder := postGitHubWebhook(infrastructure.NewGitHubHandler(dispatcher), "", openedPRBody)
+	recorder := postGitHubWebhook(t, infrastructure.NewGitHubHandler(dispatcher), "", openedPRBody)
 
 	assert.Equal(t, http.StatusInternalServerError, recorder.Code)
 }
@@ -89,7 +91,7 @@ func TestGitHubHandler_DispatchErrorReturns500(t *testing.T) {
 func TestGitHubHandler_XGitHubEventHeaderMapped(t *testing.T) {
 	dispatcher := &fakeDispatcher{}
 
-	recorder := postGitHubWebhook(infrastructure.NewGitHubHandler(dispatcher), "pull_request_review", `{
+	recorder := postGitHubWebhook(t, infrastructure.NewGitHubHandler(dispatcher), "pull_request_review", `{
 		"action": "submitted",
 		"review": {"state": "approved"},
 		"repository": {"full_name": "octo/widget"},
