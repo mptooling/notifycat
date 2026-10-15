@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -213,4 +214,67 @@ func (f *fakeReviewSessions) Finish(_ context.Context, _ string, _ int) error {
 }
 func (f *fakeReviewSessions) Reviewers(_ context.Context, _ string, _ int) ([]domain.ReviewSession, error) {
 	return f.reviewers, f.reviewersErr
+}
+
+// fakeScheduledQueue is an in-memory domain.ScheduledQueue. Pending returns
+// the seeded pending entries minus the ones marked sent.
+type fakeScheduledQueue struct {
+	enqueued   []domain.ScheduledEntry
+	pending    []domain.ScheduledEntry
+	sentIDs    []uint
+	sentAt     time.Time
+	enqueueErr error
+	pendingErr error
+	markErr    error
+}
+
+func (f *fakeScheduledQueue) Enqueue(_ context.Context, entry domain.ScheduledEntry) error {
+	if f.enqueueErr != nil {
+		return f.enqueueErr
+	}
+	f.enqueued = append(f.enqueued, entry)
+	return nil
+}
+func (f *fakeScheduledQueue) Pending(_ context.Context) ([]domain.ScheduledEntry, error) {
+	return f.pending, f.pendingErr
+}
+func (f *fakeScheduledQueue) MarkSent(_ context.Context, ids []uint, sentAt time.Time) error {
+	if f.markErr != nil {
+		return f.markErr
+	}
+	f.sentIDs = append(f.sentIDs, ids...)
+	f.sentAt = sentAt
+	return nil
+}
+
+// fakeScheduledPoster records each posted list; failChannels makes the post
+// for those channels fail.
+type scheduledListCall struct {
+	channel string
+	req     domain.ScheduledListRequest
+}
+
+type fakeScheduledPoster struct {
+	posts        []scheduledListCall
+	failChannels map[string]bool
+}
+
+func (f *fakeScheduledPoster) PostScheduledList(_ context.Context, channel string, req domain.ScheduledListRequest) error {
+	f.posts = append(f.posts, scheduledListCall{channel: channel, req: req})
+	if f.failChannels[channel] {
+		return errInjected
+	}
+	return nil
+}
+
+// fakeRepoBehaviors is a per-repository domain.RepoBehavior; an unknown
+// repository is unmapped.
+type fakeRepoBehaviors map[string]routingdomain.RepoMapping
+
+func (f fakeRepoBehaviors) Get(_ context.Context, repository string) (routingdomain.RepoMapping, error) {
+	mapping, ok := f[repository]
+	if !ok {
+		return routingdomain.RepoMapping{}, routingdomain.ErrNotFound
+	}
+	return mapping, nil
 }

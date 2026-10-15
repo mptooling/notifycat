@@ -94,8 +94,9 @@ A repository tier (and the `"*"` tier) may override behavioral settings that oth
 - **Reviews:** `reviews.ignore_ai_reviews`, `reviews.dependabot_format`
 - **Cleanup:** `cleanup.delete_on_close` — but **not** `cleanup.message_ttl_days`, which is global only and rejected on a tier
 - **Digest:** `digest.enabled`, `digest.schedule` — but **not** `digest.timezone`, which is global only and rejected on a tier
+- **Notifications:** `notifications.strategy` (`per-event` or `scheduled`), `notifications.mode` (`hourly`, `at`, or `cron`), `notifications.at`, `notifications.cron` — tier only, there is no global section. See [Notification strategies](notification-strategies.md).
 
-Inheritance, most-specific wins: repository tier → org `"*"` tier → global section → built-in default. Not overridable per repository: `server.*`, `database.url`, `slack.base_url`, `github.base_url` / `bitbucket.base_url`, `cleanup.message_ttl_days`.
+Inheritance, most-specific wins: repository tier → org `"*"` tier → global section → built-in default. The `notifications:` block is the exception: it is **atomic**, so the most specific tier that sets it replaces the whole block, and its keys never merge across tiers. Not overridable per repository: `server.*`, `database.url`, `slack.base_url`, `github.base_url` / `bitbucket.base_url`, `cleanup.message_ttl_days`.
 
 ## Per-path routing (monorepos)
 

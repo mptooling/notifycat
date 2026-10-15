@@ -72,6 +72,7 @@ type behavior struct {
 	ignoreAIReviews  bool
 	dependabotFormat bool
 	deleteOnClose    bool
+	notifications    domain.NotificationsConfig
 }
 
 // resolveBehavior merges the global, org/*, and org/repo tiers for the
@@ -83,6 +84,7 @@ func resolveBehavior(global domain.Defaults, star, repo *domain.RepoConfig) beha
 		ignoreAIReviews:  global.IgnoreAIReviews,
 		dependabotFormat: global.DependabotFormat,
 		deleteOnClose:    global.DeleteOnClose,
+		notifications:    domain.NotificationsConfig{Strategy: domain.StrategyPerEvent},
 	}
 
 	apply := func(rc *domain.RepoConfig) {
@@ -104,6 +106,9 @@ func resolveBehavior(global domain.Defaults, star, repo *domain.RepoConfig) beha
 		setBool(&resolved.ignoreAIReviews, rc.IgnoreAIReviews)
 		setBool(&resolved.dependabotFormat, rc.DependabotFormat)
 		setBool(&resolved.deleteOnClose, rc.DeleteOnClose)
+		if rc.Notifications != nil {
+			resolved.notifications = *rc.Notifications
+		}
 	}
 	apply(star)
 	apply(repo)

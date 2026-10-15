@@ -224,3 +224,71 @@ func TestEntries_CarryResolvedDeleteOnClose(t *testing.T) {
 	assert.False(t, entries[1].DeleteOnClose, "acme/archive overrides it")
 	assert.True(t, entries[2].DeleteOnClose, "acme/* inherits the global setting")
 }
+
+func hourlyNotifications() *domain.NotificationsConfig {
+	return &domain.NotificationsConfig{Strategy: domain.StrategyScheduled, Mode: domain.ScheduleModeHourly}
+}
+
+func TestGet_NotificationsDefaultToPerEvent(t *testing.T) {
+	provider := application.NewProvider(domain.Defaults{}, map[string]domain.Org{
+		"acme": {"api": {Channel: "C0API"}},
+	}, nil)
+
+	got, err := provider.Get(context.Background(), "acme/api")
+
+	require.NoError(t, err)
+	assert.Equal(t, domain.StrategyPerEvent, got.Notifications.Strategy, "no tier sets a strategy")
+	assert.False(t, got.Notifications.Scheduled())
+}
+
+func TestGet_NotificationsMostSpecificBlockWinsWhole(t *testing.T) {
+	atTen := &domain.NotificationsConfig{
+		Strategy: domain.StrategyScheduled,
+		Mode:     domain.ScheduleModeAt,
+		At:       []domain.TimeOfDay{{Hour: 10}},
+	}
+	provider := application.NewProvider(domain.Defaults{}, map[string]domain.Org{
+		"acme": {
+			"api":   {Channel: "C0API", Notifications: &domain.NotificationsConfig{Strategy: domain.StrategyPerEvent}},
+			"web":   {Channel: "C0WEB"},
+			"infra": {Channel: "C0INFRA", Notifications: atTen},
+			"*":     {Channel: "C0DEFAULT", Notifications: hourlyNotifications()},
+		},
+	}, nil)
+
+	api, err := provider.Get(context.Background(), "acme/api")
+	require.NoError(t, err)
+	web, err := provider.Get(context.Background(), "acme/web")
+	require.NoError(t, err)
+	infra, err := provider.Get(context.Background(), "acme/infra")
+	require.NoError(t, err)
+
+	assert.False(t, api.Notifications.Scheduled(), "the repo tier opts back out of the org-wide schedule")
+	assert.Equal(t, *hourlyNotifications(), web.Notifications, "a repo with no block inherits org/*")
+	assert.Equal(t, *atTen, infra.Notifications, "the repo block replaces org/* whole, mode included")
+}
+
+func TestNotificationSchedules_DistinctSpecsOfScheduledEntries(t *testing.T) {
+	provider := application.NewProvider(domain.Defaults{}, map[string]domain.Org{
+		"acme": {
+			"api": {Channel: "C0API", Notifications: &domain.NotificationsConfig{
+				Strategy: domain.StrategyScheduled,
+				Mode:     domain.ScheduleModeCron,
+				Cron:     []string{"0 9 * * 1-5", domain.HourlyCronSpec},
+			}},
+			"web": {Channel: "C0WEB", Notifications: &domain.NotificationsConfig{Strategy: domain.StrategyPerEvent}},
+			"*":   {Channel: "C0DEFAULT", Notifications: hourlyNotifications()},
+		},
+		"globex": {"*": {Channel: "C0GLOBEX"}},
+	}, nil)
+
+	specs := provider.NotificationSchedules()
+
+	assert.Equal(t, []string{"0 * * * *", "0 9 * * 1-5"}, specs)
+}
+
+func TestNotificationSchedules_NoneWhenAllPerEvent(t *testing.T) {
+	specs := tierProvider().NotificationSchedules()
+
+	assert.Empty(t, specs)
+}

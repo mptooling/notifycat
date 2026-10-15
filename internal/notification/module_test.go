@@ -50,6 +50,7 @@ func TestModule_GraphResolves(t *testing.T) {
 		fx.Provide(
 			func() *persistence.PullRequests { return persistence.NewPullRequests(db) },
 			func() *persistence.CodeReviews { return persistence.NewCodeReviews(db) },
+			func() *persistence.ScheduledNotifications { return persistence.NewScheduledNotifications(db) },
 			func() *slack.Client { return slack.NewClient(http.DefaultClient, "xoxb-test") },
 			func() *slack.Composer { return slack.NewComposer("eyes", false) },
 			func() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) },
@@ -57,7 +58,7 @@ func TestModule_GraphResolves(t *testing.T) {
 			func() domain.TargetResolver { return stubResolver{} },
 			func() domain.ReviewSessions { return stubReviewSessions{} },
 		),
-		fx.Invoke(func(domain.EventDispatcher) {}),
+		fx.Invoke(func(domain.EventDispatcher, domain.ScheduledSender) {}),
 	)
 
 	app.RequireStart()

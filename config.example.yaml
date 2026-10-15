@@ -227,6 +227,39 @@ mappings:
             - channel: C0ZPAY0002
               mentions: []                       # ping nobody in this channel
 
+  # ── Notification strategy: per-event (default) or scheduled ─────────────────────────────────────
+  # per-event: one message per PR, posted when the PR opens and updated as it changes (today's
+  # behavior; used when no tier sets `notifications:`).
+  # scheduled: new PRs wait in a queue; on schedule, ONE message per channel lists every PR queued
+  # since the last send. Lists are never updated or deleted. Sends use digest.timezone and skip
+  # weekends and digest.country holidays; a skipped send keeps the queue for the next one.
+  # The block is atomic: the most specific tier that sets it wins whole (no per-key merge).
+  #   mode: hourly → every hour at :00
+  #   mode: at     → at: ["HH:MM", ...] each day
+  #   mode: cron   → cron: ["<5-field cron>", ...]
+  eta:
+    "*":
+      channel: C0ETA00000
+      notifications:
+        strategy: scheduled
+        mode: hourly
+    payments:
+      channel: C0ETAPAY00
+      notifications:
+        strategy: scheduled
+        mode: at
+        at: ["10:30", "15:00"]
+    billing:
+      channel: C0ETABILL0
+      notifications:
+        strategy: scheduled
+        mode: cron
+        cron: ["0 9 * * 1-5", "0 14 * * 1-5"]
+    infra:
+      channel: C0ETAINFRA
+      notifications:
+        strategy: per-event                    # opt out of the org "*" schedule
+
 # ── Mappings rules ─────────────────────────────────────────────────────────────────────────────────
 # • The org key (acme, beta, gamma, …) matches ^[A-Za-z0-9_.-]+$. Org tier keys are repo names or "*".
 # • channel must look like a Slack ID: ^[CGD][A-Z0-9]{2,}$ (C…, G…, D…). Every resolvable org/repo pair must yield a channel.

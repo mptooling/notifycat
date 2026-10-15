@@ -430,3 +430,64 @@ func TestMovedMessage_FindsLinkInEscapedHeadline(t *testing.T) {
 		":truck: [moved from another channel] please review <https://bitbucket.org/cover42/sam-apigateway/pull-requests/55|PR #55: "+escapedTitle+">",
 		block.Text.Text)
 }
+
+func TestComposer_ScheduledList(t *testing.T) {
+	composer := slack.NewComposer("eyes", false)
+	second := samplePR()
+	second.Repository, second.Number, second.Title, second.Author = "octo/api", 7, "add retries", "bob"
+	second.URL = "https://github.com/octo/api/pull/7"
+
+	message := composer.ScheduledList([]string{"<!subteam^S0ENG>"}, []slack.PRDetails{samplePR(), second})
+
+	sections := sectionTexts(message)
+	require.Len(t, sections, 2)
+	assert.Equal(t, ":eyes: <!subteam^S0ENG>, 2 PRs ready for review:", sections[0])
+	assert.Equal(t,
+		"• <https://github.com/octo/widget/pull/42|octo/widget #42: fix the thing> · by alice\n"+
+			"• <https://github.com/octo/api/pull/7|octo/api #7: add retries> · by bob",
+		sections[1])
+	assert.Equal(t, "2 PRs ready for review", message.Fallback)
+	assert.Empty(t, actionButtons(message), "a list of many PRs has no Start review button")
+}
+
+func TestComposer_ScheduledList_SingularAndNoMentions(t *testing.T) {
+	composer := slack.NewComposer("eyes", false)
+
+	message := composer.ScheduledList(nil, []slack.PRDetails{samplePR()})
+
+	assert.Equal(t, ":eyes: 1 PR ready for review:", sectionText(t, message))
+}
+
+func TestComposer_ScheduledList_EscapesReservedChars(t *testing.T) {
+	composer := slack.NewComposer("eyes", false)
+
+	message := composer.ScheduledList(nil, []slack.PRDetails{reservedCharsPR()})
+
+	sections := sectionTexts(message)
+	require.Len(t, sections, 2)
+	assert.Equal(t,
+		"• <https://bitbucket.org/cover42/sam-apigateway/pull-requests/55|cover42/sam-apigateway #55: "+escapedTitle+"> · by Ann &amp; Bob",
+		sections[1])
+}
+
+func TestComposer_ScheduledList_CapsAtSlackBlockLimit(t *testing.T) {
+	composer := slack.NewComposer("eyes", false)
+	longTitle := strings.Repeat("x", 1400)
+	prs := make([]slack.PRDetails, 120)
+	for i := range prs {
+		prs[i] = samplePR()
+		prs[i].Number = 1000 + i
+		prs[i].Title = longTitle
+	}
+
+	message := composer.ScheduledList(nil, prs)
+
+	assert.LessOrEqual(t, len(message.Blocks), 50, "Slack caps a message at 50 blocks")
+	sections := sectionTexts(message)
+	for i, section := range sections {
+		assert.LessOrEqual(t, len(section), 3000, "section %d exceeds Slack's cap", i)
+	}
+	joined := strings.Join(sections, "\n")
+	listed := strings.Count(joined, "• <")
+	assert.Equal(t, fmt.Sprintf("…and %d more", len(prs)-listed), sections[len(sections)-1])
+}

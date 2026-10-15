@@ -1,6 +1,60 @@
 package domain
 
-import "github.com/mptooling/notifycat/internal/kernel"
+import (
+	"log/slog"
+	"time"
+
+	"github.com/mptooling/notifycat/internal/kernel"
+)
+
+// OpenHandlerParams are the OpenHandler's dependencies. Queue receives the PRs
+// of repos on the scheduled notification strategy.
+type OpenHandlerParams struct {
+	Store     MessageStore
+	Resolver  TargetResolver
+	Messenger Messenger
+	Queue     ScheduledQueue
+	Logger    *slog.Logger
+}
+
+// ScheduledEntry is one queued PR announcement for one channel. PR carries the
+// fields the list shows: Number, Title, URL, Author.
+type ScheduledEntry struct {
+	ID         uint
+	Repository string
+	PR         kernel.PR
+	Channel    string
+	Mentions   []string
+	QueuedAt   time.Time
+}
+
+// ScheduledListRequest is the intent to post one channel's list of queued PRs,
+// pinging Mentions once.
+type ScheduledListRequest struct {
+	Mentions []string
+	Entries  []ScheduledEntry
+}
+
+// ScheduledSenderParams are the ScheduledSender's dependencies. Behavior gives
+// each repo's current schedule; Now stamps the sent entries (nil = time.Now).
+type ScheduledSenderParams struct {
+	Queue    ScheduledQueue
+	Behavior RepoBehavior
+	Poster   ScheduledPoster
+	Logger   *slog.Logger
+	Now      func() time.Time
+}
+
+// ScheduledRunnerParams are the ScheduledRunner's dependencies. Specs are
+// standard 5-field cron specs read in TZ (nil = UTC); Calendar may be nil.
+type ScheduledRunnerParams struct {
+	Specs    []string
+	Sender   ScheduledSender
+	Calendar ScheduleCalendar
+	TZ       *time.Location
+	Logger   *slog.Logger
+	Now      func() time.Time
+}
 
 // Message is one posted chat message for a PR: the channel it lives in and the
 // platform's id for the post. Mapped from the store's persistence model at the

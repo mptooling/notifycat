@@ -5,7 +5,9 @@ import (
 	"path"
 	"slices"
 	"strings"
+	"time"
 
+	"github.com/robfig/cron/v3"
 	"gopkg.in/yaml.v3"
 
 	domain "github.com/mptooling/notifycat/internal/routing/domain"
@@ -217,6 +219,7 @@ type repoConfigWire struct {
 	DependabotFormat *bool
 	DeleteOnClose    *bool
 	Digest           *digestConfigWire
+	Notifications    *domain.NotificationsConfig
 	Paths            []domain.PathRule
 	Channels         []domain.ChannelSpec
 }
@@ -290,6 +293,10 @@ func (rc *repoConfigWire) UnmarshalYAML(node *yaml.Node) error {
 				return fmt.Errorf("digest: country is only valid in the global digest section, not per-repo")
 			}
 			rc.Digest = d
+		case "notifications":
+			if err := decodeNotifications(rc, valNode); err != nil {
+				return err
+			}
 		case "paths":
 			paths, err := decodePaths(valNode)
 			if err != nil {
@@ -373,6 +380,137 @@ func decodeCleanup(rc *repoConfigWire, node *yaml.Node) error {
 		}
 	}
 	return nil
+}
+
+// decodeNotifications parses a tier's `notifications:` block. The block is
+// atomic — never merged across tiers — so it is checked whole here, and a
+// schedule that could never fire fails config load instead of the first tick.
+func decodeNotifications(rc *repoConfigWire, node *yaml.Node) error {
+	if node.Kind != yaml.MappingNode {
+		return fmt.Errorf("notifications: expected mapping; got node kind %d", node.Kind)
+	}
+	if len(node.Content)%2 != 0 {
+		return fmt.Errorf("notifications: malformed mapping")
+	}
+	notifications := domain.NotificationsConfig{}
+	seen := map[string]bool{}
+	for i := 0; i < len(node.Content); i += 2 {
+		key, val := node.Content[i], node.Content[i+1]
+		if err := markSeen(seen, key.Value); err != nil {
+			return fmt.Errorf("notifications: %w", err)
+		}
+		switch key.Value {
+		case "strategy":
+			if err := val.Decode(&notifications.Strategy); err != nil {
+				return fmt.Errorf("notifications.strategy: %w", err)
+			}
+		case "mode":
+			if err := val.Decode(&notifications.Mode); err != nil {
+				return fmt.Errorf("notifications.mode: %w", err)
+			}
+		case "at":
+			sendTimes, err := decodeAtTimes(val)
+			if err != nil {
+				return fmt.Errorf("notifications.%w", err)
+			}
+			notifications.At = sendTimes
+		case "cron":
+			specs, err := decodeCronSpecs(val)
+			if err != nil {
+				return fmt.Errorf("notifications.%w", err)
+			}
+			notifications.Cron = specs
+		default:
+			return fmt.Errorf("notifications: unknown field %q", key.Value)
+		}
+	}
+	if err := checkNotifications(notifications, seen); err != nil {
+		return fmt.Errorf("notifications: %w", err)
+	}
+	rc.Notifications = &notifications
+	return nil
+}
+
+func checkNotifications(notifications domain.NotificationsConfig, seen map[string]bool) error {
+	switch notifications.Strategy {
+	case "":
+		return fmt.Errorf("strategy is required (%s or %s)", domain.StrategyPerEvent, domain.StrategyScheduled)
+	case domain.StrategyPerEvent:
+		for _, key := range []string{"mode", "at", "cron"} {
+			if seen[key] {
+				return fmt.Errorf("%s is only valid with strategy: %s", key, domain.StrategyScheduled)
+			}
+		}
+		return nil
+	case domain.StrategyScheduled:
+	default:
+		return fmt.Errorf("unknown strategy %q (want %s or %s)", notifications.Strategy, domain.StrategyPerEvent, domain.StrategyScheduled)
+	}
+
+	switch notifications.Mode {
+	case "":
+		return fmt.Errorf("mode is required with strategy: %s (%s, %s or %s)",
+			domain.StrategyScheduled, domain.ScheduleModeHourly, domain.ScheduleModeAt, domain.ScheduleModeCron)
+	case domain.ScheduleModeHourly:
+	case domain.ScheduleModeAt:
+		if len(notifications.At) == 0 {
+			return fmt.Errorf("mode: at needs at times, e.g. at: [\"10:30\"]")
+		}
+	case domain.ScheduleModeCron:
+		if len(notifications.Cron) == 0 {
+			return fmt.Errorf("mode: cron needs cron specs, e.g. cron: [\"0 9 * * 1-5\"]")
+		}
+	default:
+		return fmt.Errorf("unknown mode %q (want %s, %s or %s)",
+			notifications.Mode, domain.ScheduleModeHourly, domain.ScheduleModeAt, domain.ScheduleModeCron)
+	}
+	if seen["at"] && notifications.Mode != domain.ScheduleModeAt {
+		return fmt.Errorf("at is only valid with mode: %s", domain.ScheduleModeAt)
+	}
+	if seen["cron"] && notifications.Mode != domain.ScheduleModeCron {
+		return fmt.Errorf("cron is only valid with mode: %s", domain.ScheduleModeCron)
+	}
+	return nil
+}
+
+func decodeAtTimes(node *yaml.Node) ([]domain.TimeOfDay, error) {
+	if node.Kind != yaml.SequenceNode {
+		return nil, fmt.Errorf("at: must be a list of HH:MM times")
+	}
+	var values []string
+	if err := node.Decode(&values); err != nil {
+		return nil, fmt.Errorf("at: %w", err)
+	}
+	sendTimes := make([]domain.TimeOfDay, 0, len(values))
+	for _, value := range values {
+		parsed, err := time.Parse(domain.AtTimeLayout, strings.TrimSpace(value))
+		if err != nil {
+			return nil, fmt.Errorf("at: %q is not an HH:MM time", value)
+		}
+		sendTimes = append(sendTimes, domain.TimeOfDay{Hour: parsed.Hour(), Minute: parsed.Minute()})
+	}
+	return sendTimes, nil
+}
+
+// decodeCronSpecs normalizes whitespace so two tiers that write the same
+// schedule share one cron entry and one list message per channel.
+func decodeCronSpecs(node *yaml.Node) ([]string, error) {
+	if node.Kind != yaml.SequenceNode {
+		return nil, fmt.Errorf("cron: must be a list of cron specs")
+	}
+	var values []string
+	if err := node.Decode(&values); err != nil {
+		return nil, fmt.Errorf("cron: %w", err)
+	}
+	specs := make([]string, 0, len(values))
+	for _, value := range values {
+		spec := strings.Join(strings.Fields(value), " ")
+		if _, err := cron.ParseStandard(spec); err != nil {
+			return nil, fmt.Errorf("cron: %q: %w", value, err)
+		}
+		specs = append(specs, spec)
+	}
+	return specs, nil
 }
 
 // decodePaths parses a tier's `paths:` block into ordered PathRules, rejecting
@@ -541,6 +679,7 @@ func (rc repoConfigWire) toDomain() domain.RepoConfig {
 		IgnoreAIReviews:  rc.IgnoreAIReviews,
 		DependabotFormat: rc.DependabotFormat,
 		DeleteOnClose:    rc.DeleteOnClose,
+		Notifications:    rc.Notifications,
 		Paths:            rc.Paths,
 		Channels:         rc.Channels,
 	}

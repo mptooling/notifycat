@@ -63,6 +63,25 @@ type CodeReview struct {
 // TableName pins the table name.
 func (CodeReview) TableName() string { return "code_reviews" }
 
+// ScheduledNotification is one queued PR announcement for one channel under the
+// scheduled notification strategy. SentAt nil means it waits for the next tick.
+// (PullRequestID, Channel) is unique, so a PR is announced in a channel once; it
+// is cascade-deleted with its PullRequest.
+type ScheduledNotification struct {
+	ID            uint       `gorm:"primaryKey"`
+	PullRequestID uint       `gorm:"column:pull_request_id;not null"`
+	Channel       string     `gorm:"column:channel;not null"`
+	Mentions      []string   `gorm:"column:mentions;serializer:json;not null"`
+	Title         string     `gorm:"column:title;not null"`
+	URL           string     `gorm:"column:url;not null"`
+	Author        string     `gorm:"column:author;not null"`
+	QueuedAt      time.Time  `gorm:"column:queued_at;not null"`
+	SentAt        *time.Time `gorm:"column:sent_at"`
+}
+
+// TableName pins the table name.
+func (ScheduledNotification) TableName() string { return "scheduled_notifications" }
+
 // Target aliases the routing domain value object during the migration.
 type Target = routingdomain.Target
 

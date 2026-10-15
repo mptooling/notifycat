@@ -34,7 +34,21 @@ func newOpenHandler(
 	resolver *fakeTargetResolver,
 	messenger *fakeMessenger,
 ) *application.OpenHandler {
-	return application.NewOpenHandler(store, resolver, messenger, discardLogger())
+	return application.NewOpenHandler(domain.OpenHandlerParams{
+		Store:     store,
+		Resolver:  resolver,
+		Messenger: messenger,
+		Queue:     &fakeScheduledQueue{},
+		Logger:    discardLogger(),
+	})
+}
+
+// scheduledHourly is the repo behavior of a repo on the scheduled strategy.
+var scheduledHourly = routingdomain.RepoMapping{
+	Notifications: routingdomain.NotificationsConfig{
+		Strategy: routingdomain.StrategyScheduled,
+		Mode:     routingdomain.ScheduleModeHourly,
+	},
 }
 
 func openedEvent(repository string, prNumber int) kernel.Event {
@@ -309,4 +323,53 @@ func TestOpenHandler_FansOutToEachTarget(t *testing.T) {
 	messages, err := store.Messages(context.Background(), "acme/web", 7)
 	require.NoError(t, err)
 	assert.Len(t, messages, 2)
+}
+
+func TestOpenHandler_Scheduled_QueuesEachTargetInsteadOfPosting(t *testing.T) {
+	store := newFakeMessageStore()
+	resolver := &fakeTargetResolver{
+		behavior: scheduledHourly,
+		targets: []routingdomain.Target{
+			{Channel: "C0A", Mentions: []string{"<@U0A>"}},
+			{Channel: "C0B", Mentions: []string{"<@U0B>"}},
+		},
+	}
+	messenger := &fakeMessenger{}
+	queue := &fakeScheduledQueue{}
+	logger, logs := captureLogger()
+	handler := application.NewOpenHandler(domain.OpenHandlerParams{
+		Store: store, Resolver: resolver, Messenger: messenger, Queue: queue, Logger: logger,
+	})
+	event := openedEvent("acme/web", 7)
+
+	err := handler.Handle(context.Background(), event)
+
+	require.NoError(t, err)
+	assert.Empty(t, messenger.opens, "a scheduled repo makes no Slack call on open")
+	assert.Equal(t, []domain.ScheduledEntry{
+		{Repository: "acme/web", PR: event.PR, Channel: "C0A", Mentions: []string{"<@U0A>"}},
+		{Repository: "acme/web", PR: event.PR, Channel: "C0B", Mentions: []string{"<@U0B>"}},
+	}, queue.enqueued)
+	_, storeErr := store.Messages(context.Background(), "acme/web", 7)
+	assert.ErrorIs(t, storeErr, routingdomain.ErrNotFound, "no message row: the list message is never stored")
+	assertLogFields(t, logs.Bytes(), map[string]any{
+		"msg":        "queued scheduled notification",
+		"repository": "acme/web",
+		"pr":         float64(7),
+	})
+}
+
+func TestOpenHandler_Scheduled_ReturnsQueueError(t *testing.T) {
+	queue := &fakeScheduledQueue{enqueueErr: errInjected}
+	handler := application.NewOpenHandler(domain.OpenHandlerParams{
+		Store:     newFakeMessageStore(),
+		Resolver:  &fakeTargetResolver{behavior: scheduledHourly, targets: targetsFor("C0A")},
+		Messenger: &fakeMessenger{},
+		Queue:     queue,
+		Logger:    discardLogger(),
+	})
+
+	err := handler.Handle(context.Background(), openedEvent("acme/web", 7))
+
+	require.ErrorIs(t, err, errInjected)
 }

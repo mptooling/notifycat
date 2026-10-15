@@ -14,15 +14,16 @@ import (
 // least one stuck PR. It is the application's DigestReporter and, via
 // ReportSchedule, its ScheduleJob.
 type Reporter struct {
-	finder   domain.StuckFinder
-	targets  domain.DigestTargets
-	poster   domain.DigestPoster
-	composer domain.DigestComposer
-	digests  domain.DigestResolver
-	now      func() time.Time
-	tz       *time.Location
-	provider kernel.Provider
-	logger   *slog.Logger
+	finder        domain.StuckFinder
+	targets       domain.DigestTargets
+	poster        domain.DigestPoster
+	composer      domain.DigestComposer
+	digests       domain.DigestResolver
+	announcements domain.ScheduledAnnouncements
+	now           func() time.Time
+	tz            *time.Location
+	provider      kernel.Provider
+	logger        *slog.Logger
 }
 
 // NewReporter constructs a Reporter from its params. Now defaults to time.Now
@@ -37,15 +38,16 @@ func NewReporter(params domain.ReporterParams) *Reporter {
 		tz = time.UTC
 	}
 	return &Reporter{
-		finder:   params.Finder,
-		targets:  params.Targets,
-		poster:   params.Poster,
-		composer: params.Composer,
-		digests:  params.Digests,
-		now:      now,
-		tz:       tz,
-		provider: params.Provider,
-		logger:   params.Logger,
+		finder:        params.Finder,
+		targets:       params.Targets,
+		poster:        params.Poster,
+		composer:      params.Composer,
+		digests:       params.Digests,
+		announcements: params.Announcements,
+		now:           now,
+		tz:            tz,
+		provider:      params.Provider,
+		logger:        params.Logger,
 	}
 }
 
@@ -87,7 +89,12 @@ func (r *Reporter) report(ctx context.Context, include func(repo string) bool) e
 		return nil
 	}
 
-	for _, group := range r.groupByChannel(prs, now, include) {
+	announced, err := r.announcedSince(ctx, cutoff)
+	if err != nil {
+		return err
+	}
+
+	for _, group := range r.groupByChannel(prs, now, include, announced) {
 		ts, err := r.poster.PostMessage(ctx, group.channel, r.composer.StuckDigestParent(group.mentions, len(group.prs)))
 		if err != nil {
 			r.logger.Error("stuck-pr digest: parent post failed",
@@ -116,16 +123,31 @@ type channelGroup struct {
 	prs      []domain.StuckPR
 }
 
+type announcedSet map[domain.AnnouncedPR]bool
+
+func (r *Reporter) announcedSince(ctx context.Context, cutoff time.Time) (announcedSet, error) {
+	announcements, err := r.announcements.AnnouncedSince(ctx, cutoff)
+	if err != nil {
+		return nil, fmt.Errorf("digest: list scheduled announcements: %w", err)
+	}
+	announced := make(announcedSet, len(announcements))
+	for _, announcement := range announcements {
+		announced[announcement] = true
+	}
+	return announced, nil
+}
+
 // groupByChannel buckets stuck PRs by the channels their repository is
 // configured to post to, preserving first-seen channel order for stable output.
 // Each channel carries its own configured mentions, so a `channels:` fan-out
 // pings every channel's own group. PRs whose repo resolves to no channel, or for
-// which include returns false, are skipped.
+// which include returns false, are skipped. A PR is also skipped in each channel
+// where the scheduled strategy announces it.
 //
 // Destinations come from config, never from the PR's stored messages: after an
 // operator repoints a repo at a new channel the reminder has to follow the
 // config, not the channel the original message happens to live in.
-func (r *Reporter) groupByChannel(prs []domain.PullRequest, now time.Time, include func(repo string) bool) []channelGroup {
+func (r *Reporter) groupByChannel(prs []domain.PullRequest, now time.Time, include func(repo string) bool, announced announcedSet) []channelGroup {
 	var order []string
 	byChannel := map[string]*channelGroup{}
 	mentionSeen := map[string]map[string]bool{}
@@ -140,6 +162,13 @@ func (r *Reporter) groupByChannel(prs []domain.PullRequest, now time.Time, inclu
 		for _, target := range r.targets.BaseTargets(pullRequest.Repository) {
 			// An unmapped repo resolves to one target with an empty channel.
 			if target.Channel == "" {
+				continue
+			}
+			if announced[domain.AnnouncedPR{Repository: pullRequest.Repository, PRNumber: pullRequest.PRNumber, Channel: target.Channel}] {
+				r.logger.Debug("stuck-pr digest: skipping PR announced by scheduled list",
+					slog.String("repository", pullRequest.Repository),
+					slog.Int("pr", pullRequest.PRNumber),
+					slog.String("channel", target.Channel))
 				continue
 			}
 			group := byChannel[target.Channel]

@@ -46,6 +46,7 @@ func TestModule_GraphResolves(t *testing.T) {
 		digest.Module,
 		fx.Provide(
 			func() *persistence.PullRequests { return persistence.NewPullRequests(db) },
+			func() *persistence.ScheduledNotifications { return persistence.NewScheduledNotifications(db) },
 			func() *slack.Composer { return slack.NewComposer("eyes", false) },
 			func() *slack.Client { return slack.NewClient(http.DefaultClient, "xoxb-test") },
 			func() domain.DigestTargets { return stubTargets{} },
@@ -66,6 +67,7 @@ func digestGraphDeps(t *testing.T) fx.Option {
 	db := persistence.NewTestDB(t)
 	return fx.Provide(
 		func() *persistence.PullRequests { return persistence.NewPullRequests(db) },
+		func() *persistence.ScheduledNotifications { return persistence.NewScheduledNotifications(db) },
 		func() *slack.Composer { return slack.NewComposer("eyes", false) },
 		func() *slack.Client { return slack.NewClient(http.DefaultClient, "xoxb-test") },
 		func() domain.DigestTargets { return stubTargets{} },

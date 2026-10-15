@@ -27,6 +27,14 @@ type DigestResolver interface {
 	DigestFor(repository string) routingdomain.DigestConfig
 }
 
+// ScheduledAnnouncements lists the (PR, channel) pairs the scheduled
+// notification strategy has queued but not sent yet, or sent at or after
+// cutoff. The reporter leaves those pairs out, so one PR never shows in a
+// channel's scheduled list and its stuck digest on the same day.
+type ScheduledAnnouncements interface {
+	AnnouncedSince(ctx context.Context, cutoff time.Time) ([]AnnouncedPR, error)
+}
+
 // DigestComposer renders the two messages of a channel's stuck-PR digest: a
 // parent headline carrying the mentions and PR count, and a threaded list of
 // one line per stuck PR. Implementations produce a presentation-neutral Message

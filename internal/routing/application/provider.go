@@ -78,6 +78,7 @@ func (p *Provider) Get(_ context.Context, repository string) (domain.RepoMapping
 		IgnoreAIReviews:  resolved.ignoreAIReviews,
 		DependabotFormat: resolved.dependabotFormat,
 		DeleteOnClose:    resolved.deleteOnClose,
+		Notifications:    resolved.notifications,
 	}, nil
 }
 
@@ -181,6 +182,25 @@ func (p *Provider) Schedules() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// NotificationSchedules returns the sorted distinct cron specs across every
+// mapping entry whose effective notifications strategy is scheduled. The
+// scheduled-notification runner registers one cron per returned spec.
+func (p *Provider) NotificationSchedules() []string {
+	seen := map[string]struct{}{}
+	for _, entry := range p.Entries() {
+		starTier, repoTier := p.lookup(entry.Key())
+		for _, spec := range resolveBehavior(p.defaults, starTier, repoTier).notifications.Specs() {
+			seen[spec] = struct{}{}
+		}
+	}
+	specs := make([]string, 0, len(seen))
+	for spec := range seen {
+		specs = append(specs, spec)
+	}
+	sort.Strings(specs)
+	return specs
 }
 
 func splitRepo(s string) (org, repo string, ok bool) {

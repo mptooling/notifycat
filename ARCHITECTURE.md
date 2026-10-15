@@ -86,7 +86,7 @@ flowchart TB
 
 | Domain | Business capability | Absorbs today's packages |
 | --- | --- | --- |
-| **notification** | Receive a GitHub PR event and keep one Slack message per (PR, channel) in sync — post on open, update/react on state change, delete on draft. Includes bot-PR classification/formatting and AI-reviewer suppression. | `pullrequest` (dispatcher, open/close/draft + reaction handlers), `botpr`, `aireview`, `githubhook` parsing (verification → `platform/security`), the messages repository from `store` |
+| **notification** | Receive a GitHub PR event and keep one Slack message per (PR, channel) in sync — post on open, update/react on state change, delete on draft. Includes bot-PR classification/formatting and AI-reviewer suppression. A repo on the `scheduled` strategy queues the PR per channel instead, and a cron runner posts one list message per channel. | `pullrequest` (dispatcher, open/close/draft + reaction handlers), `botpr`, `aireview`, `githubhook` parsing (verification → `platform/security`), the messages repository from `store` |
 | **review** | The interactive "Start review" flow: a Slack button click records a reviewer and appends an in-review marker; a submitted GitHub review finishes sessions and clears the in-review state; reviewers are shown on close. | `startreview`, `slackhook` parsing (verification → `platform/security`), the `code_reviews` repository from `store`, the review-session logic in `pullrequest` |
 | **routing** | Resolve a repo (and optionally a PR's changed files) to the Slack channel(s) and behavioral config that apply, across global/org/repo tiers and monorepo path rules. | `mappings` (provider, parsing, tiers, defaults, lock), the per-PR `Router` from `pullrequest`, the changed-files reader over `platform/github` |
 | **validation** | Validate mapping entries against Slack (channel exists, bot present) and GitHub (repo exists); cache results in `config.lock`. Powers the startup gate, the doctor, and `notifycat-config validate`. | `validate` |
@@ -98,7 +98,7 @@ flowchart TB
 
 ## Dependency injection with fx
 
-The wiring is **uber/fx**. Each domain exports one `fx.Module` that provides its use cases and binds its infrastructure adapters to the domain's ports. Each binary is an `fx.New(...)` composing the modules it needs. Runtime lifecycle — the HTTP server, the cleanup scheduler, the digest scheduler, the DB handle — is managed by `fx.Lifecycle` `OnStart`/`OnStop` hooks, replacing the manual goroutine + `Cleanup func()` + signal juggling in `cmd/notifycat-server`.
+The wiring is **uber/fx**. Each domain exports one `fx.Module` that provides its use cases and binds its infrastructure adapters to the domain's ports. Each binary is an `fx.New(...)` composing the modules it needs. Runtime lifecycle — the HTTP server, the cleanup scheduler, the digest scheduler, the scheduled-notification runner, the DB handle — is managed by `fx.Lifecycle` `OnStart`/`OnStop` hooks, replacing the manual goroutine + `Cleanup func()` + signal juggling in `cmd/notifycat-server`.
 
 A domain module binds concrete adapters to ports in exactly one place:
 

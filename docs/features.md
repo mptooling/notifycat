@@ -70,6 +70,10 @@ A merged or declined PR normally keeps its message, tagged `[Merged]` or `[Close
 
 It's off by default, works per repository, and is permanent — deleted Slack messages don't come back. Details and the trade-off: [Remove messages on close](delete-on-close.md).
 
+## Scheduled lists instead of instant messages
+
+Some teams want fewer pings. Set a repository's notification strategy to `scheduled` and its new PRs wait in a queue. Every hour, at set times, or on your own cron, each channel gets one message that lists the PRs queued since the last send. Weekends and holidays are skipped. Details: [Notification strategies](notification-strategies.md).
+
 ## The morning digest
 
 Once a day (9am UTC by default), each channel with stuck PRs gets a two-part reminder: a parent message with the count that pings the channel's configured mentions, and a single threaded reply listing the PRs. The list lives in the thread, so the channel feed pays exactly one line per day.
