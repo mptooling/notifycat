@@ -15,6 +15,7 @@ Which webhook secret and read token apply depends on [`git_provider`](#git_provi
 | Variable | Required | Notes |
 | --- | --- | --- |
 | `SLACK_BOT_TOKEN` | Required | Slack bot token, usually starting with `xoxb-`. |
+| `SLACK_SIGNING_SECRET` | Optional | Turns on Slack interactions: the server serves `POST /webhook/slack/interactions` and PR messages carry the **Start review** button. Find it under your Slack app's Basic Information → App Credentials → Signing Secret. If unset, notifycat stays outbound-only and posts no button. |
 | `GITHUB_WEBHOOK_SECRET` | Required for `git_provider: github` | The secret configured on the GitHub webhook. Use a long random value; 32 characters or more is a good baseline. |
 | `GITHUB_TOKEN` | Optional (github) | PAT used by `notifycat-config validate` and `notifycat-doctor` to read repository webhook config and by path routing to read a PR's changed files. Required scope: `admin:repo_hook` (or `repo` for private repositories). The server does not need this; if unset, the webhook-coverage and path-routing checks are skipped. |
 | `BITBUCKET_WEBHOOK_SECRET` | Required for `git_provider: bitbucket` | The secret configured on the Bitbucket repository/workspace webhook. Bitbucket signs deliveries with `X-Hub-Signature: sha256=<hmac>`; an unsigned delivery (no secret configured) is rejected. |

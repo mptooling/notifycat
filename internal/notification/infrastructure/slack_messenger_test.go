@@ -18,7 +18,7 @@ import (
 func testMessenger(t *testing.T) (*SlackMessenger, *slack.Composer) {
 	t.Helper()
 
-	composer := slack.NewComposer("eyes")
+	composer := slack.NewComposer("eyes", false)
 	client := slack.NewClient(http.DefaultClient, "xoxb-test")
 	return NewSlackMessenger(client, composer), composer
 }
@@ -86,7 +86,7 @@ func messengerAgainst(t *testing.T, historyResponse string) *SlackMessenger {
 	}))
 	t.Cleanup(server.Close)
 	client := slack.NewClient(server.Client(), "xoxb-test", slack.WithBaseURL(server.URL))
-	return NewSlackMessenger(client, slack.NewComposer("eyes"))
+	return NewSlackMessenger(client, slack.NewComposer("eyes", false))
 }
 
 func TestSlackMessenger_HasThreadReplies(t *testing.T) {

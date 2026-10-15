@@ -77,6 +77,15 @@ func actionButtons(message slack.Message) []slack.Button {
 	return nil
 }
 
+// blockTypes returns the type of every block, in order.
+func blockTypes(message slack.Message) []string {
+	types := make([]string, 0, len(message.Blocks))
+	for _, block := range message.Blocks {
+		types = append(types, block.Type)
+	}
+	return types
+}
+
 // wantContext builds the expected context line for a PR opened at `created`.
 func wantContext(repository, author string) string {
 	return fmt.Sprintf("%s · %s · opened <!date^%d^{date_short_pretty} at {time}|Jun 5, 2026 at 2:04 PM>",
@@ -84,7 +93,7 @@ func wantContext(repository, author string) string {
 }
 
 func TestComposer_NewMessage(t *testing.T) {
-	composer := slack.NewComposer("eyes")
+	composer := slack.NewComposer("eyes", false)
 
 	got := composer.NewMessage(samplePR(), []string{"@bob", "@carol"}, "rocket")
 
@@ -94,7 +103,7 @@ func TestComposer_NewMessage(t *testing.T) {
 }
 
 func TestComposer_NewMessage_NoMentions(t *testing.T) {
-	composer := slack.NewComposer("eyes")
+	composer := slack.NewComposer("eyes", false)
 
 	got := composer.NewMessage(slack.PRDetails{
 		Repository: "octo/widget", Number: 1, Title: "t", URL: "u", Author: "a", CreatedAt: created,
@@ -106,7 +115,7 @@ func TestComposer_NewMessage_NoMentions(t *testing.T) {
 }
 
 func TestComposer_NewMessage_ChannelFallback(t *testing.T) {
-	composer := slack.NewComposer("eyes")
+	composer := slack.NewComposer("eyes", false)
 
 	got := composer.NewMessage(slack.PRDetails{
 		Repository: "octo/widget", Number: 1, Title: "t", URL: "u", Author: "a", CreatedAt: created,
@@ -116,7 +125,7 @@ func TestComposer_NewMessage_ChannelFallback(t *testing.T) {
 }
 
 func TestComposer_NewMessage_NoCreatedAt(t *testing.T) {
-	composer := slack.NewComposer("eyes")
+	composer := slack.NewComposer("eyes", false)
 
 	got := composer.NewMessage(slack.PRDetails{
 		Repository: "octo/widget", Number: 1, Title: "t", URL: "u", Author: "a",
@@ -125,8 +134,16 @@ func TestComposer_NewMessage_NoCreatedAt(t *testing.T) {
 	assert.Equal(t, "octo/widget · a", contextText(t, got), "a zero created time drops the 'opened' clause")
 }
 
+func TestComposer_NewMessage_NoStartReviewButtonWhenInteractionsOff(t *testing.T) {
+	composer := slack.NewComposer("eyes", false)
+
+	got := composer.NewMessage(samplePR(), []string{"@bob"}, "rocket")
+
+	assert.Equal(t, []string{"section", "context"}, blockTypes(got), "without interactions a click has nowhere to go")
+}
+
 func TestComposer_NewMessage_HasStartReviewButton(t *testing.T) {
-	composer := slack.NewComposer("eyes")
+	composer := slack.NewComposer("eyes", true)
 
 	got := composer.NewMessage(samplePR(), []string{"@bob"}, "rocket")
 
@@ -140,7 +157,7 @@ func TestComposer_NewMessage_HasStartReviewButton(t *testing.T) {
 }
 
 func TestComposer_BotMessage_Routine(t *testing.T) {
-	composer := slack.NewComposer("eyes")
+	composer := slack.NewComposer("eyes", false)
 
 	got := composer.BotMessage(slack.PRDetails{
 		Number: 42,
@@ -154,7 +171,7 @@ func TestComposer_BotMessage_Routine(t *testing.T) {
 }
 
 func TestComposer_BotMessage_Security(t *testing.T) {
-	composer := slack.NewComposer("eyes")
+	composer := slack.NewComposer("eyes", false)
 
 	got := composer.BotMessage(slack.PRDetails{
 		Number: 42,
@@ -166,7 +183,7 @@ func TestComposer_BotMessage_Security(t *testing.T) {
 }
 
 func TestComposer_BotMessage_NoMentions(t *testing.T) {
-	composer := slack.NewComposer("eyes")
+	composer := slack.NewComposer("eyes", false)
 
 	got := composer.BotMessage(slack.PRDetails{Number: 1, Title: "t", URL: "u"}, nil, "dependabot", false)
 
@@ -175,7 +192,7 @@ func TestComposer_BotMessage_NoMentions(t *testing.T) {
 }
 
 func TestComposer_BotMessage_NoButton(t *testing.T) {
-	composer := slack.NewComposer("eyes")
+	composer := slack.NewComposer("eyes", false)
 
 	got := composer.BotMessage(slack.PRDetails{Number: 1, Title: "t", URL: "u"}, nil, "dependabot", false)
 
@@ -183,7 +200,7 @@ func TestComposer_BotMessage_NoButton(t *testing.T) {
 }
 
 func TestComposer_UpdatedMessage_Merged(t *testing.T) {
-	composer := slack.NewComposer("eyes")
+	composer := slack.NewComposer("eyes", false)
 	pullRequest := slack.PRDetails{
 		Repository: "octo/widget", Number: 7, Title: "feat", URL: "u", Author: "a", CreatedAt: created,
 	}
@@ -196,7 +213,7 @@ func TestComposer_UpdatedMessage_Merged(t *testing.T) {
 }
 
 func TestComposer_UpdatedMessage_Closed(t *testing.T) {
-	composer := slack.NewComposer("eyes")
+	composer := slack.NewComposer("eyes", false)
 	pullRequest := slack.PRDetails{
 		Repository: "octo/widget", Number: 7, Title: "feat", URL: "u", Author: "a", CreatedAt: created,
 	}
@@ -208,7 +225,7 @@ func TestComposer_UpdatedMessage_Closed(t *testing.T) {
 }
 
 func TestComposer_StuckDigestParent(t *testing.T) {
-	composer := slack.NewComposer("eyes")
+	composer := slack.NewComposer("eyes", false)
 
 	message := composer.StuckDigestParent([]string{"<!channel>"}, 2)
 
@@ -220,7 +237,7 @@ func TestComposer_StuckDigestParent(t *testing.T) {
 }
 
 func TestComposer_StuckDigestParent_SingularAndNoMentions(t *testing.T) {
-	composer := slack.NewComposer("eyes")
+	composer := slack.NewComposer("eyes", false)
 
 	message := composer.StuckDigestParent(nil, 1)
 
@@ -230,7 +247,7 @@ func TestComposer_StuckDigestParent_SingularAndNoMentions(t *testing.T) {
 }
 
 func TestComposer_StuckDigestList(t *testing.T) {
-	composer := slack.NewComposer("eyes")
+	composer := slack.NewComposer("eyes", false)
 	stuck := []slack.StuckPR{
 		{Repository: "octo/api", Number: 42, URL: "https://github.com/octo/api/pull/42", IdleDays: 1},
 		{Repository: "octo/web", Number: 51, URL: "https://github.com/octo/web/pull/51", IdleDays: 3},
@@ -246,7 +263,7 @@ func TestComposer_StuckDigestList(t *testing.T) {
 }
 
 func TestComposer_StuckDigestList_SplitsToRespectSlackSectionLimit(t *testing.T) {
-	composer := slack.NewComposer("eyes")
+	composer := slack.NewComposer("eyes", false)
 	// A busy channel: enough PRs that a single section would exceed Slack's
 	// 3000-char section-text cap (which returns invalid_blocks).
 	stuck := make([]slack.StuckPR, 80)
@@ -275,7 +292,7 @@ func TestComposer_StuckDigestList_SplitsToRespectSlackSectionLimit(t *testing.T)
 }
 
 func TestComposer_ActionsBlockMarshalsToButtonJSON(t *testing.T) {
-	composer := slack.NewComposer("eyes")
+	composer := slack.NewComposer("eyes", true)
 	got := composer.NewMessage(slack.PRDetails{
 		Repository: "octo/widget", Number: 42, Title: "t", URL: "u", Author: "a", CreatedAt: created,
 	}, nil, "rocket")
@@ -303,7 +320,7 @@ func TestComposer_SectionAndContextJSONUnchanged(t *testing.T) {
 		Elements []slack.TextObject `json:"elements,omitempty"`
 	}
 
-	composer := slack.NewComposer("eyes")
+	composer := slack.NewComposer("eyes", false)
 	got := composer.NewMessage(slack.PRDetails{
 		Repository: "octo/widget", Number: 1, Title: "t", URL: "u", Author: "a", CreatedAt: created,
 	}, nil, "rocket")
@@ -324,7 +341,7 @@ func TestComposer_SectionAndContextJSONUnchanged(t *testing.T) {
 }
 
 func TestComposer_ReviewingMarker(t *testing.T) {
-	composer := slack.NewComposer("eyes")
+	composer := slack.NewComposer("eyes", false)
 	since := time.Date(2026, 6, 5, 14, 4, 0, 0, time.UTC)
 
 	block := composer.ReviewingMarker("U123", since)
@@ -337,7 +354,7 @@ func TestComposer_ReviewingMarker(t *testing.T) {
 }
 
 func TestComposer_ReviewedByMarker(t *testing.T) {
-	composer := slack.NewComposer("eyes")
+	composer := slack.NewComposer("eyes", false)
 
 	block := composer.ReviewedByMarker([]string{"U1", "U2"})
 
@@ -364,7 +381,7 @@ func reservedCharsPR() slack.PRDetails {
 const escapedTitle = "release: host pinning via Cognito groups host:&lt;hostname&gt; &amp; co &gt; staging"
 
 func TestComposer_NewMessage_EscapesReservedChars(t *testing.T) {
-	composer := slack.NewComposer("eyes")
+	composer := slack.NewComposer("eyes", false)
 
 	got := composer.NewMessage(reservedCharsPR(), []string{"<!subteam^S0ENG>"}, "rocket")
 
@@ -376,7 +393,7 @@ func TestComposer_NewMessage_EscapesReservedChars(t *testing.T) {
 }
 
 func TestComposer_BotMessage_EscapesReservedChars(t *testing.T) {
-	composer := slack.NewComposer("eyes")
+	composer := slack.NewComposer("eyes", false)
 
 	got := composer.BotMessage(reservedCharsPR(), nil, "dependabot", false)
 
@@ -387,7 +404,7 @@ func TestComposer_BotMessage_EscapesReservedChars(t *testing.T) {
 }
 
 func TestComposer_UpdatedMessage_EscapesReservedChars(t *testing.T) {
-	composer := slack.NewComposer("eyes")
+	composer := slack.NewComposer("eyes", false)
 
 	got := composer.UpdatedMessage(reservedCharsPR(), true, "merged")
 
@@ -400,7 +417,7 @@ func TestComposer_UpdatedMessage_EscapesReservedChars(t *testing.T) {
 // A headline whose title escaped its reserved characters still exposes exactly
 // one <…> link, so relocating the message can find it.
 func TestMovedMessage_FindsLinkInEscapedHeadline(t *testing.T) {
-	composer := slack.NewComposer("eyes")
+	composer := slack.NewComposer("eyes", false)
 	headline, err := json.Marshal(composer.NewMessage(reservedCharsPR(), nil, "rocket").Blocks[0])
 	require.NoError(t, err)
 

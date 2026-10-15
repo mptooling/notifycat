@@ -331,6 +331,18 @@ func blockText(body map[string]any, blockType string) string {
 	return ""
 }
 
+// hasBlock reports whether a posted Slack message body carries a block of the
+// given type.
+func hasBlock(body map[string]any, blockType string) bool {
+	blocks, _ := body["blocks"].([]any)
+	for _, block := range blocks {
+		if fields, ok := block.(map[string]any); ok && fields["type"] == blockType {
+			return true
+		}
+	}
+	return false
+}
+
 func TestIntegration_OpenedPR(t *testing.T) {
 	fixture := newIntegrationFixture(t, mappingSeed{repository: "octo/widget", channel: "C123ABCDE", mentions: []string{"@alice"}})
 
@@ -365,6 +377,38 @@ func TestIntegration_OpenedPR(t *testing.T) {
 	saved, err := fixture.loadMessage(t, "octo/widget", 42)
 	require.NoError(t, err)
 	assert.NotEmpty(t, saved.MessageID)
+}
+
+const openedWidgetPR = `{
+	"action": "opened",
+	"repository": {"full_name": "octo/widget"},
+	"pull_request": {
+		"number": 42, "title": "fix", "html_url": "https://gh/octo/widget/pull/42",
+		"user": {"login": "bob"}, "draft": false
+	}
+}`
+
+func TestIntegration_OpenedPR_StartReviewButtonFollowsInteractivity(t *testing.T) {
+	testCases := []struct {
+		name          string
+		signingSecret config.Secret
+		wantButton    bool
+	}{
+		{name: "interactivity off", signingSecret: "", wantButton: false},
+		{name: "interactivity on", signingSecret: "slack-signing-secret", wantButton: true},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := newIntegrationFixtureCfg(t, func(cfg *config.Config) {
+				cfg.SlackSigningSecret = testCase.signingSecret
+			}, mappingSeed{repository: "octo/widget", channel: "C123ABCDE"})
+
+			status := fixture.post(t, openedWidgetPR)
+
+			require.Equal(t, http.StatusOK, status)
+			assert.Equal(t, testCase.wantButton, hasBlock(fixture.postedBody(t), "actions"))
+		})
+	}
 }
 
 func TestIntegration_ClosedMerged(t *testing.T) {

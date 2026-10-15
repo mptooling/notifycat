@@ -87,9 +87,10 @@ func newHTTPClient() *http.Client {
 }
 
 // newComposer builds the Slack message composer from the configured new-PR
-// reaction.
+// reaction. The Start review button rides on the same switch as the
+// interactions route, so a posted button always has an endpoint behind it.
 func newComposer(cfg config.Config) *slack.Composer {
-	return slack.NewComposer(cfg.Reactions.NewPR)
+	return slack.NewComposer(cfg.Reactions.NewPR, cfg.SlackInteractivityEnabled())
 }
 
 // buildProvider constructs the mappings provider from config and warns when
@@ -276,7 +277,7 @@ func buildMux(cfg config.Config, dispatcher *notificationapp.Dispatcher, startRe
 	})
 	registerWebhookRoute(mux, cfg, dispatcher)
 
-	if cfg.SlackSigningSecret.Reveal() == "" {
+	if !cfg.SlackInteractivityEnabled() {
 		logger.Info("slack interactivity disabled", slog.String("reason", "SLACK_SIGNING_SECRET unset"))
 	} else {
 		slackVerifier := security.NewSlackVerifier(cfg.SlackSigningSecret.Reveal())

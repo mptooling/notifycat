@@ -122,18 +122,22 @@ func escapeDisplayText(pr PRDetails) PRDetails {
 
 // Composer renders Slack-formatted notification messages.
 type Composer struct {
-	newPREmoji string
+	newPREmoji        string
+	startReviewButton bool
 }
 
 // NewComposer returns a Composer that prefixes new-PR messages with the given
-// reaction-style emoji name (without colons).
-func NewComposer(newPREmoji string) *Composer {
-	return &Composer{newPREmoji: newPREmoji}
+// reaction-style emoji name (without colons). startReviewButton adds the Start
+// review button to new-PR messages; pass it only when the Slack interactions
+// endpoint is served, or the button would lead a click nowhere.
+func NewComposer(newPREmoji string, startReviewButton bool) *Composer {
+	return &Composer{newPREmoji: newPREmoji, startReviewButton: startReviewButton}
 }
 
 // NewMessage renders the initial notification for a PR: a headline section with
 // the new-PR emoji, any mentions, and the linked title, plus a muted context
-// line carrying repo, author, and the localized open time. Mentions stay in the
+// line carrying repo, author, and the localized open time, plus the Start review
+// button when the composer was built with it. Mentions stay in the
 // section because Slack only reliably notifies on a mention in a section/
 // top-level text — a context block renders the mention as gray text but does
 // not ping. When the mentions list is empty the prefix is omitted entirely so
@@ -153,14 +157,11 @@ func (c *Composer) NewMessage(pr PRDetails, mentions []string, newPREmoji string
 		"%splease review PR #%d: %s by %s",
 		mentionsPrefix(mentions), pr.Number, pr.Title, pr.Author,
 	)
-	return Message{
-		Blocks: []Block{
-			section(headline),
-			contextBlock(contextLine(pr)),
-			startReviewActions(pr),
-		},
-		Fallback: fallback,
+	blocks := []Block{section(headline), contextBlock(contextLine(pr))}
+	if c.startReviewButton {
+		blocks = append(blocks, startReviewActions(pr))
 	}
+	return Message{Blocks: blocks, Fallback: fallback}
 }
 
 // ReviewingMarker renders the small context line appended to a PR message when

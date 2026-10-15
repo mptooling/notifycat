@@ -34,7 +34,7 @@ func slackSectionText(message slack.Message) string {
 // The SlackComposer adapter must preserve the underlying composer's rendered
 // text and fallback when mapping slack.Message to the domain's neutral Message.
 func TestSlackComposer_PreservesComposerOutput(t *testing.T) {
-	composer := slack.NewComposer("eyes")
+	composer := slack.NewComposer("eyes", false)
 	adapter := NewSlackComposer(composer)
 	domainPRs := []domain.StuckPR{{Repository: "acme/api", Number: 42, URL: "https://github.com/acme/api/pull/42", IdleDays: 2}}
 	slackPRs := []slack.StuckPR{{Repository: "acme/api", Number: 42, URL: "https://github.com/acme/api/pull/42", IdleDays: 2}}

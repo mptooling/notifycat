@@ -41,7 +41,7 @@ A PR converted back to draft is the one case where the message is *removed* — 
 
 ## The review flow
 
-Each PR message carries a **Start review** button. Clicking it appends an `:eye: @you reviewing` marker, visible to the whole channel — no more two people silently reviewing the same PR, and no more "is anyone on this?".
+With Slack interactions turned on (set [`SLACK_SIGNING_SECRET`](configuration.md#secrets-environment-variables-only)), each PR message carries a **Start review** button. Without it, messages post with no button. Clicking it appends an `:eye: @you reviewing` marker, visible to the whole channel — no more two people silently reviewing the same PR, and no more "is anyone on this?".
 
 <video autoplay loop muted playsinline width="700">
   <source src="../assets/videos/review-flow.mp4" type="video/mp4">
