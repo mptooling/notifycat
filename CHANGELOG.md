@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.27.0](https://github.com/mptooling/notifycat/compare/v0.26.1...v0.27.0) (2026-10-15)
+
+
+### 🚀 Features
+
+* **notification:** add scheduled notification strategy ([#213](https://github.com/mptooling/notifycat/issues/213)) ([d4f4544](https://github.com/mptooling/notifycat/commit/d4f45440fe54682cc8071cfe8eade112c6a0e777))
+
+
+### 🐛 Bug fixes
+
+* **slack:** show the Start review button only when interactivity is on ([#212](https://github.com/mptooling/notifycat/issues/212)) ([2917c71](https://github.com/mptooling/notifycat/commit/2917c71583bca4122cc8600130858438cff53df7))
+
+
+### 🧹 Maintenance
+
+* **deps:** bump golang from 1.26.6-alpine to 1.27.1-alpine in the docker group across 1 directory ([#191](https://github.com/mptooling/notifycat/issues/191)) ([e082094](https://github.com/mptooling/notifycat/commit/e082094a579cd343fcfe0029911b5570e420362e))
+
 ## [0.26.1](https://github.com/mptooling/notifycat/compare/v0.26.0...v0.26.1) (2026-10-13)
 
 
