@@ -4,7 +4,7 @@ The exact rules for the `mappings:` section of `config.yaml`. For task-oriented 
 
 ## File location
 
-`mappings:` is a top-level section of `config.yaml` (default path `./config.yaml`, overridable via `NOTIFYCAT_CONFIG_FILE`). The sibling **lock file** `config.lock` is written next to it and is operator-derived state — gitignored in this repository, committed in the ops repository that owns your deployment.
+`mappings:` is a top-level section of `config.yaml` (default path `./config.yaml`, overridable via `NOTIFYCAT_CONFIG_FILE`). The sibling **lock file** `config.lock` is written next to it (overridable via `NOTIFYCAT_LOCK_FILE`) and is operator-derived state — gitignored in this repository, committed in the ops repository that owns your deployment.
 
 A runnable starting point lives in [`config.example.yaml`](https://github.com/mptooling/notifycat/blob/main/config.example.yaml).
 

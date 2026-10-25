@@ -24,9 +24,12 @@ import (
 // read cfg.Addr, cfg.Reactions.NewPR, etc.; the nested config.yaml shape is an
 // internal detail of Load (see fileSchema).
 type Config struct {
-	// ConfigFile is the path config.yaml was loaded from; the sibling
-	// config.lock is derived from it.
+	// ConfigFile is the path config.yaml was loaded from.
 	ConfigFile string
+
+	// LockFile is the config.lock path from NOTIFYCAT_LOCK_FILE; empty means
+	// beside ConfigFile (see LockFilePath).
+	LockFile string
 
 	// GitProvider is the required git_provider enum ("github"). It selects which
 	// provider's secrets are required (see readSecrets) and hashes into every
@@ -217,6 +220,7 @@ func Load() (Config, error) {
 
 	cfg := defaults()
 	cfg.ConfigFile = path
+	cfg.LockFile = os.Getenv("NOTIFYCAT_LOCK_FILE")
 	applyFileSchema(&cfg, fs)
 
 	cfg.Mappings, err = routinginfra.DecodeMappings(&fs.Mappings)
@@ -328,6 +332,14 @@ func readSecrets(cfg *Config) error {
 		return fmt.Errorf("config: %w", &MissingVarError{Var: "SLACK_BOT_TOKEN"})
 	}
 	return requireProviderSecret(cfg)
+}
+
+// LockFilePath returns where startup validation caches its results.
+func (c Config) LockFilePath() string {
+	if c.LockFile != "" {
+		return c.LockFile
+	}
+	return routinginfra.LockPath(c.ConfigFile)
 }
 
 // SlackInteractivityEnabled reports whether the inbound Slack interactions

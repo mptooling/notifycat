@@ -22,7 +22,6 @@ import (
 	"github.com/mptooling/notifycat/internal/platform/slack"
 	routingapp "github.com/mptooling/notifycat/internal/routing/application"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
-	routinginfra "github.com/mptooling/notifycat/internal/routing/infrastructure"
 	validationapp "github.com/mptooling/notifycat/internal/validation/application"
 	validationdomain "github.com/mptooling/notifycat/internal/validation/domain"
 	validationinfra "github.com/mptooling/notifycat/internal/validation/infrastructure"
@@ -39,8 +38,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, w)
 	}
 	checker, lister := buildValidationDeps(cfg, provider)
-	lockPath := routinginfra.LockPath(cfg.ConfigFile)
-	gateway := diagnosticsinfra.NewLockGateway(lockPath, time.Now)
+	gateway := diagnosticsinfra.NewLockGateway(cfg.LockFilePath(), time.Now)
 	validator := diagnosticsapp.NewMappingsValidator(provider, checker, lister, gateway)
 	os.Exit(dispatch(os.Args[1:], provider, validator, os.Stdout, os.Stderr))
 }

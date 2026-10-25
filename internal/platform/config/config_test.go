@@ -28,7 +28,7 @@ func writeConfig(t *testing.T, body string) {
 		"NOTIFYCAT_IGNORE_AI_REVIEWS", "NOTIFYCAT_DEPENDABOT_FORMAT",
 		"SLACK_REACTIONS_ENABLED", "SLACK_REACTION_NEW_PR",
 		"GITHUB_WEBHOOK_SECRET", "SLACK_BOT_TOKEN", "GITHUB_TOKEN",
-		"SLACK_SIGNING_SECRET",
+		"SLACK_SIGNING_SECRET", "NOTIFYCAT_LOCK_FILE",
 	} {
 		t.Setenv(name, "")
 	}
@@ -139,6 +139,24 @@ func TestLoad_SlackSigningSecretRead(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, "v0-signing", cfg.SlackSigningSecret.Reveal())
+}
+
+func TestLoad_LockFileDefaultsBesideConfigFile(t *testing.T) {
+	cfg, err := loadConfigured(t, minimalConfig)
+
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(filepath.Dir(cfg.ConfigFile), "config.lock"), cfg.LockFilePath())
+}
+
+func TestLoad_LockFileFromEnvironment(t *testing.T) {
+	writeConfig(t, minimalConfig)
+	setSecrets(t)
+	t.Setenv("NOTIFYCAT_LOCK_FILE", "/app/config.lock")
+
+	cfg, err := config.Load()
+
+	require.NoError(t, err)
+	assert.Equal(t, "/app/config.lock", cfg.LockFilePath())
 }
 
 func TestConfig_SlackInteractivityEnabled(t *testing.T) {
