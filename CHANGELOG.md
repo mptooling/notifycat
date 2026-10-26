@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.28.0](https://github.com/mptooling/notifycat/compare/v0.27.0...v0.28.0) (2026-10-26)
+
+
+### 🚀 Features
+
+* **config:** add NOTIFYCAT_LOCK_FILE to move config.lock ([#215](https://github.com/mptooling/notifycat/issues/215)) ([1dc9b89](https://github.com/mptooling/notifycat/commit/1dc9b8949e91731e557a1aabee0776328f8a51fd))
+
+
+### 🧹 Maintenance
+
+* **deps:** bump github.com/pressly/goose/v3 from 3.28.0 to 3.29.0 in the go-modules group ([#214](https://github.com/mptooling/notifycat/issues/214)) ([06bb4e7](https://github.com/mptooling/notifycat/commit/06bb4e7a9e6639216de883effe28a9fbe7fd2b8f))
+
 ## [0.27.0](https://github.com/mptooling/notifycat/compare/v0.26.1...v0.27.0) (2026-10-15)
 
 
