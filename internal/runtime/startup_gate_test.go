@@ -18,6 +18,10 @@ import (
 
 const memberChannel = `{"ok":true,"channel":{"id":"C0123ABCDE","name":"general","is_member":true}}`
 
+const fullCoverageHooks = `[{"id":1,"active":true,
+	"config":{"url":"https://notifycat.example.com/webhook/github"},
+	"events":["pull_request","pull_request_review","pull_request_review_comment","issue_comment"]}]`
+
 // slackValidationFake answers the two read-only calls the validator makes,
 // including the scope header the Slack client reads scopes from.
 func slackValidationFake(t *testing.T, channelBody string) *httptest.Server {
@@ -112,14 +116,25 @@ func TestStartupGate_NoWebhookOnRepository_Boots(t *testing.T) {
 // stopped writing the lock altogether.
 func TestStartupGate_FullCoverage_CachesEntry(t *testing.T) {
 	slack := slackValidationFake(t, memberChannel)
-	gitHub := gitHubHooksFake(t, http.StatusOK, `[{"id":1,"active":true,
-		"config":{"url":"https://notifycat.example.com/webhook/github"},
-		"events":["pull_request","pull_request_review","pull_request_review_comment","issue_comment"]}]`)
+	gitHub := gitHubHooksFake(t, http.StatusOK, fullCoverageHooks)
 	cfg := gateConfig(t, slack.URL, gitHub.URL)
 
 	buildTestServer(t, cfg)
 
 	assert.Contains(t, readGateLock(t, cfg.ConfigFile).Entries, "acme/api")
+}
+
+func TestStartupGate_LockFileSet_CachesEntryThere(t *testing.T) {
+	slack := slackValidationFake(t, memberChannel)
+	gitHub := gitHubHooksFake(t, http.StatusOK, fullCoverageHooks)
+	cfg := gateConfig(t, slack.URL, gitHub.URL)
+	cfg.LockFile = filepath.Join(t.TempDir(), "elsewhere.lock")
+
+	buildTestServer(t, cfg)
+
+	lock, err := routinginfra.ReadLock(cfg.LockFile)
+	require.NoError(t, err)
+	assert.Contains(t, lock.Entries, "acme/api")
 }
 
 // The fatal path stays unregressed: a broken Slack install still refuses to start.

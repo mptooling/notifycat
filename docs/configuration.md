@@ -6,6 +6,8 @@ Notifycat is configured through a single `config.yaml` file that holds all non-s
 
 The config file path defaults to `./config.yaml`. Override with `NOTIFYCAT_CONFIG_FILE`. The Docker image default is `/app/config.yaml`.
 
+The validation cache `config.lock` is written next to the config file. Override with `NOTIFYCAT_LOCK_FILE` when that folder is read-only — for example when the platform injects `config.yaml` as a file and the writable volume lives elsewhere.
+
 Secrets should stay in environment variables or your deployment secret manager. Do not put real tokens in committed files. See [config.example.yaml](https://github.com/mptooling/notifycat/blob/main/config.example.yaml) for a copy-paste starting point.
 
 ## Secrets (environment variables only)

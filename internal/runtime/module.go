@@ -497,7 +497,7 @@ func startupValidate(
 	if len(entries) == 0 {
 		return nil
 	}
-	lockPath := routinginfra.LockPath(cfg.ConfigFile)
+	lockPath := cfg.LockFilePath()
 	lock, err := routinginfra.ReadLock(lockPath)
 	if err != nil {
 		logger.Warn("startup validate: lock unreadable; rebuilding", slog.Any("err", err))
