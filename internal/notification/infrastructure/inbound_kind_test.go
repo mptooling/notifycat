@@ -75,9 +75,27 @@ func TestMapKind(t *testing.T) {
 			want:        kernel.KindMerged,
 		},
 		{
-			name:        "pull_request synchronize is unmapped",
+			name:        "pull_request synchronize is updated",
 			githubEvent: "pull_request",
 			body:        `{"action":"synchronize","repository":{"full_name":"o/r"},"pull_request":{"number":7,"user":{"login":"a"}}}`,
+			want:        kernel.KindUpdated,
+		},
+		{
+			name:        "synchronize draft is gated to unknown",
+			githubEvent: "pull_request",
+			body:        `{"action":"synchronize","repository":{"full_name":"o/r"},"pull_request":{"number":7,"draft":true,"user":{"login":"a"}}}`,
+			want:        kernel.KindUnknown,
+		},
+		{
+			name:        "reopened",
+			githubEvent: "pull_request",
+			body:        `{"action":"reopened","repository":{"full_name":"o/r"},"pull_request":{"number":7,"user":{"login":"a"}}}`,
+			want:        kernel.KindReopened,
+		},
+		{
+			name:        "reopened draft is gated to unknown",
+			githubEvent: "pull_request",
+			body:        `{"action":"reopened","repository":{"full_name":"o/r"},"pull_request":{"number":7,"draft":true,"user":{"login":"a"}}}`,
 			want:        kernel.KindUnknown,
 		},
 		{

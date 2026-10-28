@@ -93,6 +93,11 @@ type bitbucketPullRequest struct {
 	Draft       bool
 	Description string
 	CreatedAt   time.Time
+
+	HeadSHA      string
+	AuthorID     string
+	SourceBranch string
+	TargetBranch string
 }
 
 // rawBitbucketPayload mirrors only the JSON fields we read. Unknown fields are
@@ -117,7 +122,21 @@ type rawBitbucketPayload struct {
 		Author struct {
 			DisplayName string `json:"display_name"`
 			Type        string `json:"type"`
+			AccountID   string `json:"account_id"`
 		} `json:"author"`
+		Source struct {
+			Commit struct {
+				Hash string `json:"hash"`
+			} `json:"commit"`
+			Branch struct {
+				Name string `json:"name"`
+			} `json:"branch"`
+		} `json:"source"`
+		Destination struct {
+			Branch struct {
+				Name string `json:"name"`
+			} `json:"branch"`
+		} `json:"destination"`
 	} `json:"pullrequest"`
 	Repository struct {
 		FullName string `json:"full_name"`
@@ -156,6 +175,11 @@ func parseBitbucketPayload(body []byte) (bitbucketPayload, error) {
 			Draft:       raw.PullRequest.Draft,
 			Description: raw.PullRequest.Description,
 			CreatedAt:   createdAt,
+
+			HeadSHA:      raw.PullRequest.Source.Commit.Hash,
+			AuthorID:     raw.PullRequest.Author.AccountID,
+			SourceBranch: raw.PullRequest.Source.Branch.Name,
+			TargetBranch: raw.PullRequest.Destination.Branch.Name,
 		},
 	}, nil
 }
@@ -232,6 +256,11 @@ func toBitbucketEvent(eventKey string, p bitbucketPayload) kernel.Event {
 			Draft:     p.PullRequest.Draft,
 			Body:      p.PullRequest.Description,
 			CreatedAt: p.PullRequest.CreatedAt,
+
+			HeadSHA:      p.PullRequest.HeadSHA,
+			AuthorID:     p.PullRequest.AuthorID,
+			SourceBranch: p.PullRequest.SourceBranch,
+			TargetBranch: p.PullRequest.TargetBranch,
 		},
 		Sender: kernel.Sender{Login: p.Actor.DisplayName, IsBot: p.Actor.Type != bbActorTypeUser},
 	}

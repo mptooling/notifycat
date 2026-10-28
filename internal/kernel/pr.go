@@ -14,6 +14,12 @@ type PR struct {
 	// Body is the PR description, consulted to tell a Dependabot/Renovate
 	// security advisory from a routine bump.
 	Body string
+	// HeadSHA, AuthorID, SourceBranch and TargetBranch feed the agent PR list.
+	// Each is empty when the payload omits it.
+	HeadSHA      string
+	AuthorID     string
+	SourceBranch string
+	TargetBranch string
 	// CreatedAt is the PR's open time, rendered as a localized date token in the
 	// Slack context line. Zero when the payload omits it.
 	CreatedAt time.Time

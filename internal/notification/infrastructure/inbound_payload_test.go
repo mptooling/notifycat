@@ -215,3 +215,31 @@ func TestParsePayload_SenderAbsentIsZeroValue(t *testing.T) {
 	assert.Empty(t, payload.Sender.Type, "sender stays optional")
 	assert.Empty(t, payload.Sender.Login)
 }
+
+func TestParsePayload_FeedFields(t *testing.T) {
+	payload := parsePayload(t, `{
+		"action": "synchronize",
+		"repository": {"full_name": "octo/widget"},
+		"pull_request": {
+			"number": 42,
+			"head": {"sha": "9fceb02d0ae598e95dc970b74767f19372d61af8", "ref": "feature/billing-retry"},
+			"base": {"ref": "main"},
+			"user": {"login": "alice", "id": 583231}
+		}
+	}`)
+
+	assert.Equal(t, "9fceb02d0ae598e95dc970b74767f19372d61af8", payload.PullRequest.HeadSHA)
+	assert.Equal(t, "feature/billing-retry", payload.PullRequest.SourceBranch)
+	assert.Equal(t, "main", payload.PullRequest.TargetBranch)
+	assert.Equal(t, "583231", payload.PullRequest.AuthorID)
+}
+
+func TestParsePayload_FeedFieldsWithoutUserID(t *testing.T) {
+	payload := parsePayload(t, `{
+		"action": "opened",
+		"repository": {"full_name": "octo/widget"},
+		"pull_request": {"number": 42, "user": {"login": "alice"}}
+	}`)
+
+	assert.Empty(t, payload.PullRequest.AuthorID)
+}

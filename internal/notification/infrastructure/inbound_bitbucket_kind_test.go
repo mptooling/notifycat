@@ -139,3 +139,13 @@ func TestToBitbucketEvent_SenderIsBot(t *testing.T) {
 		})
 	}
 }
+
+func TestMapBitbucketKind_UpdatedKeepsReadyForReviewAndCarriesHeadSHA(t *testing.T) {
+	body := `{"repository":{"full_name":"w/r"},"pullrequest":{"id":7,"draft":false,"state":"OPEN",` +
+		`"source":{"commit":{"hash":"9fceb02d0ae5"}}}}`
+
+	event := dispatchBitbucketKind(t, "pullrequest:updated", body)
+
+	assert.Equal(t, kernel.KindReadyForReview, event.Kind)
+	assert.Equal(t, "9fceb02d0ae5", event.PR.HeadSHA)
+}

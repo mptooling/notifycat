@@ -68,3 +68,28 @@ func TestToBitbucketEvent_MergedFromState(t *testing.T) {
 
 	assert.True(t, event.PR.Merged, "state MERGED marks the PR merged")
 }
+
+func TestBitbucketPayload_FeedFields(t *testing.T) {
+	event := toBitbucketEvent("pullrequest:created", mustParseBitbucket(t, `{
+		"pullrequest": {
+			"id": 42, "state": "OPEN",
+			"source": {"commit": {"hash": "9fceb02d0ae5"}, "branch": {"name": "feature/billing-retry"}},
+			"destination": {"branch": {"name": "main"}},
+			"author": {"display_name": "Bob", "type": "user", "account_id": "557058:2f1c"}
+		},
+		"repository": {"full_name": "workspace/repo"}
+	}`))
+
+	assert.Equal(t, "9fceb02d0ae5", event.PR.HeadSHA)
+	assert.Equal(t, "feature/billing-retry", event.PR.SourceBranch)
+	assert.Equal(t, "main", event.PR.TargetBranch)
+	assert.Equal(t, "557058:2f1c", event.PR.AuthorID)
+}
+
+func mustParseBitbucket(t *testing.T, body string) bitbucketPayload {
+	t.Helper()
+
+	payload, err := parseBitbucketPayload([]byte(body))
+	require.NoError(t, err)
+	return payload
+}

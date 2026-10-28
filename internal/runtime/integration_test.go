@@ -520,6 +520,20 @@ func TestIntegration_IssueCommentOnPlainIssueIsIgnored(t *testing.T) {
 	assert.NotContains(t, fixture.slack.paths(), "/api/reactions.add", "a plain issue is not a PR")
 }
 
+func TestIntegration_SynchronizeMakesNoSlackCall(t *testing.T) {
+	fixture := newIntegrationFixture(t, mappingSeed{repository: "octo/widget", channel: "C123ABCDE"})
+	fixture.seedMessage(t, "octo/widget", 42, "prev-ts")
+
+	status := fixture.postEvent(t, "pull_request", `{
+		"action": "synchronize",
+		"repository": {"full_name": "octo/widget"},
+		"pull_request": {"number": 42, "title": "fix", "html_url": "u", "user": {"login": "bob"}}
+	}`)
+
+	require.Equal(t, http.StatusOK, status)
+	assert.Empty(t, fixture.slack.paths(), "a synchronize is not a Slack event")
+}
+
 func TestIntegration_ReviewRequestChange(t *testing.T) {
 	fixture := newIntegrationFixture(t, mappingSeed{repository: "octo/widget", channel: "C123ABCDE"})
 	fixture.seedMessage(t, "octo/widget", 42, "prev-ts")
