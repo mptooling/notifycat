@@ -147,3 +147,11 @@ type TokenAuthenticatorParams struct {
 	Clock  Clock
 	Logger *slog.Logger
 }
+
+// AdminHandlerParams are the dependencies of the admin HTTP handler.
+type AdminHandlerParams struct {
+	Authenticator AdminAuthenticator
+	Invites       InviteIssuer
+	Tokens        TokenAdmin
+	Logger        *slog.Logger
+}
