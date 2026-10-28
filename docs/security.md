@@ -78,6 +78,9 @@ Only bcrypt hashes of invites and tokens are stored, in SQLite. They never go in
 Generate a key with `notifycat-keygen`. It writes the key (`nca_…`) to stdout and the env line for its hash to stderr. Split the two streams so you can store each one:
 
 ```sh
+# only you can read key.txt and hash.txt
+umask 077
+
 # pull first, so pull progress does not end up in hash.txt
 docker pull ghcr.io/mptooling/notifycat
 
@@ -100,9 +103,9 @@ NOTIFYCAT_ADMIN_KEY_HASH='$2a$10$…'
 
 This line is a secret. Put it in your platform's secret store:
 
-- Fly.io: `fly secrets set`.
+- Fly.io: `fly secrets import < hash.txt`.
 - Kubernetes: a `Secret`.
-- Docker Compose or the plain binary: the gitignored `.env` (`cat hash.txt >> .env`).
+- Docker Compose or the plain binary: the gitignored `.env` (`cat hash.txt >> .env`; make sure `.env` ends with a newline first).
 
 A secret store takes the name `NOTIFYCAT_ADMIN_KEY_HASH` and, as the value, the hash between the single quotes.
 
@@ -156,7 +159,7 @@ curl -fsS -X DELETE -H @- http://localhost:9091/admin/v1/tokens/<id> <<<"Authori
 
 The `<id>` in the `DELETE` example is the `id` field from `GET /admin/v1/tokens`.
 
-The invite response carries a `redeem_command` built from `server.domain`; send it to the developer. If `server.domain` is not set, the command uses `$NOTIFYCAT_URL` instead, and the developer sets it to the public base URL first (`export NOTIFYCAT_URL=https://notifycat.example.com`). The developer runs it on their own machine, in bash or zsh. The response holds their token, shown only once, so they must save it right away: for example in their password manager, or as an `export NOTIFYCAT_TOKEN='nct_…'` line in their shell profile (such as `~/.zshrc`) after `chmod 600 ~/.zshrc`. The admin never sees the token.
+The invite response carries a `redeem_command` built from `server.domain`; send it to the developer. If `server.domain` is not set, the command uses `$NOTIFYCAT_URL` instead, and the developer sets it to the public base URL first (`export NOTIFYCAT_URL=https://notifycat.example.com`). The developer runs it on their own machine, in bash or zsh. The response holds their token, shown only once, so they must save it right away: for example in their password manager, or as an `export NOTIFYCAT_TOKEN='nct_…'` line in their shell profile (such as `~/.zshrc` or `~/.bashrc`), with `chmod 600` on that file. The admin never sees the token.
 
 ### What a stolen token gets
 

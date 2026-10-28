@@ -27,7 +27,7 @@ Startup validation distinguishes what the operator controls from what lives on t
 
 Each warning logs `startup validate warning` with `entry`, `repository`, `check`, and `detail`, followed by one `startup validation completed with warnings` line naming the affected entries. Warned entries are **not** written to `config.lock`, so every boot re-probes them and re-logs the warning until the problem is fixed — no warning goes quiet on its own.
 
-When the agent API is enabled and `server.admin_addr` is set, the admin server is a second listener. It starts and stops together with the public one. If either port cannot be bound, startup stops with an error that names the server and exit code 1. The error is printed on stderr, not as a log line: `notifycat-server: admin server: listen tcp …` (or `http server: …`). A later fatal error on either listener also exits with code 1. See [Agent API access](security.md#agent-api-access).
+When the agent API is enabled and `server.admin_addr` is set, the admin server is a second listener. It starts and stops together with the public one. If either port cannot be bound, startup stops with an error that names the server, and the exit code is 1. The error is printed on stderr, not as a log line: `notifycat-server: admin server: listen tcp …` (or `http server: …`). A later fatal error on either listener also exits with code 1. See [Agent API access](security.md#agent-api-access).
 
 Shutdown listens for `SIGINT`/`SIGTERM` and lets in-flight requests finish within the shutdown window.
 

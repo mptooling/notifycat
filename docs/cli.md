@@ -115,6 +115,9 @@ Runs are idempotent: the row is retargeted immediately after the repost, so a re
 Generates the admin key and the hash the server checks it against. The key goes to stdout; the `NOTIFYCAT_ADMIN_KEY_HASH='...'` line goes to stderr. Split the two streams to store each one:
 
 ```sh
+# only you can read key.txt and hash.txt
+umask 077
+
 # pull first, so pull progress does not end up in hash.txt
 docker pull ghcr.io/mptooling/notifycat
 
@@ -129,7 +132,7 @@ go build -o bin/notifycat-keygen ./cmd/notifycat-keygen
 ./bin/notifycat-keygen >key.txt 2>hash.txt
 ```
 
-Keep the key in a password manager. The hash line is a secret too: put it in your platform's secret store (Fly: `fly secrets set`; Kubernetes: a `Secret`; Compose or the plain binary: the gitignored `.env`). Never commit it to git, not even to a deploy repository. Then delete `key.txt` and `hash.txt`.
+Keep the key in a password manager. The hash line is a secret too: put it in your platform's secret store (Fly: `fly secrets import < hash.txt`; Kubernetes: a `Secret`; Compose or the plain binary: the gitignored `.env`). Never commit it to git, not even to a deploy repository. Then delete `key.txt` and `hash.txt`.
 
 Keep the single quotes around the hash. A bcrypt hash contains `$`, which an unquoted `.env` or shell value expands, corrupting the hash.
 
