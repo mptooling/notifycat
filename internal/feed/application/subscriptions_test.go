@@ -40,7 +40,7 @@ func TestSubscriptions_Add(t *testing.T) {
 		wantAddCalls int
 	}{
 		{name: "exact repository", requested: []string{"acme/api"}, wantAdded: []string{"acme/api"}, wantListed: []string{"acme/api"}, wantAddCalls: 1},
-		{name: "repository the catalog resolves through a tier", requested: []string{"acme/ops"}, wantAdded: []string{"acme/ops"}, wantListed: []string{"acme/ops"}, wantAddCalls: 1},
+		{name: "surrounding whitespace trimmed", requested: []string{" acme/api "}, wantAdded: []string{"acme/api"}, wantListed: []string{"acme/api"}, wantAddCalls: 1},
 		{name: "all repositories", requested: []string{"*"}, wantAdded: []string{"*"}, wantListed: []string{"*"}, wantAddCalls: 1},
 		{name: "stored lower case", requested: []string{"ACME/Api"}, wantAdded: []string{"acme/api"}, wantListed: []string{"acme/api"}, wantAddCalls: 1},
 		{name: "duplicates add once", requested: []string{"acme/api", "ACME/API", "acme/api"}, wantAdded: []string{"acme/api"}, wantListed: []string{"acme/api"}, wantAddCalls: 1},
@@ -78,6 +78,8 @@ func TestSubscriptions_AddRejects(t *testing.T) {
 			wantAs: &domain.UnknownRepositoriesError{Repositories: []string{"acme/nope", "other/x"}},
 		},
 		{name: "empty list", requested: nil, wantErr: domain.ErrNoRepositories},
+		{name: "only blank entries", requested: []string{" ", ""}, wantErr: domain.ErrNoRepositories},
+		{name: "all repositories counts as one over the limit", existing: 200, requested: []string{"*"}, wantErr: domain.ErrTooManySubscriptions},
 		{name: "too many", existing: 199, requested: []string{"acme/api", "acme/web"}, wantErr: domain.ErrTooManySubscriptions},
 	}
 	for _, testCase := range testCases {
@@ -114,6 +116,19 @@ func TestSubscriptions_AddAcceptsAtTheLimitWhenOneIsAlreadySubscribed(t *testing
 	subscriptions, _ := subscriptionsWithLog(store)
 
 	listed, err := subscriptions.Add(t.Context(), subscriber, []string{"acme/api", "acme/web"})
+
+	require.NoError(t, err)
+	assert.Len(t, listed, domain.MaxSubscriptionsPerToken)
+}
+
+func TestSubscriptions_AddAllRepositoriesCountsAsOne(t *testing.T) {
+	store := &fakeSubscriptionStore{}
+	for index := range 199 {
+		store.seed("acme/existing-" + string(rune('a'+index%26)) + string(rune('a'+index/26)))
+	}
+	subscriptions, _ := subscriptionsWithLog(store)
+
+	listed, err := subscriptions.Add(t.Context(), subscriber, []string{"*"})
 
 	require.NoError(t, err)
 	assert.Len(t, listed, domain.MaxSubscriptionsPerToken)

@@ -118,3 +118,13 @@ func TestRecorder_ReturnsStoreError(t *testing.T) {
 
 	require.ErrorIs(t, err, storeErr)
 }
+
+func TestRecorder_ReturnsDeleteError(t *testing.T) {
+	storeErr := errors.New("disk full")
+	store := &fakePullRequestStore{deleteErr: storeErr}
+	recorder := newRecorder(store, &fakeCatalog{repositories: []string{"acme/api"}})
+
+	err := recorder.Record(t.Context(), kernel.Event{Kind: kernel.KindClosed, Repository: "acme/api", PR: kernel.PR{Number: 1}})
+
+	require.ErrorIs(t, err, storeErr)
+}

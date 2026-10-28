@@ -91,6 +91,7 @@ type fakePullRequestStore struct {
 	changed       []domain.PullRequest
 	changedCalls  []changedCall
 	upsertErr     error
+	deleteErr     error
 	repositoryErr error
 }
 
@@ -108,6 +109,9 @@ func (store *fakePullRequestStore) Upsert(_ context.Context, pullRequest domain.
 }
 
 func (store *fakePullRequestStore) Delete(_ context.Context, repository string, number int) error {
+	if store.deleteErr != nil {
+		return store.deleteErr
+	}
 	store.deletes = append(store.deletes, deleteCall{repository: repository, number: number})
 	return nil
 }
