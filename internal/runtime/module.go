@@ -23,6 +23,7 @@ import (
 	"go.uber.org/fx"
 	"gorm.io/gorm"
 
+	"github.com/mptooling/notifycat/internal/access"
 	digestapp "github.com/mptooling/notifycat/internal/digest/application"
 	digestdomain "github.com/mptooling/notifycat/internal/digest/domain"
 	digestinfra "github.com/mptooling/notifycat/internal/digest/infrastructure"
@@ -52,11 +53,13 @@ import (
 
 // Module is the runtime composition root. Supply a config.Config and it builds
 // the whole graph — logger, mappings provider, migrated database, Slack client,
-// per-PR router, dispatcher, start-review sink, HTTP server, and the cleanup and
-// digest schedulers — then starts the startup-validation gate, the HTTP server,
-// and the schedulers via lifecycle hooks. A failing startup gate or a bad cron
-// spec fails App.Start; the database handle closes on App.Stop.
+// per-PR router, dispatcher, start-review sink, access use cases, HTTP server,
+// optional admin server, and the cleanup and digest schedulers — then starts the
+// startup-validation gate, the HTTP server, the admin server on its private
+// port, and the schedulers via lifecycle hooks. A failing startup gate or a bad
+// cron spec fails App.Start; the database handle closes on App.Stop.
 var Module = fx.Module("runtime",
+	access.Module,
 	fx.Provide(
 		newLogger,
 		newHTTPClient,
@@ -66,6 +69,9 @@ var Module = fx.Module("runtime",
 		persistence.NewPullRequests,
 		persistence.NewCodeReviews,
 		persistence.NewScheduledNotifications,
+		persistence.NewAccessInvites,
+		persistence.NewAccessTokens,
+		provideAccessSettings,
 		buildProvider,
 		buildRouter,
 		buildDispatcher,
@@ -75,10 +81,12 @@ var Module = fx.Module("runtime",
 		buildScheduledRunner,
 		buildMux,
 		buildServer,
+		buildAdminServer,
 		newRunContext,
 	),
 	fx.Invoke(startupGate),
 	fx.Invoke(registerServer),
+	fx.Invoke(registerAdminServer),
 	fx.Invoke(registerSchedulers),
 )
 
@@ -343,10 +351,10 @@ func buildStartReviewSink(pullRequests *persistence.PullRequests, codeReviews *p
 }
 
 // buildMux builds the HTTP routes: health check, the selected git provider's
-// webhook, and the optional inbound Slack interactivity endpoint. The Slack
-// route is registered only when a signing secret is configured; otherwise
-// notifycat stays outbound-only and the route is absent.
-func buildMux(cfg config.Config, dispatcher *notificationapp.Dispatcher, startReviewSink reviewinfra.InteractionSink, logger *slog.Logger) *http.ServeMux {
+// webhook, the optional inbound Slack interactivity endpoint, and the optional
+// agent API. The Slack route is registered only when a signing secret is
+// configured; otherwise notifycat stays outbound-only and the route is absent.
+func buildMux(cfg config.Config, dispatcher *notificationapp.Dispatcher, startReviewSink reviewinfra.InteractionSink, logger *slog.Logger, agentAPI agentAPIInputs) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -364,6 +372,7 @@ func buildMux(cfg config.Config, dispatcher *notificationapp.Dispatcher, startRe
 		)
 		logger.Info("slack interactivity enabled", slog.String("route", "POST /webhook/slack/interactions"))
 	}
+	registerAgentAPI(mux, cfg, agentAPI, logger)
 	return mux
 }
 
@@ -390,11 +399,16 @@ func registerWebhookRoute(mux *http.ServeMux, cfg config.Config, dispatcher *not
 	}
 }
 
-// buildServer builds the HTTP server with notifycat's hardened timeouts.
+// buildServer builds the public HTTP server.
 func buildServer(cfg config.Config, mux *http.ServeMux) *http.Server {
+	return newHardenedServer(cfg.Addr, mux)
+}
+
+// newHardenedServer builds an HTTP server with notifycat's hardened timeouts.
+func newHardenedServer(addr string, handler http.Handler) *http.Server {
 	return &http.Server{
-		Addr:              cfg.Addr,
-		Handler:           mux,
+		Addr:              addr,
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,
@@ -423,16 +437,18 @@ func startupGate(provider *routingapp.Provider, cfg config.Config, slackClient *
 	return startupValidate(provider, cfg, slackClient, httpClient, logger)
 }
 
-// registerServer wires the HTTP server into the lifecycle: OnStart launches
-// ListenAndServe in a goroutine (ignoring http.ErrServerClosed), OnStop calls
-// Shutdown. A fatal ListenAndServe error (e.g. the address is already in use)
-// triggers a shutdown with exit code 1 via the Shutdowner, preserving the legacy
-// entrypoint's fatal-server-error → non-zero-exit behaviour.
+// registerServer serves the public HTTP server in the lifecycle.
 func registerServer(lc fx.Lifecycle, server *http.Server, logger *slog.Logger, shutdowner fx.Shutdowner) {
-	lc.Append(fx.Hook{
+	serveInLifecycle(lc, server, "listening", logger, shutdowner)
+}
+
+// serveInLifecycle runs ListenAndServe from OnStart and Shutdown from OnStop. A
+// fatal serve error, such as a taken port, shuts the app down with exit code 1.
+func serveInLifecycle(lifecycle fx.Lifecycle, server *http.Server, listeningMessage string, logger *slog.Logger, shutdowner fx.Shutdowner) {
+	lifecycle.Append(fx.Hook{
 		OnStart: func(context.Context) error {
 			go func() {
-				logger.Info("listening", slog.String("addr", server.Addr))
+				logger.Info(listeningMessage, slog.String("addr", server.Addr))
 				if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 					logger.Error("http server stopped", slog.Any("err", err))
 					_ = shutdowner.Shutdown(fx.ExitCode(1))
