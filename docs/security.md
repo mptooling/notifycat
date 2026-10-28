@@ -71,7 +71,7 @@ Notifycat can hand developers' coding agents a personal token for its agent API.
 1. The admin creates an **invite** for a user label such as `alice`. An invite is valid for one hour and can be redeemed once.
 2. The developer redeems the invite over HTTPS from their own machine and receives their own **token** (`nct_…`). It is shown once and never again.
 
-Only bcrypt hashes of invites and tokens are stored, in SQLite. They never go into git or `config.yaml`. A token has no end date; deleting its row ends access at once. The agent feed endpoints follow in a later release.
+Only bcrypt hashes of invites and tokens are stored, in SQLite. They never go into git or `config.yaml`. A token has no end date; deleting its row ends access at once. Developers use the token to read open PRs; see [Agent API](agent-api.md).
 
 ### The admin key
 
@@ -163,7 +163,7 @@ The invite response carries a `redeem_command` built from `server.domain`; send 
 
 ### What a stolen token gets
 
-Once the agent feed ships, a token reads the titles, descriptions, branch names, author ids, links, and commit SHAs of open PRs in the configured repositories. No code. The fix is `DELETE /admin/v1/tokens/{id}`.
+A token reads the titles, descriptions, branch names, author ids, links, and commit SHAs of open PRs in the configured repositories. No code. The fix is `DELETE /admin/v1/tokens/{id}`.
 
 ### What a stolen invite gets
 

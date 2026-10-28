@@ -69,7 +69,7 @@ Two provider-specific behaviors are worth knowing when running `git_provider: bi
 
 | Key | Default | Notes |
 | --- | --- | --- |
-| `agent_api.enabled` | `false` | Serves the `/api/v1/` agent routes. Off means no `/api/v1/` routes and no admin server. Invites can only be created when `server.admin_addr` is set too; with the API on and no `admin_addr`, notifycat logs `WARN admin server not started` and existing tokens keep working. Turning the API off hides the routes but does not revoke tokens; turning it on again restores them. To revoke a token, use `DELETE /admin/v1/tokens/{id}`. |
+| `agent_api.enabled` | `false` | Serves the `/api/v1/` agent routes. When on, notifycat also records the open PRs of configured repositories for the agent feed. Off means no recording, no `/api/v1/` routes and no admin server. Invites can only be created when `server.admin_addr` is set too; with the API on and no `admin_addr`, notifycat logs `WARN admin server not started` and existing tokens keep working. Turning the API off hides the routes but does not revoke tokens; turning it on again restores them. To revoke a token, use `DELETE /admin/v1/tokens/{id}`. |
 
 ### database
 

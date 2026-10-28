@@ -59,7 +59,7 @@ Authorization beyond "is this credential valid" does not exist: a token identifi
 
 ## Domain map
 
-Eight domains over the shared kernel and platform. The core domain is **notification**; everything else supports it.
+Nine domains over the shared kernel and platform. The core domain is **notification**; everything else supports it.
 
 ```mermaid
 flowchart TB
@@ -72,6 +72,7 @@ flowchart TB
     maintenance["maintenance<br/>cleanup + reconcile + relocate"]
     diagnostics["diagnostics<br/>doctor · config CLI · smoke"]
     access["access<br/>admin key · invites · agent tokens"]
+    feed["feed<br/>subscriptions · open-PR feed for agents"]
   end
   subgraph kernel["internal/kernel (shared model)"]
     k["PR · Message · Event · Sender · enums"]
@@ -88,6 +89,10 @@ flowchart TB
   validation --> routing
   diagnostics --> validation
   access --> platform
+  feed --> kernel
+  feed --> routing
+  feed --> access
+  feed --> platform
   domains --> platform
 ```
 
@@ -101,6 +106,7 @@ flowchart TB
 | **maintenance** | Background housekeeping: delete stale message rows past their TTL; reconcile closed PRs; relocate messages after a channel change. | `cleanup`, `reconcile`, `relocate` |
 | **diagnostics** | Operator tooling: the preflight doctor, the `notifycat-config` CLI (list/validate), and the smoke-test delivery. | `doctor`, `mappingcli`, `smoke` |
 | **access** | Agent API access: an admin key guards a private admin port where invites are issued (one hour, single use) and tokens listed or deleted; a redeemed invite yields a bcrypt-hashed agent token checked as a Bearer credential. | — (new) |
+| **feed** | The agent PR feed: records the open PRs of configured repositories from webhook events, keeps each token's subscriptions, and serves each token the open PRs it has not received yet under `/api/v1/subs*`. | — (new) |
 
 `internal/app` (the old hand-written composition root) has been deleted: its wiring is per-domain fx modules, and its lifecycle orchestration is `fx.Lifecycle` hooks composed in `internal/runtime` and each `cmd/*/main.go`.
 
@@ -145,7 +151,7 @@ Binary → module composition:
 
 | Binary | Modules |
 | --- | --- |
-| `notifycat-server` | platform, kernel, routing, validation, notification, review, digest, maintenance, access + HTTP server and admin server |
+| `notifycat-server` | platform, kernel, routing, validation, notification, review, digest, maintenance, access, feed + HTTP server and admin server |
 | `notifycat-config` | platform, kernel, routing, validation, diagnostics |
 | `notifycat-doctor` | platform, kernel, routing, validation, diagnostics |
 | `notifycat-migrate` | platform (persistence only) |

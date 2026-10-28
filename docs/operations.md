@@ -69,6 +69,12 @@ The agent API logs these lines. None of them carries a credential or an `Authori
 | `agent token last_used_at not updated` | warn | The token worked but its usage timestamp could not be written. |
 | `agent api request failed` | error | An internal error on a public agent route. |
 | `admin request failed` | error | An internal error on an admin route. |
+| `feed subscriptions added` | info | A token subscribed to new repositories (`user`, `token_id`, `count`). |
+| `feed subscription removed` | info | A token removed a subscription (`user`, `token_id`, `repository`). |
+| `feed pull requests delivered` | info | A poll returned new PRs (`user`, `token_id`, `count`). Logged only when `count` is above 0. |
+| `feed pull request not recorded` | warn | A webhook PR could not be stored for the feed (`repository`, `pr`, `kind`, `err`). The webhook response does not change. |
+
+With the agent API on, `ignored webhook event` with `reason=no_handler` also shows `kind=updated` (a new push) and `kind=reopened`. Slack ignores these kinds, but the feed records them. See the [agent API guide](agent-api.md).
 
 ## Release images
 
