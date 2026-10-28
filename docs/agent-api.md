@@ -16,7 +16,7 @@ With `agent_api.enabled: false`, notifycat records nothing for the feed and serv
 
 When the API is on, notifycat records the open PRs of every repository in your `mappings:`. It learns about a PR from its webhook. A PR that was already open before you turned the feed on appears after its next [recorded event](#what-notifycat-records). A PR that gets no such event is never listed. Webhooks that arrive while notifycat is down are lost, so those PRs are missed too.
 
-A repository that you remove from `mappings:` is no longer served. Its stored PRs and its subscriptions, for every token, are removed at the next start. If you map the repository again, subscribe again.
+A repository that you remove from `mappings:` is no longer served. Its stored PRs and its subscriptions, for every token, are removed at the next start. If you map the repository again, subscribe again. With no repositories in `mappings:`, notifycat keeps all subscriptions.
 
 Serve the public API over HTTPS only. Your reverse proxy does this.
 
