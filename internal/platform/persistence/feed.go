@@ -67,6 +67,29 @@ func (r *FeedSubscriptions) Delete(ctx context.Context, tokenID string, id int64
 	return deleted[0], nil
 }
 
+// DeleteRepositories removes the repositories' subscriptions of every token and returns how many rows went.
+func (r *FeedSubscriptions) DeleteRepositories(ctx context.Context, repositories []string) (int, error) {
+	if len(repositories) == 0 {
+		return 0, nil
+	}
+	result := r.db.WithContext(ctx).Where("repository IN ?", repositories).Delete(&FeedSubscription{})
+	if result.Error != nil {
+		return 0, fmt.Errorf("store: delete feed subscriptions of repositories: %w", result.Error)
+	}
+	return int(result.RowsAffected), nil
+}
+
+// Repositories returns the distinct repositories that have a subscription, sorted.
+func (r *FeedSubscriptions) Repositories(ctx context.Context) ([]string, error) {
+	var repositories []string
+	err := r.db.WithContext(ctx).Model(&FeedSubscription{}).
+		Distinct().Order("repository").Pluck("repository", &repositories).Error
+	if err != nil {
+		return nil, fmt.Errorf("store: list subscribed repositories: %w", err)
+	}
+	return repositories, nil
+}
+
 // FeedPullRequests persists the latest state of open pull requests.
 type FeedPullRequests struct {
 	db *gorm.DB

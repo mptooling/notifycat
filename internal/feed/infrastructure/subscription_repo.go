@@ -59,6 +59,24 @@ func (repo *SubscriptionRepo) Delete(ctx context.Context, tokenID string, id int
 	return subscriptionFromRow(row), nil
 }
 
+// DeleteRepositories implements domain.SubscriptionStore.
+func (repo *SubscriptionRepo) DeleteRepositories(ctx context.Context, repositories []string) (int, error) {
+	removed, err := repo.subscriptions.DeleteRepositories(ctx, repositories)
+	if err != nil {
+		return 0, fmt.Errorf("feed: delete subscriptions of repositories: %w", err)
+	}
+	return removed, nil
+}
+
+// Repositories implements domain.SubscriptionStore.
+func (repo *SubscriptionRepo) Repositories(ctx context.Context) ([]string, error) {
+	repositories, err := repo.subscriptions.Repositories(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("feed: list subscribed repositories: %w", err)
+	}
+	return repositories, nil
+}
+
 func subscriptionFromRow(row persistence.FeedSubscription) domain.Subscription {
 	return domain.Subscription{
 		ID:         row.ID,

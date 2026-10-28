@@ -228,6 +228,52 @@ func TestFeedPullRequests_DeleteAllCascadesDeliveriesAndKeepsSubscriptions(t *te
 	assert.EqualValues(t, 1, countTable(t, db, "access_tokens", "id = ?", "t1"))
 }
 
+func seedSubscriptionsOfTwoTokens(t *testing.T, subscriptions *persistence.FeedSubscriptions) {
+	t.Helper()
+	for _, tokenID := range []string{"t1", "t2"} {
+		_, err := subscriptions.Add(context.Background(), persistence.FeedSubscriptionBatch{
+			TokenID: tokenID, Repositories: []string{"acme/web", "acme/api", "*"}, CreatedAt: accessBaseTime,
+		})
+		require.NoError(t, err)
+	}
+}
+
+func TestFeedSubscriptions_RepositoriesAreDistinct(t *testing.T) {
+	subscriptions := persistence.NewFeedSubscriptions(newFeedDB(t))
+	seedSubscriptionsOfTwoTokens(t, subscriptions)
+
+	repositories, err := subscriptions.Repositories(context.Background())
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"*", "acme/api", "acme/web"}, repositories, "two tokens on one repository list it once")
+}
+
+func TestFeedSubscriptions_DeleteRepositoriesRemovesEveryTokensRows(t *testing.T) {
+	db := newFeedDB(t)
+	subscriptions := persistence.NewFeedSubscriptions(db)
+	seedSubscriptionsOfTwoTokens(t, subscriptions)
+
+	removed, err := subscriptions.DeleteRepositories(context.Background(), []string{"acme/api", "acme/gone"})
+
+	require.NoError(t, err)
+	assert.Equal(t, 2, removed)
+	assert.Zero(t, countTable(t, db, "feed_subscriptions", "repository = ?", "acme/api"))
+	assert.EqualValues(t, 2, countTable(t, db, "feed_subscriptions", "repository = ?", "acme/web"))
+	assert.EqualValues(t, 2, countTable(t, db, "feed_subscriptions", "repository = ?", "*"))
+}
+
+func TestFeedSubscriptions_DeleteRepositoriesWithoutRepositories(t *testing.T) {
+	db := newFeedDB(t)
+	subscriptions := persistence.NewFeedSubscriptions(db)
+	seedSubscriptionsOfTwoTokens(t, subscriptions)
+
+	removed, err := subscriptions.DeleteRepositories(context.Background(), nil)
+
+	require.NoError(t, err)
+	assert.Zero(t, removed)
+	assert.EqualValues(t, 6, countTable(t, db, "feed_subscriptions", "1 = 1"))
+}
+
 func TestFeedPullRequests_DeleteRepositoriesKeepsOtherRepositories(t *testing.T) {
 	db := newFeedDB(t)
 	seedDeliveredFeed(t, db)

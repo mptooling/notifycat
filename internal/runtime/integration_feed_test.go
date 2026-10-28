@@ -265,3 +265,61 @@ func TestIntegration_StartupRemovesFeedPullRequestsOfUnmappedRepositories(t *tes
 
 	assert.Equal(t, []string{feedRepository}, storedFeedRepositories(t, db))
 }
+
+func seedFeedSubscriptions(t *testing.T, cfg config.Config, repositories ...string) {
+	t.Helper()
+
+	db, err := persistence.Open(cfg.DatabaseURL)
+	require.NoError(t, err)
+	defer func() {
+		if sqlDB, closeErr := persistence.SQLDB(db); closeErr == nil {
+			_ = sqlDB.Close()
+		}
+	}()
+	ctx := context.Background()
+	require.NoError(t, persistence.MigrateUp(ctx, db))
+	now := time.Now()
+	invites := persistence.NewAccessInvites(db)
+	require.NoError(t, invites.Create(ctx, persistence.AccessInvite{
+		ID: "invite", User: "alice", SecretHash: "invite-hash", ExpiresAt: now.Add(time.Hour), CreatedAt: now,
+	}))
+	require.NoError(t, invites.Redeem(ctx, "invite", persistence.AccessToken{
+		ID: "token", User: "alice", SecretHash: "token-hash", CreatedAt: now,
+	}))
+	_, err = persistence.NewFeedSubscriptions(db).Add(ctx, persistence.FeedSubscriptionBatch{
+		TokenID: "token", Repositories: repositories, CreatedAt: now,
+	})
+	require.NoError(t, err)
+}
+
+func storedFeedSubscriptions(t *testing.T, db *gorm.DB) []string {
+	t.Helper()
+
+	var repositories []string
+	require.NoError(t, db.Table("feed_subscriptions").Order("repository").Pluck("repository", &repositories).Error)
+	return repositories
+}
+
+func TestIntegration_StartupRemovesSubscriptionsToUnmappedRepositories(t *testing.T) {
+	testCases := []struct {
+		name            string
+		agentAPIEnabled bool
+	}{
+		{name: "agent API on", agentAPIEnabled: true},
+		{name: "agent API off"},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			cfg := feedConfig(t, testCase.agentAPIEnabled)
+			seedFeedSubscriptions(t, cfg, feedRepository, "acme/gone", "*")
+			logged := &lockedBuffer{}
+			var db *gorm.DB
+
+			buildAgentAPIApp(t, cfg, fx.Replace(slog.New(slog.NewTextHandler(logged, nil))), fx.Populate(&db))
+
+			assert.Equal(t, []string{"*", feedRepository}, storedFeedSubscriptions(t, db))
+			assert.Contains(t, logged.String(), `msg="feed subscriptions removed" count=1 reason=unmapped`)
+		})
+	}
+}

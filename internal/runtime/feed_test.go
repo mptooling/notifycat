@@ -79,6 +79,17 @@ func (cleaner *fakeCleaner) RemoveUnconfigured(context.Context) (int, error) {
 	return cleaner.removed, cleaner.err
 }
 
+type fakeSubscriptionCleaner struct {
+	removed int
+	err     error
+	calls   int
+}
+
+func (cleaner *fakeSubscriptionCleaner) RemoveUnconfigured(context.Context) (int, error) {
+	cleaner.calls++
+	return cleaner.removed, cleaner.err
+}
+
 func updatedEvent() kernel.Event {
 	return kernel.Event{
 		Provider:   kernel.ProviderGitHub,
@@ -170,7 +181,7 @@ func TestBuildWebhookDispatcher_DisabledReturnsPlainDispatcher(t *testing.T) {
 	assert.Same(t, plain, built)
 }
 
-func TestCleanFeedPullRequests(t *testing.T) {
+func TestCleanFeed_PullRequests(t *testing.T) {
 	testCases := []struct {
 		name            string
 		agentAPIEnabled bool
@@ -198,7 +209,7 @@ func TestCleanFeedPullRequests(t *testing.T) {
 			var logged bytes.Buffer
 			cleaner := &fakeCleaner{removed: testCase.removed, err: testCase.err}
 
-			cleanFeedPullRequests(config.Config{AgentAPIEnabled: testCase.agentAPIEnabled}, cleaner, slog.New(slog.NewTextHandler(&logged, nil)))
+			cleanFeed(config.Config{AgentAPIEnabled: testCase.agentAPIEnabled}, cleaner, &fakeSubscriptionCleaner{}, slog.New(slog.NewTextHandler(&logged, nil)))
 
 			assert.Equal(t, []string{testCase.wantCall}, cleaner.calls)
 			assert.Contains(t, logged.String(), testCase.wantLog)
@@ -206,12 +217,54 @@ func TestCleanFeedPullRequests(t *testing.T) {
 	}
 }
 
-func TestCleanFeedPullRequests_NothingRemovedLogsNothing(t *testing.T) {
+func TestCleanFeed_NothingRemovedLogsNothing(t *testing.T) {
 	var logged bytes.Buffer
 	cleaner := &fakeCleaner{}
 
-	cleanFeedPullRequests(config.Config{AgentAPIEnabled: true}, cleaner, slog.New(slog.NewTextHandler(&logged, nil)))
+	cleanFeed(config.Config{AgentAPIEnabled: true}, cleaner, &fakeSubscriptionCleaner{}, slog.New(slog.NewTextHandler(&logged, nil)))
 
 	assert.Equal(t, []string{"remove_unconfigured"}, cleaner.calls)
 	assert.Empty(t, logged.String())
+}
+
+func TestCleanFeed_Subscriptions(t *testing.T) {
+	testCases := []struct {
+		name            string
+		agentAPIEnabled bool
+		removed         int
+		err             error
+		wantLog         string
+	}{
+		{name: "agent API on", agentAPIEnabled: true, removed: 2, wantLog: `level=INFO msg="feed subscriptions removed" count=2 reason=unmapped`},
+		{name: "agent API off", removed: 3, wantLog: `level=INFO msg="feed subscriptions removed" count=3 reason=unmapped`},
+		{name: "a failure only warns", err: errRecord, wantLog: `level=WARN msg="feed cleanup failed" err="database is locked"`},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			var logged bytes.Buffer
+			subscriptions := &fakeSubscriptionCleaner{removed: testCase.removed, err: testCase.err}
+
+			cleanFeed(config.Config{AgentAPIEnabled: testCase.agentAPIEnabled}, &fakeCleaner{}, subscriptions, slog.New(slog.NewTextHandler(&logged, nil)))
+
+			assert.Equal(t, 1, subscriptions.calls, "subscriptions are cleaned on every start")
+			assert.Contains(t, logged.String(), testCase.wantLog)
+		})
+	}
+}
+
+func TestCleanFeed_PullRequestFailureDoesNotSkipSubscriptions(t *testing.T) {
+	subscriptions := &fakeSubscriptionCleaner{}
+
+	cleanFeed(config.Config{AgentAPIEnabled: true}, &fakeCleaner{err: errRecord}, subscriptions, discardLogger())
+
+	assert.Equal(t, 1, subscriptions.calls)
+}
+
+func TestCleanFeed_SubscriptionFailureDoesNotSkipPullRequests(t *testing.T) {
+	pullRequests := &fakeCleaner{}
+
+	cleanFeed(config.Config{AgentAPIEnabled: true}, pullRequests, &fakeSubscriptionCleaner{err: errRecord}, discardLogger())
+
+	assert.Equal(t, []string{"remove_unconfigured"}, pullRequests.calls)
 }

@@ -23,6 +23,35 @@ type fakeSubscriptionStore struct {
 	listErr       error
 	addErr        error
 	nextID        int64
+
+	deletedRepositories   [][]string
+	repositoriesErr       error
+	deleteRepositoriesErr error
+}
+
+func (store *fakeSubscriptionStore) Repositories(context.Context) ([]string, error) {
+	if store.repositoriesErr != nil {
+		return nil, store.repositoriesErr
+	}
+	var repositories []string
+	for _, subscription := range store.subscriptions {
+		if !slices.Contains(repositories, subscription.Repository) {
+			repositories = append(repositories, subscription.Repository)
+		}
+	}
+	return repositories, nil
+}
+
+func (store *fakeSubscriptionStore) DeleteRepositories(_ context.Context, repositories []string) (int, error) {
+	store.deletedRepositories = append(store.deletedRepositories, repositories)
+	if store.deleteRepositoriesErr != nil {
+		return 0, store.deleteRepositoriesErr
+	}
+	before := len(store.subscriptions)
+	store.subscriptions = slices.DeleteFunc(store.subscriptions, func(subscription domain.Subscription) bool {
+		return slices.Contains(repositories, subscription.Repository)
+	})
+	return before - len(store.subscriptions), nil
 }
 
 func (store *fakeSubscriptionStore) seed(repositories ...string) {

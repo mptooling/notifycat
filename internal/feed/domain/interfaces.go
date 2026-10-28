@@ -14,6 +14,10 @@ type SubscriptionStore interface {
 	Add(ctx context.Context, subscriptions NewSubscriptions) (int, error)
 	// Delete returns ErrSubscriptionNotFound when the id is not the token's.
 	Delete(ctx context.Context, tokenID string, id int64) (Subscription, error)
+	// DeleteRepositories removes the repositories' subscriptions of every token and returns how many it removed.
+	DeleteRepositories(ctx context.Context, repositories []string) (int, error)
+	// Repositories returns every repository that has a subscription.
+	Repositories(ctx context.Context) ([]string, error)
 }
 
 // PullRequestStore persists open pull requests for the feed.
@@ -69,6 +73,12 @@ type PullRequestCleaner interface {
 	// RemoveAll removes every stored pull request and returns how many it removed.
 	RemoveAll(ctx context.Context) (int, error)
 	// RemoveUnconfigured removes the pull requests of repositories the catalog no longer configures and returns how many it removed.
+	RemoveUnconfigured(ctx context.Context) (int, error)
+}
+
+// SubscriptionCleaner removes subscriptions the feed can no longer serve; tokens and stored pull requests stay.
+type SubscriptionCleaner interface {
+	// RemoveUnconfigured removes every token's subscriptions to repositories the catalog no longer configures, keeps the all-repositories subscription, and returns how many it removed.
 	RemoveUnconfigured(ctx context.Context) (int, error)
 }
 
