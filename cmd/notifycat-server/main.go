@@ -46,7 +46,7 @@ func main() {
 	}
 
 	// Block until a SIGINT/SIGTERM (exit code 0) or a Shutdowner-triggered exit
-	// (e.g. a fatal ListenAndServe error → exit code 1).
+	// (e.g. a fatal Serve error → exit code 1).
 	sig := <-app.Wait()
 
 	stopCtx, stopCancel := context.WithTimeout(context.Background(), shutdownTimeout)

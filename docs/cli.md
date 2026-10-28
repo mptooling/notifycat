@@ -1,6 +1,6 @@
 # CLI binaries
 
-The image (and a source build) ships six binaries. `notifycat-server` is the long-running process; the rest are operator tools you run ad hoc.
+The image (and a source build) ships eight binaries. `notifycat-server` is the long-running process; the rest are operator tools you run ad hoc.
 
 | Binary | Purpose |
 | --- | --- |
@@ -11,6 +11,7 @@ The image (and a source build) ships six binaries. `notifycat-server` is the lon
 | `notifycat-migrate` | Apply or inspect the embedded SQLite migrations |
 | `notifycat-reconcile` | One-time backfill: mark long-closed PRs closed in the database |
 | `notifycat-relocate` | Move open PRs' Slack messages to another channel after repointing a repo |
+| `notifycat-keygen` | Generate the admin key and the bcrypt hash the server stores |
 
 Under Docker, pass the binary name as the command; the Compose install wraps the common ones (`./notifycat doctor`, `./notifycat smoke`):
 
@@ -108,3 +109,31 @@ The reposted message announces itself: `:truck: [moved from another channel] ple
 Runs are idempotent: the row is retargeted immediately after the repost, so a re-run skips whatever already moved, and it can never leave a row pointing at a message that was never posted. If the pointer edit is the step that fails, the move is already recorded — the run reports the error, and the only trace is an un-marked message in the old channel.
 
 `SLACK_BOT_TOKEN` needs two scopes beyond the server's own — `reactions:read` and the history scopes `channels:history` / `groups:history` — because the tool reads a posted message back. The run refuses to start without them, and refuses a destination the bot isn't a member of, rather than failing partway. The server needs the history scopes only for entries with [`cleanup.delete_on_close`](delete-on-close.md) on.
+
+## notifycat-keygen
+
+Generates the admin key and the hash the server checks it against. The key goes to stdout; the `NOTIFYCAT_ADMIN_KEY_HASH='...'` line goes to stderr. Split the two streams to store each one:
+
+```sh
+# only you can read key.txt and hash.txt
+umask 077
+
+# pull first, so pull progress does not end up in hash.txt
+docker pull ghcr.io/mptooling/notifycat
+
+# the key stays on screen, the hash line goes to hash.txt
+docker run --rm ghcr.io/mptooling/notifycat notifycat-keygen 2>hash.txt
+
+# or both go to files
+docker run --rm ghcr.io/mptooling/notifycat notifycat-keygen >key.txt 2>hash.txt
+
+# from a source checkout instead of the image
+go build -o bin/notifycat-keygen ./cmd/notifycat-keygen
+./bin/notifycat-keygen >key.txt 2>hash.txt
+```
+
+Keep the key in a password manager. The hash line is a secret too: put it in your platform's secret store (Fly: `fly secrets import < hash.txt`; Kubernetes: a `Secret`; Compose or the plain binary: the gitignored `.env`). Never commit it to git, not even to a deploy repository. Then delete `key.txt` and `hash.txt`.
+
+Keep the single quotes around the hash. A bcrypt hash contains `$`, which an unquoted `.env` or shell value expands, corrupting the hash.
+
+It reads no config and touches no database. Run it on the admin's machine. The server never stores the key, so a lost key means generating a new pair.

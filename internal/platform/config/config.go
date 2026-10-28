@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/yaml.v3"
 
 	"github.com/mptooling/notifycat/internal/kernel"
@@ -37,6 +38,7 @@ type Config struct {
 	GitProvider kernel.Provider
 
 	Addr        string
+	AdminAddr   string
 	LogLevel    string
 	LogFormat   string
 	DatabaseURL string
@@ -77,6 +79,9 @@ type Config struct {
 	// (POST /webhook/slack/interactions). Optional: when empty the endpoint is
 	// not registered and notifycat behaves exactly as an outbound-only service.
 	SlackSigningSecret Secret
+
+	AgentAPIEnabled bool
+	AdminKeyHash    Secret
 }
 
 // Reactions configures Slack reaction emoji names per PR lifecycle event.
@@ -92,11 +97,21 @@ type Reactions struct {
 }
 
 // MissingVarError is returned when a required secret env var is unset or empty.
-type MissingVarError struct{ Var string }
+// Remedy, when set, tells the operator how to produce the value.
+type MissingVarError struct {
+	Var    string
+	Remedy string
+}
 
 func (e *MissingVarError) Error() string {
-	return fmt.Sprintf("config: required environment variable %s is missing", e.Var)
+	message := fmt.Sprintf("config: required environment variable %s is missing", e.Var)
+	if e.Remedy == "" {
+		return message
+	}
+	return message + " — " + e.Remedy
 }
+
+const adminKeyHashRemedy = "run notifycat-keygen and put the printed NOTIFYCAT_ADMIN_KEY_HASH='…' line in the server's environment"
 
 // DefaultConfigFile is used when NOTIFYCAT_CONFIG_FILE is unset.
 const DefaultConfigFile = "./config.yaml"
@@ -111,7 +126,11 @@ type fileSchema struct {
 		LogLevel  string `yaml:"log_level"`
 		LogFormat string `yaml:"log_format"`
 		Domain    string `yaml:"domain"`
+		AdminAddr string `yaml:"admin_addr"`
 	} `yaml:"server"`
+	AgentAPI struct {
+		Enabled *bool `yaml:"enabled"`
+	} `yaml:"agent_api"`
 	Database struct {
 		URL string `yaml:"url"`
 	} `yaml:"database"`
@@ -244,6 +263,9 @@ func Load() (Config, error) {
 	if err := readSecrets(&cfg); err != nil {
 		return Config{}, err
 	}
+	if err := validateAgentAPI(cfg); err != nil {
+		return Config{}, err
+	}
 	if cfg.MessageTTLDays <= 0 {
 		return Config{}, fmt.Errorf("config: cleanup.message_ttl_days must be > 0, got %d", cfg.MessageTTLDays)
 	}
@@ -257,6 +279,8 @@ func applyFileSchema(cfg *Config, fs fileSchema) {
 	setString(&cfg.Addr, fs.Server.Addr)
 	setString(&cfg.LogLevel, fs.Server.LogLevel)
 	setString(&cfg.LogFormat, fs.Server.LogFormat)
+	cfg.AdminAddr = fs.Server.AdminAddr
+	cfg.AgentAPIEnabled = fs.AgentAPI.Enabled != nil && *fs.AgentAPI.Enabled
 	cfg.Domain = fs.Server.Domain // no default; take the YAML value verbatim (empty is valid)
 	setString(&cfg.DatabaseURL, fs.Database.URL)
 	setString(&cfg.SlackBaseURL, fs.Slack.BaseURL)
@@ -316,6 +340,28 @@ func setString(dst *string, v string) {
 	}
 }
 
+func trimSingleQuotes(value string) string {
+	if len(value) >= 2 && strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'") {
+		return value[1 : len(value)-1]
+	}
+	return value
+}
+
+func validateAgentAPI(cfg Config) error {
+	if cfg.AdminAddr != "" && cfg.AdminKeyHash == "" {
+		return fmt.Errorf("config: %w", &MissingVarError{Var: "NOTIFYCAT_ADMIN_KEY_HASH", Remedy: adminKeyHashRemedy})
+	}
+	if cfg.AdminAddr != "" && cfg.AdminAddr == cfg.Addr {
+		return fmt.Errorf("config: server.admin_addr must differ from server.addr (both %q)", cfg.Addr)
+	}
+	if cfg.AdminKeyHash != "" {
+		if _, err := bcrypt.Cost([]byte(cfg.AdminKeyHash)); err != nil {
+			return fmt.Errorf("config: NOTIFYCAT_ADMIN_KEY_HASH is not a valid bcrypt hash — wrap it in single quotes in .env so $ is not expanded: %w", err)
+		}
+	}
+	return nil
+}
+
 // readSecrets pulls the secrets from the environment into cfg. SLACK_BOT_TOKEN is
 // always required; the webhook secret requirement follows the selected provider
 // (see requireProviderSecret). GITHUB_TOKEN and SLACK_SIGNING_SECRET are optional
@@ -328,6 +374,7 @@ func readSecrets(cfg *Config) error {
 	cfg.BitbucketWebhookSecret = Secret(os.Getenv("BITBUCKET_WEBHOOK_SECRET"))
 	cfg.BitbucketToken = Secret(os.Getenv("BITBUCKET_TOKEN"))
 	cfg.BitbucketAuthEmail = os.Getenv("BITBUCKET_AUTH_EMAIL")
+	cfg.AdminKeyHash = Secret(trimSingleQuotes(os.Getenv("NOTIFYCAT_ADMIN_KEY_HASH")))
 	if cfg.SlackBotToken.Reveal() == "" {
 		return fmt.Errorf("config: %w", &MissingVarError{Var: "SLACK_BOT_TOKEN"})
 	}

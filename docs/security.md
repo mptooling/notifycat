@@ -14,6 +14,8 @@ Run through this before you point a production webhook at Notifycat:
 - [ ] The Slack bot has only the [documented scopes](slack-app.md#bot-scopes) — nothing broader.
 - [ ] Public traffic terminates TLS in front of Notifycat (the Compose install does this with Caddy); the server itself
   speaks plain HTTP only on the internal network.
+- [ ] If you enable the [agent API](#agent-api-access), the admin port is **not** published to the internet — only reachable through an SSH tunnel, `kubectl port-forward`, or `fly proxy`.
+- [ ] `NOTIFYCAT_ADMIN_KEY_HASH` lives in your secret store or the gitignored `.env` — never in git — and is wrapped in single quotes in `.env`, so `$` in the bcrypt hash is not expanded.
 
 ## What Notifycat asks for — and what it doesn't
 
@@ -61,6 +63,113 @@ Two rules follow:
 4. Restart Notifycat if your runtime does not reload environment variables.
 
 Deliveries sent between steps 2 and 3 fail with `401` — keep the window short, then redeliver the failed events from the webhook's delivery history.
+
+## Agent API access
+
+Notifycat can hand developers' coding agents a personal token for its agent API. Access is granted in two steps, and the admin never sees a token:
+
+1. The admin creates an **invite** for a user label such as `alice`. An invite is valid for one hour and can be redeemed once.
+2. The developer redeems the invite over HTTPS from their own machine and receives their own **token** (`nct_…`). It is shown once and never again.
+
+Only bcrypt hashes of invites and tokens are stored, in SQLite. They never go into git or `config.yaml`. A token has no end date; deleting its row ends access at once. The agent feed endpoints follow in a later release.
+
+### The admin key
+
+Generate a key with `notifycat-keygen`. It writes the key (`nca_…`) to stdout and the env line for its hash to stderr. Split the two streams so you can store each one:
+
+```sh
+# only you can read key.txt and hash.txt
+umask 077
+
+# pull first, so pull progress does not end up in hash.txt
+docker pull ghcr.io/mptooling/notifycat
+
+# the key stays on screen, the hash line goes to hash.txt
+docker run --rm ghcr.io/mptooling/notifycat notifycat-keygen 2>hash.txt
+
+# or both go to files
+docker run --rm ghcr.io/mptooling/notifycat notifycat-keygen >key.txt 2>hash.txt
+
+# from a source checkout instead of the image
+go build -o bin/notifycat-keygen ./cmd/notifycat-keygen
+./bin/notifycat-keygen >key.txt 2>hash.txt
+```
+
+Keep the key in your password manager. Only the hash goes to the server, as this line:
+
+```sh
+NOTIFYCAT_ADMIN_KEY_HASH='$2a$10$…'
+```
+
+This line is a secret. Put it in your platform's secret store:
+
+- Fly.io: `fly secrets import < hash.txt`.
+- Kubernetes: a `Secret`.
+- Docker Compose or the plain binary: the gitignored `.env` (`cat hash.txt >> .env`; make sure `.env` ends with a newline first).
+
+A secret store takes the name `NOTIFYCAT_ADMIN_KEY_HASH` and, as the value, the hash between the single quotes.
+
+Never commit it to git, not even to a deploy repository. Once the key is in your password manager and the hash is in the secret store, delete `key.txt` and `hash.txt`.
+
+The single quotes matter: `godotenv` and Docker Compose expand `$` in unquoted values and would silently break the hash. Startup fails if the value is not a valid bcrypt hash.
+
+### The admin port
+
+The admin routes are served by a second HTTP server, set by `server.admin_addr`. The public server never registers them.
+
+| Where notifycat runs | `server.admin_addr` | How the admin reaches it |
+| --- | --- | --- |
+| Docker Compose on a VM | `0.0.0.0:9091` in the container, published on the host only as `127.0.0.1:9091` | `ssh -L 9091:localhost:9091 vm` |
+| Kubernetes | `0.0.0.0:9091`, no Ingress for it | `kubectl port-forward` |
+| Fly.io | `fly-local-6pn:9091`, no `[[services]]` entry | `fly proxy 9091 -a <app>` |
+
+For Docker Compose, set `server.admin_addr: "0.0.0.0:9091"` in `config.yaml` and publish the port on the host's loopback only:
+
+```yaml
+# compose.yaml, notifycat service
+ports:
+  - "127.0.0.1:9091:9091"
+```
+
+Never write `"9091:9091"`: it publishes the plain-HTTP admin port on every host interface, and Docker-published ports bypass ufw.
+
+The admin port speaks plain HTTP. Never publish it to the internet; the tunnel provides the encryption. The public agent API, including invite redemption, is HTTPS-only through your reverse proxy.
+
+### Managing access
+
+Every admin call needs `Authorization: Bearer <admin key>`. First set the key in your shell without leaving it in the shell history. Run this line and paste the key from your password manager; nothing is shown:
+
+```sh
+read -rs NOTIFYCAT_ADMIN_KEY && export NOTIFYCAT_ADMIN_KEY
+```
+
+The examples need bash or zsh (they use `<<<` here-strings) and curl 7.55 or newer (for `-H @-`). The header comes from stdin so the key is not on the command line. Through the tunnel the port is `localhost:9091`:
+
+```sh
+# create an invite for alice
+curl -fsS -X POST -H @- http://localhost:9091/admin/v1/invites \
+  -d '{"user":"alice"}' <<<"Authorization: Bearer $NOTIFYCAT_ADMIN_KEY"
+
+# list tokens (never a hash)
+curl -fsS -H @- http://localhost:9091/admin/v1/tokens <<<"Authorization: Bearer $NOTIFYCAT_ADMIN_KEY"
+
+# remove a token
+curl -fsS -X DELETE -H @- http://localhost:9091/admin/v1/tokens/<id> <<<"Authorization: Bearer $NOTIFYCAT_ADMIN_KEY"
+```
+
+The `<id>` in the `DELETE` example is the `id` field from `GET /admin/v1/tokens`.
+
+The invite response carries a `redeem_command` built from `server.domain`; send it to the developer. If `server.domain` is not set, the command uses `$NOTIFYCAT_URL` instead, and the developer sets it to the public base URL first (`export NOTIFYCAT_URL=https://notifycat.example.com`). The developer runs it on their own machine, in bash or zsh. The response holds their token, shown only once, so they must save it right away: for example in their password manager, or as an `export NOTIFYCAT_TOKEN='nct_…'` line in their shell profile (such as `~/.zshrc` or `~/.bashrc`), with `chmod 600` on that file. The admin never sees the token.
+
+### What a stolen token gets
+
+Once the agent feed ships, a token reads the titles, descriptions, branch names, author ids, links, and commit SHAs of open PRs in the configured repositories. No code. The fix is `DELETE /admin/v1/tokens/{id}`.
+
+### What a stolen invite gets
+
+One token, within the hour, if nobody redeemed the invite first.
+
+Notifycat never logs a token, an invite, the admin key, or an `Authorization` header; a test pins this.
 
 <a id="signature-validation"></a>
 

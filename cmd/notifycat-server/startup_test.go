@@ -22,6 +22,17 @@ func TestStartupError_MissingSecret(t *testing.T) {
 	}
 }
 
+func TestStartupError_MissingAdminKeyHashPointsAtKeygen(t *testing.T) {
+	err := startupError(fmt.Errorf("config: %w", &config.MissingVarError{
+		Var:    "NOTIFYCAT_ADMIN_KEY_HASH",
+		Remedy: "run notifycat-keygen",
+	}))
+
+	require.ErrorContains(t, err, "NOTIFYCAT_ADMIN_KEY_HASH is not set")
+	assert.ErrorContains(t, err, "run notifycat-keygen")
+	assert.NotContains(t, err.Error(), ".env.example", "the hash comes from keygen, not from the template")
+}
+
 func TestStartupError_InternalError_Passthrough(t *testing.T) {
 	original := errors.New("database: unexpected error")
 

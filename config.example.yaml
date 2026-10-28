@@ -29,6 +29,11 @@ server:
   log_level: info                     # debug | info | warn | error
   log_format: text                    # text | json (use json for production)
   domain: notifycat.example.com       # public domain; notifycat-doctor derives https://$domain/webhook/github
+  admin_addr: ""                      # private admin port for agent invites/tokens (agent_api); empty = no admin server; never publish it
+
+# ── Agent API ─────────────────────────────────────────────────────────────────────────────────────
+agent_api:
+  enabled: false                      # serve the /api/v1/ agent routes; off = no routes and no admin server
 
 # ── Database ──────────────────────────────────────────────────────────────────────────────────────
 database:
