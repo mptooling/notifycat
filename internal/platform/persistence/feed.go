@@ -147,10 +147,7 @@ func NewFeedDeliveries(db *gorm.DB) *FeedDeliveries {
 	return &FeedDeliveries{db: db}
 }
 
-// Claim marks every not-yet-delivered pull request of the repositories as
-// delivered to the token and returns exactly the rows this call inserted.
-// The insert is the transaction's first statement so SQLite never has to
-// upgrade a read lock, which would fail immediately with SQLITE_BUSY.
+// Claim writes first so SQLite never upgrades a read lock, which fails at once with SQLITE_BUSY.
 func (r *FeedDeliveries) Claim(ctx context.Context, claim FeedClaim) ([]FeedPullRequest, error) {
 	if len(claim.Repositories) == 0 {
 		return []FeedPullRequest{}, nil
