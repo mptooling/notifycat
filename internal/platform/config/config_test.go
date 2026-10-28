@@ -3,10 +3,12 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/mptooling/notifycat/internal/kernel"
 	"github.com/mptooling/notifycat/internal/platform/config"
@@ -28,7 +30,7 @@ func writeConfig(t *testing.T, body string) {
 		"NOTIFYCAT_IGNORE_AI_REVIEWS", "NOTIFYCAT_DEPENDABOT_FORMAT",
 		"SLACK_REACTIONS_ENABLED", "SLACK_REACTION_NEW_PR",
 		"GITHUB_WEBHOOK_SECRET", "SLACK_BOT_TOKEN", "GITHUB_TOKEN",
-		"SLACK_SIGNING_SECRET", "NOTIFYCAT_LOCK_FILE",
+		"SLACK_SIGNING_SECRET", "NOTIFYCAT_LOCK_FILE", "NOTIFYCAT_ADMIN_KEY_HASH",
 	} {
 		t.Setenv(name, "")
 	}
@@ -352,4 +354,102 @@ func TestLoad_DeleteOnClose_Enabled(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.True(t, cfg.DeleteOnClose)
+}
+
+func adminKeyHash(t *testing.T) string {
+	t.Helper()
+
+	hash, err := bcrypt.GenerateFromPassword([]byte("nca_test"), bcrypt.MinCost)
+	require.NoError(t, err)
+	return string(hash)
+}
+
+func loadWithAdminKeyHash(t *testing.T, body, hashValue string) (config.Config, error) {
+	t.Helper()
+
+	writeConfig(t, body)
+	setSecrets(t)
+	t.Setenv("NOTIFYCAT_ADMIN_KEY_HASH", hashValue)
+	return config.Load()
+}
+
+func TestLoad_AgentAPI_DefaultsOff(t *testing.T) {
+	cfg, err := loadConfigured(t, minimalConfig)
+
+	require.NoError(t, err)
+	assert.False(t, cfg.AgentAPIEnabled)
+	assert.Empty(t, cfg.AdminAddr)
+	assert.Empty(t, cfg.AdminKeyHash.Reveal())
+}
+
+func TestLoad_AgentAPI_ReadsKeysAndHash(t *testing.T) {
+	hash := adminKeyHash(t)
+	body := minimalConfig + "  admin_addr: \"127.0.0.1:9091\"\nagent_api:\n  enabled: true\n"
+
+	cfg, err := loadWithAdminKeyHash(t, body, hash)
+
+	require.NoError(t, err)
+	assert.True(t, cfg.AgentAPIEnabled)
+	assert.Equal(t, "127.0.0.1:9091", cfg.AdminAddr)
+	assert.Equal(t, hash, cfg.AdminKeyHash.Reveal())
+	assert.Equal(t, "[REDACTED]", cfg.AdminKeyHash.String())
+}
+
+func TestLoad_AdminKeyHash_StripsSingleQuotes(t *testing.T) {
+	hash := adminKeyHash(t)
+	body := minimalConfig + "  admin_addr: \"127.0.0.1:9091\"\n"
+
+	cfg, err := loadWithAdminKeyHash(t, body, "'"+hash+"'")
+
+	require.NoError(t, err)
+	assert.Equal(t, hash, cfg.AdminKeyHash.Reveal())
+}
+
+func TestLoad_AdminAddrWithoutKeyHash_Fails(t *testing.T) {
+	body := minimalConfig + "  admin_addr: \"127.0.0.1:9091\"\n"
+
+	_, err := loadConfigured(t, body)
+
+	var missing *config.MissingVarError
+	require.ErrorAs(t, err, &missing)
+	assert.Equal(t, "NOTIFYCAT_ADMIN_KEY_HASH", missing.Var, "the check runs even while the API is disabled")
+}
+
+func TestLoad_AdminAddrEqualsAddr_Fails(t *testing.T) {
+	body := "git_provider: github\nserver:\n  addr: \":9091\"\n  admin_addr: \":9091\"\n"
+
+	_, err := loadWithAdminKeyHash(t, body, adminKeyHash(t))
+
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "server.admin_addr")
+	assert.ErrorContains(t, err, "server.addr")
+}
+
+func TestLoad_AdminKeyHashNotBcrypt_Fails(t *testing.T) {
+	hash := adminKeyHash(t)
+	testCases := []struct {
+		name  string
+		value string
+	}{
+		{"plain text", "not-a-hash"},
+		{"dollar signs expanded", strings.ReplaceAll(hash, "$", "")},
+		{"cut after the cost", "$2a$10$"},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			body := minimalConfig + "  admin_addr: \"127.0.0.1:9091\"\n"
+
+			_, err := loadWithAdminKeyHash(t, body, testCase.value)
+
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "NOTIFYCAT_ADMIN_KEY_HASH")
+			assert.ErrorContains(t, err, "single quotes")
+		})
+	}
+}
+
+func TestLoad_AgentAPI_UnknownKeyRejected(t *testing.T) {
+	_, err := loadConfigured(t, minimalConfig+"agent_api:\n  enable: true\n")
+
+	require.Error(t, err)
 }

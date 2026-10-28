@@ -12,7 +12,7 @@ import (
 )
 
 func TestStartupError_MissingSecret(t *testing.T) {
-	for _, varName := range []string{"GITHUB_WEBHOOK_SECRET", "SLACK_BOT_TOKEN"} {
+	for _, varName := range []string{"GITHUB_WEBHOOK_SECRET", "SLACK_BOT_TOKEN", "NOTIFYCAT_ADMIN_KEY_HASH"} {
 		t.Run(varName, func(t *testing.T) {
 			err := startupError(fmt.Errorf("config: %w", &config.MissingVarError{Var: varName}))
 
