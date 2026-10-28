@@ -99,7 +99,7 @@ func TestPullRequestRepo_RepositoriesAndDelete(t *testing.T) {
 	assert.Empty(t, remaining)
 }
 
-func TestSubscriptionRepo_AddListDelete(t *testing.T) {
+func TestSubscriptionRepo_AddThenListReturnsTokenSubscriptions(t *testing.T) {
 	repo := infrastructure.NewSubscriptionRepo(persistence.NewFeedSubscriptions(newFeedDB(t)))
 	ctx := context.Background()
 
@@ -113,12 +113,24 @@ func TestSubscriptionRepo_AddListDelete(t *testing.T) {
 	require.Len(t, listed, 2)
 	assert.Equal(t, 2, added)
 	assert.Equal(t, "t1", listed[0].TokenID)
+	assert.ElementsMatch(t, []string{"acme/api", "acme/web"}, []string{listed[0].Repository, listed[1].Repository})
+}
 
-	removed, removeErr := repo.Delete(ctx, "t1", listed[0].ID)
+func TestSubscriptionRepo_DeleteReturnsTheRemovedSubscription(t *testing.T) {
+	repo := infrastructure.NewSubscriptionRepo(persistence.NewFeedSubscriptions(newFeedDB(t)))
+	ctx := context.Background()
+	_, addErr := repo.Add(ctx, domain.NewSubscriptions{
+		TokenID: "t1", Repositories: []string{"acme/api"}, CreatedAt: repoBaseTime,
+	})
+	require.NoError(t, addErr)
+	listed, listErr := repo.List(ctx, "t1")
+	require.NoError(t, listErr)
+	require.Len(t, listed, 1)
 
-	require.NoError(t, removeErr)
-	assert.Equal(t, listed[0].ID, removed.ID)
-	assert.Equal(t, listed[0].Repository, removed.Repository)
+	removed, err := repo.Delete(ctx, "t1", listed[0].ID)
+
+	require.NoError(t, err)
+	assert.Equal(t, listed[0], removed)
 }
 
 func TestSubscriptionRepo_DeleteUnknownIsErrSubscriptionNotFound(t *testing.T) {

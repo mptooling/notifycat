@@ -18,7 +18,7 @@ func (lister stubEntryLister) Entries() []routingdomain.Entry { return lister.en
 func newCatalog() *infrastructure.RoutingCatalog {
 	return infrastructure.NewRoutingCatalog(stubEntryLister{entries: []routingdomain.Entry{
 		{Org: "Acme", Repo: "API"},
-		{Org: "acme", Wildcard: true},
+		{Org: "ACME", Wildcard: true},
 		{Org: "beta", Repo: "svc"},
 	}})
 }
@@ -37,6 +37,7 @@ func TestRoutingCatalog_IsConfigured(t *testing.T) {
 		{"unconfigured org", "other/x", false},
 		{"no slash", "acme", false},
 		{"empty repo", "acme/", false},
+		{"empty org", "/x", false},
 		{"star", "*", false},
 	}
 	catalog := newCatalog()
