@@ -23,6 +23,18 @@ func TestOpen_EnablesForeignKeysOnEveryPooledConnection(t *testing.T) {
 	assert.Equal(t, []int{1, 1, 1}, enabled)
 }
 
+func TestOpen_SetsBusyTimeoutOnEveryPooledConnection(t *testing.T) {
+	db := persistence.NewTestDB(t)
+	connections := holdConnections(t, db, 3)
+
+	busyTimeouts := make([]int, 0, len(connections))
+	for _, connection := range connections {
+		busyTimeouts = append(busyTimeouts, pragmaValue(t, connection, "busy_timeout"))
+	}
+
+	assert.Equal(t, []int{5000, 5000, 5000}, busyTimeouts)
+}
+
 func TestOpen_KeepsOperatorQueryParameters(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "query.db")
 	db, err := persistence.Open("file:" + path + "?_pragma=busy_timeout(7000)")

@@ -112,3 +112,57 @@ type AccessToken struct {
 
 // TableName pins the table name.
 func (AccessToken) TableName() string { return "access_tokens" }
+
+// FeedSubscription is one repository (or "*") an agent token follows.
+type FeedSubscription struct {
+	ID         int64     `gorm:"primaryKey;autoIncrement"`
+	TokenID    string    `gorm:"column:token_id;not null"`
+	Repository string    `gorm:"column:repository;not null"`
+	CreatedAt  time.Time `gorm:"column:created_at;not null;autoCreateTime:false"`
+}
+
+// TableName pins the table name.
+func (FeedSubscription) TableName() string { return "feed_subscriptions" }
+
+// FeedPullRequest is the latest known state of an open pull request.
+type FeedPullRequest struct {
+	Repository   string     `gorm:"column:repository;primaryKey"`
+	Number       int        `gorm:"column:number;primaryKey"`
+	Title        string     `gorm:"column:title"`
+	Description  string     `gorm:"column:description"`
+	URL          string     `gorm:"column:url"`
+	AuthorID     string     `gorm:"column:author_id"`
+	SourceBranch string     `gorm:"column:source_branch"`
+	TargetBranch string     `gorm:"column:target_branch"`
+	HeadSHA      string     `gorm:"column:head_sha;not null"`
+	CreatedAt    *time.Time `gorm:"column:created_at;autoCreateTime:false"`
+	UpdatedAt    time.Time  `gorm:"column:updated_at;not null;autoUpdateTime:false"`
+}
+
+// TableName pins the table name.
+func (FeedPullRequest) TableName() string { return "feed_pull_requests" }
+
+// FeedDelivery records that a token already received a pull request.
+type FeedDelivery struct {
+	TokenID     string    `gorm:"column:token_id;primaryKey"`
+	Repository  string    `gorm:"column:repository;primaryKey"`
+	Number      int       `gorm:"column:number;primaryKey"`
+	DeliveredAt time.Time `gorm:"column:delivered_at;not null;autoCreateTime:false"`
+}
+
+// TableName pins the table name.
+func (FeedDelivery) TableName() string { return "feed_deliveries" }
+
+// FeedSubscriptionBatch is a set of repositories to subscribe a token to.
+type FeedSubscriptionBatch struct {
+	TokenID      string
+	Repositories []string
+	CreatedAt    time.Time
+}
+
+// FeedClaim asks for the pull requests a token has not received yet.
+type FeedClaim struct {
+	TokenID      string
+	Repositories []string
+	DeliveredAt  time.Time
+}

@@ -25,7 +25,7 @@ func (p Provider) String() string { return string(p) }
 // kinds; handlers match on the kind alone and never see provider verbs.
 //
 // The zero value KindUnknown marks a payload no handler acts on — the adapter
-// returns it for draft opens, synchronize/label churn, plain-issue comments, and
+// returns it for draft opens, label churn, plain-issue comments, and
 // anything unmapped, so the dispatcher debug-logs no_handler exactly as before.
 type EventKind int
 
@@ -43,6 +43,8 @@ const (
 	KindChangesRequested
 	KindCommented
 	KindReviewCommented
+	KindUpdated
+	KindReopened
 )
 
 // String returns the neutral log token for the kind, used in the ignored-event
@@ -67,6 +69,10 @@ func (k EventKind) String() string {
 		return "commented"
 	case KindReviewCommented:
 		return "review_commented"
+	case KindUpdated:
+		return "updated"
+	case KindReopened:
+		return "reopened"
 	default:
 		return "unknown"
 	}

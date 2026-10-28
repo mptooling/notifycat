@@ -76,10 +76,7 @@ func (s *SmokeUseCase) Run(ctx context.Context, target string, withReactions boo
 	}
 
 	prNumber := int(s.cfg.Now().Unix())
-	// Delete the synthetic pull_requests row this run causes the server to
-	// create, on every exit path once prNumber is known. The Slack message is
-	// left in place for the operator's visual confirmation. Delete is a no-op
-	// when the row is absent, so it is safe even if delivery failed.
+	// The Slack message stays for the operator to see; only the stored rows go.
 	defer func() {
 		if cleanupErr := s.cleanup.DeletePR(ctx, target, prNumber); cleanupErr != nil {
 			cleanupErr = fmt.Errorf("smoke: clean up synthetic PR row %s#%d: %w", target, prNumber, cleanupErr)

@@ -58,7 +58,7 @@ docker compose logs notifycat | grep "ignored webhook event"   # or: ./notifycat
 
 | `reason` | Level | Meaning | Fix |
 | --- | --- | --- | --- |
-| `no_handler` | Debug | No handler for this event kind — fires for `synchronize`, `labeled`, and other unmapped deliveries. | Expected. Set `server.log_level: debug` to see these. |
+| `no_handler` | Debug | No handler for this event kind — fires for `synchronize` (`kind=updated`), `reopened` (`kind=reopened`), `labeled`, and other unmapped deliveries. | Expected. Set `server.log_level: debug` to see these. |
 | `no_mapping` | Warn | The repository isn't covered by any `mappings:` entry. | Add the repository (or an org `"*"` tier) — see [routing](routing.md) — or remove the webhook from that repository. |
 | `no_stored_message` | Info | The handler found no Slack message row for this PR — common when the PR predates Notifycat or the row was cleaned up. | Toggle the PR to draft and back to re-announce it, or wait for the next PR. |
 | `already_sent` | Info | `OpenHandler` saw an existing message — idempotency. Expected on `ready_for_review` after a prior `opened`. | Nothing to fix. |

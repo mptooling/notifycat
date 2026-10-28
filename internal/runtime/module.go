@@ -29,6 +29,8 @@ import (
 	digestapp "github.com/mptooling/notifycat/internal/digest/application"
 	digestdomain "github.com/mptooling/notifycat/internal/digest/domain"
 	digestinfra "github.com/mptooling/notifycat/internal/digest/infrastructure"
+	"github.com/mptooling/notifycat/internal/feed"
+	feedinfra "github.com/mptooling/notifycat/internal/feed/infrastructure"
 	"github.com/mptooling/notifycat/internal/kernel"
 	maintenanceapp "github.com/mptooling/notifycat/internal/maintenance/application"
 	maintenancedomain "github.com/mptooling/notifycat/internal/maintenance/domain"
@@ -55,13 +57,15 @@ import (
 
 // Module is the runtime composition root. Supply a config.Config and it builds
 // the whole graph — logger, mappings provider, migrated database, Slack client,
-// per-PR router, dispatcher, start-review sink, access use cases, HTTP server,
-// optional admin server, and the cleanup and digest schedulers — then starts the
-// startup-validation gate, the HTTP server, the admin server on its private
-// port, and the schedulers via lifecycle hooks. A failing startup gate or a bad
-// cron spec fails App.Start; the database handle closes on App.Stop.
+// per-PR router, dispatcher, start-review sink, access and feed use cases, HTTP
+// server, optional admin server, and the cleanup and digest schedulers — then
+// runs the startup-validation gate and the feed cleanup, and starts the HTTP
+// server, the admin server on its private port, and the schedulers via
+// lifecycle hooks. A failing startup gate or a bad cron spec fails fx.New, and
+// the database handle closes on App.Stop.
 var Module = fx.Module("runtime",
 	access.Module,
+	feed.Module,
 	fx.Provide(
 		newLogger,
 		newHTTPClient,
@@ -73,20 +77,27 @@ var Module = fx.Module("runtime",
 		persistence.NewScheduledNotifications,
 		persistence.NewAccessInvites,
 		persistence.NewAccessTokens,
+		persistence.NewFeedSubscriptions,
+		persistence.NewFeedPullRequests,
+		persistence.NewFeedDeliveries,
 		provideAccessSettings,
 		buildProvider,
+		provideEntryLister,
 		buildRouter,
 		buildDispatcher,
+		buildWebhookDispatcher,
 		buildStartReviewSink,
 		buildCleanupScheduler,
 		buildDigestScheduler,
 		buildScheduledRunner,
+		AsAgentAPIRoutes(feedinfra.NewRoutes),
 		buildMux,
 		buildServer,
 		buildAdminServer,
 		newRunContext,
 	),
 	fx.Invoke(startupGate),
+	fx.Invoke(cleanFeed),
 	fx.Invoke(registerServer),
 	fx.Invoke(registerAdminServer),
 	fx.Invoke(registerSchedulers),
@@ -356,7 +367,7 @@ func buildStartReviewSink(pullRequests *persistence.PullRequests, codeReviews *p
 // webhook, the optional inbound Slack interactivity endpoint, and the optional
 // agent API. The Slack route is registered only when a signing secret is
 // configured; otherwise notifycat stays outbound-only and the route is absent.
-func buildMux(cfg config.Config, dispatcher *notificationapp.Dispatcher, startReviewSink reviewinfra.InteractionSink, logger *slog.Logger, agentAPI agentAPIInputs) *http.ServeMux {
+func buildMux(cfg config.Config, dispatcher notificationdomain.EventDispatcher, startReviewSink reviewinfra.InteractionSink, logger *slog.Logger, agentAPI agentAPIInputs) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -382,7 +393,7 @@ func buildMux(cfg config.Config, dispatcher *notificationapp.Dispatcher, startRe
 // provider — only the selected provider's route, verifier, and handler exist, so
 // a github deployment has no /webhook/bitbucket and vice versa. Both verifiers
 // reject an unsigned or mis-signed delivery with 401.
-func registerWebhookRoute(mux *http.ServeMux, cfg config.Config, dispatcher *notificationapp.Dispatcher) {
+func registerWebhookRoute(mux *http.ServeMux, cfg config.Config, dispatcher notificationdomain.EventDispatcher) {
 	switch cfg.GitProvider {
 	case kernel.ProviderBitbucket:
 		verifier := security.NewBitbucketVerifier(cfg.BitbucketWebhookSecret.Reveal())

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/mptooling/notifycat/internal/kernel"
@@ -105,6 +106,11 @@ type PullRequest struct {
 	Draft     bool
 	Body      string
 	CreatedAt time.Time
+
+	HeadSHA      string
+	AuthorID     string
+	SourceBranch string
+	TargetBranch string
 }
 
 // Review carries the review state (approved | commented | changes_requested).
@@ -129,7 +135,15 @@ type rawPayload struct {
 		CreatedAt string `json:"created_at"`
 		User      struct {
 			Login string `json:"login"`
+			ID    int64  `json:"id"`
 		} `json:"user"`
+		Head struct {
+			SHA string `json:"sha"`
+			Ref string `json:"ref"`
+		} `json:"head"`
+		Base struct {
+			Ref string `json:"ref"`
+		} `json:"base"`
 		Merged bool `json:"merged"`
 		Draft  bool `json:"draft"`
 	} `json:"pull_request"`
@@ -188,6 +202,11 @@ func ParsePayload(body []byte) (Payload, error) {
 			Draft:     raw.PullRequest.Draft,
 			Body:      raw.PullRequest.Body,
 			CreatedAt: createdAt,
+
+			HeadSHA:      raw.PullRequest.Head.SHA,
+			AuthorID:     formatAuthorID(raw.PullRequest.User.ID),
+			SourceBranch: raw.PullRequest.Head.Ref,
+			TargetBranch: raw.PullRequest.Base.Ref,
 		},
 		PRComment: prComment,
 		Sender:    Sender{Login: raw.Sender.Login, Type: raw.Sender.Type},
@@ -198,6 +217,13 @@ func ParsePayload(body []byte) (Payload, error) {
 	return p, nil
 }
 
+func formatAuthorID(id int64) string {
+	if id == 0 {
+		return ""
+	}
+	return strconv.FormatInt(id, 10)
+}
+
 // GitHub webhook vocabulary. Confined to this adapter — the kind-mapper is the
 // only code that reads these; no other package speaks GitHub verbs.
 const (
@@ -205,6 +231,8 @@ const (
 	ghEventIssueComment  = "issue_comment"
 
 	ghActionOpened           = "opened"
+	ghActionSynchronize      = "synchronize"
+	ghActionReopened         = "reopened"
 	ghActionClosed           = "closed"
 	ghActionReadyForReview   = "ready_for_review"
 	ghActionConvertedToDraft = "converted_to_draft"
@@ -223,7 +251,7 @@ const (
 // owning every GitHub-vocabulary decision and all draft gating. It tries each
 // classifier in turn — a review submission, then the PR lifecycle, then a created
 // comment — and the first to claim the payload wins. Anything unclaimed (a draft
-// open, a synchronize or label edit, a plain-issue comment, an edited
+// open, a label edit, a plain-issue comment, an edited
 // approve/request-change) is KindUnknown, so the dispatcher debug-logs no_handler
 // exactly as before.
 func mapKind(p Payload) kernel.EventKind {
@@ -265,16 +293,22 @@ func reviewKind(p Payload) (kernel.EventKind, bool) {
 	return kernel.KindUnknown, true
 }
 
+var lifecycleKindsByAction = map[string]kernel.EventKind{
+	ghActionOpened:      kernel.KindOpened,
+	ghActionSynchronize: kernel.KindUpdated,
+	ghActionReopened:    kernel.KindReopened,
+}
+
 // lifecycleKind claims a PR lifecycle event, keyed by action alone (these actions
 // are unique to pull_request webhooks, so no header is needed). A draft open is
 // gated to KindUnknown, and a close splits into KindMerged/KindClosed.
 func lifecycleKind(p Payload) (kernel.EventKind, bool) {
 	switch p.Action {
-	case ghActionOpened:
+	case ghActionOpened, ghActionSynchronize, ghActionReopened:
 		if p.PullRequest.Draft {
 			return kernel.KindUnknown, true
 		}
-		return kernel.KindOpened, true
+		return lifecycleKindsByAction[p.Action], true
 	case ghActionReadyForReview:
 		return kernel.KindReadyForReview, true
 	case ghActionConvertedToDraft:
@@ -322,6 +356,11 @@ func toEvent(p Payload) kernel.Event {
 			Draft:     p.PullRequest.Draft,
 			Body:      p.PullRequest.Body,
 			CreatedAt: p.PullRequest.CreatedAt,
+
+			HeadSHA:      p.PullRequest.HeadSHA,
+			AuthorID:     p.PullRequest.AuthorID,
+			SourceBranch: p.PullRequest.SourceBranch,
+			TargetBranch: p.PullRequest.TargetBranch,
 		},
 		Sender: kernel.Sender{Login: p.Sender.Login, IsBot: p.Sender.Type == ghSenderTypeBot},
 	}

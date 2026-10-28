@@ -46,7 +46,7 @@ Notifycat is a single-process HTTP server with a SQLite sidecar. It receives Git
 
 ### Domain structure
 
-Eight domains live under `internal/<domain>/`, each with three layers (`domain/`, `application/`, `infrastructure/`) and a `module.go` exporting an `fx.Module`:
+Nine domains live under `internal/<domain>/`, each with three layers (`domain/`, `application/`, `infrastructure/`) and a `module.go` exporting an `fx.Module`:
 
 | Domain | Responsibility |
 | --- | --- |
@@ -58,12 +58,13 @@ Eight domains live under `internal/<domain>/`, each with three layers (`domain/`
 | `maintenance` | Background housekeeping: delete stale message rows; reconcile closed PRs; relocate messages after a channel change |
 | `diagnostics` | Operator tooling: `notifycat-doctor`, `notifycat-config`, smoke test |
 | `access` | Agent API access: admin key, one-hour single-use invites, bcrypt-hashed agent tokens |
+| `feed` | Agent PR feed: records open PRs from webhooks, per-token subscriptions, serves undelivered open PRs under `/api/v1/subs*`; removes stale feed PRs and subscriptions to unmapped repositories (except `*`) at startup |
 
 The shared kernel (`internal/kernel`) holds pure value objects (`PR`, `Event`, `Sender`, `Review`) and GitHub event/action/review-state enums — stdlib only. The shared platform (`internal/platform/`) holds domain-agnostic clients: `config`, `persistence` (GORM/SQLite), `slack`, `github`, `httpx`, and `security` (HMAC `SignatureVerifier` with `GitHubVerifier`/`SlackVerifier` adapters).
 
 ### Composition root
 
-`internal/runtime` is an `fx.Module` that builds the full dependency graph, runs the startup-validation gate as an `fx.Invoke`, and drives the HTTP server, the optional admin server, plus cleanup/digest schedulers via `fx.Lifecycle` hooks. `cmd/notifycat-server/main.go` is `fx.New(fx.Supply(cfg), runtime.Module, fx.NopLogger)` plus manual `Start`/`Wait`/`Stop` (fatal server error → exit 1 via `fx.Shutdowner`; SIGTERM → graceful shutdown → exit 0). The seven CLI binaries (`notifycat-{migrate,reconcile,relocate,config,doctor,smoke,keygen}`) construct their domain use cases directly in `main`.
+`internal/runtime` is an `fx.Module` that builds the full dependency graph, runs the startup-validation gate and the feed startup cleanup as `fx.Invoke`s, and drives the HTTP server, the optional admin server, plus cleanup/digest schedulers via `fx.Lifecycle` hooks. `cmd/notifycat-server/main.go` is `fx.New(fx.Supply(cfg), runtime.Module, fx.NopLogger)` plus manual `Start`/`Wait`/`Stop` (fatal server error → exit 1 via `fx.Shutdowner`; SIGTERM → graceful shutdown → exit 0). The seven CLI binaries (`notifycat-{migrate,reconcile,relocate,config,doctor,smoke,keygen}`) construct their domain use cases directly in `main`.
 
 ### Request flow
 
@@ -90,6 +91,13 @@ POST|GET|DELETE /admin/v1/*      (admin port, private; admin key)
 
 POST /api/v1/invites/redeem      (public; Invite credential)
   → access/infrastructure redeem handler → invite redeemer → agent token
+
+GET|POST|DELETE /api/v1/subs, GET /api/v1/subs/prs   (public; Bearer token)
+  → access/infrastructure bearer middleware → feed/infrastructure handlers
+  → feed/application subscriptions / pull-requests use cases
+
+POST /webhook/{github,bitbucket}   (agent API on)
+  → after the notification dispatcher, feed/application recorder stores or removes the open PR
 ```
 
 Every silent no-op logs `ignored webhook event` with a `reason` field (`no_handler`, `no_mapping`, `no_stored_message`, `already_sent`). The operations doc has the full reason table — that contract matters for debugging deliveries that return 200 but don't update Slack.
@@ -100,7 +108,7 @@ Routing comes from the **`mappings:` section of the declarative `config.yaml`**,
 
 ### Persistence
 
-`internal/platform/persistence` is GORM over SQLite. Tables: `pull_requests` (one row per PR) and `slack_messages` (PR ↔ Slack message timestamp), plus `code_reviews` (review sessions), `scheduled_notifications` (the queue of the `scheduled` notification strategy, one row per (PR, channel)), and `access_invites` / `access_tokens` (bcrypt-hashed agent invites and tokens). Migrations are embedded goose SQL applied at server startup (or via `notifycat-migrate`).
+`internal/platform/persistence` is GORM over SQLite. Tables: `pull_requests` (one row per PR) and `slack_messages` (PR ↔ Slack message timestamp), plus `code_reviews` (review sessions), `scheduled_notifications` (the queue of the `scheduled` notification strategy, one row per (PR, channel)), and `access_invites` / `access_tokens` (bcrypt-hashed agent invites and tokens). It also has `feed_subscriptions`, `feed_pull_requests` and `feed_deliveries` (the agent PR feed). Migrations are embedded goose SQL applied at server startup (or via `notifycat-migrate`).
 
 The `maintenance` domain deletes stale `slack_messages` rows older than `cleanup.message_ttl_days` (config.yaml) once at startup and every 24h. It only deletes the DB row — never the Slack message.
 

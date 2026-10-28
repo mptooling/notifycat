@@ -45,7 +45,7 @@ v1 is expected to live about three months. v2 replaces the invite-and-token logi
 6. An invite is single-use. Redeeming it creates the token and marks the invite used in one transaction.
 7. The admin key is one random key per deployment. `config.yaml` never holds it. Notifycat reads only its bcrypt hash from the env secret `NOTIFYCAT_ADMIN_KEY_HASH`. A new helper, `notifycat-keygen`, prints a new key (stdout) and its hash (stderr).
 8. The admin server listens on `server.admin_addr` from `config.yaml` (empty = no admin server). Startup fails when `admin_addr` is set but `NOTIFYCAT_ADMIN_KEY_HASH` is not, or when `admin_addr` equals `server.addr`.
-9. Subscriptions belong to a token. Each subscription is one row with its own id, for one repo or for `"*"`. A token sees and deletes only its own subscriptions; another token's id gives `404`. A "configured repo" is one that `mappings:` routes, exactly or through an `owner/*` tier. `"*"` means every configured repo, including repos added later. A repo that loses its mapping drops out of `GET` at once.
+9. Subscriptions belong to a token. Each subscription is one row with its own id, for one repo or for `"*"`. A token sees and deletes only its own subscriptions; another token's id gives `404`. A "configured repo" is one that `mappings:` routes, exactly or through an `owner/*` tier. `"*"` means every configured repo, including repos added later. A repo that loses its mapping drops out of `GET` at once, and its subscriptions are removed at the next start.
 10. Notifycat tracks open, non-draft PRs of **every configured repo**, whether anyone subscribed or not. A new subscription then sees PRs that are already open.
 11. Each PR carries `author_id` (GitHub user id / Bitbucket `account_id`), `description`, `source_branch`, `target_branch`, and `created_at`. Title and description are refreshed on every recorded event; an edit without a push shows up with the next push.
 12. `agent_api.enabled` defaults to `false`. When off: no `/api/v1/` routes (`404`), no admin server, nothing tracked.
@@ -266,15 +266,15 @@ export NOTIFYCAT_URL=https://notifycat.example.com
 export NOTIFYCAT_TOKEN=nct_…
 
 # once: subscribe (the header comes from stdin, so the token is not on the command line)
-curl -fsS -X POST -H @- "$NOTIFYCAT_URL/api/v1/subs" \
+curl --fail-with-body -sS -X POST -H @- "$NOTIFYCAT_URL/api/v1/subs" \
   -d '{"repositories":["acme/api","acme/web"]}' <<<"Authorization: Bearer $NOTIFYCAT_TOKEN"
 ```
 
 Claude Code loop, for example `/loop 5m` with this prompt (or `claude -p` from cron):
 
-> Run `curl -fsS -H @- "$NOTIFYCAT_URL/api/v1/subs/prs" <<<"Authorization: Bearer $NOTIFYCAT_TOKEN"`. For each pull request: check it is still open, read its diff, and post a review. Never print `$NOTIFYCAT_TOKEN`.
+> Run `curl --fail-with-body -sS -H @- "$NOTIFYCAT_URL/api/v1/subs/prs" <<<"Authorization: Bearer $NOTIFYCAT_TOKEN"`. For each pull request: check it is still open, read its diff, and post a review. Never print `$NOTIFYCAT_TOKEN`.
 
-The docs show the "read the diff, post the review" step for GitHub (`gh`) and for Bitbucket (REST API). They recommend polling every minute or slower. They show how to get back a lost list: `GET /api/v1/subs/prs?since=<time of the lost run>`.
+The docs show the "read the diff, post the review" step for GitHub (`gh`) and for Bitbucket (REST API). They recommend polling every minute or slower. They show how to get back a lost list: `GET /api/v1/subs/prs?since=<a few minutes before the last good poll before the lost one>`, or any earlier time. Not the exact time: `updated_at` comes from the server clock, and a webhook can still be recording while you poll. `since` matches a PR's last change, not when it was delivered, so the time of the lost run itself misses PRs. For a lost first poll, use an old time such as `1970-01-01T00:00:00Z` and skip PRs already reviewed.
 
 ## Docs
 

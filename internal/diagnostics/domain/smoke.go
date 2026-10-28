@@ -115,9 +115,10 @@ type SmokeReactions interface {
 	Reactions(ctx context.Context, channel, ts string) ([]string, error)
 }
 
-// SmokeCleanup deletes the synthetic pull_requests row the smoke run causes
-// the server to create. It is called deferred so cleanup runs on every exit
-// path once the PR number is known.
+// SmokeCleanup deletes the synthetic pull request rows (the Slack message
+// mapping and the agent feed entry) the smoke run causes the server to create.
+// It is called deferred so cleanup runs on every exit path once the PR number
+// is known, and is a no-op when the rows are absent.
 type SmokeCleanup interface {
 	DeletePR(ctx context.Context, repository string, prNumber int) error
 }

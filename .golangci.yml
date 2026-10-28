@@ -199,6 +199,27 @@ linters:
           deny:
             - pkg: github.com/mptooling/notifycat/internal
               desc: access/application imports only its own domain layer and the shared kernel — never infrastructure, store, slack, or github
+        feed-domain:
+          list-mode: lax
+          files:
+            - "**/internal/feed/domain/**"
+          allow:
+            - github.com/mptooling/notifycat/internal/kernel
+            - github.com/mptooling/notifycat/internal/feed/domain
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: feed/domain imports only the shared kernel and the standard library — never application, infrastructure, store, slack, or github
+        feed-application:
+          list-mode: lax
+          files:
+            - "**/internal/feed/application/**"
+          allow:
+            - github.com/mptooling/notifycat/internal/kernel
+            - github.com/mptooling/notifycat/internal/feed/domain
+            - github.com/mptooling/notifycat/internal/feed/application
+          deny:
+            - pkg: github.com/mptooling/notifycat/internal
+              desc: feed/application imports only its own domain layer and the shared kernel — never infrastructure, store, slack, or github
         diagnostics-domain:
           list-mode: lax
           files:

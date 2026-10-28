@@ -85,7 +85,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	smokeMappings := diagnosticsinfra.NewMappingsSmokeMappings(provider)
 	smokeMessages := diagnosticsinfra.NewStoreSmokeMessages(pullRequests)
 	smokeReactions := diagnosticsinfra.NewSlackSmokeReactions(slackClient)
-	smokeCleanup := diagnosticsinfra.NewStoreSmokeCleanup(pullRequests)
+	smokeCleanup := diagnosticsinfra.NewStoreSmokeCleanup(pullRequests, persistence.NewFeedPullRequests(db))
 
 	var signer diagnosticsdomain.Signer
 	var builder diagnosticsdomain.WebhookBuilder

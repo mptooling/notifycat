@@ -199,7 +199,8 @@ func TestMigration00010_DownDropsAccessTables(t *testing.T) {
 	const countSQL = "SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('access_invites','access_tokens')"
 	var tableCount int
 
-	require.NoError(t, persistence.MigrateDown(ctx, db))
+	require.NoError(t, persistence.MigrateDown(ctx, db)) // 00011
+	require.NoError(t, persistence.MigrateDown(ctx, db)) // 00010
 	require.NoError(t, db.Raw(countSQL).Scan(&tableCount).Error)
 	assert.Zero(t, tableCount)
 

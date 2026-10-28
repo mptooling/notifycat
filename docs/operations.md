@@ -69,6 +69,15 @@ The agent API logs these lines. None of them carries a credential or an `Authori
 | `agent token last_used_at not updated` | warn | The token worked but its usage timestamp could not be written. |
 | `agent api request failed` | error | An internal error on a public agent route. |
 | `admin request failed` | error | An internal error on an admin route. |
+| `feed subscriptions added` | info | A token subscribed to new repositories (`user`, `token_id`, `count`). |
+| `feed subscription removed` | info | A token removed a subscription (`user`, `token_id`, `repository`). |
+| `feed pull requests delivered` | info | A poll returned new PRs (`user`, `token_id`, `count`). Logged only when `count` is above 0. |
+| `feed pull request not recorded` | warn | A webhook PR could not be stored for the feed (`repository`, `pr`, `kind`, `err`). The webhook response does not change. |
+| `feed pull requests removed` | info | At startup, notifycat removed stored feed PRs (`count`, `reason`). `reason` is `agent_api_off` (the agent API is off, so every stored PR goes) or `unmapped` (the PRs of repositories that left `mappings:`). Logged only when `count` is above 0. |
+| `feed subscriptions removed` | info | At startup, notifycat removed the subscriptions of every token to repositories that left `mappings:` (`count`, `reason`, `repositories`). `reason` is `unmapped`, and `repositories` lists the removed repository names, sorted. The `*` subscription stays, and so does every subscription when `mappings:` has no repository. Logged on every start, with the API on or off, only when `count` is above 0. |
+| `feed cleanup failed` | warn | A startup removal of feed PRs or of feed subscriptions failed (`err`). Notifycat still starts, and the other removal still runs. |
+
+`ignored webhook event` with `reason=no_handler` also shows `kind=updated` (a new push) and `kind=reopened`, whether the agent API is on or off. Slack ignores these kinds. The feed records them when the agent API is on. See the [agent API guide](agent-api.md).
 
 ## Release images
 

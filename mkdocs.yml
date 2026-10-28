@@ -93,6 +93,7 @@ nav:
       - Remove messages on close: delete-on-close.md
       - Notification strategies: notification-strategies.md
       - Stuck-PR digest: digest.md
+      - Agent API: agent-api.md
   - Troubleshoot:
       - Start here: troubleshooting.md
       - Doctor: doctor.md
