@@ -17,4 +17,12 @@ const (
 	TextMediaType     = "text/plain"
 	TextContentType   = TextMediaType + "; charset=utf-8"
 	QualityParameter  = "q"
+	MediaWildcard     = "*"
+)
+
+// Accept media range specificity, lowest first: the most specific matching range sets the quality.
+const (
+	anyTypeSpecificity = iota
+	subtypeWildcardSpecificity
+	exactTypeSpecificity
 )

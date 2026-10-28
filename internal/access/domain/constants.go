@@ -36,6 +36,7 @@ const (
 
 	MaxRequestBodyBytes = 16 << 10
 
+	HTTPSScheme       = "https://"
 	URLVariable       = "NOTIFYCAT_URL"
 	TokenVariable     = "NOTIFYCAT_TOKEN"
 	PublicURLVariable = "$" + URLVariable

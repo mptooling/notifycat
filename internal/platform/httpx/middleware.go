@@ -6,9 +6,10 @@
 // message) stays with each provider, because those genuinely differ (GitHub
 // signs the raw body; Slack signs a timestamped base string).
 //
-// It also holds the JSON writers, which send non-cacheable JSON responses, and
-// Route, which pairs a ServeMux pattern with its handler so a domain can hand
-// its routes to the composition root.
+// It also holds the JSON and plain-text writers, which send non-cacheable
+// responses, PrefersText, which reads the Accept header, and Route, which pairs
+// a ServeMux pattern with its handler so a domain can hand its routes to the
+// composition root.
 package httpx
 
 import (

@@ -76,18 +76,20 @@ func TestIntegration_AgentAccessPlainTextFlow(t *testing.T) {
 
 	createStatus, redeemCommand := request(t, admin, http.MethodPost, "/admin/v1/invites", `{"user":"alice"}`, adminHeaders)
 	require.Equal(t, http.StatusCreated, createStatus)
-	commandMatch := regexp.MustCompile(
+	commandPattern := regexp.MustCompile(
 		`^curl -fsS -X POST -H 'Accept: text/plain' -H @- https://notifycat\.example\.com/api/v1/invites/redeem <<<'Authorization: Invite (nci_[0-9a-f]{32}_[A-Za-z0-9_-]{43})'\n$`,
-	).FindStringSubmatch(redeemCommand)
-	require.Len(t, commandMatch, 2, redeemCommand)
+	)
+	require.Regexp(t, commandPattern, redeemCommand)
+	commandMatch := commandPattern.FindStringSubmatch(redeemCommand)
 
 	redeemHeaders := map[string]string{"Authorization": "Invite " + commandMatch[1], "Accept": "text/plain"}
 	redeemStatus, exports := request(t, public, http.MethodPost, "/api/v1/invites/redeem", "", redeemHeaders)
 	require.Equal(t, http.StatusCreated, redeemStatus)
-	exportsMatch := regexp.MustCompile(
+	exportsPattern := regexp.MustCompile(
 		`^export NOTIFYCAT_URL=https://notifycat\.example\.com\nexport NOTIFYCAT_TOKEN='(nct_[0-9a-f]{32}_[A-Za-z0-9_-]{43})'\n$`,
-	).FindStringSubmatch(exports)
-	require.Len(t, exportsMatch, 2)
+	)
+	require.Regexp(t, exportsPattern, exports)
+	exportsMatch := exportsPattern.FindStringSubmatch(exports)
 
 	probeStatus, _ := request(t, public, http.MethodGet, "/api/v1/probe", "", map[string]string{"Authorization": "Bearer " + exportsMatch[1]})
 	assert.Equal(t, http.StatusOK, probeStatus)

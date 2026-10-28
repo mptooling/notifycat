@@ -7,14 +7,6 @@ import (
 	"strings"
 )
 
-const wildcard = "*"
-
-const (
-	anyTypeSpecificity = iota
-	subtypeWildcardSpecificity
-	exactTypeSpecificity
-)
-
 type mediaRange struct {
 	mediaType string
 	subtype   string
@@ -84,9 +76,9 @@ func (candidate mediaRange) match(mediaType, subtype string) (int, bool) {
 	switch {
 	case candidate.mediaType == mediaType && candidate.subtype == subtype:
 		return exactTypeSpecificity, true
-	case candidate.mediaType == mediaType && candidate.subtype == wildcard:
+	case candidate.mediaType == mediaType && candidate.subtype == MediaWildcard:
 		return subtypeWildcardSpecificity, true
-	case candidate.mediaType == wildcard && candidate.subtype == wildcard:
+	case candidate.mediaType == MediaWildcard && candidate.subtype == MediaWildcard:
 		return anyTypeSpecificity, true
 	default:
 		return anyTypeSpecificity, false

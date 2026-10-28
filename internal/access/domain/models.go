@@ -117,7 +117,7 @@ func ValidUser(user string) bool {
 func RedeemCommand(publicDomain, invite string) string {
 	redeemURL := `"` + PublicURLVariable + RedeemPath + `"`
 	if publicDomain != "" {
-		redeemURL = "https://" + publicDomain + RedeemPath
+		redeemURL = HTTPSScheme + publicDomain + RedeemPath
 	}
 	return "curl -fsS -X POST -H '" + AcceptTextHeader + "' -H @- " + redeemURL +
 		" <<<'" + AuthorizationHeader + ": " + InviteScheme + " " + invite + "'"
@@ -129,7 +129,7 @@ func ShellExports(publicDomain, token string) string {
 	if publicDomain == "" {
 		return tokenLine
 	}
-	return "export " + URLVariable + "=https://" + publicDomain + "\n" + tokenLine
+	return "export " + URLVariable + "=" + HTTPSScheme + publicDomain + "\n" + tokenLine
 }
 
 // InviteIssuerParams are the dependencies of the invite issuer.

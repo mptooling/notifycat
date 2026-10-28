@@ -43,6 +43,7 @@ func TestPrefersText(t *testing.T) {
 		{name: "exact type wins over range", accept: []string{"text/plain;q=0, text/*"}, want: false},
 		{name: "two header lines", accept: []string{"application/json;q=0.1", "text/plain"}, want: true},
 		{name: "malformed", accept: []string{"text/plain;;;q=x"}, want: false},
+		{name: "quality above one", accept: []string{"text/plain;q=2"}, want: false},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
