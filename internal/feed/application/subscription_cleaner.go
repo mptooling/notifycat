@@ -36,10 +36,10 @@ func (cleaner *SubscriptionCleaner) RemoveUnconfigured(ctx context.Context) (dom
 			unconfigured = append(unconfigured, repository)
 		}
 	}
-	slices.Sort(unconfigured)
 	if len(unconfigured) == 0 {
 		return domain.RemovedSubscriptions{}, nil
 	}
+	slices.Sort(unconfigured)
 	count, err := cleaner.subscriptions.DeleteRepositories(ctx, unconfigured)
 	if err != nil {
 		return domain.RemovedSubscriptions{}, fmt.Errorf("delete unconfigured subscriptions: %w", err)
