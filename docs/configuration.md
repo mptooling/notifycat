@@ -2,7 +2,7 @@
 
 This page is the complete key-by-key reference. New to Notifycat? Read [Configuration basics](configure.md) first — it shows the whole model (two files, one change loop) in two minutes; come back here to look up exact keys, defaults, and rules.
 
-Notifycat is configured through a single `config.yaml` file that holds all non-secret settings. Secrets and infra-interpolation values live in environment variables (or `.env` for local development). For local development, `.env` is loaded automatically if the file exists.
+Notifycat is configured through a single `config.yaml` file that holds all non-secret settings. Secrets and infra-interpolation values live in environment variables (or `.env` for local development). For local development, `.env` is loaded automatically if the file exists. Outside Docker, the server and CLIs read `.env` from their working directory; a variable already set in the environment wins over the file.
 
 The config file path defaults to `./config.yaml`. Override with `NOTIFYCAT_CONFIG_FILE`. The Docker image default is `/app/config.yaml`.
 
@@ -62,14 +62,14 @@ Two provider-specific behaviors are worth knowing when running `git_provider: bi
 | `server.addr` | `:8080` | HTTP listen address. |
 | `server.log_level` | `info` | Supported values: `debug`, `info`, `warn`, `error`. |
 | `server.log_format` | `text` | Use `json` for structured production logs. |
-| `server.domain` | _(unset)_ | Public domain name. `notifycat-doctor` derives `https://$domain/webhook/github` from this. Not read by the server process itself. The agent invite `redeem_command` also uses it. |
+| `server.domain` | _(unset)_ | Public domain name. `notifycat-doctor` derives `https://$domain/webhook/github` from this, and the server builds the agent invite `redeem_command` from it. |
 | `server.admin_addr` | _(unset)_ | Listen address of the private admin server for agent invites and tokens. Must differ from `server.addr`. Plain HTTP; never publish it. Requires `NOTIFYCAT_ADMIN_KEY_HASH`. |
 
 ### agent_api
 
 | Key | Default | Notes |
 | --- | --- | --- |
-| `agent_api.enabled` | `false` | Serves the `/api/v1/` agent routes. Off means no `/api/v1/` routes and no admin server. |
+| `agent_api.enabled` | `false` | Serves the `/api/v1/` agent routes. Off means no `/api/v1/` routes and no admin server. Invites can only be created when `server.admin_addr` is set too; with the API on and no `admin_addr`, notifycat logs `WARN admin server not started` and existing tokens keep working. Turning the API off hides the routes but does not revoke tokens; turning it on again restores them. To revoke a token, use `DELETE /admin/v1/tokens/{id}`. |
 
 ### database
 

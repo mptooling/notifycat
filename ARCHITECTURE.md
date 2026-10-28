@@ -87,6 +87,7 @@ flowchart TB
   digest --> routing
   validation --> routing
   diagnostics --> validation
+  access --> platform
   domains --> platform
 ```
 

@@ -27,7 +27,7 @@ Startup validation distinguishes what the operator controls from what lives on t
 
 Each warning logs `startup validate warning` with `entry`, `repository`, `check`, and `detail`, followed by one `startup validation completed with warnings` line naming the affected entries. Warned entries are **not** written to `config.lock`, so every boot re-probes them and re-logs the warning until the problem is fixed — no warning goes quiet on its own.
 
-When the agent API is enabled and `server.admin_addr` is set, the admin server is a second listener. It starts and stops together with the public one, and a fatal admin-server error exits the process with code 1, like a fatal public-server error. See [Agent API access](security.md#agent-api-access).
+When the agent API is enabled and `server.admin_addr` is set, the admin server is a second listener. It starts and stops together with the public one. If either port cannot be bound, startup stops with an error that names the server (`http server: …` or `admin server: …`) and exit code 1. A later fatal error on either listener also exits with code 1. See [Agent API access](security.md#agent-api-access).
 
 Shutdown listens for `SIGINT`/`SIGTERM` and lets in-flight requests finish within the shutdown window.
 
@@ -58,7 +58,8 @@ The agent API logs these lines. None of them carries a credential or an `Authori
 | Message | Level | Meaning |
 | --- | --- | --- |
 | `admin server listening` | info | The admin listener is up (`addr`). |
-| `admin server not started` | warn | `server.admin_addr` is set but the agent API is disabled, so no admin listener runs. |
+| `admin server not started` | warn | No admin listener runs. `reason` is `agent_api.enabled is false` (`server.admin_addr` is set but the agent API is disabled) or `server.admin_addr is empty` (the agent API is on but has no admin port, so no invites can be created; existing tokens keep working). |
+| `admin server stopped` | error | The admin listener failed after it started; the process exits with code 1. |
 | `admin auth failed` | warn | A request to the admin port had a missing or wrong admin key. |
 | `agent invite created` | info | An invite was issued (`user`, `invite_id`, `expires_at`). |
 | `agent token created` | info | An invite was redeemed (`user`, `token_id`). |

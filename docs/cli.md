@@ -112,12 +112,18 @@ Runs are idempotent: the row is retargeted immediately after the repost, so a re
 
 ## notifycat-keygen
 
-Generates the admin key and the hash the server checks it against. The key goes to stdout; the `NOTIFYCAT_ADMIN_KEY_HASH='...'` line goes to stderr. Put that line in the server's environment and keep the key.
+Generates the admin key and the hash the server checks it against. The key goes to stdout; the `NOTIFYCAT_ADMIN_KEY_HASH='...'` line goes to stderr. Split the two streams to store each one:
 
 ```sh
-docker run --rm ghcr.io/mptooling/notifycat notifycat-keygen
+# the key stays on screen, the hash line goes to hash.txt
+docker run --rm ghcr.io/mptooling/notifycat notifycat-keygen 2>hash.txt
+
+# or both go to files
+docker run --rm ghcr.io/mptooling/notifycat notifycat-keygen >key.txt 2>hash.txt
 ```
+
+Keep the key in a password manager. The hash line is a secret too: put it in your platform's secret store (Fly: `fly secrets set`; Kubernetes: a `Secret`; Compose or the plain binary: the gitignored `.env`). Never commit it to git, not even to a deploy repository. Then delete `key.txt` and `hash.txt`.
 
 Keep the single quotes around the hash. A bcrypt hash contains `$`, which an unquoted `.env` or shell value expands, corrupting the hash.
 
-It reads no config and touches no database. Run it on the admin's machine and keep the key in a password manager; the server never stores it, so a lost key means generating a new pair.
+It reads no config and touches no database. Run it on the admin's machine. The server never stores the key, so a lost key means generating a new pair.
