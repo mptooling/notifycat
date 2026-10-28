@@ -2,6 +2,8 @@ package persistence_test
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -89,6 +91,40 @@ func TestAccessInvites_Redeem_UsedInviteIsErrInviteUsed(t *testing.T) {
 	require.ErrorIs(t, err, persistence.ErrInviteUsed)
 	_, findErr := tokens.Find(ctx, "t2")
 	assert.ErrorIs(t, findErr, persistence.ErrNotFound)
+}
+
+func TestAccessInvites_Redeem_ConcurrentRacersRedeemOnce(t *testing.T) {
+	const racers = 8
+	db := persistence.NewTestDB(t)
+	invites := persistence.NewAccessInvites(db)
+	ctx := context.Background()
+	require.NoError(t, invites.Create(ctx, newInvite("i1")))
+	start := make(chan struct{})
+	results := make([]error, racers)
+	var racing sync.WaitGroup
+	for racer := range racers {
+		racing.Go(func() {
+			<-start
+			token := persistence.AccessToken{ID: fmt.Sprintf("t%d", racer), User: "alice", SecretHash: "h", CreatedAt: accessBaseTime}
+			results[racer] = invites.Redeem(ctx, "i1", token)
+		})
+	}
+
+	close(start)
+	racing.Wait()
+
+	successes := 0
+	for _, err := range results {
+		if err == nil {
+			successes++
+			continue
+		}
+		assert.ErrorIs(t, err, persistence.ErrInviteUsed)
+	}
+	assert.Equal(t, 1, successes, "an invite is single use")
+	var tokenRows int
+	require.NoError(t, db.Raw("SELECT count(*) FROM access_tokens").Scan(&tokenRows).Error)
+	assert.Equal(t, 1, tokenRows)
 }
 
 func TestAccessInvites_Redeem_RollsBackWhenTokenInsertFails(t *testing.T) {

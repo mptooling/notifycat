@@ -29,11 +29,12 @@ type touchCall struct {
 }
 
 type fakeInviteStore struct {
-	invites   map[string]domain.StoredInvite
-	created   []domain.StoredInvite
-	redeemed  []redeemCall
-	findErr   error
-	redeemErr error
+	invites        map[string]domain.StoredInvite
+	created        []domain.StoredInvite
+	redeemed       []redeemCall
+	redeemAttempts int
+	findErr        error
+	redeemErr      error
 }
 
 func newFakeInviteStore() *fakeInviteStore {
@@ -58,6 +59,7 @@ func (store *fakeInviteStore) Find(_ context.Context, id string) (domain.StoredI
 }
 
 func (store *fakeInviteStore) Redeem(_ context.Context, id string, token domain.StoredToken) error {
+	store.redeemAttempts++
 	if store.redeemErr != nil {
 		return store.redeemErr
 	}

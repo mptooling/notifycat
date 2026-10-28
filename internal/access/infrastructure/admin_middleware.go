@@ -13,7 +13,7 @@ import (
 func AdminMiddleware(authenticator domain.AdminAuthenticator, logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set(httpx.CacheControlHeader, httpx.NoStore)
 			err := authenticator.Authenticate(request.Context(), credentialFromHeader(request, domain.BearerScheme))
 			if errors.Is(err, domain.ErrUnauthorized) {
 				writeUnauthorized(w, domain.BearerScheme)

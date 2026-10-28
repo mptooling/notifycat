@@ -13,7 +13,11 @@ import (
 func startupError(err error) error {
 	var mv *config.MissingVarError
 	if errors.As(err, &mv) {
-		return fmt.Errorf("%s is not set — copy .env.example to .env and set the missing value", mv.Var)
+		remedy := mv.Remedy
+		if remedy == "" {
+			remedy = "copy .env.example to .env and set the missing value"
+		}
+		return fmt.Errorf("%s is not set — %s", mv.Var, remedy)
 	}
 
 	return err

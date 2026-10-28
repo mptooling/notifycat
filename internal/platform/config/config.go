@@ -97,11 +97,21 @@ type Reactions struct {
 }
 
 // MissingVarError is returned when a required secret env var is unset or empty.
-type MissingVarError struct{ Var string }
+// Remedy, when set, tells the operator how to produce the value.
+type MissingVarError struct {
+	Var    string
+	Remedy string
+}
 
 func (e *MissingVarError) Error() string {
-	return fmt.Sprintf("config: required environment variable %s is missing", e.Var)
+	message := fmt.Sprintf("config: required environment variable %s is missing", e.Var)
+	if e.Remedy == "" {
+		return message
+	}
+	return message + " — " + e.Remedy
 }
+
+const adminKeyHashRemedy = "run notifycat-keygen and put the printed NOTIFYCAT_ADMIN_KEY_HASH='…' line in the server's environment"
 
 // DefaultConfigFile is used when NOTIFYCAT_CONFIG_FILE is unset.
 const DefaultConfigFile = "./config.yaml"
@@ -339,7 +349,7 @@ func trimSingleQuotes(value string) string {
 
 func validateAgentAPI(cfg Config) error {
 	if cfg.AdminAddr != "" && cfg.AdminKeyHash == "" {
-		return fmt.Errorf("config: %w", &MissingVarError{Var: "NOTIFYCAT_ADMIN_KEY_HASH"})
+		return fmt.Errorf("config: %w", &MissingVarError{Var: "NOTIFYCAT_ADMIN_KEY_HASH", Remedy: adminKeyHashRemedy})
 	}
 	if cfg.AdminAddr != "" && cfg.AdminAddr == cfg.Addr {
 		return fmt.Errorf("config: server.admin_addr must differ from server.addr (both %q)", cfg.Addr)

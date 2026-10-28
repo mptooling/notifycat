@@ -413,6 +413,37 @@ func TestLoad_AdminAddrWithoutKeyHash_Fails(t *testing.T) {
 	var missing *config.MissingVarError
 	require.ErrorAs(t, err, &missing)
 	assert.Equal(t, "NOTIFYCAT_ADMIN_KEY_HASH", missing.Var, "the check runs even while the API is disabled")
+	assert.ErrorContains(t, err, "run notifycat-keygen and put the printed NOTIFYCAT_ADMIN_KEY_HASH='…' line in the server's environment")
+}
+
+func TestLoad_AdminAddrEqualsAddrWithoutKeyHash_ReportsMissingHashFirst(t *testing.T) {
+	body := "git_provider: github\nserver:\n  addr: \":9091\"\n  admin_addr: \":9091\"\n"
+
+	_, err := loadConfigured(t, body)
+
+	var missing *config.MissingVarError
+	require.ErrorAs(t, err, &missing)
+	assert.Equal(t, "NOTIFYCAT_ADMIN_KEY_HASH", missing.Var)
+}
+
+func TestLoad_AdminKeyHash_BareQuotesNeverBoot(t *testing.T) {
+	testCases := []struct {
+		name            string
+		value           string
+		wantErrContains string
+	}{
+		{name: "lone quote", value: "'", wantErrContains: "NOTIFYCAT_ADMIN_KEY_HASH is not a valid bcrypt hash"},
+		{name: "empty quoted value", value: "''", wantErrContains: "NOTIFYCAT_ADMIN_KEY_HASH is missing"},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			body := minimalConfig + "  admin_addr: \"127.0.0.1:9091\"\n"
+
+			_, err := loadWithAdminKeyHash(t, body, testCase.value)
+
+			assert.ErrorContains(t, err, testCase.wantErrContains)
+		})
+	}
 }
 
 func TestLoad_AdminAddrEqualsAddr_Fails(t *testing.T) {

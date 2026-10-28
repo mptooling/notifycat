@@ -13,6 +13,7 @@ import (
 func BearerMiddleware(authenticator domain.TokenAuthenticator, logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+			w.Header().Set(httpx.CacheControlHeader, httpx.NoStore)
 			principal, err := authenticator.Authenticate(request.Context(), credentialFromHeader(request, domain.BearerScheme))
 			if errors.Is(err, domain.ErrUnauthorized) {
 				writeUnauthorized(w, domain.BearerScheme)

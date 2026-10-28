@@ -51,8 +51,9 @@ func NewAdminHandler(params domain.AdminHandlerParams) http.Handler {
 
 func (handler *adminHandler) createInvite(w http.ResponseWriter, request *http.Request) {
 	var body createInviteRequest
-	reader := http.MaxBytesReader(w, request.Body, domain.MaxRequestBodyBytes)
-	if err := json.NewDecoder(reader).Decode(&body); err != nil {
+	decoder := json.NewDecoder(http.MaxBytesReader(w, request.Body, domain.MaxRequestBodyBytes))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, string(domain.ErrorCodeInvalidBody))
 		return
 	}

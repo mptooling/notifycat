@@ -68,45 +68,80 @@ func TestInviteRedeemer_Redeem_ValidJustBeforeExpiry(t *testing.T) {
 
 func TestInviteRedeemer_Redeem_Failures(t *testing.T) {
 	testCases := []struct {
-		name           string
-		raw            string
-		arrange        func(fixture redeemerFixture)
-		wantReason     domain.AuthFailureReason
-		wantMatchCalls int
+		name               string
+		raw                string
+		secret             string
+		arrange            func(fixture redeemerFixture)
+		wantReason         domain.AuthFailureReason
+		wantMatchCalls     int
+		wantHashCalls      int
+		wantRedeemAttempts int
 	}{
-		{"malformed", "nci_garbage", func(redeemerFixture) {}, domain.AuthFailureMalformed, 0},
-		{"unknown", validInvite(), func(fixture redeemerFixture) { fixture.invites.findErr = domain.ErrInviteNotFound }, domain.AuthFailureUnknown, 0},
-		{"mismatch", validInvite(), func(fixture redeemerFixture) {
-			stored := fixture.invites.invites[inviteID]
-			stored.SecretHash = "hash:other"
-			fixture.invites.invites[inviteID] = stored
-		}, domain.AuthFailureMismatch, 1},
-		{"used", validInvite(), func(fixture redeemerFixture) {
-			stored := fixture.invites.invites[inviteID]
-			stored.UsedAt = &now
-			fixture.invites.invites[inviteID] = stored
-		}, domain.AuthFailureUsed, 1},
-		{"expired", validInvite(), func(fixture redeemerFixture) { fixture.clock.now = now.Add(time.Hour) }, domain.AuthFailureExpired, 1},
-		{"expired later", validInvite(), func(fixture redeemerFixture) { fixture.clock.now = now.Add(time.Hour + time.Second) }, domain.AuthFailureExpired, 1},
-		{"lost race", validInvite(), func(fixture redeemerFixture) { fixture.invites.redeemErr = domain.ErrInviteUsed }, domain.AuthFailureUsed, 1},
+		{
+			name: "malformed", raw: "nci_garbage", secret: "garbage",
+			arrange:    func(redeemerFixture) {},
+			wantReason: domain.AuthFailureMalformed,
+		},
+		{
+			name: "unknown", raw: validInvite(), secret: inviteSecret,
+			arrange:    func(fixture redeemerFixture) { fixture.invites.findErr = domain.ErrInviteNotFound },
+			wantReason: domain.AuthFailureUnknown,
+		},
+		{
+			name: "mismatch", raw: validInvite(), secret: inviteSecret,
+			arrange: func(fixture redeemerFixture) {
+				stored := fixture.invites.invites[inviteID]
+				stored.SecretHash = "hash:other"
+				fixture.invites.invites[inviteID] = stored
+			},
+			wantReason: domain.AuthFailureMismatch, wantMatchCalls: 1,
+		},
+		{
+			name: "used", raw: validInvite(), secret: inviteSecret,
+			arrange: func(fixture redeemerFixture) {
+				stored := fixture.invites.invites[inviteID]
+				stored.UsedAt = &now
+				fixture.invites.invites[inviteID] = stored
+			},
+			wantReason: domain.AuthFailureUsed, wantMatchCalls: 1,
+		},
+		{
+			name: "expired", raw: validInvite(), secret: inviteSecret,
+			arrange:    func(fixture redeemerFixture) { fixture.clock.now = now.Add(time.Hour) },
+			wantReason: domain.AuthFailureExpired, wantMatchCalls: 1,
+		},
+		{
+			name: "expired later", raw: validInvite(), secret: inviteSecret,
+			arrange:    func(fixture redeemerFixture) { fixture.clock.now = now.Add(time.Hour + time.Second) },
+			wantReason: domain.AuthFailureExpired, wantMatchCalls: 1,
+		},
+		{
+			name: "lost race", raw: validInvite(), secret: inviteSecret,
+			arrange:    func(fixture redeemerFixture) { fixture.invites.redeemErr = domain.ErrInviteUsed },
+			wantReason: domain.AuthFailureUsed, wantMatchCalls: 1, wantHashCalls: 1, wantRedeemAttempts: 1,
+		},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			fixture := newRedeemerFixture()
 			testCase.arrange(fixture)
 
-			_, err := fixture.redeemer.Redeem(t.Context(), testCase.raw)
+			issued, err := fixture.redeemer.Redeem(t.Context(), testCase.raw)
 
 			var authErr *domain.AuthError
 			require.ErrorAs(t, err, &authErr)
 			assert.Equal(t, testCase.wantReason, authErr.Reason)
 			assert.ErrorIs(t, err, domain.ErrUnauthorized)
+			assert.Zero(t, issued)
 			assert.Contains(t, fixture.logged.String(), "agent invite redeem failed")
 			assert.Contains(t, fixture.logged.String(), "reason="+string(testCase.wantReason))
 			assert.Equal(t, testCase.wantMatchCalls, fixture.hasher.matchCalls)
-			if testCase.name != "lost race" {
-				assert.Empty(t, fixture.invites.redeemed)
-			}
+			assert.Equal(t, testCase.wantHashCalls, fixture.hasher.hashCalls)
+			assert.Equal(t, testCase.wantRedeemAttempts, fixture.invites.redeemAttempts)
+			assert.Empty(t, fixture.invites.redeemed)
+			assert.NotContains(t, fixture.logged.String(), testCase.secret)
+			assert.NotContains(t, err.Error(), testCase.secret)
+			assert.NotContains(t, fixture.logged.String(), tokenSecret)
 		})
 	}
 }
@@ -115,8 +150,12 @@ func TestInviteRedeemer_Redeem_StoreErrorIsNotUnauthorized(t *testing.T) {
 	fixture := newRedeemerFixture()
 	fixture.invites.findErr = errors.New("disk")
 
-	_, err := fixture.redeemer.Redeem(t.Context(), validInvite())
+	issued, err := fixture.redeemer.Redeem(t.Context(), validInvite())
 
 	require.Error(t, err)
 	assert.NotErrorIs(t, err, domain.ErrUnauthorized)
+	assert.Zero(t, issued)
+	assert.Zero(t, fixture.hasher.hashCalls)
+	assert.NotContains(t, fixture.logged.String(), inviteSecret)
+	assert.NotContains(t, err.Error(), inviteSecret)
 }

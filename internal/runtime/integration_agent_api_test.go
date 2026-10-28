@@ -35,7 +35,7 @@ func TestIntegration_AgentAccessFlow(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal([]byte(redeemBody), &redeemed))
 	require.Equal(t, "alice", redeemed.User)
-	require.Contains(t, redeemed.Token, "nct_")
+	require.Regexp(t, `^nct_[0-9a-f]{32}_[A-Za-z0-9_-]{43}$`, redeemed.Token)
 
 	redeemAgainStatus, _ := request(t, public, http.MethodPost, "/api/v1/invites/redeem", "", inviteAuth)
 	require.Equal(t, http.StatusUnauthorized, redeemAgainStatus, "an invite is single-use")

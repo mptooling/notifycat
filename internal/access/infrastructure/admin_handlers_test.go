@@ -72,6 +72,7 @@ func TestAdminHandler_CreateInvite_BadRequests(t *testing.T) {
 		{name: "bad json", body: "not json", wantCode: "invalid_body", wantStatus: http.StatusBadRequest},
 		{name: "too large", body: `{"user":"` + strings.Repeat("a", 16<<10) + `"}`, wantCode: "invalid_body", wantStatus: http.StatusBadRequest},
 		{name: "invalid user", body: `{"user":"Alice"}`, issuerErr: domain.ErrInvalidUser, wantCode: "invalid_user", wantStatus: http.StatusBadRequest},
+		{name: "unknown field", body: `{"user":"alice","foo":1}`, wantCode: "invalid_body", wantStatus: http.StatusBadRequest},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {

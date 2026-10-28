@@ -1,10 +1,14 @@
-// Package httpx holds the HTTP plumbing shared by notifycat's signed-webhook
-// receivers. It owns only the parts that are identical across providers —
-// capping and reading the body once, and replaying a fresh body reader
-// downstream — and delegates authentication to a provider-supplied callback. The
-// signing scheme itself (which headers, what HMAC, which error message) stays
-// with each provider, because those genuinely differ (GitHub signs the raw body;
-// Slack signs a timestamped base string).
+// Package httpx holds the HTTP plumbing shared by notifycat's handlers. For the
+// signed-webhook receivers it owns only the parts that are identical across
+// providers — capping and reading the body once, and replaying a fresh body
+// reader downstream — and delegates authentication to a provider-supplied
+// callback. The signing scheme itself (which headers, what HMAC, which error
+// message) stays with each provider, because those genuinely differ (GitHub
+// signs the raw body; Slack signs a timestamped base string).
+//
+// It also holds the JSON writers, which send non-cacheable JSON responses, and
+// Route, which pairs a ServeMux pattern with its handler so a domain can hand
+// its routes to the composition root.
 package httpx
 
 import (

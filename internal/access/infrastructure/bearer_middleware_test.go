@@ -33,6 +33,21 @@ func TestBearerMiddleware_PutsPrincipalInContext(t *testing.T) {
 	assert.Equal(t, validToken, authenticator.gotRaw)
 }
 
+func TestBearerMiddleware_SuccessIsNotCacheable(t *testing.T) {
+	authenticator := &fakeTokenAuthenticator{principal: domain.Principal{TokenID: "t1", User: "alice"}}
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	request := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
+	request.Header.Set("Authorization", "Bearer "+validToken)
+	recorder := httptest.NewRecorder()
+
+	infrastructure.BearerMiddleware(authenticator, discardLogger())(next).ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	assert.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
+}
+
 func TestBearerMiddleware_AcceptsHeaderVariants(t *testing.T) {
 	testCases := []string{"bearer " + validToken, "Bearer  " + validToken + "\t", "BEARER " + validToken}
 	for _, header := range testCases {

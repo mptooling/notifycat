@@ -102,7 +102,8 @@ func statusOf(url string) int {
 	if err != nil {
 		return 0
 	}
-	response, err := http.DefaultClient.Do(request)
+	client := &http.Client{Timeout: 5 * time.Second}
+	response, err := client.Do(request)
 	if err != nil {
 		return 0
 	}

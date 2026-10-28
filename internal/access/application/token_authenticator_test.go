@@ -52,14 +52,15 @@ func TestTokenAuthenticator_Authenticate_Failures(t *testing.T) {
 	testCases := []struct {
 		name           string
 		raw            string
+		secret         string
 		arrange        func(fixture authenticatorFixture)
 		wantReason     domain.AuthFailureReason
 		wantMatchCalls int
 	}{
-		{"malformed", "nct_short", func(authenticatorFixture) {}, domain.AuthFailureMalformed, 0},
-		{"invite credential", "nci_" + inviteID + "_" + inviteSecret, func(authenticatorFixture) {}, domain.AuthFailureMalformed, 0},
-		{"unknown", validToken(), func(fixture authenticatorFixture) { delete(fixture.tokens.tokens, tokenID) }, domain.AuthFailureUnknown, 0},
-		{"mismatch", validToken(), func(fixture authenticatorFixture) {
+		{"malformed", "nct_short", "short", func(authenticatorFixture) {}, domain.AuthFailureMalformed, 0},
+		{"invite credential", "nci_" + inviteID + "_" + inviteSecret, inviteSecret, func(authenticatorFixture) {}, domain.AuthFailureMalformed, 0},
+		{"unknown", validToken(), tokenSecret, func(fixture authenticatorFixture) { delete(fixture.tokens.tokens, tokenID) }, domain.AuthFailureUnknown, 0},
+		{"mismatch", validToken(), tokenSecret, func(fixture authenticatorFixture) {
 			stored := fixture.tokens.tokens[tokenID]
 			stored.SecretHash = "hash:other"
 			fixture.tokens.tokens[tokenID] = stored
@@ -70,16 +71,19 @@ func TestTokenAuthenticator_Authenticate_Failures(t *testing.T) {
 			fixture := newAuthenticatorFixture(nil)
 			testCase.arrange(fixture)
 
-			_, err := fixture.authenticator.Authenticate(t.Context(), testCase.raw)
+			principal, err := fixture.authenticator.Authenticate(t.Context(), testCase.raw)
 
 			var authErr *domain.AuthError
 			require.ErrorAs(t, err, &authErr)
 			assert.Equal(t, testCase.wantReason, authErr.Reason)
 			assert.ErrorIs(t, err, domain.ErrUnauthorized)
+			assert.Zero(t, principal)
 			assert.Contains(t, fixture.logged.String(), "agent api auth failed")
 			assert.Contains(t, fixture.logged.String(), "reason="+string(testCase.wantReason))
 			assert.Equal(t, testCase.wantMatchCalls, fixture.hasher.matchCalls)
 			assert.Empty(t, fixture.tokens.touched)
+			assert.NotContains(t, fixture.logged.String(), testCase.secret)
+			assert.NotContains(t, err.Error(), testCase.secret)
 		})
 	}
 }
@@ -134,4 +138,6 @@ func TestTokenAuthenticator_StoreErrorIsNotUnauthorized(t *testing.T) {
 
 	require.Error(t, err)
 	assert.NotErrorIs(t, err, domain.ErrUnauthorized)
+	assert.NotContains(t, fixture.logged.String(), tokenSecret)
+	assert.NotContains(t, err.Error(), tokenSecret)
 }
