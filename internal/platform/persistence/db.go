@@ -13,7 +13,11 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-const foreignKeysPragma = "_pragma=foreign_keys(1)"
+const (
+	foreignKeysPragma = "_pragma=foreign_keys(1)"
+	busyTimeoutName   = "busy_timeout"
+	busyTimeoutPragma = "_pragma=busy_timeout(5000)"
+)
 
 // Open opens a SQLite database for production use. The url accepts either a
 // raw file path or the "file:..." DSN form used in our config defaults.
@@ -21,7 +25,7 @@ const foreignKeysPragma = "_pragma=foreign_keys(1)"
 // GORM's logger is silenced for "record not found" because we treat ErrNotFound
 // as a normal return value, not a warning condition.
 func Open(url string) (*gorm.DB, error) {
-	dsn := withForeignKeys(stripFilePrefix(url))
+	dsn := withBusyTimeout(withForeignKeys(stripFilePrefix(url)))
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		Logger: logger.New(
 			log.New(io.Discard, "", 0),
@@ -50,11 +54,22 @@ func SQLDB(db *gorm.DB) (*sql.DB, error) {
 }
 
 func withForeignKeys(dsn string) string {
+	return appendQuery(dsn, foreignKeysPragma)
+}
+
+func withBusyTimeout(dsn string) string {
+	if strings.Contains(dsn, busyTimeoutName) {
+		return dsn
+	}
+	return appendQuery(dsn, busyTimeoutPragma)
+}
+
+func appendQuery(dsn, parameter string) string {
 	separator := "?"
 	if strings.Contains(dsn, "?") {
 		separator = "&"
 	}
-	return dsn + separator + foreignKeysPragma
+	return dsn + separator + parameter
 }
 
 func stripFilePrefix(url string) string {

@@ -167,6 +167,7 @@ func TestCodeReviews_Migration00008DownRestoresSingleActiveIndex(t *testing.T) {
 	require.NoError(t, db.Raw(indexSQL).Scan(&afterUp).Error)
 	require.Contains(t, afterUp, "slack_user_id", "all migrations applied means a per-(PR,user) index")
 
+	require.NoError(t, persistence.MigrateDown(ctx, db)) // 00011
 	require.NoError(t, persistence.MigrateDown(ctx, db)) // 00010
 	require.NoError(t, persistence.MigrateDown(ctx, db)) // 00009
 	require.NoError(t, persistence.MigrateDown(ctx, db)) // 00008

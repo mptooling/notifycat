@@ -199,11 +199,27 @@ func TestMigration00010_DownDropsAccessTables(t *testing.T) {
 	const countSQL = "SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('access_invites','access_tokens')"
 	var tableCount int
 
-	require.NoError(t, persistence.MigrateDown(ctx, db))
+	require.NoError(t, persistence.MigrateDown(ctx, db)) // 00011
+	require.NoError(t, persistence.MigrateDown(ctx, db)) // 00010
 	require.NoError(t, db.Raw(countSQL).Scan(&tableCount).Error)
 	assert.Zero(t, tableCount)
 
 	require.NoError(t, persistence.MigrateUp(ctx, db))
 	require.NoError(t, db.Raw(countSQL).Scan(&tableCount).Error)
 	assert.Equal(t, 2, tableCount)
+}
+
+func TestMigration00011_DownDropsFeedTables(t *testing.T) {
+	db := persistence.NewTestDB(t)
+	ctx := context.Background()
+	const countSQL = "SELECT count(*) FROM sqlite_master WHERE type='table' AND name LIKE 'feed_%'"
+	var tableCount int
+
+	require.NoError(t, persistence.MigrateDown(ctx, db))
+	require.NoError(t, db.Raw(countSQL).Scan(&tableCount).Error)
+	assert.Zero(t, tableCount)
+
+	require.NoError(t, persistence.MigrateUp(ctx, db))
+	require.NoError(t, db.Raw(countSQL).Scan(&tableCount).Error)
+	assert.Equal(t, 3, tableCount)
 }
