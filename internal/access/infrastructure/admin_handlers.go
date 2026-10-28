@@ -66,6 +66,10 @@ func (handler *adminHandler) createInvite(w http.ResponseWriter, request *http.R
 		handler.writeInternal(w, request, err)
 		return
 	}
+	if httpx.PrefersText(request) {
+		httpx.WriteText(w, http.StatusCreated, issued.RedeemCommand)
+		return
+	}
 	httpx.WriteJSON(w, http.StatusCreated, createInviteResponse{
 		Invite:        issued.Secret,
 		User:          issued.Invite.User,

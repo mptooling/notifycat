@@ -27,6 +27,10 @@ func NewRedeemHandler(redeemer domain.InviteRedeemer, logger *slog.Logger) http.
 			httpx.WriteError(w, http.StatusInternalServerError, string(domain.ErrorCodeInternal))
 			return
 		}
+		if httpx.PrefersText(request) {
+			httpx.WriteText(w, http.StatusCreated, issued.ShellExports)
+			return
+		}
 		httpx.WriteJSON(w, http.StatusCreated, redeemResponse{User: issued.Token.User, Token: issued.Secret})
 	})
 }

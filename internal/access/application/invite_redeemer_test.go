@@ -31,11 +31,12 @@ func newRedeemerFixture() redeemerFixture {
 	hasher := &fakeHasher{}
 	clock := &fakeClock{now: now}
 	redeemer := application.NewInviteRedeemer(domain.InviteRedeemerParams{
-		Invites: invites,
-		Secrets: &fakeSecrets{ids: []string{tokenID}, secrets: []string{tokenSecret}},
-		Hasher:  hasher,
-		Clock:   clock,
-		Logger:  logger,
+		Invites:  invites,
+		Secrets:  &fakeSecrets{ids: []string{tokenID}, secrets: []string{tokenSecret}},
+		Hasher:   hasher,
+		Clock:    clock,
+		Settings: domain.Settings{PublicDomain: "notifycat.example.com"},
+		Logger:   logger,
 	})
 	return redeemerFixture{redeemer: redeemer, invites: invites, hasher: hasher, clock: clock, logged: logged}
 }
@@ -55,6 +56,17 @@ func TestInviteRedeemer_Redeem_CreatesTokenAndMarksInviteUsed(t *testing.T) {
 	}}, fixture.invites.redeemed[0])
 	assert.Equal(t, "nct_"+tokenID+"_"+tokenSecret, issued.Secret)
 	assert.Contains(t, fixture.logged.String(), "agent token created")
+}
+
+func TestInviteRedeemer_Redeem_ShellExportsUseServerDomain(t *testing.T) {
+	fixture := newRedeemerFixture()
+
+	issued, err := fixture.redeemer.Redeem(t.Context(), validInvite())
+
+	require.NoError(t, err)
+	assert.Equal(t,
+		"export NOTIFYCAT_URL=https://notifycat.example.com\nexport NOTIFYCAT_TOKEN='nct_"+tokenID+"_"+tokenSecret+"'",
+		issued.ShellExports)
 }
 
 func TestInviteRedeemer_Redeem_ValidJustBeforeExpiry(t *testing.T) {

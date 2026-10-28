@@ -11,10 +11,12 @@ type errorBody struct {
 
 // WriteJSON writes body as a non-cacheable JSON response.
 func WriteJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(ContentTypeHeader, JSONMediaType)
 	w.Header().Set(CacheControlHeader, NoStore)
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
+	encoder := json.NewEncoder(w)
+	encoder.SetEscapeHTML(false)
+	_ = encoder.Encode(body)
 }
 
 // WriteError writes {"error": code} with the status.

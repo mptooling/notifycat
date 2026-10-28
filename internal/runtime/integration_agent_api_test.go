@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -64,4 +65,32 @@ func TestIntegration_AgentAccessFlow(t *testing.T) {
 
 	revokedStatus, _ := request(t, public, http.MethodGet, "/api/v1/probe", "", tokenAuth)
 	assert.Equal(t, http.StatusUnauthorized, revokedStatus, "deleting the row ends access at once")
+}
+
+func TestIntegration_AgentAccessPlainTextFlow(t *testing.T) {
+	public, adminServer := buildAgentAPIApp(t, agentAPIConfig(t))
+	require.NotNil(t, adminServer)
+	admin := httptest.NewServer(adminServer.Handler)
+	t.Cleanup(admin.Close)
+	adminHeaders := map[string]string{"Authorization": "Bearer " + testAdminKey, "Accept": "text/plain"}
+
+	createStatus, redeemCommand := request(t, admin, http.MethodPost, "/admin/v1/invites", `{"user":"alice"}`, adminHeaders)
+	require.Equal(t, http.StatusCreated, createStatus)
+	commandPattern := regexp.MustCompile(
+		`^curl -fsS -X POST -H 'Accept: text/plain' -H @- https://notifycat\.example\.com/api/v1/invites/redeem <<<'Authorization: Invite (nci_[0-9a-f]{32}_[A-Za-z0-9_-]{43})'\n$`,
+	)
+	require.Regexp(t, commandPattern, redeemCommand)
+	commandMatch := commandPattern.FindStringSubmatch(redeemCommand)
+
+	redeemHeaders := map[string]string{"Authorization": "Invite " + commandMatch[1], "Accept": "text/plain"}
+	redeemStatus, exports := request(t, public, http.MethodPost, "/api/v1/invites/redeem", "", redeemHeaders)
+	require.Equal(t, http.StatusCreated, redeemStatus)
+	exportsPattern := regexp.MustCompile(
+		`^export NOTIFYCAT_URL=https://notifycat\.example\.com\nexport NOTIFYCAT_TOKEN='(nct_[0-9a-f]{32}_[A-Za-z0-9_-]{43})'\n$`,
+	)
+	require.Regexp(t, exportsPattern, exports)
+	exportsMatch := exportsPattern.FindStringSubmatch(exports)
+
+	probeStatus, _ := request(t, public, http.MethodGet, "/api/v1/probe", "", map[string]string{"Authorization": "Bearer " + exportsMatch[1]})
+	assert.Equal(t, http.StatusOK, probeStatus)
 }

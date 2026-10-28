@@ -54,11 +54,20 @@ func TestPrincipalFrom_EmptyContext(t *testing.T) {
 
 func TestRedeemCommand(t *testing.T) {
 	assert.Equal(t,
-		`curl -fsS -X POST -H @- https://notifycat.example.com/api/v1/invites/redeem <<<'Authorization: Invite nci_x'`,
+		`curl -fsS -X POST -H 'Accept: text/plain' -H @- https://notifycat.example.com/api/v1/invites/redeem <<<'Authorization: Invite nci_x'`,
 		domain.RedeemCommand("notifycat.example.com", "nci_x"))
 	assert.Equal(t,
-		`curl -fsS -X POST -H @- "$NOTIFYCAT_URL/api/v1/invites/redeem" <<<'Authorization: Invite nci_x'`,
+		`curl -fsS -X POST -H 'Accept: text/plain' -H @- "$NOTIFYCAT_URL/api/v1/invites/redeem" <<<'Authorization: Invite nci_x'`,
 		domain.RedeemCommand("", "nci_x"))
+}
+
+func TestShellExports(t *testing.T) {
+	assert.Equal(t,
+		"export NOTIFYCAT_URL=https://notifycat.example.com\nexport NOTIFYCAT_TOKEN='nct_y'",
+		domain.ShellExports("notifycat.example.com", "nct_y"))
+	assert.Equal(t,
+		"export NOTIFYCAT_TOKEN='nct_y'",
+		domain.ShellExports("", "nct_y"), "without server.domain the developer keeps the URL they already set")
 }
 
 func TestAuthError_UnwrapsToUnauthorized(t *testing.T) {
