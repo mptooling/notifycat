@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.29.0](https://github.com/mptooling/notifycat/compare/v0.28.0...v0.29.0) (2026-10-28)
+
+
+### 🚀 Features
+
+* **access:** admin port, invites and agent tokens ([#219](https://github.com/mptooling/notifycat/issues/219)) ([247c824](https://github.com/mptooling/notifycat/commit/247c824594a51b379fc5fec26e8f687977da7c0d))
+* **feed:** subscriptions and open PR list for agents ([#220](https://github.com/mptooling/notifycat/issues/220)) ([7ab669f](https://github.com/mptooling/notifycat/commit/7ab669f838c7e3565daa075aa2180dc6755e57d0))
+
+
+### 🐛 Bug fixes
+
+* **persistence:** enable foreign keys on every pooled connection ([#217](https://github.com/mptooling/notifycat/issues/217)) ([29be59b](https://github.com/mptooling/notifycat/commit/29be59b7bcbe9956b9d5d15f394628b54da8dbc2))
+
 ## [0.28.0](https://github.com/mptooling/notifycat/compare/v0.27.0...v0.28.0) (2026-10-26)
 
 
