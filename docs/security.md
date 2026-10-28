@@ -14,6 +14,8 @@ Run through this before you point a production webhook at Notifycat:
 - [ ] The Slack bot has only the [documented scopes](slack-app.md#bot-scopes) — nothing broader.
 - [ ] Public traffic terminates TLS in front of Notifycat (the Compose install does this with Caddy); the server itself
   speaks plain HTTP only on the internal network.
+- [ ] If you enable the [agent API](#agent-api-access), the admin port is **not** published to the internet — only reachable through an SSH tunnel, `kubectl port-forward`, or `fly proxy`.
+- [ ] `NOTIFYCAT_ADMIN_KEY_HASH` is wrapped in single quotes in `.env`, so `$` in the bcrypt hash is not expanded.
 
 ## What Notifycat asks for — and what it doesn't
 
@@ -61,6 +63,65 @@ Two rules follow:
 4. Restart Notifycat if your runtime does not reload environment variables.
 
 Deliveries sent between steps 2 and 3 fail with `401` — keep the window short, then redeliver the failed events from the webhook's delivery history.
+
+## Agent API access
+
+Notifycat can hand developers' coding agents a personal token for its agent API. Access is granted in two steps, and the admin never sees a token:
+
+1. The admin creates an **invite** for a user label such as `alice`. An invite is valid for one hour and can be redeemed once.
+2. The developer redeems the invite over HTTPS and receives their own **token** (`nct_…`). It is shown once and never again.
+
+Only bcrypt hashes of invites and tokens are stored, in SQLite. They never go into git or `config.yaml`. A token has no end date; deleting its row ends access at once. The agent feed endpoints follow in a later release.
+
+### The admin key
+
+Generate a key with `notifycat-keygen` (for example `docker run --rm ghcr.io/mptooling/notifycat notifycat-keygen`). It prints the key (`nca_…`) to stdout and the env line for its hash to stderr. Keep the key in your password manager; only the hash goes to the server:
+
+```sh
+NOTIFYCAT_ADMIN_KEY_HASH='$2a$10$…'
+```
+
+The single quotes matter: `godotenv` and Docker Compose expand `$` in unquoted values and would silently break the hash. Startup fails if the value is not a valid bcrypt hash.
+
+### The admin port
+
+The admin routes are served by a second HTTP server, set by `server.admin_addr`. The public server never registers them.
+
+| Where notifycat runs | `server.admin_addr` | How the admin reaches it |
+| --- | --- | --- |
+| Docker Compose on a VM | `0.0.0.0:9091` in the container, published on the host only as `127.0.0.1:9091` | `ssh -L 9091:localhost:9091 vm` |
+| Kubernetes | `0.0.0.0:9091`, no Ingress for it | `kubectl port-forward` |
+| Fly.io | `fly-local-6pn:9091`, no `[[services]]` entry | `fly proxy 9091 -a <app>` |
+
+The admin port speaks plain HTTP. Never publish it to the internet; the tunnel provides the encryption. The public agent API, including invite redemption, is HTTPS-only through your reverse proxy.
+
+### Managing access
+
+Every admin call needs `Authorization: Bearer <admin key>`. The header comes from stdin so the key is not on the command line. Through the tunnel the port is `localhost:9091`:
+
+```sh
+# create an invite for alice
+curl -fsS -X POST -H @- http://localhost:9091/admin/v1/invites \
+  -d '{"user":"alice"}' <<<"Authorization: Bearer $NOTIFYCAT_ADMIN_KEY"
+
+# list tokens (never a hash)
+curl -fsS -H @- http://localhost:9091/admin/v1/tokens <<<"Authorization: Bearer $NOTIFYCAT_ADMIN_KEY"
+
+# remove a token
+curl -fsS -X DELETE -H @- http://localhost:9091/admin/v1/tokens/<id> <<<"Authorization: Bearer $NOTIFYCAT_ADMIN_KEY"
+```
+
+The invite response carries a `redeem_command` built from `server.domain`; send it to the developer.
+
+### What a stolen token gets
+
+Titles, descriptions, branch names, author ids, links, and commit SHAs of open PRs in the configured repositories. No code. The fix is `DELETE /admin/v1/tokens/{id}`.
+
+### What a stolen invite gets
+
+One token, within the hour, if nobody redeemed the invite first.
+
+Notifycat never logs a token, an invite, the admin key, or an `Authorization` header; a test pins this.
 
 <a id="signature-validation"></a>
 

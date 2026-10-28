@@ -46,7 +46,7 @@ Notifycat is a single-process HTTP server with a SQLite sidecar. It receives Git
 
 ### Domain structure
 
-Seven domains live under `internal/<domain>/`, each with three layers (`domain/`, `application/`, `infrastructure/`) and a `module.go` exporting an `fx.Module`:
+Eight domains live under `internal/<domain>/`, each with three layers (`domain/`, `application/`, `infrastructure/`) and a `module.go` exporting an `fx.Module`:
 
 | Domain | Responsibility |
 | --- | --- |
@@ -57,12 +57,13 @@ Seven domains live under `internal/<domain>/`, each with three layers (`domain/`
 | `digest` | Periodic stuck-PR digest per cron schedule |
 | `maintenance` | Background housekeeping: delete stale message rows; reconcile closed PRs; relocate messages after a channel change |
 | `diagnostics` | Operator tooling: `notifycat-doctor`, `notifycat-config`, smoke test |
+| `access` | Agent API access: admin key, one-hour single-use invites, bcrypt-hashed agent tokens |
 
 The shared kernel (`internal/kernel`) holds pure value objects (`PR`, `Event`, `Sender`, `Review`) and GitHub event/action/review-state enums — stdlib only. The shared platform (`internal/platform/`) holds domain-agnostic clients: `config`, `persistence` (GORM/SQLite), `slack`, `github`, `httpx`, and `security` (HMAC `SignatureVerifier` with `GitHubVerifier`/`SlackVerifier` adapters).
 
 ### Composition root
 
-`internal/runtime` is an `fx.Module` that builds the full dependency graph, runs the startup-validation gate as an `fx.Invoke`, and drives the HTTP server plus cleanup/digest schedulers via `fx.Lifecycle` hooks. `cmd/notifycat-server/main.go` is `fx.New(fx.Supply(cfg), runtime.Module, fx.NopLogger)` plus manual `Start`/`Wait`/`Stop` (fatal server error → exit 1 via `fx.Shutdowner`; SIGTERM → graceful shutdown → exit 0). The six CLI binaries (`notifycat-{migrate,reconcile,relocate,config,doctor,smoke}`) construct their domain use cases directly in `main`.
+`internal/runtime` is an `fx.Module` that builds the full dependency graph, runs the startup-validation gate as an `fx.Invoke`, and drives the HTTP server, the optional admin server, plus cleanup/digest schedulers via `fx.Lifecycle` hooks. `cmd/notifycat-server/main.go` is `fx.New(fx.Supply(cfg), runtime.Module, fx.NopLogger)` plus manual `Start`/`Wait`/`Stop` (fatal server error → exit 1 via `fx.Shutdowner`; SIGTERM → graceful shutdown → exit 0). The seven CLI binaries (`notifycat-{migrate,reconcile,relocate,config,doctor,smoke,keygen}`) construct their domain use cases directly in `main`.
 
 ### Request flow
 
@@ -83,6 +84,12 @@ POST /webhook/slack/interactions
   → platform/security.SlackVerifier
   → review/infrastructure interactions receiver
   → review/application start-review use case
+
+POST /admin/v1/*                 (admin port, private; admin key)
+  → access/infrastructure admin handler → invite issuer / token admin
+
+POST /api/v1/invites/redeem      (public; Invite credential)
+  → access/infrastructure redeem handler → invite redeemer → agent token
 ```
 
 Every silent no-op logs `ignored webhook event` with a `reason` field (`no_handler`, `no_mapping`, `no_stored_message`, `already_sent`). The operations doc has the full reason table — that contract matters for debugging deliveries that return 200 but don't update Slack.

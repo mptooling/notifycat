@@ -43,18 +43,23 @@ A hexagonal Go app needs two pieces of connective tissue that are deliberately *
   - `platform/github` — raw GitHub REST client.
   - `platform/persistence` — the GORM `*gorm.DB` handle, connection open/close, embedded goose migrations.
   - `platform/config` — env + `config.yaml` loading, plus the `Secret` type that hides credentials.
-  - `platform/httpx` — shared inbound plumbing: cap the body, read it once, replay a fresh reader downstream. Provider-agnostic; delegates authentication to `platform/security`.
+  - `platform/httpx` — shared inbound plumbing: cap the body, read it once, replay a fresh reader downstream, write JSON responses and errors, and the `Route` type that lets a domain contribute public routes. Provider-agnostic; delegates authentication to `platform/security`.
   - `platform/security` — inbound webhook **authentication**: a `SignatureVerifier` port with one adapter per provider scheme (GitHub raw-body HMAC-SHA256; Slack timestamped-base-string HMAC). The single home for "is this request genuinely from GitHub/Slack."
 
 ### Authentication and authorization
 
-Notifycat has **no user accounts, sessions, logins, roles, or permissions**, so there is no authentication or authorization *domain* — modelling them as domains would produce empty, ruleless folders. The only authentication that exists today is **inbound webhook message authentication**: proving, by HMAC signature, that a request genuinely came from GitHub or Slack. That is a cross-cutting security concern, so it lives in **`platform/security`** as an explicit `SignatureVerifier` port with one adapter per provider scheme — not inside a business domain. The inbound adapters in `notification` and `review` consume that port and only parse the verified body; they never re-implement verification. Outbound credentials (the Slack bot token, the GitHub token) are `Secret`s from `platform/config`, passed to the `platform/slack` / `platform/github` clients.
+Notifycat has **no user accounts, sessions, logins, or roles**, so there is no general identity domain. Two kinds of authentication exist, and each has one home.
 
-**Authorization does not exist today** — single tenant, no access control beyond "is this webhook authentic." If the multi-tenant SaaS direction lands (see the productization plan), *then* authentication (tenant/user identity, GitHub-App OAuth installs, API keys) and authorization (tenant isolation, who may configure which mappings) become genuine bounded contexts — new `internal/identity` and `internal/access` domains alongside these seven, owning their ports in the domain layer and plugging into the same fx composition. That is deliberately out of scope for this refactor.
+- **Inbound webhook authentication** — proving, by HMAC signature, that a request genuinely came from GitHub or Slack. It is a cross-cutting concern, so it lives in **`platform/security`** as an explicit `SignatureVerifier` port with one adapter per provider scheme. The inbound adapters in `notification` and `review` consume that port and only parse the verified body; they never re-implement verification.
+- **Agent authentication** — **`internal/access`** owns it: the admin key that guards the private admin port, one-hour single-use invites, and bcrypt-hashed agent tokens checked as Bearer credentials on the public agent API. Its ports (stores, hasher, secret source, clock, use cases) live in `access/domain`; the HTTP adapters (admin handler, redeem handler, Bearer middleware) live in `access/infrastructure`.
+
+Outbound credentials (the Slack bot token, the GitHub token) are `Secret`s from `platform/config`, passed to the `platform/slack` / `platform/github` clients.
+
+Authorization beyond "is this credential valid" does not exist: a token identifies one agent user, and the admin key is a single operator secret. If the multi-tenant SaaS direction lands (see the productization plan), tenant identity and isolation would become a new `internal/identity` domain alongside the others.
 
 ## Domain map
 
-Seven domains over the shared kernel and platform. The core domain is **notification**; everything else supports it.
+Eight domains over the shared kernel and platform. The core domain is **notification**; everything else supports it.
 
 ```mermaid
 flowchart TB
@@ -66,6 +71,7 @@ flowchart TB
     digest["digest<br/>stuck-PR digest"]
     maintenance["maintenance<br/>cleanup + reconcile + relocate"]
     diagnostics["diagnostics<br/>doctor · config CLI · smoke"]
+    access["access<br/>admin key · invites · agent tokens"]
   end
   subgraph kernel["internal/kernel (shared model)"]
     k["PR · Message · Event · Sender · enums"]
@@ -93,6 +99,7 @@ flowchart TB
 | **digest** | Periodically post a digest of stuck (stale) PRs per the enabled cron schedules. | `digest` |
 | **maintenance** | Background housekeeping: delete stale message rows past their TTL; reconcile closed PRs; relocate messages after a channel change. | `cleanup`, `reconcile`, `relocate` |
 | **diagnostics** | Operator tooling: the preflight doctor, the `notifycat-config` CLI (list/validate), and the smoke-test delivery. | `doctor`, `mappingcli`, `smoke` |
+| **access** | Agent API access: an admin key guards a private admin port where invites are issued (one hour, single use) and tokens listed or deleted; a redeemed invite yields a bcrypt-hashed agent token checked as a Bearer credential. | — (new) |
 
 `internal/app` (the old hand-written composition root) has been deleted: its wiring is per-domain fx modules, and its lifecycle orchestration is `fx.Lifecycle` hooks composed in `internal/runtime` and each `cmd/*/main.go`.
 
@@ -137,13 +144,14 @@ Binary → module composition:
 
 | Binary | Modules |
 | --- | --- |
-| `notifycat-server` | platform, kernel, routing, validation, notification, review, digest, maintenance + HTTP server |
+| `notifycat-server` | platform, kernel, routing, validation, notification, review, digest, maintenance, access + HTTP server and admin server |
 | `notifycat-config` | platform, kernel, routing, validation, diagnostics |
 | `notifycat-doctor` | platform, kernel, routing, validation, diagnostics |
 | `notifycat-migrate` | platform (persistence only) |
 | `notifycat-reconcile` | platform, kernel, maintenance |
 | `notifycat-relocate` | platform, kernel, routing, maintenance |
 | `notifycat-smoke` | platform, kernel, diagnostics |
+| `notifycat-keygen` | access infrastructure only |
 
 ## Cross-cutting conventions
 

@@ -27,6 +27,8 @@ Startup validation distinguishes what the operator controls from what lives on t
 
 Each warning logs `startup validate warning` with `entry`, `repository`, `check`, and `detail`, followed by one `startup validation completed with warnings` line naming the affected entries. Warned entries are **not** written to `config.lock`, so every boot re-probes them and re-logs the warning until the problem is fixed — no warning goes quiet on its own.
 
+When the agent API is enabled and `server.admin_addr` is set, the admin server is a second listener. It starts and stops together with the public one, and a fatal admin-server error exits the process with code 1, like a fatal public-server error. See [Agent API access](security.md#agent-api-access).
+
 Shutdown listens for `SIGINT`/`SIGTERM` and lets in-flight requests finish within the shutdown window.
 
 ## Persistence and backup
@@ -50,6 +52,22 @@ That sweep is separate from `cleanup.delete_on_close`, which does delete Slack m
 Set `server.log_format: json` in `config.yaml` for production log aggregation, and `server.log_level: debug` when triaging. Logs never contain raw webhook payloads, signatures, or secrets.
 
 The one log contract worth knowing by heart: every intentionally-ignored delivery logs `ignored webhook event` with a `reason` field. That line is how you answer "the webhook returned 200 — why didn't Slack change?" from logs alone. The reason table lives in [Troubleshooting](troubleshooting.md#200-ok-no-slack-change).
+
+The agent API logs these lines. None of them carries a credential or an `Authorization` header.
+
+| Message | Level | Meaning |
+| --- | --- | --- |
+| `admin server listening` | info | The admin listener is up (`addr`). |
+| `admin server not started` | warn | `server.admin_addr` is set but the agent API is disabled, so no admin listener runs. |
+| `admin auth failed` | warn | A request to the admin port had a missing or wrong admin key. |
+| `agent invite created` | info | An invite was issued (`user`, `invite_id`, `expires_at`). |
+| `agent token created` | info | An invite was redeemed (`user`, `token_id`). |
+| `agent invite redeem failed` | warn | `reason` is `malformed`, `unknown`, `mismatch`, `used`, or `expired`. |
+| `agent api auth failed` | warn | `reason` is `malformed`, `unknown`, or `mismatch`. |
+| `agent token deleted` | info | An admin removed a token (`user`, `token_id`). |
+| `agent token last_used_at not updated` | warn | The token worked but its usage timestamp could not be written. |
+| `agent api request failed` | error | An internal error on a public agent route. |
+| `admin request failed` | error | An internal error on an admin route. |
 
 ## Release images
 

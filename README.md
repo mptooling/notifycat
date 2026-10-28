@@ -15,11 +15,12 @@ Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow.svg)](
 
 <img src="docs/assets/images/slack_notifications.png" width="900" alt="A Slack channel where every pull request is one updating message">
 
-Three things it's built around:
+Four things it's built around:
 
 - **Quiet** — state changes are message updates and emoji, not new posts; dependency bumps collapse to one compact line; bot reviews can be marked or muted.
 - **Nothing slips through** — a morning digest resurfaces PRs nobody touched yesterday, and the "Start review" button shows who's already on it.
 - **Easy to own** — one Go binary, one declarative `config.yaml`, one SQLite file. The server validates its whole configuration against Slack and your git host before it will boot, and runtime needs only a webhook secret plus a Slack bot token — no GitHub App, no OAuth.
+- **Agent access** — admins invite developers with a one-hour, single-use invite; each developer redeems it for their own token. Admin routes live on a private port. See [Agent API access](docs/security.md#agent-api-access).
 
 ## Documentation
 
