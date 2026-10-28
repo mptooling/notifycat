@@ -47,11 +47,11 @@ Poll every minute or slower.
 
 ## Routes
 
-All routes need `Authorization: Bearer nct_<id>_<secret>`. All responses are JSON with `Cache-Control: no-store`. Times are RFC 3339 in UTC, such as `2026-10-28T09:14:03Z`.
+All routes need `Authorization: Bearer nct_<id>_<secret>`. Every response with a body is JSON. All responses carry `Cache-Control: no-store`. Times are RFC 3339 in UTC, such as `2026-10-28T09:14:03Z`.
 
 | Route | Result |
 | --- | --- |
-| `GET /api/v1/subs` | `200 {"subscriptions":[{"id":17,"repository":"acme/api","created_at":"…"}]}`, ordered by `id`. |
+| `GET /api/v1/subs` | `200 {"subscriptions":[{"id":17,"repository":"acme/api","created_at":"2026-10-27T16:40:12Z"}]}`, ordered by `id`. |
 | `POST /api/v1/subs` | Adds repositories. `200` with the full list, in the same shape as `GET`. |
 | `DELETE /api/v1/subs/{id}` | `204`. `404 not_found` if the id is unknown, belongs to another token, or is not a positive integer. |
 | `GET /api/v1/subs/prs` | The pull requests. See below. |
