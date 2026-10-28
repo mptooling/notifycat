@@ -46,6 +46,8 @@ type RepositoryCatalog interface {
 	HasRepositories() bool
 	// Configured returns the subset of repositories that is configured.
 	Configured(repositories []string) []string
+	// List returns the explicitly configured repositories and the organizations configured through an org tier.
+	List() ConfiguredRepositories
 }
 
 // Clock provides the current time.
@@ -60,6 +62,8 @@ type Subscriptions interface {
 	Add(ctx context.Context, subscriber Subscriber, repositories []string) ([]Subscription, error)
 	// Remove returns ErrSubscriptionNotFound when the id is not the subscriber's.
 	Remove(ctx context.Context, subscriber Subscriber, id int64) error
+	// Available returns the repositories and organizations a subscriber can subscribe to.
+	Available() ConfiguredRepositories
 }
 
 // PullRequests serves a token's feed of open pull requests.

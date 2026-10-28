@@ -77,6 +77,11 @@ func (subscriptions *Subscriptions) Remove(ctx context.Context, subscriber domai
 	return nil
 }
 
+// Available implements domain.Subscriptions.
+func (subscriptions *Subscriptions) Available() domain.ConfiguredRepositories {
+	return subscriptions.catalog.List()
+}
+
 func (subscriptions *Subscriptions) unknownRepositories(repositories []string) []string {
 	var unknown []string
 	for _, repository := range repositories {

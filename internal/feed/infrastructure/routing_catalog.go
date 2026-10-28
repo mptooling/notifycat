@@ -1,7 +1,9 @@
 package infrastructure
 
 import (
+	"maps"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/mptooling/notifycat/internal/feed/domain"
@@ -67,4 +69,12 @@ func (catalog *RoutingCatalog) Configured(repositories []string) []string {
 		configured = append(configured, name)
 	}
 	return configured
+}
+
+// List implements domain.RepositoryCatalog.
+func (catalog *RoutingCatalog) List() domain.ConfiguredRepositories {
+	return domain.ConfiguredRepositories{
+		Repositories:  slices.Sorted(maps.Keys(catalog.repositories)),
+		Organizations: slices.Sorted(maps.Keys(catalog.wildcardOrgs)),
+	}
 }

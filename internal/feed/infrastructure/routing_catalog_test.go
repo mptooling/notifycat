@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/mptooling/notifycat/internal/feed/domain"
 	"github.com/mptooling/notifycat/internal/feed/infrastructure"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 )
@@ -81,4 +82,29 @@ func TestRoutingCatalog_Configured(t *testing.T) {
 	got := catalog.Configured([]string{"BETA/svc", "other/x", "acme/api", "beta/svc"})
 
 	assert.Equal(t, []string{"beta/svc", "acme/api"}, got)
+}
+
+func TestRoutingCatalog_List(t *testing.T) {
+	catalog := infrastructure.NewRoutingCatalog(stubEntryLister{entries: []routingdomain.Entry{
+		{Org: "beta", Repo: "svc"},
+		{Org: "Acme", Repo: "API"},
+		{Org: "ACME", Wildcard: true},
+		{Org: "beta", Repo: "SVC"},
+	}})
+
+	got := catalog.List()
+
+	assert.Equal(t, domain.ConfiguredRepositories{
+		Repositories:  []string{"acme/api", "beta/svc"},
+		Organizations: []string{"acme"},
+	}, got)
+}
+
+func TestRoutingCatalog_List_NoEntriesIsEmpty(t *testing.T) {
+	catalog := infrastructure.NewRoutingCatalog(stubEntryLister{})
+
+	got := catalog.List()
+
+	assert.Empty(t, got.Repositories)
+	assert.Empty(t, got.Organizations)
 }

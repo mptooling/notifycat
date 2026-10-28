@@ -14,11 +14,13 @@ import (
 func NewRoutes(subscriptions domain.Subscriptions, pullRequests domain.PullRequests, logger *slog.Logger) []httpx.Route {
 	subscriptionsHandler := &subsHandler{subscriptions: subscriptions, logger: logger}
 	pullRequestsHandler := &prsHandler{pullRequests: pullRequests, logger: logger}
+	repositoriesHandler := &reposHandler{subscriptions: subscriptions}
 	return []httpx.Route{
 		{Pattern: domain.ListSubscriptionsPattern, Handler: http.HandlerFunc(subscriptionsHandler.list)},
 		{Pattern: domain.AddSubscriptionsPattern, Handler: http.HandlerFunc(subscriptionsHandler.add)},
 		{Pattern: domain.RemoveSubscriptionPattern, Handler: http.HandlerFunc(subscriptionsHandler.remove)},
 		{Pattern: domain.PullRequestsPattern, Handler: http.HandlerFunc(pullRequestsHandler.list)},
+		{Pattern: domain.RepositoriesPattern, Handler: http.HandlerFunc(repositoriesHandler.list)},
 	}
 }
 

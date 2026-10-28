@@ -205,3 +205,11 @@ func TestSubscriptions_Remove(t *testing.T) {
 		require.ErrorIs(t, err, storeErr)
 	})
 }
+
+func TestSubscriptions_Available(t *testing.T) {
+	subscriptions, _ := subscriptionsWithLog(&fakeSubscriptionStore{})
+
+	available := subscriptions.Available()
+
+	assert.Equal(t, domain.ConfiguredRepositories{Repositories: []string{"acme/api", "acme/web", "acme/ops"}}, available)
+}
