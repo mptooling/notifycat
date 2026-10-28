@@ -29,6 +29,8 @@ const (
 	DeleteTokenPattern  = "DELETE /admin/v1/tokens/{id}" //nolint:gosec // route pattern, not a credential
 	TokenIDPathValue    = "id"
 
+	RedactedSecret = "[REDACTED]"
+
 	MaxRequestBodyBytes = 16 << 10
 
 	PublicURLVariable = "$NOTIFYCAT_URL"

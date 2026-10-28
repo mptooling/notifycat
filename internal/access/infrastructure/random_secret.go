@@ -27,11 +27,11 @@ func (*RandomSecret) NewID() (string, error) {
 
 // NewSecret implements SecretSource.
 func (*RandomSecret) NewSecret() (string, error) {
-	randomBytes, err := randomBytes(domain.SecretBytes)
+	raw, err := randomBytes(domain.SecretBytes)
 	if err != nil {
 		return "", err
 	}
-	return base64.RawURLEncoding.EncodeToString(randomBytes), nil
+	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
 func randomBytes(length int) ([]byte, error) {

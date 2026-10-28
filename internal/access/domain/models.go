@@ -2,6 +2,8 @@ package domain
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
 	"regexp"
 	"time"
 )
@@ -48,10 +50,40 @@ type IssuedInvite struct {
 	RedeemCommand string
 }
 
+// String renders the invite with the secret redacted.
+func (issued IssuedInvite) String() string {
+	return redactedCredential(InvitePrefix, issued.Invite.ID)
+}
+
+// Format writes the redacted form for every fmt verb.
+func (issued IssuedInvite) Format(state fmt.State, _ rune) {
+	_, _ = fmt.Fprint(state, issued.String())
+}
+
+// LogValue renders the redacted form in slog output.
+func (issued IssuedInvite) LogValue() slog.Value {
+	return slog.StringValue(issued.String())
+}
+
 // IssuedToken carries the full encoded token credential in Secret, shown once.
 type IssuedToken struct {
 	Token  Token
 	Secret string
+}
+
+// String renders the token with the secret redacted.
+func (issued IssuedToken) String() string {
+	return redactedCredential(TokenPrefix, issued.Token.ID)
+}
+
+// Format writes the redacted form for every fmt verb.
+func (issued IssuedToken) Format(state fmt.State, _ rune) {
+	_, _ = fmt.Fprint(state, issued.String())
+}
+
+// LogValue renders the redacted form in slog output.
+func (issued IssuedToken) LogValue() slog.Value {
+	return slog.StringValue(issued.String())
 }
 
 // Settings is the access configuration.

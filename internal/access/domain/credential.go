@@ -2,14 +2,35 @@ package domain
 
 import (
 	"encoding/base64"
+	"fmt"
+	"log/slog"
 	"strings"
 )
 
-// Credential is a parsed prefix + id + secret. It has no String method so fmt and slog never print it; use Encode.
+// Credential is a parsed prefix + id + secret; fmt and slog render it redacted, and only Encode returns the wire form.
 type Credential struct {
 	Prefix string
 	ID     string
 	Secret string
+}
+
+// String renders the credential with the secret redacted.
+func (credential Credential) String() string {
+	return redactedCredential(credential.Prefix, credential.ID)
+}
+
+// Format writes the redacted form for every fmt verb.
+func (credential Credential) Format(state fmt.State, _ rune) {
+	_, _ = fmt.Fprint(state, credential.String())
+}
+
+// LogValue renders the redacted form in slog output.
+func (credential Credential) LogValue() slog.Value {
+	return slog.StringValue(credential.String())
+}
+
+func redactedCredential(prefix, id string) string {
+	return prefix + id + CredentialSeparator + RedactedSecret
 }
 
 // Encode returns the wire form of the credential.
