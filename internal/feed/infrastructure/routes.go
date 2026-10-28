@@ -12,13 +12,13 @@ import (
 
 // NewRoutes returns the agent feed routes; the caller guards them with the bearer middleware.
 func NewRoutes(subscriptions domain.Subscriptions, pullRequests domain.PullRequests, logger *slog.Logger) []httpx.Route {
-	subs := &subsHandler{subscriptions: subscriptions, logger: logger}
-	prs := &prsHandler{pullRequests: pullRequests, logger: logger}
+	subscriptionsHandler := &subsHandler{subscriptions: subscriptions, logger: logger}
+	pullRequestsHandler := &prsHandler{pullRequests: pullRequests, logger: logger}
 	return []httpx.Route{
-		{Pattern: domain.ListSubscriptionsPattern, Handler: http.HandlerFunc(subs.list)},
-		{Pattern: domain.AddSubscriptionsPattern, Handler: http.HandlerFunc(subs.add)},
-		{Pattern: domain.RemoveSubscriptionPattern, Handler: http.HandlerFunc(subs.remove)},
-		{Pattern: domain.PullRequestsPattern, Handler: http.HandlerFunc(prs.list)},
+		{Pattern: domain.ListSubscriptionsPattern, Handler: http.HandlerFunc(subscriptionsHandler.list)},
+		{Pattern: domain.AddSubscriptionsPattern, Handler: http.HandlerFunc(subscriptionsHandler.add)},
+		{Pattern: domain.RemoveSubscriptionPattern, Handler: http.HandlerFunc(subscriptionsHandler.remove)},
+		{Pattern: domain.PullRequestsPattern, Handler: http.HandlerFunc(pullRequestsHandler.list)},
 	}
 }
 

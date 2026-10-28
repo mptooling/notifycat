@@ -35,7 +35,7 @@ type prsHandler struct {
 
 func (handler *prsHandler) list(w http.ResponseWriter, request *http.Request) {
 	if request.Method == http.MethodHead {
-		w.Header().Set("Allow", http.MethodGet)
+		w.Header().Set(httpx.AllowHeader, http.MethodGet)
 		httpx.WriteError(w, http.StatusMethodNotAllowed, string(domain.ErrorCodeMethodNotAllowed))
 		return
 	}
