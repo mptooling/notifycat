@@ -8,7 +8,7 @@ import (
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 )
 
-var repositoryName = regexp.MustCompile(domain.RepositoryNamePattern)
+var wellFormedRepositoryName = regexp.MustCompile(domain.RepositoryNamePattern)
 
 // RoutingCatalog answers which repositories the routing mappings configure.
 type RoutingCatalog struct {
@@ -38,7 +38,7 @@ func NewRoutingCatalog(entries routingdomain.EntryLister) *RoutingCatalog {
 // IsConfigured implements domain.RepositoryCatalog.
 func (catalog *RoutingCatalog) IsConfigured(repository string) bool {
 	name := strings.ToLower(repository)
-	if !repositoryName.MatchString(name) {
+	if !wellFormedRepositoryName.MatchString(name) {
 		return false
 	}
 	org, _, _ := strings.Cut(name, "/")

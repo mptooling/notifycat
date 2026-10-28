@@ -61,8 +61,8 @@ import (
 // server, optional admin server, and the cleanup and digest schedulers — then
 // runs the startup-validation gate and the feed cleanup, and starts the HTTP
 // server, the admin server on its private port, and the schedulers via
-// lifecycle hooks. A failing startup gate
-// or a bad cron spec fails App.Start; the database handle closes on App.Stop.
+// lifecycle hooks. A failing startup gate or a bad cron spec fails fx.New, and
+// the database handle closes on App.Stop.
 var Module = fx.Module("runtime",
 	access.Module,
 	feed.Module,
