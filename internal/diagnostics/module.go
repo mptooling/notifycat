@@ -30,6 +30,7 @@ type Config struct {
 // Module binds the diagnostics ports to their implementations. The composition
 // root must supply the following external inputs:
 //   - *persistence.PullRequests
+//   - *persistence.FeedPullRequests
 //   - *slack.Client
 //   - *http.Client
 //   - routingdomain.RoutingProvider (satisfies SmokeMappings Get)

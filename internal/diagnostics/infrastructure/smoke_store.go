@@ -2,7 +2,9 @@ package infrastructure
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 
 	diagnosticsdomain "github.com/mptooling/notifycat/internal/diagnostics/domain"
 	"github.com/mptooling/notifycat/internal/platform/persistence"
@@ -39,20 +41,23 @@ func (s *StoreSmokeMessages) Messages(ctx context.Context, repository string, pr
 }
 
 // StoreSmokeCleanup implements diagnosticsdomain.SmokeCleanup over
-// *persistence.PullRequests.
+// *persistence.PullRequests and *persistence.FeedPullRequests.
 type StoreSmokeCleanup struct {
-	pullRequests *persistence.PullRequests
+	pullRequests     *persistence.PullRequests
+	feedPullRequests *persistence.FeedPullRequests
 }
 
 // NewStoreSmokeCleanup returns a StoreSmokeCleanup backed by the given persistence.
-func NewStoreSmokeCleanup(pullRequests *persistence.PullRequests) *StoreSmokeCleanup {
-	return &StoreSmokeCleanup{pullRequests: pullRequests}
+func NewStoreSmokeCleanup(pullRequests *persistence.PullRequests, feedPullRequests *persistence.FeedPullRequests) *StoreSmokeCleanup {
+	return &StoreSmokeCleanup{pullRequests: pullRequests, feedPullRequests: feedPullRequests}
 }
 
-// DeletePR deletes the synthetic pull_requests row. It is a no-op when the row
-// is absent, so it is safe to call even if delivery failed.
+// DeletePR implements diagnosticsdomain.SmokeCleanup.
 func (s *StoreSmokeCleanup) DeletePR(ctx context.Context, repository string, prNumber int) error {
-	return s.pullRequests.Delete(ctx, repository, prNumber)
+	return errors.Join(
+		s.pullRequests.Delete(ctx, repository, prNumber),
+		s.feedPullRequests.Delete(ctx, strings.ToLower(repository), prNumber),
+	)
 }
 
 // MappingsSmokeMappings implements diagnosticsdomain.SmokeMappings over a

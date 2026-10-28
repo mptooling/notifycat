@@ -55,6 +55,7 @@ func TestModule_GraphResolves(t *testing.T) {
 		// External inputs supplied by the composition root.
 		fx.Provide(
 			func() *persistence.PullRequests { return pullRequests },
+			func() *persistence.FeedPullRequests { return persistence.NewFeedPullRequests(db) },
 			func() *slack.Client { return slack.NewClient(http.DefaultClient, "xoxb-test") },
 			func() *http.Client { return http.DefaultClient },
 			func() routingdomain.RoutingProvider { return provider },

@@ -63,6 +63,8 @@ The last step of an install and the first step of a delivery investigation: it f
 
 A secret mismatch surfaces as a clear `401`; an unmapped repository is rejected before anything is sent. `--reactions` verification needs the optional `reactions:read` scope — without it the reactions still post, and the check reports "could not verify" instead of failing. Delete the throwaway message when you're done.
 
+With the [agent API](agent-api.md) on, the smoke PR is also recorded for the agent feed. Smoke removes it when it finishes. An agent that polls during the few seconds of the run can still receive it.
+
 ## notifycat-migrate
 
 The server applies migrations itself at startup, so most deployments never run this. Use it when you want migrations as a separate, controlled step:
