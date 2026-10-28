@@ -13,13 +13,15 @@ import (
 	"gorm.io/gorm/logger"
 )
 
+const foreignKeysPragma = "_pragma=foreign_keys(1)"
+
 // Open opens a SQLite database for production use. The url accepts either a
 // raw file path or the "file:..." DSN form used in our config defaults.
 //
 // GORM's logger is silenced for "record not found" because we treat ErrNotFound
 // as a normal return value, not a warning condition.
 func Open(url string) (*gorm.DB, error) {
-	dsn := stripFilePrefix(url)
+	dsn := withForeignKeys(stripFilePrefix(url))
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		Logger: logger.New(
 			log.New(io.Discard, "", 0),
@@ -34,9 +36,6 @@ func Open(url string) (*gorm.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("store: open: %w", err)
 	}
-	if err := enableForeignKeys(db); err != nil {
-		return nil, err
-	}
 	return db, nil
 }
 
@@ -50,11 +49,12 @@ func SQLDB(db *gorm.DB) (*sql.DB, error) {
 	return sqlDB, nil
 }
 
-func enableForeignKeys(db *gorm.DB) error {
-	if err := db.Exec("PRAGMA foreign_keys = ON").Error; err != nil {
-		return fmt.Errorf("store: enable foreign keys: %w", err)
+func withForeignKeys(dsn string) string {
+	separator := "?"
+	if strings.Contains(dsn, "?") {
+		separator = "&"
 	}
-	return nil
+	return dsn + separator + foreignKeysPragma
 }
 
 func stripFilePrefix(url string) string {
