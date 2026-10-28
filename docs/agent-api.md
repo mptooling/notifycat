@@ -76,12 +76,12 @@ The body is `{"repositories":["acme/api","acme/web"]}`. Use `["*"]` to subscribe
 - Names are lower-cased and de-duplicated. A repository you already follow is kept.
 - An empty or missing list, unknown fields, or invalid JSON give `400 invalid_body`.
 - A repository that is not in your `mappings:` gives `400` with the list of unknown names. Nothing is added.
-- An org tier such as `acme/*` cannot be subscribed to. It gives `400 unknown_repository`. Use `*` for all repositories, or list them.
 
     ```json
     {"error":"unknown_repository","repositories":["acme/unknown"]}
     ```
 
+- An org tier such as `acme/*` cannot be subscribed to. It gives `400 unknown_repository`. Use `*` for all repositories, or list them.
 - More than 200 subscriptions for one token gives `400 too_many_subscriptions`. Nothing is added. Repositories you already follow do not count.
 - The body can be at most 16 KiB.
 
@@ -160,7 +160,7 @@ A path that is not a feed route gets the plain-text 404 or 405 of the Go HTTP se
 
 If a run crashed after the poll and before it finished the reviews, the PRs are already marked as received. The same is true when the response was lost on the way to you. Ask for them again with `?since=`.
 
-`since` matches a PR's last change (`updated_at`), not the time it was delivered. So use the time of your last good poll before the lost one, or any earlier time. An earlier time only returns more PRs. The time of the lost poll itself is too late: it misses the PRs that changed before it.
+`since` matches a PR's last change (`updated_at`), not the time it was delivered. So use a time a few minutes before the last good poll that came before the lost one, or any earlier time. Do not use the exact time: `updated_at` comes from the notifycat server's clock, and a webhook can still be recording while you poll. An earlier time only returns more PRs. The time of the lost poll itself is too late: it misses the PRs that changed before it.
 
 ```sh
 curl --fail-with-body -sS --get --data-urlencode "since=2026-10-28T09:00:00Z" \

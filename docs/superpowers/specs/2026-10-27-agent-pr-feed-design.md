@@ -274,7 +274,7 @@ Claude Code loop, for example `/loop 5m` with this prompt (or `claude -p` from c
 
 > Run `curl --fail-with-body -sS -H @- "$NOTIFYCAT_URL/api/v1/subs/prs" <<<"Authorization: Bearer $NOTIFYCAT_TOKEN"`. For each pull request: check it is still open, read its diff, and post a review. Never print `$NOTIFYCAT_TOKEN`.
 
-The docs show the "read the diff, post the review" step for GitHub (`gh`) and for Bitbucket (REST API). They recommend polling every minute or slower. They show how to get back a lost list: `GET /api/v1/subs/prs?since=<time of the last good poll before the lost one>`, or any earlier time. `since` matches a PR's last change, not when it was delivered, so the time of the lost run itself misses PRs. For a lost first poll, use an old time such as `1970-01-01T00:00:00Z` and skip PRs already reviewed.
+The docs show the "read the diff, post the review" step for GitHub (`gh`) and for Bitbucket (REST API). They recommend polling every minute or slower. They show how to get back a lost list: `GET /api/v1/subs/prs?since=<a few minutes before the last good poll before the lost one>`, or any earlier time. Not the exact time: `updated_at` comes from the server clock, and a webhook can still be recording while you poll. `since` matches a PR's last change, not when it was delivered, so the time of the lost run itself misses PRs. For a lost first poll, use an old time such as `1970-01-01T00:00:00Z` and skip PRs already reviewed.
 
 ## Docs
 
