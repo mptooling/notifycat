@@ -71,6 +71,10 @@ migrate-status:
 reconcile *args:
   go run ./cmd/notifycat-reconcile {{args}}
 
+# Generate the admin key and its NOTIFYCAT_ADMIN_KEY_HASH line
+keygen:
+  go run ./cmd/notifycat-keygen
+
 # Move open PRs' Slack messages to another channel (-audit first, then -dry-run)
 relocate *args:
   go run ./cmd/notifycat-relocate {{args}}

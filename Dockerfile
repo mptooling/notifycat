@@ -23,6 +23,7 @@ RUN go build -ldflags="${LDFLAGS}" -o /out/notifycat-doctor    ./cmd/notifycat-d
 RUN go build -ldflags="${LDFLAGS}" -o /out/notifycat-smoke     ./cmd/notifycat-smoke
 RUN go build -ldflags="${LDFLAGS}" -o /out/notifycat-reconcile ./cmd/notifycat-reconcile
 RUN go build -ldflags="${LDFLAGS}" -o /out/notifycat-relocate  ./cmd/notifycat-relocate
+RUN go build -ldflags="${LDFLAGS}" -o /out/notifycat-keygen    ./cmd/notifycat-keygen
 RUN mkdir -p /out/app
 
 # ---- runtime stage -------------------------------------------------------
@@ -40,6 +41,7 @@ COPY --from=build /out/notifycat-doctor    /usr/local/bin/notifycat-doctor
 COPY --from=build /out/notifycat-smoke     /usr/local/bin/notifycat-smoke
 COPY --from=build /out/notifycat-reconcile /usr/local/bin/notifycat-reconcile
 COPY --from=build /out/notifycat-relocate  /usr/local/bin/notifycat-relocate
+COPY --from=build /out/notifycat-keygen    /usr/local/bin/notifycat-keygen
 COPY --from=build --chown=65532:65532 /out/app /app
 
 EXPOSE 8080
