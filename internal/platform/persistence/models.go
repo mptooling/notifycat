@@ -87,3 +87,28 @@ type Target = routingdomain.Target
 
 // RepoMapping aliases the routing domain value object during the migration.
 type RepoMapping = routingdomain.RepoMapping
+
+// AccessInvite is a one-time invite; UsedAt is set when it is redeemed.
+type AccessInvite struct {
+	ID         string     `gorm:"primaryKey"`
+	User       string     `gorm:"column:user;not null"`
+	SecretHash string     `gorm:"column:secret_hash;not null"`
+	ExpiresAt  time.Time  `gorm:"column:expires_at;not null"`
+	UsedAt     *time.Time `gorm:"column:used_at"`
+	CreatedAt  time.Time  `gorm:"column:created_at;not null"`
+}
+
+// TableName pins the table name.
+func (AccessInvite) TableName() string { return "access_invites" }
+
+// AccessToken is a long-lived agent token stored as a hash.
+type AccessToken struct {
+	ID         string     `gorm:"primaryKey"`
+	User       string     `gorm:"column:user;not null"`
+	SecretHash string     `gorm:"column:secret_hash;not null"`
+	CreatedAt  time.Time  `gorm:"column:created_at;not null"`
+	LastUsedAt *time.Time `gorm:"column:last_used_at"`
+}
+
+// TableName pins the table name.
+func (AccessToken) TableName() string { return "access_tokens" }
