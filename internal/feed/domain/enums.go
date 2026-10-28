@@ -12,4 +12,5 @@ const (
 	ErrorCodeInvalidSince         ErrorCode = "invalid_since"
 	ErrorCodeNotFound             ErrorCode = "not_found"
 	ErrorCodeInternal             ErrorCode = "internal_error"
+	ErrorCodeMethodNotAllowed     ErrorCode = "method_not_allowed"
 )

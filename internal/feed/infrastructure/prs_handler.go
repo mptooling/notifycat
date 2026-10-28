@@ -3,6 +3,7 @@ package infrastructure
 import (
 	"log/slog"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/mptooling/notifycat/internal/feed/domain"
@@ -33,16 +34,25 @@ type prsHandler struct {
 }
 
 func (handler *prsHandler) list(w http.ResponseWriter, request *http.Request) {
+	if request.Method == http.MethodHead {
+		w.Header().Set("Allow", http.MethodGet)
+		httpx.WriteError(w, http.StatusMethodNotAllowed, string(domain.ErrorCodeMethodNotAllowed))
+		return
+	}
 	subscriber, ok := subscriberFrom(request)
 	if !ok {
 		writeUnauthorized(w)
+		return
+	}
+	query, queryErr := url.ParseQuery(request.URL.RawQuery)
+	if queryErr != nil {
+		httpx.WriteError(w, http.StatusBadRequest, string(domain.ErrorCodeInvalidSince))
 		return
 	}
 	var (
 		pullRequests []domain.PullRequest
 		err          error
 	)
-	query := request.URL.Query()
 	if query.Has(domain.SinceQueryParameter) {
 		since, parseErr := time.Parse(time.RFC3339, query.Get(domain.SinceQueryParameter))
 		if parseErr != nil {

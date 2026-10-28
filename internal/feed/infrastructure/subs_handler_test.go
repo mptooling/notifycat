@@ -1,9 +1,8 @@
 package infrastructure_test
 
 import (
-	"bytes"
 	"context"
-	"log/slog"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,41 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	accessdomain "github.com/mptooling/notifycat/internal/access/domain"
 	"github.com/mptooling/notifycat/internal/feed/domain"
-	"github.com/mptooling/notifycat/internal/feed/infrastructure"
 )
-
-type feedFixture struct {
-	subscriptions *fakeSubscriptions
-	pullRequests  *fakePullRequests
-	logs          *bytes.Buffer
-	mux           *http.ServeMux
-}
-
-func newFeedFixture() feedFixture {
-	fixture := feedFixture{
-		subscriptions: &fakeSubscriptions{},
-		pullRequests:  &fakePullRequests{},
-		logs:          &bytes.Buffer{},
-		mux:           http.NewServeMux(),
-	}
-	logger := slog.New(slog.NewTextHandler(fixture.logs, nil))
-	for _, route := range infrastructure.NewRoutes(fixture.subscriptions, fixture.pullRequests, logger) {
-		fixture.mux.Handle(route.Pattern, route.Handler)
-	}
-	return fixture
-}
-
-func (fixture feedFixture) do(method, target, body string) *httptest.ResponseRecorder {
-	request := httptest.NewRequestWithContext(context.Background(), method, target, strings.NewReader(body))
-	request = request.WithContext(accessdomain.WithPrincipal(request.Context(), accessdomain.Principal{TokenID: "t1", User: "alice"}))
-	recorder := httptest.NewRecorder()
-	fixture.mux.ServeHTTP(recorder, request)
-	return recorder
-}
-
-var aliceSubscriber = domain.Subscriber{TokenID: "t1", User: "alice"}
 
 func sampleSubscriptions() []domain.Subscription {
 	return []domain.Subscription{{ID: 17, TokenID: "t1", Repository: "acme/api", CreatedAt: time.Date(2026, 10, 28, 9, 0, 0, 0, time.UTC)}}
@@ -142,11 +108,16 @@ func TestSubs_Remove_UnknownIs404(t *testing.T) {
 }
 
 func TestSubs_Remove_InvalidIDIs404WithoutUseCase(t *testing.T) {
-	for _, rawID := range []string{"abc", "0", "-1"} {
-		t.Run(rawID, func(t *testing.T) {
+	testCases := []struct{ name, rawID string }{
+		{name: "not a number", rawID: "abc"},
+		{name: "zero", rawID: "0"},
+		{name: "negative", rawID: "-1"},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
 			fixture := newFeedFixture()
 
-			recorder := fixture.do(http.MethodDelete, "/api/v1/subs/"+rawID, "")
+			recorder := fixture.do(http.MethodDelete, "/api/v1/subs/"+testCase.rawID, "")
 
 			assert.Equal(t, http.StatusNotFound, recorder.Code)
 			assert.JSONEq(t, `{"error":"not_found"}`, recorder.Body.String())
@@ -156,17 +127,17 @@ func TestSubs_Remove_InvalidIDIs404WithoutUseCase(t *testing.T) {
 }
 
 func TestSubs_UseCaseFailureIs500AndLogged(t *testing.T) {
-	requests := []struct{ method, target, body string }{
-		{http.MethodGet, "/api/v1/subs", ""},
-		{http.MethodPost, "/api/v1/subs", `{"repositories":["acme/api"]}`},
-		{http.MethodDelete, "/api/v1/subs/17", ""},
+	testCases := []struct{ name, method, target, body string }{
+		{name: "list", method: http.MethodGet, target: "/api/v1/subs"},
+		{name: "add", method: http.MethodPost, target: "/api/v1/subs", body: `{"repositories":["acme/api"]}`},
+		{name: "remove", method: http.MethodDelete, target: "/api/v1/subs/17"},
 	}
-	for _, request := range requests {
-		t.Run(request.method, func(t *testing.T) {
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
 			fixture := newFeedFixture()
 			fixture.subscriptions.err = assert.AnError
 
-			recorder := fixture.do(request.method, request.target, request.body)
+			recorder := fixture.do(testCase.method, testCase.target, testCase.body)
 
 			assert.Equal(t, http.StatusInternalServerError, recorder.Code)
 			assert.JSONEq(t, `{"error":"internal_error"}`, recorder.Body.String())
@@ -175,30 +146,33 @@ func TestSubs_UseCaseFailureIs500AndLogged(t *testing.T) {
 	}
 }
 
-func TestSubs_NoPrincipalIs401(t *testing.T) {
+func TestSubs_Add_WrappedUnknownRepositoriesIs400WithList(t *testing.T) {
 	fixture := newFeedFixture()
-	request := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/subs", nil)
-	recorder := httptest.NewRecorder()
+	fixture.subscriptions.err = fmt.Errorf("x: %w", &domain.UnknownRepositoriesError{Repositories: []string{"acme/nope"}})
 
-	fixture.mux.ServeHTTP(recorder, request)
+	recorder := fixture.do(http.MethodPost, "/api/v1/subs", `{"repositories":["acme/nope"]}`)
 
-	require.Equal(t, http.StatusUnauthorized, recorder.Code)
-	assert.JSONEq(t, `{"error":"unauthorized"}`, recorder.Body.String())
-	assert.Zero(t, fixture.subscriptions.listCalls)
+	assert.Equal(t, http.StatusBadRequest, recorder.Code)
+	assert.JSONEq(t, `{"error":"unknown_repository","repositories":["acme/nope"]}`, recorder.Body.String())
 }
 
-func TestRoutes_Patterns(t *testing.T) {
-	routes := infrastructure.NewRoutes(&fakeSubscriptions{}, &fakePullRequests{}, discardLogger())
-
-	patterns := make([]string, 0, len(routes))
-	for _, route := range routes {
-		patterns = append(patterns, route.Pattern)
+func TestSubs_NoPrincipalIs401(t *testing.T) {
+	testCases := []struct{ name, method, target, body string }{
+		{name: "list", method: http.MethodGet, target: "/api/v1/subs"},
+		{name: "add", method: http.MethodPost, target: "/api/v1/subs", body: `{"repositories":["acme/api"]}`},
+		{name: "remove", method: http.MethodDelete, target: "/api/v1/subs/17"},
 	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := newFeedFixture()
+			request := httptest.NewRequestWithContext(context.Background(), testCase.method, testCase.target, strings.NewReader(testCase.body))
+			recorder := httptest.NewRecorder()
 
-	assert.ElementsMatch(t, []string{
-		domain.ListSubscriptionsPattern,
-		domain.AddSubscriptionsPattern,
-		domain.RemoveSubscriptionPattern,
-		domain.PullRequestsPattern,
-	}, patterns)
+			fixture.mux.ServeHTTP(recorder, request)
+
+			require.Equal(t, http.StatusUnauthorized, recorder.Code)
+			assert.JSONEq(t, `{"error":"unauthorized"}`, recorder.Body.String())
+			assert.Zero(t, fixture.subscriptions.listCalls+fixture.subscriptions.addCalls+fixture.subscriptions.removeCalls)
+		})
+	}
 }

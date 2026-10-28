@@ -53,6 +53,7 @@ func TestPrs_Next_EmptyIsEmptyArray(t *testing.T) {
 
 	recorder := fixture.do(http.MethodGet, "/api/v1/subs/prs", "")
 
+	assert.Equal(t, http.StatusOK, recorder.Code)
 	assert.JSONEq(t, `{"pull_requests":[]}`, recorder.Body.String())
 }
 
@@ -64,26 +65,40 @@ func TestPrs_ZeroCreatedAtIsNull(t *testing.T) {
 
 	recorder := fixture.do(http.MethodGet, "/api/v1/subs/prs", "")
 
-	assert.Contains(t, recorder.Body.String(), `"created_at":null`)
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.JSONEq(t, `{"pull_requests":[{
+		"repository":"acme/api","number":42,"title":"Add retry to the billing client",
+		"description":"Retries 5xx responses up to three times.",
+		"url":"https://bitbucket.org/acme/api/pull-requests/42","author_id":"557058:2f1c",
+		"source_branch":"feature/billing-retry","target_branch":"main","head_sha":"9fceb02d0ae5",
+		"created_at":null,"updated_at":"2026-10-28T09:14:03Z"}]}`, recorder.Body.String())
 }
 
 func TestPrs_Since(t *testing.T) {
 	fixture := newFeedFixture()
+	fixture.pullRequests.pullRequests = []domain.PullRequest{samplePullRequest()}
 
 	recorder := fixture.do(http.MethodGet, "/api/v1/subs/prs?since=2026-10-28T11:00:00%2B02:00", "")
 
 	require.Equal(t, http.StatusOK, recorder.Code)
-	assert.True(t, time.Date(2026, 10, 28, 9, 0, 0, 0, time.UTC).Equal(fixture.pullRequests.gotSince))
+	assert.JSONEq(t, samplePullRequestJSON, recorder.Body.String())
+	assert.WithinDuration(t, time.Date(2026, 10, 28, 9, 0, 0, 0, time.UTC), fixture.pullRequests.gotSince, 0)
 	assert.Equal(t, aliceSubscriber, fixture.pullRequests.gotSubscriber)
 	assert.Zero(t, fixture.pullRequests.nextCalls)
 }
 
 func TestPrs_InvalidSinceIs400WithoutUseCase(t *testing.T) {
-	for _, target := range []string{"/api/v1/subs/prs?since=yesterday", "/api/v1/subs/prs?since="} {
-		t.Run(target, func(t *testing.T) {
+	testCases := []struct{ name, target string }{
+		{name: "not a time", target: "/api/v1/subs/prs?since=yesterday"},
+		{name: "empty", target: "/api/v1/subs/prs?since="},
+		{name: "bad escape", target: "/api/v1/subs/prs?since=%zz"},
+		{name: "semicolon", target: "/api/v1/subs/prs?since=2026-10-28T09:00:00Z;x"},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
 			fixture := newFeedFixture()
 
-			recorder := fixture.do(http.MethodGet, target, "")
+			recorder := fixture.do(http.MethodGet, testCase.target, "")
 
 			assert.Equal(t, http.StatusBadRequest, recorder.Code)
 			assert.JSONEq(t, `{"error":"invalid_since"}`, recorder.Body.String())
@@ -92,13 +107,27 @@ func TestPrs_InvalidSinceIs400WithoutUseCase(t *testing.T) {
 	}
 }
 
+func TestPrs_HeadIs405WithoutUseCase(t *testing.T) {
+	fixture := newFeedFixture()
+
+	recorder := fixture.do(http.MethodHead, "/api/v1/subs/prs", "")
+
+	assert.Equal(t, http.StatusMethodNotAllowed, recorder.Code)
+	assert.Equal(t, http.MethodGet, recorder.Header().Get("Allow"))
+	assert.Zero(t, fixture.pullRequests.nextCalls+fixture.pullRequests.sinceCalls)
+}
+
 func TestPrs_UseCaseFailureIs500AndLogged(t *testing.T) {
-	for _, target := range []string{"/api/v1/subs/prs", "/api/v1/subs/prs?since=2026-10-28T09:00:00Z"} {
-		t.Run(target, func(t *testing.T) {
+	testCases := []struct{ name, target string }{
+		{name: "next", target: "/api/v1/subs/prs"},
+		{name: "since", target: "/api/v1/subs/prs?since=2026-10-28T09:00:00Z"},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
 			fixture := newFeedFixture()
 			fixture.pullRequests.err = assert.AnError
 
-			recorder := fixture.do(http.MethodGet, target, "")
+			recorder := fixture.do(http.MethodGet, testCase.target, "")
 
 			assert.Equal(t, http.StatusInternalServerError, recorder.Code)
 			assert.JSONEq(t, `{"error":"internal_error"}`, recorder.Body.String())
@@ -116,4 +145,5 @@ func TestPrs_NoPrincipalIs401(t *testing.T) {
 
 	assert.Equal(t, http.StatusUnauthorized, recorder.Code)
 	assert.JSONEq(t, `{"error":"unauthorized"}`, recorder.Body.String())
+	assert.Zero(t, fixture.pullRequests.nextCalls+fixture.pullRequests.sinceCalls)
 }
