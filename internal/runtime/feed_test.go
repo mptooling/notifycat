@@ -21,21 +21,37 @@ var (
 	errRecord = errors.New("database is locked")
 )
 
+type callLog struct {
+	calls []string
+}
+
+func (log *callLog) add(call string) {
+	log.calls = append(log.calls, call)
+}
+
 type fakeEventDispatcher struct {
 	err error
+	log *callLog
 }
 
 func (dispatcher *fakeEventDispatcher) Dispatch(context.Context, kernel.Event) error {
+	if dispatcher.log != nil {
+		dispatcher.log.add("dispatch")
+	}
 	return dispatcher.err
 }
 
 type fakeRecorder struct {
 	err           error
+	log           *callLog
 	recorded      []kernel.Event
 	contextErrors []error
 }
 
 func (recorder *fakeRecorder) Record(ctx context.Context, event kernel.Event) error {
+	if recorder.log != nil {
+		recorder.log.add("record")
+	}
 	recorder.recorded = append(recorder.recorded, event)
 	recorder.contextErrors = append(recorder.contextErrors, ctx.Err())
 	return recorder.err
@@ -56,15 +72,17 @@ func discardLogger() *slog.Logger {
 
 func TestRecordingDispatcher_RecordErrorKeepsDispatchResult(t *testing.T) {
 	var logged bytes.Buffer
+	calls := &callLog{}
 	dispatcher := &recordingDispatcher{
-		next:     &fakeEventDispatcher{},
-		recorder: &fakeRecorder{err: errRecord},
+		next:     &fakeEventDispatcher{log: calls},
+		recorder: &fakeRecorder{err: errRecord, log: calls},
 		logger:   slog.New(slog.NewTextHandler(&logged, nil)),
 	}
 
 	err := dispatcher.Dispatch(context.Background(), updatedEvent())
 
 	require.NoError(t, err, "a record failure never changes the webhook response")
+	assert.Equal(t, []string{"dispatch", "record"}, calls.calls, "the notification runs before the record")
 	assert.Contains(t, logged.String(), `level=WARN msg="feed pull request not recorded"`)
 	assert.Contains(t, logged.String(), "repository=acme/api")
 	assert.Contains(t, logged.String(), "pr=42")
@@ -73,9 +91,10 @@ func TestRecordingDispatcher_RecordErrorKeepsDispatchResult(t *testing.T) {
 }
 
 func TestRecordingDispatcher_RecordsWhenDispatchFails(t *testing.T) {
-	recorder := &fakeRecorder{}
+	calls := &callLog{}
+	recorder := &fakeRecorder{log: calls}
 	dispatcher := &recordingDispatcher{
-		next:     &fakeEventDispatcher{err: errSlack},
+		next:     &fakeEventDispatcher{err: errSlack, log: calls},
 		recorder: recorder,
 		logger:   discardLogger(),
 	}
@@ -84,6 +103,22 @@ func TestRecordingDispatcher_RecordsWhenDispatchFails(t *testing.T) {
 
 	require.ErrorIs(t, err, errSlack)
 	assert.Equal(t, []kernel.Event{updatedEvent()}, recorder.recorded)
+	assert.Equal(t, []string{"dispatch", "record"}, calls.calls)
+}
+
+func TestRecordingDispatcher_DispatchAndRecordBothFailReturnsDispatchError(t *testing.T) {
+	calls := &callLog{}
+	dispatcher := &recordingDispatcher{
+		next:     &fakeEventDispatcher{err: errSlack, log: calls},
+		recorder: &fakeRecorder{err: errRecord, log: calls},
+		logger:   discardLogger(),
+	}
+
+	err := dispatcher.Dispatch(context.Background(), updatedEvent())
+
+	require.ErrorIs(t, err, errSlack)
+	assert.NotErrorIs(t, err, errRecord, "a record failure never replaces the notification error")
+	assert.Equal(t, []string{"dispatch", "record"}, calls.calls)
 }
 
 func TestRecordingDispatcher_RecordsWithoutCancel(t *testing.T) {

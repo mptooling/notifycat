@@ -188,12 +188,14 @@ func TestIntegration_AgentAPIDisabled_NothingTracked(t *testing.T) {
 	public, _ := buildAgentAPIApp(t, cfg, fx.Populate(&db))
 
 	webhookStatus := deliverPullRequestEvent(t, public, cfg, pullRequestEvent("opened", openedHeadSHA))
-	subscriptionsStatus, _ := request(t, public, http.MethodGet, "/api/v1/subs", "",
-		map[string]string{"Authorization": "Bearer nct_unknown"})
+	unknownToken := map[string]string{"Authorization": "Bearer nct_unknown"}
+	subscriptionsStatus, _ := request(t, public, http.MethodGet, "/api/v1/subs", "", unknownToken)
+	pullRequestsStatus, _ := request(t, public, http.MethodGet, "/api/v1/subs/prs", "", unknownToken)
 
 	var trackedPullRequests int64
 	require.NoError(t, db.Table("feed_pull_requests").Count(&trackedPullRequests).Error)
 	assert.Equal(t, http.StatusOK, webhookStatus)
 	assert.Equal(t, http.StatusNotFound, subscriptionsStatus)
+	assert.Equal(t, http.StatusNotFound, pullRequestsStatus)
 	assert.Zero(t, trackedPullRequests)
 }
