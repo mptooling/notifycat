@@ -63,6 +63,22 @@ func (recorder *fakeRecorder) Record(ctx context.Context, event kernel.Event) er
 	return recorder.err
 }
 
+type fakeCleaner struct {
+	removed int
+	err     error
+	calls   []string
+}
+
+func (cleaner *fakeCleaner) RemoveAll(context.Context) (int, error) {
+	cleaner.calls = append(cleaner.calls, "remove_all")
+	return cleaner.removed, cleaner.err
+}
+
+func (cleaner *fakeCleaner) RemoveUnconfigured(context.Context) (int, error) {
+	cleaner.calls = append(cleaner.calls, "remove_unconfigured")
+	return cleaner.removed, cleaner.err
+}
+
 func updatedEvent() kernel.Event {
 	return kernel.Event{
 		Provider:   kernel.ProviderGitHub,
@@ -152,4 +168,50 @@ func TestBuildWebhookDispatcher_DisabledReturnsPlainDispatcher(t *testing.T) {
 	built := buildWebhookDispatcher(config.Config{AgentAPIEnabled: false}, plain, &fakeRecorder{}, discardLogger())
 
 	assert.Same(t, plain, built)
+}
+
+func TestCleanFeedPullRequests(t *testing.T) {
+	testCases := []struct {
+		name            string
+		agentAPIEnabled bool
+		removed         int
+		err             error
+		wantCall        string
+		wantLog         string
+	}{
+		{
+			name: "agent API off removes every pull request", removed: 2, wantCall: "remove_all",
+			wantLog: `level=INFO msg="feed pull requests removed" count=2 reason=agent_api_off`,
+		},
+		{
+			name: "agent API on removes unmapped repositories", agentAPIEnabled: true, removed: 1, wantCall: "remove_unconfigured",
+			wantLog: `level=INFO msg="feed pull requests removed" count=1 reason=unmapped`,
+		},
+		{
+			name: "a failure only warns", agentAPIEnabled: true, err: errRecord, wantCall: "remove_unconfigured",
+			wantLog: `level=WARN msg="feed cleanup failed" err="database is locked"`,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			var logged bytes.Buffer
+			cleaner := &fakeCleaner{removed: testCase.removed, err: testCase.err}
+
+			cleanFeedPullRequests(config.Config{AgentAPIEnabled: testCase.agentAPIEnabled}, cleaner, slog.New(slog.NewTextHandler(&logged, nil)))
+
+			assert.Equal(t, []string{testCase.wantCall}, cleaner.calls)
+			assert.Contains(t, logged.String(), testCase.wantLog)
+		})
+	}
+}
+
+func TestCleanFeedPullRequests_NothingRemovedLogsNothing(t *testing.T) {
+	var logged bytes.Buffer
+	cleaner := &fakeCleaner{}
+
+	cleanFeedPullRequests(config.Config{AgentAPIEnabled: true}, cleaner, slog.New(slog.NewTextHandler(&logged, nil)))
+
+	assert.Equal(t, []string{"remove_unconfigured"}, cleaner.calls)
+	assert.Empty(t, logged.String())
 }

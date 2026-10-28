@@ -59,8 +59,9 @@ import (
 // the whole graph — logger, mappings provider, migrated database, Slack client,
 // per-PR router, dispatcher, start-review sink, access and feed use cases, HTTP
 // server, optional admin server, and the cleanup and digest schedulers — then
-// starts the startup-validation gate, the HTTP server, the admin server on its
-// private port, and the schedulers via lifecycle hooks. A failing startup gate
+// runs the startup-validation gate and the feed cleanup, and starts the HTTP
+// server, the admin server on its private port, and the schedulers via
+// lifecycle hooks. A failing startup gate
 // or a bad cron spec fails App.Start; the database handle closes on App.Stop.
 var Module = fx.Module("runtime",
 	access.Module,
@@ -96,6 +97,7 @@ var Module = fx.Module("runtime",
 		newRunContext,
 	),
 	fx.Invoke(startupGate),
+	fx.Invoke(cleanFeedPullRequests),
 	fx.Invoke(registerServer),
 	fx.Invoke(registerAdminServer),
 	fx.Invoke(registerSchedulers),

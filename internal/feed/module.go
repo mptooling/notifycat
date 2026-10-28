@@ -12,7 +12,7 @@ import (
 	"github.com/mptooling/notifycat/internal/feed/infrastructure"
 )
 
-// Module binds the feed ports to their adapters and the three use cases. It
+// Module binds the feed ports to their adapters and the four use cases. It
 // expects the composition root to supply *persistence.FeedSubscriptions,
 // *persistence.FeedPullRequests, *persistence.FeedDeliveries,
 // routingdomain.EntryLister and a *slog.Logger.
@@ -26,6 +26,7 @@ var Module = fx.Module("feed",
 		fx.Annotate(provideSubscriptions, fx.As(new(domain.Subscriptions))),
 		fx.Annotate(providePullRequests, fx.As(new(domain.PullRequests))),
 		fx.Annotate(application.NewRecorder, fx.As(new(domain.Recorder))),
+		fx.Annotate(application.NewPullRequestCleaner, fx.As(new(domain.PullRequestCleaner))),
 	),
 )
 

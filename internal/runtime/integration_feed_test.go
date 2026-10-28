@@ -2,6 +2,7 @@ package runtime_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -19,6 +20,7 @@ import (
 
 	accessdomain "github.com/mptooling/notifycat/internal/access/domain"
 	"github.com/mptooling/notifycat/internal/platform/config"
+	"github.com/mptooling/notifycat/internal/platform/persistence"
 	routingapp "github.com/mptooling/notifycat/internal/routing/application"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 )
@@ -215,4 +217,51 @@ func TestIntegration_SubscribeToAnOrgTierIsUnknownRepository(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, status)
 	assert.JSONEq(t, `{"error":"unknown_repository","repositories":["acme/*"]}`, body)
+}
+
+func seedFeedPullRequests(t *testing.T, cfg config.Config, repositories ...string) {
+	t.Helper()
+
+	db, err := persistence.Open(cfg.DatabaseURL)
+	require.NoError(t, err)
+	defer func() {
+		if sqlDB, closeErr := persistence.SQLDB(db); closeErr == nil {
+			_ = sqlDB.Close()
+		}
+	}()
+	require.NoError(t, persistence.MigrateUp(context.Background(), db))
+	pullRequests := persistence.NewFeedPullRequests(db)
+	for index, repository := range repositories {
+		require.NoError(t, pullRequests.Upsert(context.Background(), persistence.FeedPullRequest{
+			Repository: repository, Number: index + 1, HeadSHA: openedHeadSHA, UpdatedAt: time.Now(),
+		}))
+	}
+}
+
+func storedFeedRepositories(t *testing.T, db *gorm.DB) []string {
+	t.Helper()
+
+	var repositories []string
+	require.NoError(t, db.Table("feed_pull_requests").Order("repository").Pluck("repository", &repositories).Error)
+	return repositories
+}
+
+func TestIntegration_StartupWithAgentAPIOffRemovesFeedPullRequests(t *testing.T) {
+	cfg := feedConfig(t, false)
+	seedFeedPullRequests(t, cfg, feedRepository)
+	var db *gorm.DB
+
+	buildAgentAPIApp(t, cfg, fx.Populate(&db))
+
+	assert.Empty(t, storedFeedRepositories(t, db), "nothing records a close while the API is off")
+}
+
+func TestIntegration_StartupRemovesFeedPullRequestsOfUnmappedRepositories(t *testing.T) {
+	cfg := feedConfig(t, true)
+	seedFeedPullRequests(t, cfg, feedRepository, "acme/gone")
+	var db *gorm.DB
+
+	buildAgentAPIApp(t, cfg, fx.Populate(&db))
+
+	assert.Equal(t, []string{feedRepository}, storedFeedRepositories(t, db))
 }

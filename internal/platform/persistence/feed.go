@@ -117,6 +117,27 @@ func (r *FeedPullRequests) Delete(ctx context.Context, repository string, number
 	return nil
 }
 
+// DeleteAll removes every pull request and its deliveries and returns how many pull requests went.
+func (r *FeedPullRequests) DeleteAll(ctx context.Context) (int, error) {
+	result := r.db.WithContext(ctx).Exec("DELETE FROM feed_pull_requests")
+	if result.Error != nil {
+		return 0, fmt.Errorf("store: delete all feed pull requests: %w", result.Error)
+	}
+	return int(result.RowsAffected), nil
+}
+
+// DeleteRepositories removes the pull requests of the repositories and their deliveries.
+func (r *FeedPullRequests) DeleteRepositories(ctx context.Context, repositories []string) (int, error) {
+	if len(repositories) == 0 {
+		return 0, nil
+	}
+	result := r.db.WithContext(ctx).Where("repository IN ?", repositories).Delete(&FeedPullRequest{})
+	if result.Error != nil {
+		return 0, fmt.Errorf("store: delete feed pull requests of repositories: %w", result.Error)
+	}
+	return int(result.RowsAffected), nil
+}
+
 // Repositories returns the distinct repositories that have a pull request, sorted.
 func (r *FeedPullRequests) Repositories(ctx context.Context) ([]string, error) {
 	var repositories []string

@@ -20,6 +20,10 @@ type SubscriptionStore interface {
 type PullRequestStore interface {
 	Upsert(ctx context.Context, pullRequest PullRequest) error
 	Delete(ctx context.Context, repository string, number int) error
+	// DeleteAll removes every pull request with its deliveries and returns how many pull requests it removed.
+	DeleteAll(ctx context.Context) (int, error)
+	// DeleteRepositories removes the pull requests of the repositories with their deliveries and returns how many pull requests it removed.
+	DeleteRepositories(ctx context.Context, repositories []string) (int, error)
 	// Repositories returns every repository that has a stored pull request.
 	Repositories(ctx context.Context) ([]string, error)
 	ChangedSince(ctx context.Context, repositories []string, since time.Time) ([]PullRequest, error)
@@ -58,6 +62,14 @@ type PullRequests interface {
 	Next(ctx context.Context, subscriber Subscriber) ([]PullRequest, error)
 	// Since returns pull requests changed after the given time without marking anything delivered.
 	Since(ctx context.Context, subscriber Subscriber, since time.Time) ([]PullRequest, error)
+}
+
+// PullRequestCleaner removes stored pull requests the feed can no longer keep in sync; subscriptions and tokens stay.
+type PullRequestCleaner interface {
+	// RemoveAll removes every stored pull request and returns how many it removed.
+	RemoveAll(ctx context.Context) (int, error)
+	// RemoveUnconfigured removes the pull requests of repositories the catalog no longer configures and returns how many it removed.
+	RemoveUnconfigured(ctx context.Context) (int, error)
 }
 
 // Recorder keeps the feed's pull-request store in sync with provider events.

@@ -195,6 +195,66 @@ func TestFeedPullRequests_DeleteCascadesDeliveries(t *testing.T) {
 	assert.Zero(t, countTable(t, db, "feed_deliveries", "token_id = ?", "t1"))
 }
 
+func seedDeliveredFeed(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	ctx := context.Background()
+	subscriptions := persistence.NewFeedSubscriptions(db)
+	_, err := subscriptions.Add(ctx, persistence.FeedSubscriptionBatch{
+		TokenID: "t1", Repositories: []string{"acme/api", "acme/web"}, CreatedAt: accessBaseTime,
+	})
+	require.NoError(t, err)
+	upsertAll(t, persistence.NewFeedPullRequests(db),
+		feedPullRequest("acme/api", 1, accessBaseTime),
+		feedPullRequest("acme/api", 2, accessBaseTime),
+		feedPullRequest("acme/web", 3, accessBaseTime),
+	)
+	_, err = persistence.NewFeedDeliveries(db).Claim(ctx, persistence.FeedClaim{
+		TokenID: "t1", Repositories: []string{"acme/api", "acme/web"}, DeliveredAt: accessBaseTime,
+	})
+	require.NoError(t, err)
+}
+
+func TestFeedPullRequests_DeleteAllCascadesDeliveriesAndKeepsSubscriptions(t *testing.T) {
+	db := newFeedDB(t)
+	seedDeliveredFeed(t, db)
+
+	removed, err := persistence.NewFeedPullRequests(db).DeleteAll(context.Background())
+
+	require.NoError(t, err)
+	assert.Equal(t, 3, removed)
+	assert.Zero(t, countTable(t, db, "feed_pull_requests", "1 = 1"))
+	assert.Zero(t, countTable(t, db, "feed_deliveries", "1 = 1"))
+	assert.EqualValues(t, 2, countTable(t, db, "feed_subscriptions", "token_id = ?", "t1"))
+	assert.EqualValues(t, 1, countTable(t, db, "access_tokens", "id = ?", "t1"))
+}
+
+func TestFeedPullRequests_DeleteRepositoriesKeepsOtherRepositories(t *testing.T) {
+	db := newFeedDB(t)
+	seedDeliveredFeed(t, db)
+	pullRequests := persistence.NewFeedPullRequests(db)
+
+	removed, err := pullRequests.DeleteRepositories(context.Background(), []string{"acme/api", "acme/gone"})
+
+	require.NoError(t, err)
+	assert.Equal(t, 2, removed)
+	assert.Zero(t, countTable(t, db, "feed_pull_requests", "repository = ?", "acme/api"))
+	assert.Zero(t, countTable(t, db, "feed_deliveries", "repository = ?", "acme/api"))
+	assert.EqualValues(t, 1, countTable(t, db, "feed_pull_requests", "repository = ?", "acme/web"))
+	assert.EqualValues(t, 1, countTable(t, db, "feed_deliveries", "repository = ?", "acme/web"))
+	assert.EqualValues(t, 2, countTable(t, db, "feed_subscriptions", "token_id = ?", "t1"))
+}
+
+func TestFeedPullRequests_DeleteRepositoriesWithoutRepositories(t *testing.T) {
+	db := newFeedDB(t)
+	seedDeliveredFeed(t, db)
+
+	removed, err := persistence.NewFeedPullRequests(db).DeleteRepositories(context.Background(), nil)
+
+	require.NoError(t, err)
+	assert.Zero(t, removed)
+	assert.EqualValues(t, 3, countTable(t, db, "feed_pull_requests", "1 = 1"))
+}
+
 func TestFeedPullRequests_ChangedSince(t *testing.T) {
 	pullRequests := persistence.NewFeedPullRequests(newFeedDB(t))
 	ctx := context.Background()

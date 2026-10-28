@@ -85,14 +85,19 @@ type deleteCall struct {
 }
 
 type fakePullRequestStore struct {
-	upserts       []domain.PullRequest
-	deletes       []deleteCall
-	repositories  []string
-	changed       []domain.PullRequest
-	changedCalls  []changedCall
-	upsertErr     error
-	deleteErr     error
-	repositoryErr error
+	upserts               []domain.PullRequest
+	deletes               []deleteCall
+	repositories          []string
+	changed               []domain.PullRequest
+	changedCalls          []changedCall
+	deleteAllCalls        int
+	deletedRepositories   [][]string
+	removedCount          int
+	upsertErr             error
+	deleteErr             error
+	repositoryErr         error
+	deleteAllErr          error
+	deleteRepositoriesErr error
 }
 
 type changedCall struct {
@@ -114,6 +119,22 @@ func (store *fakePullRequestStore) Delete(_ context.Context, repository string, 
 	}
 	store.deletes = append(store.deletes, deleteCall{repository: repository, number: number})
 	return nil
+}
+
+func (store *fakePullRequestStore) DeleteAll(context.Context) (int, error) {
+	store.deleteAllCalls++
+	if store.deleteAllErr != nil {
+		return 0, store.deleteAllErr
+	}
+	return store.removedCount, nil
+}
+
+func (store *fakePullRequestStore) DeleteRepositories(_ context.Context, repositories []string) (int, error) {
+	store.deletedRepositories = append(store.deletedRepositories, repositories)
+	if store.deleteRepositoriesErr != nil {
+		return 0, store.deleteRepositoriesErr
+	}
+	return store.removedCount, nil
 }
 
 func (store *fakePullRequestStore) Repositories(context.Context) ([]string, error) {

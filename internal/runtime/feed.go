@@ -45,6 +45,23 @@ func buildWebhookDispatcher(cfg config.Config, dispatcher *notificationapp.Dispa
 	return &recordingDispatcher{next: dispatcher, recorder: recorder, logger: logger}
 }
 
+// cleanFeedPullRequests runs before serving: with the API off nothing records
+// a close, and an unmapped repository records nothing, so those rows go stale.
+func cleanFeedPullRequests(cfg config.Config, cleaner feeddomain.PullRequestCleaner, logger *slog.Logger) {
+	remove, reason := cleaner.RemoveUnconfigured, feeddomain.CleanupReasonUnmapped
+	if !cfg.AgentAPIEnabled {
+		remove, reason = cleaner.RemoveAll, feeddomain.CleanupReasonAgentAPIOff
+	}
+	removed, err := remove(context.Background())
+	if err != nil {
+		logger.Warn("feed cleanup failed", slog.Any("err", err))
+		return
+	}
+	if removed > 0 {
+		logger.Info("feed pull requests removed", slog.Int("count", removed), slog.String("reason", string(reason)))
+	}
+}
+
 func provideEntryLister(provider *routingapp.Provider) routingdomain.EntryLister {
 	return provider
 }

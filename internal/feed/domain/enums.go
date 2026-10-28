@@ -14,3 +14,12 @@ const (
 	ErrorCodeInternal             ErrorCode = "internal_error"
 	ErrorCodeMethodNotAllowed     ErrorCode = "method_not_allowed"
 )
+
+// CleanupReason says why stored pull requests were removed at startup.
+type CleanupReason string
+
+// Startup cleanup reasons.
+const (
+	CleanupReasonAgentAPIOff CleanupReason = "agent_api_off"
+	CleanupReasonUnmapped    CleanupReason = "unmapped"
+)
