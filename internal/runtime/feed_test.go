@@ -7,10 +7,12 @@ import (
 	"io"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	feeddomain "github.com/mptooling/notifycat/internal/feed/domain"
 	"github.com/mptooling/notifycat/internal/kernel"
 	notificationapp "github.com/mptooling/notifycat/internal/notification/application"
 	"github.com/mptooling/notifycat/internal/platform/config"
@@ -46,6 +48,7 @@ type fakeRecorder struct {
 	log           *callLog
 	recorded      []kernel.Event
 	contextErrors []error
+	deadlines     []time.Time
 }
 
 func (recorder *fakeRecorder) Record(ctx context.Context, event kernel.Event) error {
@@ -54,6 +57,9 @@ func (recorder *fakeRecorder) Record(ctx context.Context, event kernel.Event) er
 	}
 	recorder.recorded = append(recorder.recorded, event)
 	recorder.contextErrors = append(recorder.contextErrors, ctx.Err())
+	if deadline, hasDeadline := ctx.Deadline(); hasDeadline {
+		recorder.deadlines = append(recorder.deadlines, deadline)
+	}
 	return recorder.err
 }
 
@@ -130,11 +136,14 @@ func TestRecordingDispatcher_RecordsWithoutCancel(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
+	dispatchedAt := time.Now()
 
 	err := dispatcher.Dispatch(ctx, updatedEvent())
 
 	require.NoError(t, err)
 	assert.Equal(t, []error{nil}, recorder.contextErrors, "a client that hangs up must not abort the record")
+	require.Len(t, recorder.deadlines, 1, "a slow store must not hold the webhook response forever")
+	assert.WithinDuration(t, dispatchedAt.Add(feeddomain.RecordTimeout), recorder.deadlines[0], time.Second)
 }
 
 func TestBuildWebhookDispatcher_DisabledReturnsPlainDispatcher(t *testing.T) {

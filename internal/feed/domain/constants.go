@@ -1,5 +1,10 @@
 package domain
 
+import "time"
+
+// RecordTimeout caps how long a webhook waits for the feed record.
+const RecordTimeout = 3 * time.Second
+
 // Feed limits, the repository name rule, routes and parameter names.
 const (
 	AllRepositories          = "*"

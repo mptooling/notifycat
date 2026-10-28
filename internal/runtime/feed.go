@@ -24,7 +24,9 @@ type recordingDispatcher struct {
 
 func (dispatcher *recordingDispatcher) Dispatch(ctx context.Context, event kernel.Event) error {
 	dispatchErr := dispatcher.next.Dispatch(ctx, event)
-	if err := dispatcher.recorder.Record(context.WithoutCancel(ctx), event); err != nil {
+	recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), feeddomain.RecordTimeout)
+	defer cancel()
+	if err := dispatcher.recorder.Record(recordCtx, event); err != nil {
 		dispatcher.logger.WarnContext(ctx, "feed pull request not recorded",
 			slog.String("repository", event.Repository),
 			slog.Int("pr", event.PR.Number),
