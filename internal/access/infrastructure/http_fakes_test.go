@@ -20,12 +20,14 @@ func (fake *fakeTokenAuthenticator) Authenticate(_ context.Context, rawToken str
 }
 
 type fakeAdminAuthenticator struct {
-	err   error
-	calls int
+	err    error
+	calls  int
+	gotRaw string
 }
 
-func (fake *fakeAdminAuthenticator) Authenticate(_ context.Context, _ string) error {
+func (fake *fakeAdminAuthenticator) Authenticate(_ context.Context, rawKey string) error {
 	fake.calls++
+	fake.gotRaw = rawKey
 	return fake.err
 }
 
@@ -41,12 +43,14 @@ func (fake *fakeInviteIssuer) Issue(_ context.Context, user string) (domain.Issu
 }
 
 type fakeTokenAdmin struct {
-	tokens  []domain.Token
-	err     error
-	deleted []string
+	tokens    []domain.Token
+	err       error
+	deleted   []string
+	listCalls int
 }
 
 func (fake *fakeTokenAdmin) List(_ context.Context) ([]domain.Token, error) {
+	fake.listCalls++
 	return fake.tokens, fake.err
 }
 

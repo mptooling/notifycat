@@ -19,6 +19,9 @@ const (
 
 	UserLabelPattern = "^[a-z0-9][a-z0-9._-]{0,63}$"
 
+	AuthorizationHeader = "Authorization"
+	AuthenticateHeader  = "WWW-Authenticate"
+
 	BearerScheme = "Bearer"
 	InviteScheme = "Invite"
 

@@ -29,6 +29,6 @@ func BearerMiddleware(authenticator domain.TokenAuthenticator, logger *slog.Logg
 }
 
 func writeUnauthorized(w http.ResponseWriter, scheme string) {
-	w.Header().Set("WWW-Authenticate", scheme)
+	w.Header().Set(domain.AuthenticateHeader, scheme)
 	httpx.WriteError(w, http.StatusUnauthorized, string(domain.ErrorCodeUnauthorized))
 }

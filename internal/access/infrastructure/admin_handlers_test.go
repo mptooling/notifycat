@@ -2,6 +2,7 @@ package infrastructure_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -69,7 +70,7 @@ func TestAdminHandler_CreateInvite_BadRequests(t *testing.T) {
 		wantStatus int
 	}{
 		{name: "bad json", body: "not json", wantCode: "invalid_body", wantStatus: http.StatusBadRequest},
-		{name: "too large", body: strings.Repeat("x", 16<<10+1), wantCode: "invalid_body", wantStatus: http.StatusBadRequest},
+		{name: "too large", body: `{"user":"` + strings.Repeat("a", 16<<10) + `"}`, wantCode: "invalid_body", wantStatus: http.StatusBadRequest},
 		{name: "invalid user", body: `{"user":"Alice"}`, issuerErr: domain.ErrInvalidUser, wantCode: "invalid_user", wantStatus: http.StatusBadRequest},
 	}
 	for _, testCase := range testCases {
@@ -158,4 +159,32 @@ func TestAdminHandler_RequiresAdminKey(t *testing.T) {
 			assert.Empty(t, fixture.tokens.deleted, "no admin use case runs without the key")
 		})
 	}
+}
+
+func TestAdminHandler_PassesBearerKeyToAuthenticator(t *testing.T) {
+	fixture := newAdminFixture()
+
+	fixture.do(http.MethodGet, "/admin/v1/tokens", "")
+
+	assert.Equal(t, "nca_key", fixture.authenticator.gotRaw)
+}
+
+func TestAdminHandler_AuthenticatorErrorIs500(t *testing.T) {
+	fixture := newAdminFixture()
+	fixture.authenticator.err = errors.New("disk")
+
+	recorder := fixture.do(http.MethodGet, "/admin/v1/tokens", "")
+
+	assert.Equal(t, http.StatusInternalServerError, recorder.Code)
+	assert.JSONEq(t, `{"error":"internal_error"}`, recorder.Body.String())
+	assert.Zero(t, fixture.tokens.listCalls, "no admin use case runs when the key check fails")
+}
+
+func TestAdminHandler_UnknownPathIsNotCacheable(t *testing.T) {
+	fixture := newAdminFixture()
+
+	recorder := fixture.do(http.MethodGet, "/admin/v1/unknown", "")
+
+	assert.Equal(t, http.StatusNotFound, recorder.Code)
+	assert.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
 }

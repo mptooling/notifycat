@@ -46,7 +46,7 @@ func NewAdminHandler(params domain.AdminHandlerParams) http.Handler {
 	mux.HandleFunc(domain.CreateInvitePattern, handler.createInvite)
 	mux.HandleFunc(domain.ListTokensPattern, handler.listTokens)
 	mux.HandleFunc(domain.DeleteTokenPattern, handler.deleteToken)
-	return AdminMiddleware(params.Authenticator)(mux)
+	return AdminMiddleware(params.Authenticator, params.Logger)(mux)
 }
 
 func (handler *adminHandler) createInvite(w http.ResponseWriter, request *http.Request) {
