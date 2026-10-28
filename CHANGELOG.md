@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.0](https://github.com/mptooling/notifycat/compare/v0.29.0...v0.30.0) (2026-10-28)
+
+
+### 🚀 Features
+
+* **access:** plain-text invite and redeem for one-line setup ([#222](https://github.com/mptooling/notifycat/issues/222)) ([2636148](https://github.com/mptooling/notifycat/commit/2636148d56eec457cd49eec6fb6fb3123d8d919a))
+
 ## [0.29.0](https://github.com/mptooling/notifycat/compare/v0.28.0...v0.29.0) (2026-10-28)
 
 
