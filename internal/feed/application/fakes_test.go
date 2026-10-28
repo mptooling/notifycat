@@ -194,6 +194,8 @@ func (catalog *fakeCatalog) IsConfigured(repository string) bool {
 	return slices.Contains(catalog.repositories, repository)
 }
 
+func (catalog *fakeCatalog) HasRepositories() bool { return len(catalog.repositories) > 0 }
+
 func (catalog *fakeCatalog) Configured(repositories []string) []string {
 	catalog.calls++
 	var configured []string

@@ -15,7 +15,7 @@ const (
 	ErrorCodeMethodNotAllowed     ErrorCode = "method_not_allowed"
 )
 
-// CleanupReason says why stored pull requests were removed at startup.
+// CleanupReason says why stored pull requests or subscriptions were removed at startup.
 type CleanupReason string
 
 // Startup cleanup reasons.

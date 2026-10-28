@@ -65,3 +65,11 @@ type PullRequestsParams struct {
 	Clock         Clock
 	Logger        *slog.Logger
 }
+
+// RemovedSubscriptions reports what a subscription cleanup removed.
+type RemovedSubscriptions struct {
+	// Count is the number of removed subscription rows, across all tokens.
+	Count int
+	// Repositories are the repositories whose subscriptions were removed, sorted.
+	Repositories []string
+}

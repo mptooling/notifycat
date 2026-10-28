@@ -319,7 +319,7 @@ func TestIntegration_StartupRemovesSubscriptionsToUnmappedRepositories(t *testin
 			buildAgentAPIApp(t, cfg, fx.Replace(slog.New(slog.NewTextHandler(logged, nil))), fx.Populate(&db))
 
 			assert.Equal(t, []string{"*", feedRepository}, storedFeedSubscriptions(t, db))
-			assert.Contains(t, logged.String(), `msg="feed subscriptions removed" count=1 reason=unmapped`)
+			assert.Contains(t, logged.String(), `msg="feed subscriptions removed" count=1 reason=unmapped repositories=[acme/gone]`)
 		})
 	}
 }

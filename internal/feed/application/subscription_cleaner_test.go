@@ -14,21 +14,34 @@ func newSubscriptionCleaner(store *fakeSubscriptionStore) *application.Subscript
 	return application.NewSubscriptionCleaner(store, &fakeCatalog{repositories: []string{"acme/api", "acme/new"}})
 }
 
+func TestSubscriptionCleaner_EmptyCatalogRemovesNothing(t *testing.T) {
+	store := &fakeSubscriptionStore{}
+	store.seed("old/gone", domain.AllRepositories)
+	cleaner := application.NewSubscriptionCleaner(store, &fakeCatalog{})
+
+	removed, err := cleaner.RemoveUnconfigured(t.Context())
+
+	require.NoError(t, err)
+	assert.Equal(t, domain.RemovedSubscriptions{}, removed)
+	assert.Empty(t, store.deletedRepositories, "an empty mappings section must not wipe every subscription")
+	assert.Len(t, store.subscriptions, 2)
+}
+
 func TestSubscriptionCleaner_RemoveUnconfigured(t *testing.T) {
 	testCases := []struct {
 		name        string
 		subscribed  []string
 		wantDeleted [][]string
-		wantRemoved int
+		wantRemoved domain.RemovedSubscriptions
 		wantKept    []string
 	}{
 		{
 			name: "unmapped repositories removed", subscribed: []string{"acme/api", "old/gone", "acme/new", "beta/left"},
-			wantDeleted: [][]string{{"old/gone", "beta/left"}}, wantRemoved: 2, wantKept: []string{"acme/api", "acme/new"},
+			wantDeleted: [][]string{{"beta/left", "old/gone"}}, wantRemoved: domain.RemovedSubscriptions{Count: 2, Repositories: []string{"beta/left", "old/gone"}}, wantKept: []string{"acme/api", "acme/new"},
 		},
 		{
 			name: "all repositories subscription kept", subscribed: []string{domain.AllRepositories, "old/gone"},
-			wantDeleted: [][]string{{"old/gone"}}, wantRemoved: 1, wantKept: []string{domain.AllRepositories},
+			wantDeleted: [][]string{{"old/gone"}}, wantRemoved: domain.RemovedSubscriptions{Count: 1, Repositories: []string{"old/gone"}}, wantKept: []string{domain.AllRepositories},
 		},
 		{name: "every repository mapped", subscribed: []string{"acme/api", "acme/new"}, wantKept: []string{"acme/api", "acme/new"}},
 		{name: "nothing subscribed"},
@@ -55,11 +68,12 @@ func TestSubscriptionCleaner_RemoveUnconfigured(t *testing.T) {
 
 func TestSubscriptionCleaner_RemoveUnconfiguredErrors(t *testing.T) {
 	testCases := []struct {
-		name  string
-		store *fakeSubscriptionStore
+		name     string
+		store    *fakeSubscriptionStore
+		wantWrap string
 	}{
-		{name: "listing fails", store: &fakeSubscriptionStore{repositoriesErr: errStore}},
-		{name: "delete fails", store: &fakeSubscriptionStore{deleteRepositoriesErr: errStore}},
+		{name: "listing fails", store: &fakeSubscriptionStore{repositoriesErr: errStore}, wantWrap: "list subscribed repositories"},
+		{name: "delete fails", store: &fakeSubscriptionStore{deleteRepositoriesErr: errStore}, wantWrap: "delete unconfigured subscriptions"},
 	}
 
 	for _, testCase := range testCases {
@@ -68,7 +82,8 @@ func TestSubscriptionCleaner_RemoveUnconfiguredErrors(t *testing.T) {
 
 			_, err := newSubscriptionCleaner(testCase.store).RemoveUnconfigured(t.Context())
 
-			assert.ErrorIs(t, err, errStore)
+			require.ErrorIs(t, err, errStore)
+			assert.ErrorContains(t, err, testCase.wantWrap)
 		})
 	}
 }

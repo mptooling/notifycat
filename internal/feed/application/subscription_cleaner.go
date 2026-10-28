@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/mptooling/notifycat/internal/feed/domain"
 )
@@ -21,10 +22,13 @@ func NewSubscriptionCleaner(subscriptions domain.SubscriptionStore, catalog doma
 }
 
 // RemoveUnconfigured implements domain.SubscriptionCleaner.
-func (cleaner *SubscriptionCleaner) RemoveUnconfigured(ctx context.Context) (int, error) {
+func (cleaner *SubscriptionCleaner) RemoveUnconfigured(ctx context.Context) (domain.RemovedSubscriptions, error) {
+	if !cleaner.catalog.HasRepositories() {
+		return domain.RemovedSubscriptions{}, nil
+	}
 	subscribed, err := cleaner.subscriptions.Repositories(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("list subscribed repositories: %w", err)
+		return domain.RemovedSubscriptions{}, fmt.Errorf("list subscribed repositories: %w", err)
 	}
 	var unconfigured []string
 	for _, repository := range subscribed {
@@ -32,12 +36,13 @@ func (cleaner *SubscriptionCleaner) RemoveUnconfigured(ctx context.Context) (int
 			unconfigured = append(unconfigured, repository)
 		}
 	}
+	slices.Sort(unconfigured)
 	if len(unconfigured) == 0 {
-		return 0, nil
+		return domain.RemovedSubscriptions{}, nil
 	}
-	removed, err := cleaner.subscriptions.DeleteRepositories(ctx, unconfigured)
+	count, err := cleaner.subscriptions.DeleteRepositories(ctx, unconfigured)
 	if err != nil {
-		return 0, fmt.Errorf("delete unconfigured subscriptions: %w", err)
+		return domain.RemovedSubscriptions{}, fmt.Errorf("delete unconfigured subscriptions: %w", err)
 	}
-	return removed, nil
+	return domain.RemovedSubscriptions{Count: count, Repositories: unconfigured}, nil
 }

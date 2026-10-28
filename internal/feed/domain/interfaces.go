@@ -42,6 +42,8 @@ type DeliveryStore interface {
 // RepositoryCatalog answers which repositories the operator configured.
 type RepositoryCatalog interface {
 	IsConfigured(repository string) bool
+	// HasRepositories reports whether any repository, explicit or through an org tier, is configured.
+	HasRepositories() bool
 	// Configured returns the subset of repositories that is configured.
 	Configured(repositories []string) []string
 }
@@ -78,8 +80,9 @@ type PullRequestCleaner interface {
 
 // SubscriptionCleaner removes subscriptions the feed can no longer serve; tokens and stored pull requests stay.
 type SubscriptionCleaner interface {
-	// RemoveUnconfigured removes every token's subscriptions to repositories the catalog no longer configures, keeps the all-repositories subscription, and returns how many it removed.
-	RemoveUnconfigured(ctx context.Context) (int, error)
+	// RemoveUnconfigured removes every token's subscriptions to repositories the catalog no longer configures and keeps the all-repositories subscription.
+	// It removes nothing when the catalog configures no repository at all.
+	RemoveUnconfigured(ctx context.Context) (RemovedSubscriptions, error)
 }
 
 // Recorder keeps the feed's pull-request store in sync with provider events.

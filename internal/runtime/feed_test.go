@@ -80,12 +80,12 @@ func (cleaner *fakeCleaner) RemoveUnconfigured(context.Context) (int, error) {
 }
 
 type fakeSubscriptionCleaner struct {
-	removed int
+	removed feeddomain.RemovedSubscriptions
 	err     error
 	calls   int
 }
 
-func (cleaner *fakeSubscriptionCleaner) RemoveUnconfigured(context.Context) (int, error) {
+func (cleaner *fakeSubscriptionCleaner) RemoveUnconfigured(context.Context) (feeddomain.RemovedSubscriptions, error) {
 	cleaner.calls++
 	return cleaner.removed, cleaner.err
 }
@@ -231,12 +231,12 @@ func TestCleanFeed_Subscriptions(t *testing.T) {
 	testCases := []struct {
 		name            string
 		agentAPIEnabled bool
-		removed         int
+		removed         feeddomain.RemovedSubscriptions
 		err             error
 		wantLog         string
 	}{
-		{name: "agent API on", agentAPIEnabled: true, removed: 2, wantLog: `level=INFO msg="feed subscriptions removed" count=2 reason=unmapped`},
-		{name: "agent API off", removed: 3, wantLog: `level=INFO msg="feed subscriptions removed" count=3 reason=unmapped`},
+		{name: "agent API on", agentAPIEnabled: true, removed: feeddomain.RemovedSubscriptions{Count: 2, Repositories: []string{"a/b", "c/d"}}, wantLog: `level=INFO msg="feed subscriptions removed" count=2 reason=unmapped repositories="[a/b c/d]"`},
+		{name: "agent API off", removed: feeddomain.RemovedSubscriptions{Count: 3, Repositories: []string{"e/f"}}, wantLog: `level=INFO msg="feed subscriptions removed" count=3 reason=unmapped repositories=[e/f]`},
 		{name: "a failure only warns", err: errRecord, wantLog: `level=WARN msg="feed cleanup failed" err="database is locked"`},
 	}
 

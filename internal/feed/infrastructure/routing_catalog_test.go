@@ -23,6 +23,26 @@ func newCatalog() *infrastructure.RoutingCatalog {
 	}})
 }
 
+func TestRoutingCatalog_HasRepositories(t *testing.T) {
+	testCases := []struct {
+		name    string
+		entries []routingdomain.Entry
+		want    bool
+	}{
+		{"no entries", nil, false},
+		{"explicit entry", []routingdomain.Entry{{Org: "acme", Repo: "api"}}, true},
+		{"only a wildcard tier", []routingdomain.Entry{{Org: "acme", Wildcard: true}}, true},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			catalog := infrastructure.NewRoutingCatalog(stubEntryLister{entries: testCase.entries})
+
+			assert.Equal(t, testCase.want, catalog.HasRepositories())
+		})
+	}
+}
+
 func TestRoutingCatalog_IsConfigured(t *testing.T) {
 	testCases := []struct {
 		name       string

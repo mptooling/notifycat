@@ -49,6 +49,11 @@ func (catalog *RoutingCatalog) IsConfigured(repository string) bool {
 	return wildcard
 }
 
+// HasRepositories implements domain.RepositoryCatalog.
+func (catalog *RoutingCatalog) HasRepositories() bool {
+	return len(catalog.repositories) > 0 || len(catalog.wildcardOrgs) > 0
+}
+
 // Configured implements domain.RepositoryCatalog.
 func (catalog *RoutingCatalog) Configured(repositories []string) []string {
 	seen := make(map[string]struct{}, len(repositories))

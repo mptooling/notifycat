@@ -45,13 +45,10 @@ func buildWebhookDispatcher(cfg config.Config, dispatcher *notificationapp.Dispa
 	return &recordingDispatcher{next: dispatcher, recorder: recorder, logger: logger}
 }
 
-// cleanFeed runs before serving. With the API off nothing records a close, and
-// an unmapped repository records nothing, so those pull requests go stale;
-// subscriptions to unmapped repositories go on every start. One step failing
-// never skips the other.
-func cleanFeed(cfg config.Config, pullRequests feeddomain.PullRequestCleaner, subscriptions feeddomain.SubscriptionCleaner, logger *slog.Logger) {
-	cleanFeedPullRequests(cfg, pullRequests, logger)
-	cleanFeedSubscriptions(subscriptions, logger)
+// cleanFeed never lets one cleanup step failing skip the other.
+func cleanFeed(cfg config.Config, pullRequestCleaner feeddomain.PullRequestCleaner, subscriptionCleaner feeddomain.SubscriptionCleaner, logger *slog.Logger) {
+	cleanFeedPullRequests(cfg, pullRequestCleaner, logger)
+	cleanFeedSubscriptions(subscriptionCleaner, logger)
 }
 
 func cleanFeedPullRequests(cfg config.Config, cleaner feeddomain.PullRequestCleaner, logger *slog.Logger) {
@@ -75,8 +72,11 @@ func cleanFeedSubscriptions(cleaner feeddomain.SubscriptionCleaner, logger *slog
 		logger.Warn("feed cleanup failed", slog.Any("err", err))
 		return
 	}
-	if removed > 0 {
-		logger.Info("feed subscriptions removed", slog.Int("count", removed), slog.String("reason", string(feeddomain.CleanupReasonUnmapped)))
+	if removed.Count > 0 {
+		logger.Info("feed subscriptions removed",
+			slog.Int("count", removed.Count),
+			slog.String("reason", string(feeddomain.CleanupReasonUnmapped)),
+			slog.Any("repositories", removed.Repositories))
 	}
 }
 
