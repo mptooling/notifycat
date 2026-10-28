@@ -43,7 +43,7 @@ A hexagonal Go app needs two pieces of connective tissue that are deliberately *
   - `platform/github` — raw GitHub REST client.
   - `platform/persistence` — the GORM `*gorm.DB` handle, connection open/close, embedded goose migrations.
   - `platform/config` — env + `config.yaml` loading, plus the `Secret` type that hides credentials.
-  - `platform/httpx` — shared inbound plumbing: cap the body, read it once, replay a fresh reader downstream, write JSON responses and errors, and the `Route` type that lets a domain contribute public routes. Provider-agnostic; delegates authentication to `platform/security`.
+  - `platform/httpx` — shared inbound plumbing: cap the body, read it once, replay a fresh reader downstream, write JSON and plain-text responses and errors, pick plain text when the `Accept` header asks for it, and the `Route` type that lets a domain contribute public routes. Provider-agnostic; delegates authentication to `platform/security`.
   - `platform/security` — inbound webhook **authentication**: a `SignatureVerifier` port with one adapter per provider scheme (GitHub raw-body HMAC-SHA256; Slack timestamped-base-string HMAC). The single home for "is this request genuinely from GitHub/Slack."
 
 ### Authentication and authorization

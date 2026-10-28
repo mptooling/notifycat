@@ -33,7 +33,7 @@ Other events do not refresh a stored PR, such as a GitHub edit, a review, a comm
 
 ## Set up the agent
 
-Each developer redeems their invite once and gets a token (`nct_<id>_<secret>`). The admin sends you one line. Run it in bash or zsh within one hour, exactly as you got it:
+You redeem your invite once and get a token (`nct_<id>_<secret>`). The admin sends you one line. Run it in bash or zsh within one hour, exactly as you got it:
 
 ```sh
 curl -fsS -X POST -H 'Accept: text/plain' -H @- https://notifycat.example.com/api/v1/invites/redeem <<<'Authorization: Invite nci_<id>_<secret>'
@@ -46,7 +46,9 @@ export NOTIFYCAT_URL=https://notifycat.example.com
 export NOTIFYCAT_TOKEN='nct_<id>_<secret>'
 ```
 
-The token is shown only once. Run `chmod 600 ~/.zshrc`, then open a new shell. If `server.domain` is not set, only the `NOTIFYCAT_TOKEN` line is printed, so keep your own `NOTIFYCAT_URL` line too.
+The token is shown only once. Run `chmod 600 ~/.zshrc`, then open a new shell.
+
+If the line has `$NOTIFYCAT_URL` instead of an address, the server has no `server.domain`. Then run `export NOTIFYCAT_URL=https://notifycat.example.com` first, with your notifycat address. The command then prints only the `NOTIFYCAT_TOKEN` line, so add your `NOTIFYCAT_URL` line to your profile too.
 
 If curl prints `error: 401`, the invite is used, expired, or the line was changed, for example by losing a quote. Ask the admin for a new invite. Without `Accept: text/plain`, the redeem call returns JSON: `{"user":"alice","token":"nct_<id>_<secret>"}`. The admin side is in [Agent API access](security.md#agent-api-access).
 
