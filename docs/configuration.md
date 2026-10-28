@@ -62,7 +62,7 @@ Two provider-specific behaviors are worth knowing when running `git_provider: bi
 | `server.addr` | `:8080` | HTTP listen address. |
 | `server.log_level` | `info` | Supported values: `debug`, `info`, `warn`, `error`. |
 | `server.log_format` | `text` | Use `json` for structured production logs. |
-| `server.domain` | _(unset)_ | Public domain name. `notifycat-doctor` derives `https://$domain/webhook/github` from this, and the server builds the agent invite `redeem_command` from it. |
+| `server.domain` | _(unset)_ | Public domain name. `notifycat-doctor` derives `https://$domain/webhook/github` from this, and the server builds the agent invite `redeem_command` from it. When unset, the `redeem_command` uses `$NOTIFYCAT_URL` instead. |
 | `server.admin_addr` | _(unset)_ | Listen address of the private admin server for agent invites and tokens. Must differ from `server.addr`. Plain HTTP; never publish it. Requires `NOTIFYCAT_ADMIN_KEY_HASH`. |
 
 ### agent_api
