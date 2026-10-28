@@ -33,13 +33,22 @@ Other events do not refresh a stored PR, such as a GitHub edit, a review, a comm
 
 ## Set up the agent
 
-Each developer redeems their invite once and gets a token (`nct_<id>_<secret>`). The admin sends them the command to run: the `redeem_command` of the invite response. See [Agent API access](security.md#agent-api-access). Put the URL and the token in your shell profile:
+Each developer redeems their invite once and gets a token (`nct_<id>_<secret>`). The admin sends you one line. Run it in bash or zsh within one hour, exactly as you got it:
 
 ```sh
-# ~/.zshrc
+curl -fsS -X POST -H 'Accept: text/plain' -H @- https://notifycat.example.com/api/v1/invites/redeem <<<'Authorization: Invite nci_<id>_<secret>'
+```
+
+It prints two lines. Paste them into your shell profile, such as `~/.zshrc`:
+
+```sh
 export NOTIFYCAT_URL=https://notifycat.example.com
 export NOTIFYCAT_TOKEN='nct_<id>_<secret>'
 ```
+
+The token is shown only once. Run `chmod 600 ~/.zshrc`, then open a new shell. If `server.domain` is not set, only the `NOTIFYCAT_TOKEN` line is printed, so keep your own `NOTIFYCAT_URL` line too.
+
+If curl prints `error: 401`, the invite is used, expired, or the line was changed, for example by losing a quote. Ask the admin for a new invite. Without `Accept: text/plain`, the redeem call returns JSON: `{"user":"alice","token":"nct_<id>_<secret>"}`. The admin side is in [Agent API access](security.md#agent-api-access).
 
 Subscribe once to the repositories you want to review:
 

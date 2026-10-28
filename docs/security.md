@@ -146,9 +146,8 @@ read -rs NOTIFYCAT_ADMIN_KEY && export NOTIFYCAT_ADMIN_KEY
 The examples need bash or zsh (they use `<<<` here-strings) and curl 7.55 or newer (for `-H @-`). The header comes from stdin so the key is not on the command line. Through the tunnel the port is `localhost:9091`:
 
 ```sh
-# create an invite for alice
-curl -fsS -X POST -H @- http://localhost:9091/admin/v1/invites \
-  -d '{"user":"alice"}' <<<"Authorization: Bearer $NOTIFYCAT_ADMIN_KEY"
+# create an invite for alice; prints the line to send to alice
+curl -fsS -X POST -H 'Accept: text/plain' -H @- http://localhost:9091/admin/v1/invites -d '{"user":"alice"}' <<<"Authorization: Bearer $NOTIFYCAT_ADMIN_KEY"
 
 # list tokens (never a hash)
 curl -fsS -H @- http://localhost:9091/admin/v1/tokens <<<"Authorization: Bearer $NOTIFYCAT_ADMIN_KEY"
@@ -159,7 +158,15 @@ curl -fsS -X DELETE -H @- http://localhost:9091/admin/v1/tokens/<id> <<<"Authori
 
 The `<id>` in the `DELETE` example is the `id` field from `GET /admin/v1/tokens`.
 
-The invite response carries a `redeem_command` built from `server.domain`; send it to the developer. If `server.domain` is not set, the command uses `$NOTIFYCAT_URL` instead, and the developer sets it to the public base URL first (`export NOTIFYCAT_URL=https://notifycat.example.com`). The developer runs it on their own machine, in bash or zsh. The response holds their token, shown only once, so they must save it right away: for example in their password manager, or as an `export NOTIFYCAT_TOKEN='nct_…'` line in their shell profile (such as `~/.zshrc` or `~/.bashrc`), with `chmod 600` on that file. The admin never sees the token.
+The invite call prints one line: the command that redeems the invite. Send this line to the developer in a private message, as a code block, so the chat app keeps the quotes:
+
+```sh
+curl -fsS -X POST -H 'Accept: text/plain' -H @- https://notifycat.example.com/api/v1/invites/redeem <<<'Authorization: Invite nci_<id>_<secret>'
+```
+
+The command is built from `server.domain`. If `server.domain` is not set, the command uses `$NOTIFYCAT_URL` instead, and the developer sets it to the public base URL first (`export NOTIFYCAT_URL=https://notifycat.example.com`). The developer runs the command once on their own machine, in bash or zsh. It prints the lines for their shell profile, with their token. [Set up the agent](agent-api.md#set-up-the-agent) has the developer steps. The admin never sees the token.
+
+Without `Accept: text/plain`, the invite call returns JSON with `invite`, `user`, `expires_at`, and `redeem_command`.
 
 ### What a stolen token gets
 
