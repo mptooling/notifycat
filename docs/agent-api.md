@@ -12,11 +12,11 @@ This is for peer review. Engineers review their own PRs in their own pipelines.
 2. Set up the private admin port, the admin key, and the developer invites. [Agent API access](security.md#agent-api-access) has the steps. This page does not repeat them.
 3. Restart notifycat.
 
-With `agent_api.enabled: false`, notifycat records nothing for the feed and serves no `/api/v1/subs*` route. It cannot see a PR close while the API is off, so at startup it removes every stored PR. Turning the API off and on again therefore starts the feed empty, like a first enable. Tokens and subscriptions stay. A PR comes back with its next recorded event and counts as new, so your token can receive it again.
+With `agent_api.enabled: false`, notifycat records nothing for the feed and serves no `/api/v1/subs*` route. It cannot see a PR close while the API is off, so at startup it removes every stored PR. Turning the API off and on again therefore starts the feed empty, like a first enable. Tokens stay, and so do subscriptions to mapped repositories. A PR comes back with its next recorded event and counts as new, so your token can receive it again.
 
 When the API is on, notifycat records the open PRs of every repository in your `mappings:`. It learns about a PR from its webhook. A PR that was already open before you turned the feed on appears after its next [recorded event](#what-notifycat-records). A PR that gets no such event is never listed. Webhooks that arrive while notifycat is down are lost, so those PRs are missed too.
 
-A repository that you remove from `mappings:` is no longer served. Its stored PRs are removed at the next start.
+A repository that you remove from `mappings:` is no longer served. Its stored PRs and its subscriptions, for every token, are removed at the next start. If you map the repository again, subscribe again.
 
 Serve the public API over HTTPS only. Your reverse proxy does this.
 
@@ -208,10 +208,10 @@ The agent needs a credential for your git host. That is separate from the notify
 - 16 KiB request body.
 - Notifycat misses PRs whose webhooks arrived while it was down.
 - A PR that was open before you enabled the feed is listed only after one of the events in [What notifycat records](#what-notifycat-records).
-- A repository that loses its mapping is no longer served or recorded. Its stored PRs are removed at the next start.
+- A repository that loses its mapping is no longer served or recorded. Its stored PRs and its subscriptions are removed at the next start. Subscribe again if it is mapped again.
 - Turning the API off removes every stored PR at the next start. The feed starts empty when you turn it on again.
 - A stolen token reads PR titles, descriptions, branch names, author ids, links, and commit SHAs. No code. See [What a stolen token gets](security.md#what-a-stolen-token-gets).
 
 ## Logs
 
-The feed logs `feed subscriptions added`, `feed subscription removed`, `feed pull requests delivered`, `feed pull request not recorded`, `feed pull requests removed`, and `feed cleanup failed`. See [Operations](operations.md#logging).
+The feed logs `feed subscriptions added`, `feed subscription removed`, `feed pull requests delivered`, `feed pull request not recorded`, `feed pull requests removed`, `feed subscriptions removed`, and `feed cleanup failed`. See [Operations](operations.md#logging).
