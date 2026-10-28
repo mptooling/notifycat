@@ -120,3 +120,30 @@ func RedeemCommand(publicDomain, invite string) string {
 	}
 	return "curl -fsS -X POST -H @- " + redeemURL + " <<<'Authorization: " + InviteScheme + " " + invite + "'"
 }
+
+// InviteIssuerParams are the dependencies of the invite issuer.
+type InviteIssuerParams struct {
+	Invites  InviteStore
+	Secrets  SecretSource
+	Hasher   Hasher
+	Clock    Clock
+	Settings Settings
+	Logger   *slog.Logger
+}
+
+// InviteRedeemerParams are the dependencies of the invite redeemer.
+type InviteRedeemerParams struct {
+	Invites InviteStore
+	Secrets SecretSource
+	Hasher  Hasher
+	Clock   Clock
+	Logger  *slog.Logger
+}
+
+// TokenAuthenticatorParams are the dependencies of the token authenticator.
+type TokenAuthenticatorParams struct {
+	Tokens TokenStore
+	Hasher Hasher
+	Clock  Clock
+	Logger *slog.Logger
+}
