@@ -77,20 +77,27 @@ func NewFeedPullRequests(db *gorm.DB) *FeedPullRequests {
 	return &FeedPullRequests{db: db}
 }
 
-// Upsert inserts or updates the pull request in place, keeping its deliveries.
+// Upsert inserts or updates the pull request in place, keeping its deliveries and a known created_at.
 func (r *FeedPullRequests) Upsert(ctx context.Context, pullRequest FeedPullRequest) error {
 	pullRequest.UpdatedAt = pullRequest.UpdatedAt.UTC()
 	if pullRequest.CreatedAt != nil {
 		createdAt := pullRequest.CreatedAt.UTC()
 		pullRequest.CreatedAt = &createdAt
 	}
+	assignments := append(
+		clause.AssignmentColumns([]string{
+			"title", "description", "url", "author_id", "source_branch",
+			"target_branch", "head_sha", "updated_at",
+		}),
+		clause.Assignment{
+			Column: clause.Column{Name: "created_at"},
+			Value:  gorm.Expr("COALESCE(excluded.created_at, feed_pull_requests.created_at)"),
+		},
+	)
 	err := r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "repository"}, {Name: "number"}},
-			DoUpdates: clause.AssignmentColumns([]string{
-				"title", "description", "url", "author_id", "source_branch",
-				"target_branch", "head_sha", "created_at", "updated_at",
-			}),
+			Columns:   []clause.Column{{Name: "repository"}, {Name: "number"}},
+			DoUpdates: assignments,
 		}).
 		Create(&pullRequest).Error
 	if err != nil {

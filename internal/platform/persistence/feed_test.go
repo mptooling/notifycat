@@ -158,6 +158,24 @@ func TestFeedPullRequests_UpsertUpdatesInPlaceAndKeepsDeliveries(t *testing.T) {
 		"an upsert must not replace the row and cascade its deliveries")
 }
 
+func TestFeedPullRequests_UpsertWithoutCreatedAtKeepsStoredCreatedAt(t *testing.T) {
+	db := newFeedDB(t)
+	ctx := context.Background()
+	pullRequests := persistence.NewFeedPullRequests(db)
+	openedAt := accessBaseTime.Add(-time.Hour)
+	opened := feedPullRequest("acme/api", 42, accessBaseTime)
+	opened.CreatedAt = &openedAt
+	upsertAll(t, pullRequests, opened)
+
+	require.NoError(t, pullRequests.Upsert(ctx, feedPullRequest("acme/api", 42, accessBaseTime.Add(time.Hour))))
+
+	stored, err := pullRequests.ChangedSince(ctx, []string{"acme/api"}, accessBaseTime.Add(-time.Hour))
+	require.NoError(t, err)
+	require.Len(t, stored, 1)
+	require.NotNil(t, stored[0].CreatedAt, "an event without a creation time keeps the stored one")
+	assert.True(t, openedAt.Equal(*stored[0].CreatedAt))
+}
+
 func TestFeedPullRequests_DeleteCascadesDeliveries(t *testing.T) {
 	db := newFeedDB(t)
 	ctx := context.Background()
