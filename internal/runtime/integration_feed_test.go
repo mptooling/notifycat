@@ -199,3 +199,20 @@ func TestIntegration_AgentAPIDisabled_NothingTracked(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, pullRequestsStatus)
 	assert.Zero(t, trackedPullRequests)
 }
+
+func TestIntegration_SubscribeToAnOrgTierIsUnknownRepository(t *testing.T) {
+	cfg := feedConfig(t, true)
+	cfg.Mappings = seedsToMappings(t, []mappingSeed{{repository: "acme/*", channel: "C123ABCDE"}})
+	primeLock(t, cfg.ConfigFile, routingapp.NewProvider(routingdomain.Defaults{}, cfg.Mappings, cfg.Digest))
+	public, adminServer := buildAgentAPIApp(t, cfg)
+	require.NotNil(t, adminServer)
+	admin := httptest.NewServer(adminServer.Handler)
+	t.Cleanup(admin.Close)
+	token := redeemAgentToken(t, public, admin, map[string]string{"Authorization": "Bearer " + testAdminKey})
+
+	status, body := request(t, public, http.MethodPost, "/api/v1/subs", `{"repositories":["acme/*"]}`,
+		map[string]string{"Authorization": "Bearer " + token})
+
+	assert.Equal(t, http.StatusBadRequest, status)
+	assert.JSONEq(t, `{"error":"unknown_repository","repositories":["acme/*"]}`, body)
+}

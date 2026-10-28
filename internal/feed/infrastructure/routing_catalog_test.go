@@ -39,6 +39,12 @@ func TestRoutingCatalog_IsConfigured(t *testing.T) {
 		{"empty repo", "acme/", false},
 		{"empty org", "/x", false},
 		{"star", "*", false},
+		{"org tier under a wildcard org", "acme/*", false},
+		{"extra segment under a wildcard org", "acme/api/x", false},
+		{"percent under a wildcard org", "acme/%", false},
+		{"control character under a wildcard org", "acme/a\x00pi", false},
+		{"space under a wildcard org", "acme/my repo", false},
+		{"mixed-case valid name under a wildcard org", "ACME/Some.Repo_1-x", true},
 	}
 	catalog := newCatalog()
 

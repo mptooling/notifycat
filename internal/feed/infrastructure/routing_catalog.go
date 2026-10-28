@@ -1,11 +1,14 @@
 package infrastructure
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/mptooling/notifycat/internal/feed/domain"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 )
+
+var repositoryName = regexp.MustCompile(domain.RepositoryNamePattern)
 
 // RoutingCatalog answers which repositories the routing mappings configure.
 type RoutingCatalog struct {
@@ -35,10 +38,10 @@ func NewRoutingCatalog(entries routingdomain.EntryLister) *RoutingCatalog {
 // IsConfigured implements domain.RepositoryCatalog.
 func (catalog *RoutingCatalog) IsConfigured(repository string) bool {
 	name := strings.ToLower(repository)
-	org, repo, found := strings.Cut(name, "/")
-	if !found || org == "" || repo == "" {
+	if !repositoryName.MatchString(name) {
 		return false
 	}
+	org, _, _ := strings.Cut(name, "/")
 	if _, explicit := catalog.repositories[name]; explicit {
 		return true
 	}
