@@ -38,27 +38,88 @@ func newAdminFixture() adminFixture {
 	return fixture
 }
 
+const redeemCommand = "curl -fsS -X POST -H 'Accept: text/plain' -H @- https://notifycat.example.com/api/v1/invites/redeem <<<'Authorization: Invite nci_x'"
+
 func (fixture adminFixture) do(method, path, body string) *httptest.ResponseRecorder {
+	return fixture.doAccepting("", method, path, body)
+}
+
+func (fixture adminFixture) doAccepting(accept, method, path, body string) *httptest.ResponseRecorder {
 	request := httptest.NewRequestWithContext(context.Background(), method, path, strings.NewReader(body))
 	request.Header.Set("Authorization", "Bearer nca_key")
+	if accept != "" {
+		request.Header.Set("Accept", accept)
+	}
 	recorder := httptest.NewRecorder()
 	fixture.handler.ServeHTTP(recorder, request)
 	return recorder
 }
 
-func TestAdminHandler_CreateInvite(t *testing.T) {
+func newInviteFixture() adminFixture {
 	fixture := newAdminFixture()
 	fixture.issuer.issued = domain.IssuedInvite{
 		Invite:        domain.Invite{User: "alice", ExpiresAt: time.Date(2026, 10, 28, 10, 0, 0, 0, time.UTC)},
 		Secret:        "nci_x",
-		RedeemCommand: "curl …",
+		RedeemCommand: redeemCommand,
 	}
+	return fixture
+}
+
+func TestAdminHandler_CreateInvite(t *testing.T) {
+	fixture := newInviteFixture()
 
 	recorder := fixture.do(http.MethodPost, "/admin/v1/invites", `{"user":"alice"}`)
 
 	assert.Equal(t, http.StatusCreated, recorder.Code)
-	assert.JSONEq(t, `{"invite":"nci_x","user":"alice","expires_at":"2026-10-28T10:00:00Z","redeem_command":"curl …"}`, recorder.Body.String())
+	assert.Equal(t, "application/json", recorder.Header().Get("Content-Type"))
+	assert.JSONEq(t, `{"invite":"nci_x","user":"alice","expires_at":"2026-10-28T10:00:00Z",
+		"redeem_command":"curl -fsS -X POST -H 'Accept: text/plain' -H @- https://notifycat.example.com/api/v1/invites/redeem <<<'Authorization: Invite nci_x'"}`,
+		recorder.Body.String())
+	assert.Contains(t, recorder.Body.String(), "<<<'Authorization", "the admin copies the command from the raw JSON")
 	assert.Equal(t, "alice", fixture.issuer.gotUser)
+}
+
+func TestAdminHandler_CreateInvite_ContentNegotiation(t *testing.T) {
+	testCases := []struct {
+		name            string
+		accept          string
+		wantContentType string
+	}{
+		{name: "no accept header", wantContentType: "application/json"},
+		{name: "any type", accept: "*/*", wantContentType: "application/json"},
+		{name: "json and text tie", accept: "application/json, text/plain, */*", wantContentType: "application/json"},
+		{name: "plain text", accept: "text/plain", wantContentType: "text/plain; charset=utf-8"},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := newInviteFixture()
+
+			recorder := fixture.doAccepting(testCase.accept, http.MethodPost, "/admin/v1/invites", `{"user":"alice"}`)
+
+			assert.Equal(t, http.StatusCreated, recorder.Code)
+			assert.Equal(t, testCase.wantContentType, recorder.Header().Get("Content-Type"))
+		})
+	}
+}
+
+func TestAdminHandler_CreateInvite_PlainTextIsOnlyTheRedeemCommand(t *testing.T) {
+	fixture := newInviteFixture()
+
+	recorder := fixture.doAccepting("text/plain", http.MethodPost, "/admin/v1/invites", `{"user":"alice"}`)
+
+	assert.Equal(t, http.StatusCreated, recorder.Code)
+	assert.Equal(t, redeemCommand+"\n", recorder.Body.String())
+	assert.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
+}
+
+func TestAdminHandler_CreateInvite_PlainTextErrorStaysJSON(t *testing.T) {
+	fixture := newAdminFixture()
+	fixture.issuer.err = domain.ErrInvalidUser
+
+	recorder := fixture.doAccepting("text/plain", http.MethodPost, "/admin/v1/invites", `{"user":"Alice"}`)
+
+	assert.Equal(t, http.StatusBadRequest, recorder.Code)
+	assert.JSONEq(t, `{"error":"invalid_user"}`, recorder.Body.String())
 }
 
 func TestAdminHandler_CreateInvite_BadRequests(t *testing.T) {

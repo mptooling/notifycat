@@ -67,8 +67,9 @@ func (issued IssuedInvite) LogValue() slog.Value {
 
 // IssuedToken carries the full encoded token credential in Secret, shown once.
 type IssuedToken struct {
-	Token  Token
-	Secret string
+	Token        Token
+	Secret       string
+	ShellExports string
 }
 
 // String renders the token with the secret redacted.
@@ -118,7 +119,17 @@ func RedeemCommand(publicDomain, invite string) string {
 	if publicDomain != "" {
 		redeemURL = "https://" + publicDomain + RedeemPath
 	}
-	return "curl -fsS -X POST -H @- " + redeemURL + " <<<'Authorization: " + InviteScheme + " " + invite + "'"
+	return "curl -fsS -X POST -H '" + AcceptTextHeader + "' -H @- " + redeemURL +
+		" <<<'" + AuthorizationHeader + ": " + InviteScheme + " " + invite + "'"
+}
+
+// ShellExports returns the shell profile lines that set the agent API URL and token.
+func ShellExports(publicDomain, token string) string {
+	tokenLine := "export " + TokenVariable + "='" + token + "'"
+	if publicDomain == "" {
+		return tokenLine
+	}
+	return "export " + URLVariable + "=https://" + publicDomain + "\n" + tokenLine
 }
 
 // InviteIssuerParams are the dependencies of the invite issuer.
@@ -133,11 +144,12 @@ type InviteIssuerParams struct {
 
 // InviteRedeemerParams are the dependencies of the invite redeemer.
 type InviteRedeemerParams struct {
-	Invites InviteStore
-	Secrets SecretSource
-	Hasher  Hasher
-	Clock   Clock
-	Logger  *slog.Logger
+	Invites  InviteStore
+	Secrets  SecretSource
+	Hasher   Hasher
+	Clock    Clock
+	Settings Settings
+	Logger   *slog.Logger
 }
 
 // TokenAuthenticatorParams are the dependencies of the token authenticator.

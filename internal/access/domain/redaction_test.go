@@ -24,8 +24,9 @@ func TestSecretBearers_NeverPrintTheSecret(t *testing.T) {
 			RedeemCommand: domain.RedeemCommand("", domain.InvitePrefix+fixtureID+"_"+secret),
 		}},
 		{"issued token", domain.IssuedToken{
-			Token:  domain.Token{ID: fixtureID},
-			Secret: domain.TokenPrefix + fixtureID + "_" + secret,
+			Token:        domain.Token{ID: fixtureID},
+			Secret:       domain.TokenPrefix + fixtureID + "_" + secret,
+			ShellExports: domain.ShellExports("", domain.TokenPrefix+fixtureID+"_"+secret),
 		}},
 	}
 	for _, testCase := range testCases {

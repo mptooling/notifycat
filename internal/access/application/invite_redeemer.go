@@ -12,11 +12,12 @@ import (
 
 // InviteRedeemer implements domain.InviteRedeemer.
 type InviteRedeemer struct {
-	invites domain.InviteStore
-	secrets domain.SecretSource
-	hasher  domain.Hasher
-	clock   domain.Clock
-	logger  *slog.Logger
+	invites  domain.InviteStore
+	secrets  domain.SecretSource
+	hasher   domain.Hasher
+	clock    domain.Clock
+	settings domain.Settings
+	logger   *slog.Logger
 }
 
 var _ domain.InviteRedeemer = (*InviteRedeemer)(nil)
@@ -24,11 +25,12 @@ var _ domain.InviteRedeemer = (*InviteRedeemer)(nil)
 // NewInviteRedeemer builds an InviteRedeemer.
 func NewInviteRedeemer(params domain.InviteRedeemerParams) *InviteRedeemer {
 	return &InviteRedeemer{
-		invites: params.Invites,
-		secrets: params.Secrets,
-		hasher:  params.Hasher,
-		clock:   params.Clock,
-		logger:  params.Logger,
+		invites:  params.Invites,
+		secrets:  params.Secrets,
+		hasher:   params.Hasher,
+		clock:    params.Clock,
+		settings: params.Settings,
+		logger:   params.Logger,
 	}
 }
 
@@ -80,9 +82,11 @@ func (redeemer *InviteRedeemer) issueToken(ctx context.Context, invite domain.St
 		return domain.IssuedToken{}, fmt.Errorf("redeem invite: %w", err)
 	}
 	redeemer.logger.InfoContext(ctx, "agent token created", "user", token.User, "token_id", token.ID)
+	encoded := domain.Credential{Prefix: domain.TokenPrefix, ID: id, Secret: secret}.Encode()
 	return domain.IssuedToken{
-		Token:  token,
-		Secret: domain.Credential{Prefix: domain.TokenPrefix, ID: id, Secret: secret}.Encode(),
+		Token:        token,
+		Secret:       encoded,
+		ShellExports: domain.ShellExports(redeemer.settings.PublicDomain, encoded),
 	}, nil
 }
 

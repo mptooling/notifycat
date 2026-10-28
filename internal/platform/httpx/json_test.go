@@ -39,3 +39,12 @@ func TestWriteNoContent(t *testing.T) {
 	assert.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
 	assert.Empty(t, recorder.Body.String())
 }
+
+func TestWriteJSON_KeepsHTMLCharacters(t *testing.T) {
+	recorder := httptest.NewRecorder()
+
+	httpx.WriteJSON(recorder, http.StatusOK, map[string]string{"command": "curl <<<'a & b'"})
+
+	assert.Contains(t, recorder.Body.String(), `"curl <<<'a & b'"`)
+	assert.NotContains(t, recorder.Body.String(), "\\u003c")
+}

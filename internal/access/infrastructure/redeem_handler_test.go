@@ -13,6 +13,8 @@ import (
 	"github.com/mptooling/notifycat/internal/access/infrastructure"
 )
 
+const shellExports = "export NOTIFYCAT_URL=https://notifycat.example.com\nexport NOTIFYCAT_TOKEN='nct_y'"
+
 func redeemRequest(header string) *http.Request {
 	request := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/invites/redeem", nil)
 	if header != "" {
@@ -21,16 +23,49 @@ func redeemRequest(header string) *http.Request {
 	return request
 }
 
+func textRedeemRequest(header string) *http.Request {
+	request := redeemRequest(header)
+	request.Header.Set("Accept", "text/plain")
+	return request
+}
+
+func issuedToken() domain.IssuedToken {
+	return domain.IssuedToken{Token: domain.Token{User: "alice"}, Secret: "nct_y", ShellExports: shellExports}
+}
+
 func TestRedeemHandler_ReturnsToken(t *testing.T) {
-	redeemer := &fakeInviteRedeemer{issued: domain.IssuedToken{Token: domain.Token{User: "alice"}, Secret: "nct_y"}}
+	redeemer := &fakeInviteRedeemer{issued: issuedToken()}
 	recorder := httptest.NewRecorder()
 
 	infrastructure.NewRedeemHandler(redeemer, discardLogger()).ServeHTTP(recorder, redeemRequest("Invite nci_x"))
 
 	assert.Equal(t, http.StatusCreated, recorder.Code)
+	assert.Equal(t, "application/json", recorder.Header().Get("Content-Type"))
 	assert.JSONEq(t, `{"user":"alice","token":"nct_y"}`, recorder.Body.String())
 	assert.Equal(t, "nci_x", redeemer.gotRaw)
 	assert.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
+}
+
+func TestRedeemHandler_PlainTextReturnsShellExports(t *testing.T) {
+	redeemer := &fakeInviteRedeemer{issued: issuedToken()}
+	recorder := httptest.NewRecorder()
+
+	infrastructure.NewRedeemHandler(redeemer, discardLogger()).ServeHTTP(recorder, textRedeemRequest("Invite nci_x"))
+
+	assert.Equal(t, http.StatusCreated, recorder.Code)
+	assert.Equal(t, "text/plain; charset=utf-8", recorder.Header().Get("Content-Type"))
+	assert.Equal(t, shellExports+"\n", recorder.Body.String())
+	assert.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
+}
+
+func TestRedeemHandler_PlainTextFailureStaysJSON(t *testing.T) {
+	redeemer := &fakeInviteRedeemer{err: &domain.AuthError{Reason: domain.AuthFailureUsed}}
+	recorder := httptest.NewRecorder()
+
+	infrastructure.NewRedeemHandler(redeemer, discardLogger()).ServeHTTP(recorder, textRedeemRequest("Invite nci_x"))
+
+	assert.Equal(t, http.StatusUnauthorized, recorder.Code)
+	assert.JSONEq(t, `{"error":"unauthorized"}`, recorder.Body.String())
 }
 
 func TestRedeemHandler_EveryFailureIsTheSame401(t *testing.T) {

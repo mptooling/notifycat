@@ -53,20 +53,22 @@ func provideInviteIssuer(params inviteIssuerParams) *application.InviteIssuer {
 
 type inviteRedeemerParams struct {
 	fx.In
-	Invites domain.InviteStore
-	Secrets domain.SecretSource
-	Hasher  domain.Hasher
-	Clock   domain.Clock
-	Logger  *slog.Logger
+	Invites  domain.InviteStore
+	Secrets  domain.SecretSource
+	Hasher   domain.Hasher
+	Clock    domain.Clock
+	Settings domain.Settings
+	Logger   *slog.Logger
 }
 
 func provideInviteRedeemer(params inviteRedeemerParams) *application.InviteRedeemer {
 	return application.NewInviteRedeemer(domain.InviteRedeemerParams{
-		Invites: params.Invites,
-		Secrets: params.Secrets,
-		Hasher:  params.Hasher,
-		Clock:   params.Clock,
-		Logger:  params.Logger,
+		Invites:  params.Invites,
+		Secrets:  params.Secrets,
+		Hasher:   params.Hasher,
+		Clock:    params.Clock,
+		Settings: params.Settings,
+		Logger:   params.Logger,
 	})
 }
 

@@ -47,7 +47,7 @@ func TestInviteIssuer_Issue_RedeemCommandUsesServerDomain(t *testing.T) {
 	issued, err := issuer.Issue(t.Context(), "alice")
 
 	require.NoError(t, err)
-	assert.Equal(t, "curl -fsS -X POST -H @- https://notifycat.example.com/api/v1/invites/redeem <<<'Authorization: Invite nci_"+inviteID+"_"+inviteSecret+"'", issued.RedeemCommand)
+	assert.Equal(t, "curl -fsS -X POST -H 'Accept: text/plain' -H @- https://notifycat.example.com/api/v1/invites/redeem <<<'Authorization: Invite nci_"+inviteID+"_"+inviteSecret+"'", issued.RedeemCommand)
 }
 
 func TestInviteIssuer_Issue_RejectsInvalidUser(t *testing.T) {
