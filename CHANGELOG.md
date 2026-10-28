@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.0](https://github.com/mptooling/notifycat/compare/v0.30.0...v0.31.0) (2026-10-28)
+
+
+### 🚀 Features
+
+* **feed:** list the repositories a token can subscribe to ([#224](https://github.com/mptooling/notifycat/issues/224)) ([5c9496f](https://github.com/mptooling/notifycat/commit/5c9496f055ac8289bd1c5fbf93cda68471758783))
+
 ## [0.30.0](https://github.com/mptooling/notifycat/compare/v0.29.0...v0.30.0) (2026-10-28)
 
 
