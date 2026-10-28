@@ -19,7 +19,7 @@
 
 ## Review Focus
 
-- An operator `database.url` that already has a query string (`file:./data/notifycat.db?_pragma=busy_timeout(5000)`) keeps its own pragmas and also gets foreign keys — Task 1 pins it.
+- An operator `database.url` that already has a query string (`file:./data/notifycat.db?_pragma=busy_timeout(7000)`) keeps its own pragmas and also gets foreign keys — Task 1 pins it.
 - The bare path form (`./data/notifycat.db`, no `file:`) still works — Task 1 pins it.
 - All existing migrations still apply with foreign keys on for every connection — the full `just test` run covers it (every store test calls `NewTestDB`, which runs `MigrateUp`).
 - A cascade delete works on a connection that is not the first one — Task 1 pins it.
@@ -52,7 +52,7 @@ func TestOpen_EnablesForeignKeysOnEveryPooledConnection(t *testing.T) {
 
 func TestOpen_KeepsOperatorQueryParameters(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "query.db")
-	db, err := persistence.Open("file:" + path + "?_pragma=busy_timeout(5000)")
+	db, err := persistence.Open("file:" + path + "?_pragma=busy_timeout(7000)")
 	require.NoError(t, err)
 	connections := holdConnections(t, db, 2)
 
@@ -60,7 +60,7 @@ func TestOpen_KeepsOperatorQueryParameters(t *testing.T) {
 	busyTimeout := pragmaValue(t, connections[1], "busy_timeout")
 
 	assert.Equal(t, []int{1, 1}, enabled)
-	assert.Equal(t, 5000, busyTimeout)
+	assert.Equal(t, 7000, busyTimeout)
 }
 
 func TestOpen_AcceptsBarePath(t *testing.T) {
@@ -77,13 +77,13 @@ func TestOpen_CascadesOnASecondConnection(t *testing.T) {
 	db := persistence.NewTestDB(t)
 	connections := holdConnections(t, db, 2)
 	ctx := context.Background()
-	// seed through connections[1]: a pull_requests row and one slack_messages row
+	// seed through connections[1]: a pull_requests row and one messages row
 	// that references it (columns from migrations/00005_pull_requests_messages.sql)
 
 	_, err := connections[1].ExecContext(ctx, "DELETE FROM pull_requests")
 
 	require.NoError(t, err)
-	assert.Equal(t, 0, countRows(t, connections[1], "slack_messages"),
+	assert.Equal(t, 0, countRows(t, connections[1], "messages"),
 		"deleting a PR must cascade on any pooled connection")
 }
 ```
@@ -94,12 +94,12 @@ Helpers in the same file:
 - `pragmaValue(t, connection *sql.Conn, name string) int`.
 - `countRows(t, connection *sql.Conn, table string) int`.
 
-Read `migrations/00005_pull_requests_messages.sql` for the exact `pull_requests` / `slack_messages` columns before writing the seed `INSERT`s.
+Read `migrations/00005_pull_requests_messages.sql` for the exact `pull_requests` / `messages` columns before writing the seed `INSERT`s.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `go test -race ./internal/platform/persistence/ -run 'TestOpen_' -v`
-Expected: FAIL. `foreign_keys` is `0` on every connection after the first (for example `[1 0 0]`), and the cascade test finds a leftover `slack_messages` row.
+Expected: FAIL. `foreign_keys` is `0` on every connection after the first (for example `[1 0 0]`), and the cascade test finds a leftover `messages` row.
 
 - [ ] **Step 3: Implement** in `internal/platform/persistence/db.go`
 

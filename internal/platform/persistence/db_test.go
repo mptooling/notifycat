@@ -25,7 +25,7 @@ func TestOpen_EnablesForeignKeysOnEveryPooledConnection(t *testing.T) {
 
 func TestOpen_KeepsOperatorQueryParameters(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "query.db")
-	db, err := persistence.Open("file:" + path + "?_pragma=busy_timeout(5000)")
+	db, err := persistence.Open("file:" + path + "?_pragma=busy_timeout(7000)")
 	require.NoError(t, err)
 	connections := holdConnections(t, db, 2)
 
@@ -33,7 +33,18 @@ func TestOpen_KeepsOperatorQueryParameters(t *testing.T) {
 	busyTimeout := pragmaValue(t, connections[1], "busy_timeout")
 
 	assert.Equal(t, []int{1, 1}, enabled)
-	assert.Equal(t, 5000, busyTimeout)
+	assert.Equal(t, 7000, busyTimeout)
+}
+
+func TestOpen_OverridesOperatorForeignKeysOff(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "off.db")
+	db, err := persistence.Open("file:" + path + "?_pragma=foreign_keys(0)")
+	require.NoError(t, err)
+	connections := holdConnections(t, db, 2)
+
+	enabled := foreignKeysPerConnection(t, connections)
+
+	assert.Equal(t, []int{1, 1}, enabled, "foreign keys must stay on even when the operator turns them off")
 }
 
 func TestOpen_AcceptsBarePath(t *testing.T) {

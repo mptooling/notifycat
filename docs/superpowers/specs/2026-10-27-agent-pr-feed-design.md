@@ -1,6 +1,6 @@
 # Agent PR feed — design (v1)
 
-> **Status (2026-10-28): draft for Pavlo's review.** No code or branch exists yet.
+> **Status (2026-10-28): approved.** Delivered in three PRs (see "Delivery in 3 PRs").
 
 ## Why
 
