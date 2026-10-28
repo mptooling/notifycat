@@ -12,7 +12,7 @@ This is for peer review. Engineers review their own PRs in their own pipelines.
 2. Set up the private admin port, the admin key, and the developer invites. [Agent API access](security.md#agent-api-access) has the steps. This page does not repeat them.
 3. Restart notifycat.
 
-With `agent_api.enabled: false`, notifycat records nothing for the feed and serves no `/api/v1/subs*` route. It cannot see a PR close while the API is off, so at startup it removes every stored PR. Turning the API off and on again therefore starts the feed empty, like a first enable. Tokens stay, and so do subscriptions to mapped repositories. A PR comes back with its next recorded event and counts as new, so your token can receive it again.
+With `agent_api.enabled: false`, notifycat records nothing for the feed and serves no `/api/v1/subs*` or `/api/v1/repos` route. It cannot see a PR close while the API is off, so at startup it removes every stored PR. Turning the API off and on again therefore starts the feed empty, like a first enable. Tokens stay, and so do subscriptions to mapped repositories. A PR comes back with its next recorded event and counts as new, so your token can receive it again.
 
 When the API is on, notifycat records the open PRs of every repository in your `mappings:`. It learns about a PR from its webhook. A PR that was already open before you turned the feed on appears after its next [recorded event](#what-notifycat-records). A PR that gets no such event is never listed. Webhooks that arrive while notifycat is down are lost, so those PRs are missed too.
 
@@ -52,6 +52,12 @@ If the line has `$NOTIFYCAT_URL` instead of an address, the server has no `serve
 
 If curl prints `error: 401`, the invite is used, expired, or the line was changed, for example by losing a quote. Ask the admin for a new invite. Without `Accept: text/plain`, the redeem call returns JSON: `{"user":"alice","token":"nct_<id>_<secret>"}`. The admin side is in [Agent API access](security.md#agent-api-access).
 
+See which repositories you can follow:
+
+```sh
+curl --fail-with-body -sS -H @- "$NOTIFYCAT_URL/api/v1/repos" <<<"Authorization: Bearer $NOTIFYCAT_TOKEN"
+```
+
 Subscribe once to the repositories you want to review:
 
 ```sh
@@ -79,6 +85,7 @@ All routes need `Authorization: Bearer nct_<id>_<secret>`. Every feed response w
 | `POST /api/v1/subs` | Adds repositories. `200` with the full list, in the same shape as `GET`. |
 | `DELETE /api/v1/subs/{id}` | `204`. `404 not_found` if the id is unknown, belongs to another token, or is not a positive integer. |
 | `GET /api/v1/subs/prs` | The pull requests. See below. |
+| `GET /api/v1/repos` | The repositories you can subscribe to. See below. |
 
 ### Add subscriptions
 
@@ -95,6 +102,16 @@ The body is `{"repositories":["acme/api","acme/web"]}`. Use `["*"]` to subscribe
 - An org tier such as `acme/*` cannot be subscribed to. It gives `400 unknown_repository`. Use `*` for all repositories, or list them.
 - More than 200 subscriptions for one token gives `400 too_many_subscriptions`. Nothing is added. Repositories you already follow do not count.
 - The body can be at most 16 KiB.
+
+### List repositories
+
+```json
+{"repositories":["acme/api","acme/web"],"organizations":["beta"]}
+```
+
+- `repositories` are the repositories in your `mappings:`, lower case and sorted.
+- `organizations` have an org tier, such as `beta/*`. You can subscribe to every repository of such an organization. Notifycat does not list them. Your git host does.
+- Both lists can be empty.
 
 ### Get pull requests
 

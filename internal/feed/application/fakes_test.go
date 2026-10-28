@@ -196,6 +196,10 @@ func (catalog *fakeCatalog) IsConfigured(repository string) bool {
 
 func (catalog *fakeCatalog) HasRepositories() bool { return len(catalog.repositories) > 0 }
 
+func (catalog *fakeCatalog) List() domain.ConfiguredRepositories {
+	return domain.ConfiguredRepositories{Repositories: catalog.repositories}
+}
+
 func (catalog *fakeCatalog) Configured(repositories []string) []string {
 	catalog.calls++
 	var configured []string

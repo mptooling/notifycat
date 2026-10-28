@@ -16,6 +16,7 @@ const (
 	AddSubscriptionsPattern   = "POST /api/v1/subs"
 	RemoveSubscriptionPattern = "DELETE /api/v1/subs/{id}"
 	PullRequestsPattern       = "GET /api/v1/subs/prs"
+	RepositoriesPattern       = "GET /api/v1/repos"
 	SubscriptionIDPathValue   = "id"
 	SinceQueryParameter       = "since"
 )

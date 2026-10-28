@@ -34,6 +34,14 @@ type PullRequest struct {
 	UpdatedAt    time.Time
 }
 
+// ConfiguredRepositories is what a token can subscribe to.
+type ConfiguredRepositories struct {
+	// Repositories are the explicitly configured repositories, sorted.
+	Repositories []string
+	// Organizations have an org tier, so each of their repositories is configured too; sorted.
+	Organizations []string
+}
+
 // NewSubscriptions asks the store to subscribe a token to repositories.
 type NewSubscriptions struct {
 	TokenID      string

@@ -22,5 +22,6 @@ func TestNewRoutes_Patterns(t *testing.T) {
 		domain.AddSubscriptionsPattern,
 		domain.RemoveSubscriptionPattern,
 		domain.PullRequestsPattern,
+		domain.RepositoriesPattern,
 	}, patterns)
 }

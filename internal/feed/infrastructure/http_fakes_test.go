@@ -19,10 +19,12 @@ func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Disca
 
 type fakeSubscriptions struct {
 	subscriptions   []domain.Subscription
+	available       domain.ConfiguredRepositories
 	err             error
 	listCalls       int
 	addCalls        int
 	removeCalls     int
+	availableCalls  int
 	gotSubscriber   domain.Subscriber
 	gotRepositories []string
 	gotID           int64
@@ -46,6 +48,11 @@ func (fake *fakeSubscriptions) Remove(_ context.Context, subscriber domain.Subsc
 	fake.gotSubscriber = subscriber
 	fake.gotID = id
 	return fake.err
+}
+
+func (fake *fakeSubscriptions) Available() domain.ConfiguredRepositories {
+	fake.availableCalls++
+	return fake.available
 }
 
 type fakePullRequests struct {

@@ -193,12 +193,14 @@ func TestIntegration_AgentAPIDisabled_NothingTracked(t *testing.T) {
 	unknownToken := map[string]string{"Authorization": "Bearer nct_unknown"}
 	subscriptionsStatus, _ := request(t, public, http.MethodGet, "/api/v1/subs", "", unknownToken)
 	pullRequestsStatus, _ := request(t, public, http.MethodGet, "/api/v1/subs/prs", "", unknownToken)
+	repositoriesStatus, _ := request(t, public, http.MethodGet, "/api/v1/repos", "", unknownToken)
 
 	var trackedPullRequests int64
 	require.NoError(t, db.Table("feed_pull_requests").Count(&trackedPullRequests).Error)
 	assert.Equal(t, http.StatusOK, webhookStatus)
 	assert.Equal(t, http.StatusNotFound, subscriptionsStatus)
 	assert.Equal(t, http.StatusNotFound, pullRequestsStatus)
+	assert.Equal(t, http.StatusNotFound, repositoriesStatus)
 	assert.Zero(t, trackedPullRequests)
 }
 
@@ -217,6 +219,34 @@ func TestIntegration_SubscribeToAnOrgTierIsUnknownRepository(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, status)
 	assert.JSONEq(t, `{"error":"unknown_repository","repositories":["acme/*"]}`, body)
+}
+
+func TestIntegration_ListRepositories(t *testing.T) {
+	cfg := feedConfig(t, true)
+	cfg.Mappings = seedsToMappings(t, []mappingSeed{
+		{repository: "beta/*", channel: "C123ABCDE"},
+		{repository: "Acme/API", channel: "C123ABCDE"},
+	})
+	primeLock(t, cfg.ConfigFile, routingapp.NewProvider(routingdomain.Defaults{}, cfg.Mappings, cfg.Digest))
+	public, adminServer := buildAgentAPIApp(t, cfg)
+	require.NotNil(t, adminServer)
+	admin := httptest.NewServer(adminServer.Handler)
+	t.Cleanup(admin.Close)
+	token := redeemAgentToken(t, public, admin, map[string]string{"Authorization": "Bearer " + testAdminKey})
+
+	status, body := request(t, public, http.MethodGet, "/api/v1/repos", "", map[string]string{"Authorization": "Bearer " + token})
+
+	assert.Equal(t, http.StatusOK, status)
+	assert.JSONEq(t, `{"repositories":["acme/api"],"organizations":["beta"]}`, body)
+}
+
+func TestIntegration_ListRepositoriesNeedsAToken(t *testing.T) {
+	public, _ := buildAgentAPIApp(t, feedConfig(t, true))
+
+	status, body := request(t, public, http.MethodGet, "/api/v1/repos", "", nil)
+
+	assert.Equal(t, http.StatusUnauthorized, status)
+	assert.JSONEq(t, `{"error":"unauthorized"}`, body)
 }
 
 func seedFeedPullRequests(t *testing.T, cfg config.Config, repositories ...string) {
