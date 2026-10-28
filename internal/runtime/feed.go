@@ -1,0 +1,48 @@
+package runtime
+
+import (
+	"context"
+	"log/slog"
+
+	feeddomain "github.com/mptooling/notifycat/internal/feed/domain"
+	"github.com/mptooling/notifycat/internal/kernel"
+	notificationapp "github.com/mptooling/notifycat/internal/notification/application"
+	notificationdomain "github.com/mptooling/notifycat/internal/notification/domain"
+	"github.com/mptooling/notifycat/internal/platform/config"
+	routingapp "github.com/mptooling/notifycat/internal/routing/application"
+	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
+)
+
+// recordingDispatcher records every webhook event for the agent feed after the
+// notification dispatch, so a Slack failure still records and a record failure
+// never changes the webhook response.
+type recordingDispatcher struct {
+	next     notificationdomain.EventDispatcher
+	recorder feeddomain.Recorder
+	logger   *slog.Logger
+}
+
+func (dispatcher *recordingDispatcher) Dispatch(ctx context.Context, event kernel.Event) error {
+	dispatchErr := dispatcher.next.Dispatch(ctx, event)
+	if err := dispatcher.recorder.Record(context.WithoutCancel(ctx), event); err != nil {
+		dispatcher.logger.WarnContext(ctx, "feed pull request not recorded",
+			slog.String("repository", event.Repository),
+			slog.Int("pr", event.PR.Number),
+			slog.String("kind", event.Kind.String()),
+			slog.Any("err", err))
+	}
+	return dispatchErr
+}
+
+// buildWebhookDispatcher records webhook events for the feed only when the
+// agent API is enabled.
+func buildWebhookDispatcher(cfg config.Config, dispatcher *notificationapp.Dispatcher, recorder feeddomain.Recorder, logger *slog.Logger) notificationdomain.EventDispatcher {
+	if !cfg.AgentAPIEnabled {
+		return dispatcher
+	}
+	return &recordingDispatcher{next: dispatcher, recorder: recorder, logger: logger}
+}
+
+func provideEntryLister(provider *routingapp.Provider) routingdomain.EntryLister {
+	return provider
+}
