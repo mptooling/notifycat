@@ -73,8 +73,10 @@ The agent API logs these lines. None of them carries a credential or an `Authori
 | `feed subscription removed` | info | A token removed a subscription (`user`, `token_id`, `repository`). |
 | `feed pull requests delivered` | info | A poll returned new PRs (`user`, `token_id`, `count`). Logged only when `count` is above 0. |
 | `feed pull request not recorded` | warn | A webhook PR could not be stored for the feed (`repository`, `pr`, `kind`, `err`). The webhook response does not change. |
+| `feed pull requests removed` | info | At startup, notifycat removed stored feed PRs (`count`, `reason`). `reason` is `agent_api_off` (the agent API is off, so every stored PR goes) or `unmapped` (the PRs of repositories that left `mappings:`). Logged only when `count` is above 0. |
+| `feed cleanup failed` | warn | The startup removal of feed PRs failed (`err`). Notifycat still starts. |
 
-With the agent API on, `ignored webhook event` with `reason=no_handler` also shows `kind=updated` (a new push) and `kind=reopened`. Slack ignores these kinds, but the feed records them. See the [agent API guide](agent-api.md).
+`ignored webhook event` with `reason=no_handler` also shows `kind=updated` (a new push) and `kind=reopened`, whether the agent API is on or off. Slack ignores these kinds. The feed records them when the agent API is on. See the [agent API guide](agent-api.md).
 
 ## Release images
 

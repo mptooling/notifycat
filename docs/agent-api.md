@@ -12,15 +12,28 @@ This is for peer review. Engineers review their own PRs in their own pipelines.
 2. Set up the private admin port, the admin key, and the developer invites. [Agent API access](security.md#agent-api-access) has the steps. This page does not repeat them.
 3. Restart notifycat.
 
-With `agent_api.enabled: false`, notifycat records nothing for the feed and serves no `/api/v1/subs*` route.
+With `agent_api.enabled: false`, notifycat records nothing for the feed and serves no `/api/v1/subs*` route. It cannot see a PR close while the API is off, so at startup it removes every stored PR. Turning the API off and on again therefore starts the feed empty, like a first enable. Tokens and subscriptions stay. A PR comes back with its next recorded event and counts as new, so your token can receive it again.
 
-When the API is on, notifycat records the open PRs of every repository in your `mappings:`. It learns about a PR from its webhook. A PR that was already open before you turned the feed on appears the next time it changes. A PR that never changes after that is never listed. Webhooks that arrive while notifycat is down are lost, so those PRs are missed too.
+When the API is on, notifycat records the open PRs of every repository in your `mappings:`. It learns about a PR from its webhook. A PR that was already open before you turned the feed on appears after its next [recorded event](#what-notifycat-records). A PR that gets no such event is never listed. Webhooks that arrive while notifycat is down are lost, so those PRs are missed too.
+
+A repository that you remove from `mappings:` is no longer served. Its stored PRs are removed at the next start.
 
 Serve the public API over HTTPS only. Your reverse proxy does this.
 
+### What notifycat records
+
+Notifycat stores a PR, or refreshes its stored copy, on these webhook events:
+
+| Git host | Events |
+| --- | --- |
+| GitHub | `opened`, `synchronize` (a push), `reopened`, `ready_for_review` |
+| Bitbucket | The PR is created, and every update of an open PR that is not a draft |
+
+Other events do not refresh a stored PR, such as a GitHub edit, a review, a comment, or a label. A new title or description shows up with the next event in the table. A close, a merge, or a switch to draft removes the PR. A draft PR is never stored.
+
 ## Set up the agent
 
-Each developer redeems their invite once and gets a token (`nct_<id>_<secret>`). Put the URL and the token in your shell profile:
+Each developer redeems their invite once and gets a token (`nct_<id>_<secret>`). The admin sends them the command to run: the `redeem_command` of the invite response. See [Agent API access](security.md#agent-api-access). Put the URL and the token in your shell profile:
 
 ```sh
 # ~/.zshrc
@@ -31,23 +44,23 @@ export NOTIFYCAT_TOKEN='nct_<id>_<secret>'
 Subscribe once to the repositories you want to review:
 
 ```sh
-curl -fsS -X POST -H @- "$NOTIFYCAT_URL/api/v1/subs" \
+curl --fail-with-body -sS -X POST -H @- "$NOTIFYCAT_URL/api/v1/subs" \
   -d '{"repositories":["acme/api","acme/web"]}' <<<"Authorization: Bearer $NOTIFYCAT_TOKEN"
 ```
 
-The header comes from stdin (`-H @-`), so the token is not in the process list or the shell history.
+The header comes from stdin (`-H @-`), so the token is not in the process list or the shell history. `--fail-with-body` needs curl 7.76 or newer. On a 4xx or 5xx it makes curl fail and still prints the JSON error.
 
 Poll for new pull requests:
 
 ```sh
-curl -fsS -H @- "$NOTIFYCAT_URL/api/v1/subs/prs" <<<"Authorization: Bearer $NOTIFYCAT_TOKEN"
+curl --fail-with-body -sS -H @- "$NOTIFYCAT_URL/api/v1/subs/prs" <<<"Authorization: Bearer $NOTIFYCAT_TOKEN"
 ```
 
 Poll every minute or slower.
 
 ## Routes
 
-All routes need `Authorization: Bearer nct_<id>_<secret>`. Every response with a body is JSON. All responses carry `Cache-Control: no-store`. Times are RFC 3339 in UTC, such as `2026-10-28T09:14:03Z`.
+All routes need `Authorization: Bearer nct_<id>_<secret>`. Every feed response with a body is JSON. All feed responses carry `Cache-Control: no-store`. Times are RFC 3339 in UTC, such as `2026-10-28T09:14:03Z`.
 
 | Route | Result |
 | --- | --- |
@@ -63,6 +76,7 @@ The body is `{"repositories":["acme/api","acme/web"]}`. Use `["*"]` to subscribe
 - Names are lower-cased and de-duplicated. A repository you already follow is kept.
 - An empty or missing list, unknown fields, or invalid JSON give `400 invalid_body`.
 - A repository that is not in your `mappings:` gives `400` with the list of unknown names. Nothing is added.
+- An org tier such as `acme/*` cannot be subscribed to. It gives `400 unknown_repository`. Use `*` for all repositories, or list them.
 
     ```json
     {"error":"unknown_repository","repositories":["acme/unknown"]}
@@ -93,6 +107,7 @@ The body is `{"repositories":["acme/api","acme/web"]}`. Use `["*"]` to subscribe
 }
 ```
 
+- `author_id` is the git host's id for the author. GitHub gives the numeric user id as a string, such as `"4242"`. Bitbucket gives the `account_id`.
 - `created_at` is when the PR was opened on the git host. It is `null` when the webhook did not carry it.
 - `updated_at` is when notifycat last saw a change to the PR.
 - The list is ordered by `updated_at` (oldest first), then repository, then number.
@@ -105,13 +120,13 @@ A call without a query returns the open, non-draft PRs of your subscribed reposi
 `since` must be RFC 3339. Use the `Z` form, or write `+` as `%2B`. An unencoded `+` turns into a space and gives `400 invalid_since`. Let curl encode it:
 
 ```sh
-curl -fsS --get --data-urlencode "since=2026-10-28T09:00:00Z" \
+curl --fail-with-body -sS --get --data-urlencode "since=2026-10-28T09:00:00Z" \
   -H @- "$NOTIFYCAT_URL/api/v1/subs/prs" <<<"Authorization: Bearer $NOTIFYCAT_TOKEN"
 ```
 
 An empty `since`, a value that is not RFC 3339, or a query that cannot be parsed (for example `?since=%zz`) gives `400 invalid_since`. Other query parameters are ignored.
 
-`HEAD /api/v1/subs/prs` gives `405 method_not_allowed` with `Allow: GET`. A request that fails never marks PRs as received.
+`HEAD /api/v1/subs/prs` gives `405 method_not_allowed` with `Allow: GET`. A request that fails never marks PRs as received. But once the server has answered, its PRs are marked, even if the response is lost on the way to you. See [Recover a lost list](#recover-a-lost-list).
 
 ## Errors
 
@@ -138,21 +153,27 @@ A path that is not a feed route gets the plain-text 404 or 405 of the Go HTTP se
 - New commits on a PR do not send it again. Use `?since=` to read a PR again.
 - A draft PR is never delivered.
 - `?since=` re-reads and records nothing.
+- The first poll after you subscribe returns every open PR that notifycat knows for those repositories. There is no paging: they all come in one response.
+- If you unsubscribe and subscribe again, PRs you already received are not sent again. You get only the PRs that are new to your token.
 
 ### Recover a lost list
 
-If a run crashed after the poll and before it finished the reviews, the PRs are marked as received. Ask for them again with the time of the lost run:
+If a run crashed after the poll and before it finished the reviews, the PRs are already marked as received. The same is true when the response was lost on the way to you. Ask for them again with `?since=`.
+
+`since` matches a PR's last change (`updated_at`), not the time it was delivered. So use the time of your last good poll before the lost one, or any earlier time. An earlier time only returns more PRs. The time of the lost poll itself is too late: it misses the PRs that changed before it.
 
 ```sh
-curl -fsS --get --data-urlencode "since=2026-10-28T09:00:00Z" \
+curl --fail-with-body -sS --get --data-urlencode "since=2026-10-28T09:00:00Z" \
   -H @- "$NOTIFYCAT_URL/api/v1/subs/prs" <<<"Authorization: Bearer $NOTIFYCAT_TOKEN"
 ```
+
+If the lost poll was your first one, or your first after a new subscription, use an old time such as `1970-01-01T00:00:00Z`. Then skip the PRs you already reviewed.
 
 ## Review with Claude Code
 
 Run `/loop 5m` in Claude Code with this prompt:
 
-> Run `curl -fsS -H @- "$NOTIFYCAT_URL/api/v1/subs/prs" <<<"Authorization: Bearer $NOTIFYCAT_TOKEN"`. For each pull request: check it is still open, read its diff, and post a review. Never print `$NOTIFYCAT_TOKEN`.
+> Run `curl --fail-with-body -sS -H @- "$NOTIFYCAT_URL/api/v1/subs/prs" <<<"Authorization: Bearer $NOTIFYCAT_TOKEN"`. For each pull request: check it is still open, read its diff, and post a review. Never print `$NOTIFYCAT_TOKEN`.
 
 You can also run `claude -p` with the same prompt from cron.
 
@@ -172,10 +193,10 @@ The agent needs a credential for your git host. That is separate from the notify
     The REST API serves the diff and takes the comment:
 
     ```sh
-    curl -fsS -u "$BITBUCKET_USER:$BITBUCKET_APP_PASSWORD" \
+    curl --fail-with-body -sS -u "$BITBUCKET_USER:$BITBUCKET_APP_PASSWORD" \
       "https://api.bitbucket.org/2.0/repositories/acme/api/pullrequests/42/diff"
 
-    curl -fsS -u "$BITBUCKET_USER:$BITBUCKET_APP_PASSWORD" -X POST \
+    curl --fail-with-body -sS -u "$BITBUCKET_USER:$BITBUCKET_APP_PASSWORD" -X POST \
       -H "Content-Type: application/json" \
       -d '{"content":{"raw":"Review text"}}' \
       "https://api.bitbucket.org/2.0/repositories/acme/api/pullrequests/42/comments"
@@ -186,10 +207,11 @@ The agent needs a credential for your git host. That is separate from the notify
 - 200 subscriptions per token.
 - 16 KiB request body.
 - Notifycat misses PRs whose webhooks arrived while it was down.
-- A PR that was open before you enabled the feed, and never changes again, is never listed.
-- A repository that loses its mapping is no longer served or recorded.
+- A PR that was open before you enabled the feed is listed only after one of the events in [What notifycat records](#what-notifycat-records).
+- A repository that loses its mapping is no longer served or recorded. Its stored PRs are removed at the next start.
+- Turning the API off removes every stored PR at the next start. The feed starts empty when you turn it on again.
 - A stolen token reads PR titles, descriptions, branch names, author ids, links, and commit SHAs. No code. See [What a stolen token gets](security.md#what-a-stolen-token-gets).
 
 ## Logs
 
-The feed logs `feed subscriptions added`, `feed subscription removed`, `feed pull requests delivered`, and `feed pull request not recorded`. See [Operations](operations.md#logging).
+The feed logs `feed subscriptions added`, `feed subscription removed`, `feed pull requests delivered`, `feed pull request not recorded`, `feed pull requests removed`, and `feed cleanup failed`. See [Operations](operations.md#logging).

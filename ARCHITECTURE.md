@@ -106,7 +106,7 @@ flowchart TB
 | **maintenance** | Background housekeeping: delete stale message rows past their TTL; reconcile closed PRs; relocate messages after a channel change. | `cleanup`, `reconcile`, `relocate` |
 | **diagnostics** | Operator tooling: the preflight doctor, the `notifycat-config` CLI (list/validate), and the smoke-test delivery. | `doctor`, `mappingcli`, `smoke` |
 | **access** | Agent API access: an admin key guards a private admin port where invites are issued (one hour, single use) and tokens listed or deleted; a redeemed invite yields a bcrypt-hashed agent token checked as a Bearer credential. | — (new) |
-| **feed** | The agent PR feed: records the open PRs of configured repositories from webhook events, keeps each token's subscriptions, and serves each token the open PRs it has not received yet under `/api/v1/subs*`. | — (new) |
+| **feed** | The agent PR feed: records the open PRs of configured repositories from webhook events, keeps each token's subscriptions, and serves each token the open PRs it has not received yet under `/api/v1/subs*`. At startup it removes stored PRs it can no longer keep in sync: all of them when the agent API is off, those of unmapped repositories when it is on. | — (new) |
 
 `internal/app` (the old hand-written composition root) has been deleted: its wiring is per-domain fx modules, and its lifecycle orchestration is `fx.Lifecycle` hooks composed in `internal/runtime` and each `cmd/*/main.go`.
 

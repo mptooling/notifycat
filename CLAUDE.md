@@ -58,13 +58,13 @@ Nine domains live under `internal/<domain>/`, each with three layers (`domain/`,
 | `maintenance` | Background housekeeping: delete stale message rows; reconcile closed PRs; relocate messages after a channel change |
 | `diagnostics` | Operator tooling: `notifycat-doctor`, `notifycat-config`, smoke test |
 | `access` | Agent API access: admin key, one-hour single-use invites, bcrypt-hashed agent tokens |
-| `feed` | Agent PR feed: records open PRs from webhooks, per-token subscriptions, serves undelivered open PRs under `/api/v1/subs*` |
+| `feed` | Agent PR feed: records open PRs from webhooks, per-token subscriptions, serves undelivered open PRs under `/api/v1/subs*`; removes stale feed PRs at startup |
 
 The shared kernel (`internal/kernel`) holds pure value objects (`PR`, `Event`, `Sender`, `Review`) and GitHub event/action/review-state enums — stdlib only. The shared platform (`internal/platform/`) holds domain-agnostic clients: `config`, `persistence` (GORM/SQLite), `slack`, `github`, `httpx`, and `security` (HMAC `SignatureVerifier` with `GitHubVerifier`/`SlackVerifier` adapters).
 
 ### Composition root
 
-`internal/runtime` is an `fx.Module` that builds the full dependency graph, runs the startup-validation gate as an `fx.Invoke`, and drives the HTTP server, the optional admin server, plus cleanup/digest schedulers via `fx.Lifecycle` hooks. `cmd/notifycat-server/main.go` is `fx.New(fx.Supply(cfg), runtime.Module, fx.NopLogger)` plus manual `Start`/`Wait`/`Stop` (fatal server error → exit 1 via `fx.Shutdowner`; SIGTERM → graceful shutdown → exit 0). The seven CLI binaries (`notifycat-{migrate,reconcile,relocate,config,doctor,smoke,keygen}`) construct their domain use cases directly in `main`.
+`internal/runtime` is an `fx.Module` that builds the full dependency graph, runs the startup-validation gate and the feed startup cleanup as `fx.Invoke`s, and drives the HTTP server, the optional admin server, plus cleanup/digest schedulers via `fx.Lifecycle` hooks. `cmd/notifycat-server/main.go` is `fx.New(fx.Supply(cfg), runtime.Module, fx.NopLogger)` plus manual `Start`/`Wait`/`Stop` (fatal server error → exit 1 via `fx.Shutdowner`; SIGTERM → graceful shutdown → exit 0). The seven CLI binaries (`notifycat-{migrate,reconcile,relocate,config,doctor,smoke,keygen}`) construct their domain use cases directly in `main`.
 
 ### Request flow
 

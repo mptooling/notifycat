@@ -266,15 +266,15 @@ export NOTIFYCAT_URL=https://notifycat.example.com
 export NOTIFYCAT_TOKEN=nct_…
 
 # once: subscribe (the header comes from stdin, so the token is not on the command line)
-curl -fsS -X POST -H @- "$NOTIFYCAT_URL/api/v1/subs" \
+curl --fail-with-body -sS -X POST -H @- "$NOTIFYCAT_URL/api/v1/subs" \
   -d '{"repositories":["acme/api","acme/web"]}' <<<"Authorization: Bearer $NOTIFYCAT_TOKEN"
 ```
 
 Claude Code loop, for example `/loop 5m` with this prompt (or `claude -p` from cron):
 
-> Run `curl -fsS -H @- "$NOTIFYCAT_URL/api/v1/subs/prs" <<<"Authorization: Bearer $NOTIFYCAT_TOKEN"`. For each pull request: check it is still open, read its diff, and post a review. Never print `$NOTIFYCAT_TOKEN`.
+> Run `curl --fail-with-body -sS -H @- "$NOTIFYCAT_URL/api/v1/subs/prs" <<<"Authorization: Bearer $NOTIFYCAT_TOKEN"`. For each pull request: check it is still open, read its diff, and post a review. Never print `$NOTIFYCAT_TOKEN`.
 
-The docs show the "read the diff, post the review" step for GitHub (`gh`) and for Bitbucket (REST API). They recommend polling every minute or slower. They show how to get back a lost list: `GET /api/v1/subs/prs?since=<time of the lost run>`.
+The docs show the "read the diff, post the review" step for GitHub (`gh`) and for Bitbucket (REST API). They recommend polling every minute or slower. They show how to get back a lost list: `GET /api/v1/subs/prs?since=<time of the last good poll before the lost one>`, or any earlier time. `since` matches a PR's last change, not when it was delivered, so the time of the lost run itself misses PRs. For a lost first poll, use an old time such as `1970-01-01T00:00:00Z` and skip PRs already reviewed.
 
 ## Docs
 
