@@ -1,9 +1,12 @@
 package runtime_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 
@@ -39,4 +42,17 @@ func TestModule_StartsAndStops(t *testing.T) {
 	app := fxtest.New(t, runtime.Module, fx.Supply(cfg), fx.NopLogger)
 	app.RequireStart()
 	app.RequireStop()
+}
+
+func TestModule_PublicServerBindFailureFailsStart(t *testing.T) {
+	cfg := newTestConfig(t)
+	cfg.Addr = takenLoopbackAddr(t)
+	app := fx.New(fx.Supply(cfg), runtime.Module, fx.NopLogger)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	err := app.Start(ctx)
+
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "http server")
 }

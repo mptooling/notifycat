@@ -13,8 +13,10 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -439,18 +441,24 @@ func startupGate(provider *routingapp.Provider, cfg config.Config, slackClient *
 
 // registerServer serves the public HTTP server in the lifecycle.
 func registerServer(lc fx.Lifecycle, server *http.Server, logger *slog.Logger, shutdowner fx.Shutdowner) {
-	serveInLifecycle(lc, server, "listening", logger, shutdowner)
+	serveInLifecycle(lc, server, publicServerName, "listening", logger, shutdowner)
 }
 
-// serveInLifecycle runs ListenAndServe from OnStart and Shutdown from OnStop. A
-// fatal serve error, such as a taken port, shuts the app down with exit code 1.
-func serveInLifecycle(lifecycle fx.Lifecycle, server *http.Server, listeningMessage string, logger *slog.Logger, shutdowner fx.Shutdowner) {
+// serveInLifecycle binds the listener in OnStart, so a taken port fails
+// App.Start with an error that names the server, then serves in the background
+// and shuts down in OnStop. A later serve error shuts the app down with exit
+// code 1.
+func serveInLifecycle(lifecycle fx.Lifecycle, server *http.Server, serverName, listeningMessage string, logger *slog.Logger, shutdowner fx.Shutdowner) {
 	lifecycle.Append(fx.Hook{
-		OnStart: func(context.Context) error {
+		OnStart: func(ctx context.Context) error {
+			listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", server.Addr)
+			if err != nil {
+				return fmt.Errorf("%s: %w", serverName, err)
+			}
+			logger.Info(listeningMessage, slog.String("addr", server.Addr))
 			go func() {
-				logger.Info(listeningMessage, slog.String("addr", server.Addr))
-				if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-					logger.Error("http server stopped", slog.Any("err", err))
+				if serveErr := server.Serve(listener); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+					logger.Error(serverName+" stopped", slog.Any("err", serveErr))
 					_ = shutdowner.Shutdown(fx.ExitCode(1))
 				}
 			}()

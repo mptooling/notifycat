@@ -1,7 +1,9 @@
 package runtime_test
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -79,6 +81,20 @@ func freeLoopbackAddr(t *testing.T) string {
 	address := listener.Addr().String()
 	require.NoError(t, listener.Close())
 	return address
+}
+
+func takenLoopbackAddr(t *testing.T) string {
+	t.Helper()
+
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = listener.Close() })
+	return listener.Addr().String()
+}
+
+func captureRuntimeLogger() (*slog.Logger, *bytes.Buffer) {
+	logged := &bytes.Buffer{}
+	return slog.New(slog.NewTextHandler(logged, nil)), logged
 }
 
 func statusOf(url string) int {
@@ -175,25 +191,52 @@ func TestModule_ServesAdminServerOnSecondListener(t *testing.T) {
 	app.RequireStop()
 }
 
-func TestModule_AdminServerBindFailureExitsOne(t *testing.T) {
-	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = listener.Close() })
+func TestModule_AdminServerBindFailureFailsStart(t *testing.T) {
 	cfg := agentAPIConfig(t)
 	cfg.Addr = "127.0.0.1:0"
-	cfg.AdminAddr = listener.Addr().String()
+	cfg.AdminAddr = takenLoopbackAddr(t)
 	app := fx.New(fx.Supply(cfg), runtime.Module, fx.NopLogger)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	require.NoError(t, app.Start(ctx))
+	err := app.Start(ctx)
 
-	var signal fx.ShutdownSignal
-	select {
-	case signal = <-app.Wait():
-	case <-time.After(5 * time.Second):
-		require.FailNow(t, "a taken admin port must shut the app down")
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "admin server")
+}
+
+func TestModule_WarnsWhenOnlyOneAdminSettingIsSet(t *testing.T) {
+	testCases := []struct {
+		name            string
+		agentAPIEnabled bool
+		adminAddr       string
+		wantReason      string
+	}{
+		{name: "agent api without admin port", agentAPIEnabled: true, adminAddr: "", wantReason: "server.admin_addr is empty"},
+		{name: "admin port without agent api", agentAPIEnabled: false, adminAddr: "127.0.0.1:9091", wantReason: "agent_api.enabled is false"},
 	}
-	assert.Equal(t, 1, signal.ExitCode)
-	require.NoError(t, app.Stop(ctx))
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			cfg := agentAPIConfig(t)
+			cfg.AgentAPIEnabled = testCase.agentAPIEnabled
+			cfg.AdminAddr = testCase.adminAddr
+			logger, logged := captureRuntimeLogger()
+
+			buildAgentAPIApp(t, cfg, fx.Replace(logger))
+
+			assert.Contains(t, logged.String(),
+				`level=WARN msg="admin server not started" reason="`+testCase.wantReason+`"`)
+		})
+	}
+}
+
+func TestModule_NoAdminServerWarningWhenAgentAPIAndAdminPortAreOff(t *testing.T) {
+	cfg := agentAPIConfig(t)
+	cfg.AgentAPIEnabled = false
+	cfg.AdminAddr = ""
+	logger, logged := captureRuntimeLogger()
+
+	buildAgentAPIApp(t, cfg, fx.Replace(logger))
+
+	assert.NotContains(t, logged.String(), "admin server not started")
 }

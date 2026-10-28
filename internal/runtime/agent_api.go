@@ -75,13 +75,16 @@ func buildAdminServer(inputs adminServerInputs) *AdminServer {
 }
 
 // registerAdminServer serves the admin server in the lifecycle, and warns when
-// an admin address is set but the agent API is disabled.
+// only one of the agent API and the admin address is set.
 func registerAdminServer(lifecycle fx.Lifecycle, adminServer *AdminServer, cfg config.Config, logger *slog.Logger, shutdowner fx.Shutdowner) {
-	if adminServer == nil {
-		if cfg.AdminAddr != "" {
-			logger.Warn("admin server not started", slog.String("reason", "agent_api.enabled is false"))
-		}
+	if adminServer != nil {
+		serveInLifecycle(lifecycle, adminServer.Server, adminServerName, "admin server listening", logger, shutdowner)
 		return
 	}
-	serveInLifecycle(lifecycle, adminServer.Server, "admin server listening", logger, shutdowner)
+	switch {
+	case cfg.AdminAddr != "":
+		logger.Warn("admin server not started", slog.String("reason", agentAPIDisabledReason))
+	case cfg.AgentAPIEnabled:
+		logger.Warn("admin server not started", slog.String("reason", adminAddrEmptyReason))
+	}
 }
