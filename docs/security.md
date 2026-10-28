@@ -15,7 +15,7 @@ Run through this before you point a production webhook at Notifycat:
 - [ ] Public traffic terminates TLS in front of Notifycat (the Compose install does this with Caddy); the server itself
   speaks plain HTTP only on the internal network.
 - [ ] If you enable the [agent API](#agent-api-access), the admin port is **not** published to the internet — only reachable through an SSH tunnel, `kubectl port-forward`, or `fly proxy`.
-- [ ] `NOTIFYCAT_ADMIN_KEY_HASH` is wrapped in single quotes in `.env`, so `$` in the bcrypt hash is not expanded.
+- [ ] `NOTIFYCAT_ADMIN_KEY_HASH` lives in your secret store or the gitignored `.env` — never in git — and is wrapped in single quotes in `.env`, so `$` in the bcrypt hash is not expanded.
 
 ## What Notifycat asks for — and what it doesn't
 
