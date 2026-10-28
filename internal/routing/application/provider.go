@@ -8,6 +8,8 @@ import (
 	domain "github.com/mptooling/notifycat/internal/routing/domain"
 )
 
+var _ domain.EntryLister = (*Provider)(nil)
+
 // Provider serves repository → mapping lookups from a parsed mappings.yaml.
 // Construct with NewProvider; safe for concurrent reads (no mutation after construction).
 type Provider struct {

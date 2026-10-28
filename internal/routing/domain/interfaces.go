@@ -31,3 +31,8 @@ type ChangedFilesReader interface {
 type TargetResolver interface {
 	ResolveTargets(ctx context.Context, repository string, prNumber int) (RepoMapping, []Target, error)
 }
+
+// EntryLister lists the validation entries of the configured mappings.
+type EntryLister interface {
+	Entries() []Entry
+}
