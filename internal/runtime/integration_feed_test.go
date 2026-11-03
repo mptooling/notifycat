@@ -98,18 +98,22 @@ func feedConfig(t *testing.T, agentAPIEnabled bool) config.Config {
 }
 
 func pullRequestEvent(action, headSHA string) string {
+	return numberedPullRequestEvent(action, 42, headSHA)
+}
+
+func numberedPullRequestEvent(action string, number int, headSHA string) string {
 	return fmt.Sprintf(`{
 		"action": %q,
 		"repository": {"full_name": %q},
 		"pull_request": {
-			"number": 42, "title": "Retry failed deliveries", "body": "Adds a retry loop.",
+			"number": %d, "title": "Retry failed deliveries", "body": "Adds a retry loop.",
 			"html_url": "https://github.com/acme/api/pull/42",
 			"user": {"login": "bob", "id": 1001}, "draft": false, "merged": false,
 			"created_at": "2026-10-28T09:00:00Z",
 			"head": {"sha": %q, "ref": "feature/retries"},
 			"base": {"ref": "main"}
 		}
-	}`, action, feedRepository, headSHA)
+	}`, action, feedRepository, number, headSHA)
 }
 
 func deliverPullRequestEvent(t *testing.T, public *httptest.Server, cfg config.Config, payload string) int {
@@ -135,10 +139,18 @@ func listFeed(t *testing.T, public *httptest.Server, query string, tokenAuth map
 	return listed.PullRequests
 }
 
-func redeemAgentToken(t *testing.T, public, admin *httptest.Server, adminAuth map[string]string) string {
+func pullRequestNumbers(pullRequests []feedPullRequest) []int {
+	numbers := make([]int, 0, len(pullRequests))
+	for _, pullRequest := range pullRequests {
+		numbers = append(numbers, pullRequest.Number)
+	}
+	return numbers
+}
+
+func redeemAgentToken(t *testing.T, public, admin *httptest.Server, adminAuth map[string]string, user string) string {
 	t.Helper()
 
-	createStatus, createBody := request(t, admin, http.MethodPost, "/admin/v1/invites", `{"user":"alice"}`, adminAuth)
+	createStatus, createBody := request(t, admin, http.MethodPost, "/admin/v1/invites", fmt.Sprintf(`{"user":%q}`, user), adminAuth)
 	require.Equal(t, http.StatusCreated, createStatus)
 	var invite struct {
 		Invite string `json:"invite"`
@@ -166,7 +178,7 @@ func TestIntegration_AgentFeedFlow(t *testing.T) {
 	t.Cleanup(admin.Close)
 	adminAuth := map[string]string{"Authorization": "Bearer " + testAdminKey}
 
-	token := redeemAgentToken(t, public, admin, adminAuth)
+	token := redeemAgentToken(t, public, admin, adminAuth, "alice")
 	credential, err := accessdomain.ParseCredential(token, accessdomain.TokenPrefix)
 	require.NoError(t, err)
 	tokenAuth := map[string]string{"Authorization": "Bearer " + token}
@@ -222,8 +234,8 @@ func TestIntegration_ReviewPartyDeliversWithinTheCap(t *testing.T) {
 	admin := httptest.NewServer(adminServer.Handler)
 	t.Cleanup(admin.Close)
 	adminAuth := map[string]string{"Authorization": "Bearer " + testAdminKey}
-	firstMember := map[string]string{"Authorization": "Bearer " + redeemAgentToken(t, public, admin, adminAuth)}
-	secondMember := map[string]string{"Authorization": "Bearer " + redeemAgentToken(t, public, admin, adminAuth)}
+	firstMember := map[string]string{"Authorization": "Bearer " + redeemAgentToken(t, public, admin, adminAuth, "alice")}
+	secondMember := map[string]string{"Authorization": "Bearer " + redeemAgentToken(t, public, admin, adminAuth, "bob")}
 	for _, member := range []map[string]string{firstMember, secondMember} {
 		status, _ := request(t, public, http.MethodPost, "/api/v1/subs", `{"repositories":["acme/api"],"type":"party"}`, member)
 		require.Equal(t, http.StatusOK, status)
@@ -246,6 +258,78 @@ func TestIntegration_ReviewPartyDeliversWithinTheCap(t *testing.T) {
 	require.NoError(t, db.Table("feed_polls").Count(&polledTokens).Error)
 	assert.Equal(t, int64(2), polledTokens)
 	assert.Regexp(t, `msg="feed pull requests delivered" user=alice token_id=[0-9a-f]+ count=1 party=1`, logged.String())
+}
+
+func TestIntegration_ReviewPartyFlow(t *testing.T) {
+	cfg := feedConfig(t, true)
+	logged := &lockedBuffer{}
+	clock := weekdayClock()
+	public, adminServer := buildFeedApp(t, cfg, clock, fx.Replace(slog.New(slog.NewTextHandler(logged, nil))))
+	require.NotNil(t, adminServer)
+	admin := httptest.NewServer(adminServer.Handler)
+	t.Cleanup(admin.Close)
+	adminAuth := map[string]string{"Authorization": "Bearer " + testAdminKey}
+	alice := map[string]string{"Authorization": "Bearer " + redeemAgentToken(t, public, admin, adminAuth, "alice")}
+	bob := map[string]string{"Authorization": "Bearer " + redeemAgentToken(t, public, admin, adminAuth, "bob")}
+	carol := map[string]string{"Authorization": "Bearer " + redeemAgentToken(t, public, admin, adminAuth, "carol")}
+	subscribeBodies := []struct {
+		auth map[string]string
+		body string
+	}{
+		{alice, `{"repositories":["acme/api"],"type":"party"}`},
+		{bob, `{"repositories":["acme/api"],"type":"party"}`},
+		{carol, `{"repositories":["acme/api"]}`},
+	}
+	for _, subscribe := range subscribeBodies {
+		status, _ := request(t, public, http.MethodPost, "/api/v1/subs", subscribe.body, subscribe.auth)
+		require.Equal(t, http.StatusOK, status)
+		require.Empty(t, listFeed(t, public, "", subscribe.auth))
+	}
+	sinceBeforeOpenedQuery := sinceQuery(clock)
+
+	require.Equal(t, http.StatusOK, deliverPullRequestEvent(t, public, cfg, numberedPullRequestEvent("opened", 42, openedHeadSHA)))
+	aliceFirst := pullRequestNumbers(listFeed(t, public, "", alice))
+	bobFirst := pullRequestNumbers(listFeed(t, public, "", bob))
+	carolFirst := pullRequestNumbers(listFeed(t, public, "", carol))
+	require.Equal(t, http.StatusOK, deliverPullRequestEvent(t, public, cfg, numberedPullRequestEvent("opened", 43, openedHeadSHA)))
+	aliceSecond := pullRequestNumbers(listFeed(t, public, "", alice))
+	bobSecond := pullRequestNumbers(listFeed(t, public, "", bob))
+	aliceReceived := pullRequestNumbers(listFeed(t, public, sinceBeforeOpenedQuery, alice))
+	patchStatus, patchBody := request(t, public, http.MethodPatch, "/api/v1/subs", `{"repositories":["acme/api"],"type":"solo"}`, alice)
+	aliceSolo := pullRequestNumbers(listFeed(t, public, "", alice))
+
+	assert.Equal(t, []int{42}, aliceFirst)
+	assert.Empty(t, bobFirst, "the cap of one party review is taken by alice")
+	assert.Equal(t, []int{42}, carolFirst, "a solo subscriber still gets every pull request")
+	assert.Equal(t, []int{}, aliceSecond, "alice has load 1 and bob has load 0, so it is bob's turn")
+	assert.Equal(t, []int{43}, bobSecond)
+	assert.Equal(t, []int{42}, aliceReceived, "a since read returns only what alice received")
+	assert.Equal(t, http.StatusOK, patchStatus)
+	assert.Contains(t, patchBody, `"type":"solo"`)
+	assert.Equal(t, []int{43}, aliceSolo, "a solo subscriber gets the pull request the party gave to bob")
+	assert.Regexp(t, `msg="feed pull requests delivered" user=alice token_id=[0-9a-f]+ count=1 party=1`, logged.String())
+}
+
+func TestIntegration_FeedDayOff(t *testing.T) {
+	cfg := feedConfig(t, true)
+	logged := &lockedBuffer{}
+	clock := &movingClock{start: time.Date(2026, 11, 7, 10, 0, 0, 0, time.UTC), started: time.Now()}
+	public, adminServer := buildFeedApp(t, cfg, clock, fx.Replace(slog.New(slog.NewTextHandler(logged, &slog.HandlerOptions{Level: slog.LevelDebug}))))
+	require.NotNil(t, adminServer)
+	admin := httptest.NewServer(adminServer.Handler)
+	t.Cleanup(admin.Close)
+	token := map[string]string{"Authorization": "Bearer " + redeemAgentToken(t, public, admin, map[string]string{"Authorization": "Bearer " + testAdminKey}, "alice")}
+	status, _ := request(t, public, http.MethodPost, "/api/v1/subs", `{"repositories":["acme/api"]}`, token)
+	require.Equal(t, http.StatusOK, status)
+	sinceBeforeOpenedQuery := sinceQuery(clock)
+	require.Equal(t, http.StatusOK, deliverPullRequestEvent(t, public, cfg, pullRequestEvent("opened", openedHeadSHA)))
+
+	polled := listFeed(t, public, "", token)
+	received := listFeed(t, public, sinceBeforeOpenedQuery, token)
+
+	assert.Empty(t, polled, "a day off delivers nothing")
+	assert.Equal(t, []int{42}, pullRequestNumbers(received))
+	assert.Contains(t, logged.String(), "feed day off")
 }
 
 func TestIntegration_AgentAPIDisabled_NothingTracked(t *testing.T) {
@@ -276,7 +360,7 @@ func TestIntegration_SubscribeToAnOrgTierIsUnknownRepository(t *testing.T) {
 	require.NotNil(t, adminServer)
 	admin := httptest.NewServer(adminServer.Handler)
 	t.Cleanup(admin.Close)
-	token := redeemAgentToken(t, public, admin, map[string]string{"Authorization": "Bearer " + testAdminKey})
+	token := redeemAgentToken(t, public, admin, map[string]string{"Authorization": "Bearer " + testAdminKey}, "alice")
 
 	status, body := request(t, public, http.MethodPost, "/api/v1/subs", `{"repositories":["acme/*"]}`,
 		map[string]string{"Authorization": "Bearer " + token})
@@ -296,7 +380,7 @@ func TestIntegration_ListRepositories(t *testing.T) {
 	require.NotNil(t, adminServer)
 	admin := httptest.NewServer(adminServer.Handler)
 	t.Cleanup(admin.Close)
-	token := redeemAgentToken(t, public, admin, map[string]string{"Authorization": "Bearer " + testAdminKey})
+	token := redeemAgentToken(t, public, admin, map[string]string{"Authorization": "Bearer " + testAdminKey}, "alice")
 
 	status, body := request(t, public, http.MethodGet, "/api/v1/repos", "", map[string]string{"Authorization": "Bearer " + token})
 
