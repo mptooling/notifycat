@@ -235,9 +235,9 @@ If a run crashed after the poll and before it finished the reviews, the PRs are 
 
 If a normal poll returns a 5xx error, the server may have marked PRs before it failed. Call `GET /api/v1/subs/prs?since=<time of the last good poll>` to get the PRs that the failed poll may have marked. On a party repository, `since` returns only PRs that this token received.
 
-`since` matches the time that notifycat delivered a PR to your token. The lost poll came after the last good poll. So the time of the last good poll returns every PR that the lost poll marked. This includes a PR that changed long before the lost poll. An example is a PR that waited for a party turn or a working day.
+`since` matches the time that notifycat delivered a PR to your token. The lost poll came after the last good poll. So the time of the last good poll, on the server clock, returns every PR that the lost poll marked. This includes a PR that changed long before the lost poll. An example is a PR that waited for a party turn or a working day.
 
-`since` also matches the last change of a PR (`updated_at`). A webhook can still record a change while you poll, and `updated_at` comes from the clock of the notifycat server. To get these changes too, use a time a few minutes before the last good poll. An earlier time only returns more PRs.
+`since` also matches the last change of a PR (`updated_at`). A webhook can still record a change while you poll. Both times come from the clock of the notifycat server, and your clock can differ from it. To get these changes, use a time a few minutes before the last good poll. This time also covers a clock difference. An earlier time only returns more PRs.
 
 ```sh
 curl --fail-with-body -sS --get --data-urlencode "since=2026-10-28T09:00:00Z" \
