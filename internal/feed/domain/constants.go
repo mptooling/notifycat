@@ -5,6 +5,9 @@ import "time"
 // RecordTimeout caps how long a webhook waits for the feed record.
 const RecordTimeout = 3 * time.Second
 
+// AwayAfter is how long a party member stays a candidate after its last poll.
+const AwayAfter = 24 * time.Hour
+
 // Feed limits, the repository name rule, routes and parameter names.
 const (
 	AllRepositories          = "*"

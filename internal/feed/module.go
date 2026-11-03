@@ -62,7 +62,9 @@ type pullRequestsParams struct {
 	Subscriptions domain.SubscriptionStore
 	PullRequests  domain.PullRequestStore
 	Deliveries    domain.DeliveryStore
+	Polls         domain.PollStore
 	Catalog       domain.RepositoryCatalog
+	Calendar      domain.WorkCalendar
 	Clock         domain.Clock
 	Logger        *slog.Logger
 }
@@ -72,7 +74,9 @@ func providePullRequests(params pullRequestsParams) *application.PullRequests {
 		Subscriptions: params.Subscriptions,
 		PullRequests:  params.PullRequests,
 		Deliveries:    params.Deliveries,
+		Polls:         params.Polls,
 		Catalog:       params.Catalog,
+		Calendar:      params.Calendar,
 		Clock:         params.Clock,
 		Logger:        params.Logger,
 	})

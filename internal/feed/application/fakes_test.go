@@ -10,7 +10,7 @@ import (
 	"github.com/mptooling/notifycat/internal/feed/domain"
 )
 
-var now = time.Date(2026, 10, 28, 9, 0, 0, 0, time.UTC)
+var now = time.Date(2026, 11, 3, 10, 0, 0, 0, time.UTC)
 
 const tokenID = "fedcba9876543210fedcba9876543210"
 
@@ -57,10 +57,14 @@ func (store *fakeSubscriptionStore) DeleteRepositories(_ context.Context, reposi
 }
 
 func (store *fakeSubscriptionStore) seed(repositories ...string) {
+	store.seedOfType(domain.SubscriptionTypeSolo, repositories...)
+}
+
+func (store *fakeSubscriptionStore) seedOfType(subscriptionType domain.SubscriptionType, repositories ...string) {
 	for _, repository := range repositories {
 		store.nextID++
 		store.subscriptions = append(store.subscriptions, domain.Subscription{
-			ID: store.nextID, TokenID: tokenID, Repository: repository, Type: domain.SubscriptionTypeSolo, CreatedAt: now,
+			ID: store.nextID, TokenID: tokenID, Repository: repository, Type: subscriptionType, CreatedAt: now,
 		})
 	}
 }
@@ -137,6 +141,8 @@ type fakePullRequestStore struct {
 	repositories          []string
 	changed               []domain.PullRequest
 	changedCalls          []changedCall
+	received              []domain.PullRequest
+	receivedCalls         []domain.ReceivedQuery
 	deleteAllCalls        int
 	deletedRepositories   [][]string
 	removedCount          int
@@ -151,8 +157,9 @@ func (store *fakePullRequestStore) Find(context.Context, domain.PullRequestKey) 
 	return domain.PullRequest{}, false, nil
 }
 
-func (store *fakePullRequestStore) ReceivedSince(context.Context, domain.ReceivedQuery) ([]domain.PullRequest, error) {
-	return nil, nil
+func (store *fakePullRequestStore) ReceivedSince(_ context.Context, query domain.ReceivedQuery) ([]domain.PullRequest, error) {
+	store.receivedCalls = append(store.receivedCalls, query)
+	return store.received, nil
 }
 
 type changedCall struct {
@@ -201,18 +208,79 @@ func (store *fakePullRequestStore) ChangedSince(_ context.Context, repositories 
 	return store.changed, nil
 }
 
+type callLog struct {
+	calls []string
+}
+
+func (recorded *callLog) add(call string) {
+	if recorded != nil {
+		recorded.calls = append(recorded.calls, call)
+	}
+}
+
 type fakeDeliveryStore struct {
-	claims  []domain.Claim
-	claimed []domain.PullRequest
+	claims      []domain.Claim
+	claimed     []domain.PullRequest
+	claimErr    error
+	partyClaims []domain.PartyClaim
+	partyResult domain.PartyClaimResult
+	partyErr    error
+	calls       *callLog
 }
 
 func (store *fakeDeliveryStore) Claim(_ context.Context, claim domain.Claim) ([]domain.PullRequest, error) {
+	store.calls.add("claim")
 	store.claims = append(store.claims, claim)
+	if store.claimErr != nil {
+		return nil, store.claimErr
+	}
 	return store.claimed, nil
 }
 
-func (store *fakeDeliveryStore) ClaimParty(context.Context, domain.PartyClaim) (domain.PartyClaimResult, error) {
-	return domain.PartyClaimResult{}, nil
+func (store *fakeDeliveryStore) ClaimParty(_ context.Context, claim domain.PartyClaim) (domain.PartyClaimResult, error) {
+	store.calls.add("claim party")
+	store.partyClaims = append(store.partyClaims, claim)
+	if store.partyErr != nil {
+		return domain.PartyClaimResult{}, store.partyErr
+	}
+	return store.partyResult, nil
+}
+
+type pollRecord struct {
+	tokenID  string
+	polledAt time.Time
+}
+
+type fakePollStore struct {
+	records []pollRecord
+	err     error
+	calls   *callLog
+}
+
+func (store *fakePollStore) Record(_ context.Context, token string, polledAt time.Time) error {
+	store.calls.add("record poll")
+	if store.err != nil {
+		return store.err
+	}
+	store.records = append(store.records, pollRecord{tokenID: token, polledAt: polledAt})
+	return nil
+}
+
+type fakeWorkCalendar struct {
+	dayOff       bool
+	day          string
+	dayOffChecks []time.Time
+}
+
+func (calendar *fakeWorkCalendar) IsDayOff(moment time.Time) bool {
+	calendar.dayOffChecks = append(calendar.dayOffChecks, moment)
+	return calendar.dayOff
+}
+
+func (calendar *fakeWorkCalendar) Day(time.Time) string { return calendar.day }
+
+func (calendar *fakeWorkCalendar) AddWorkingTime(start time.Time, workingTime time.Duration) time.Time {
+	return start.Add(workingTime)
 }
 
 type fakeCatalog struct {
@@ -250,4 +318,9 @@ func (clock *fakeClock) Now() time.Time { return clock.now }
 func captureLogger() (*slog.Logger, *bytes.Buffer) {
 	buffer := &bytes.Buffer{}
 	return slog.New(slog.NewTextHandler(buffer, nil)), buffer
+}
+
+func captureDebugLogger() (*slog.Logger, *bytes.Buffer) {
+	buffer := &bytes.Buffer{}
+	return slog.New(slog.NewTextHandler(buffer, &slog.HandlerOptions{Level: slog.LevelDebug})), buffer
 }

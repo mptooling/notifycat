@@ -78,7 +78,9 @@ type PullRequestsParams struct {
 	Subscriptions SubscriptionStore
 	PullRequests  PullRequestStore
 	Deliveries    DeliveryStore
+	Polls         PollStore
 	Catalog       RepositoryCatalog
+	Calendar      WorkCalendar
 	Clock         Clock
 	Logger        *slog.Logger
 }

@@ -19,10 +19,12 @@ import (
 	"gorm.io/gorm"
 
 	accessdomain "github.com/mptooling/notifycat/internal/access/domain"
+	feeddomain "github.com/mptooling/notifycat/internal/feed/domain"
 	"github.com/mptooling/notifycat/internal/platform/config"
 	"github.com/mptooling/notifycat/internal/platform/persistence"
 	routingapp "github.com/mptooling/notifycat/internal/routing/application"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
+	"github.com/mptooling/notifycat/internal/runtime"
 )
 
 const (
@@ -46,6 +48,31 @@ func (locked *lockedBuffer) String() string {
 	locked.mu.Lock()
 	defer locked.mu.Unlock()
 	return locked.buffer.String()
+}
+
+type movingClock struct {
+	start   time.Time
+	started time.Time
+}
+
+func (clock *movingClock) Now() time.Time {
+	return clock.start.Add(time.Since(clock.started)).UTC()
+}
+
+// weekdayClock starts on a Tuesday morning, so a feed poll never lands on a day off.
+func weekdayClock() *movingClock {
+	return &movingClock{start: time.Date(2026, 11, 3, 10, 0, 0, 0, time.UTC), started: time.Now()}
+}
+
+func buildFeedApp(t *testing.T, cfg config.Config, clock feeddomain.Clock, options ...fx.Option) (*httptest.Server, *runtime.AdminServer) {
+	t.Helper()
+
+	feedClock := fx.Decorate(func(feeddomain.Clock) feeddomain.Clock { return clock })
+	return buildAgentAPIApp(t, cfg, append([]fx.Option{feedClock}, options...)...)
+}
+
+func sinceQuery(clock feeddomain.Clock) string {
+	return "?since=" + clock.Now().Truncate(time.Second).Format(time.RFC3339)
 }
 
 type feedPullRequest struct {
@@ -132,7 +159,8 @@ func TestIntegration_AgentFeedFlow(t *testing.T) {
 	cfg := feedConfig(t, true)
 	logged := &lockedBuffer{}
 	debugLogger := slog.New(slog.NewTextHandler(logged, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	public, adminServer := buildAgentAPIApp(t, cfg, fx.Replace(debugLogger))
+	clock := weekdayClock()
+	public, adminServer := buildFeedApp(t, cfg, clock, fx.Replace(debugLogger))
 	require.NotNil(t, adminServer)
 	admin := httptest.NewServer(adminServer.Handler)
 	t.Cleanup(admin.Close)
@@ -151,7 +179,7 @@ func TestIntegration_AgentFeedFlow(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(subscribeBody), &subscribed))
 	require.Len(t, subscribed.Subscriptions, 1)
 	require.Equal(t, feedRepository, subscribed.Subscriptions[0].Repository)
-	sinceBeforeOpenedQuery := "?since=" + time.Now().UTC().Truncate(time.Second).Format(time.RFC3339)
+	sinceBeforeOpenedQuery := sinceQuery(clock)
 
 	require.Equal(t, http.StatusOK, deliverPullRequestEvent(t, public, cfg, pullRequestEvent("opened", openedHeadSHA)))
 	opened := listFeed(t, public, "", tokenAuth)
@@ -182,6 +210,42 @@ func TestIntegration_AgentFeedFlow(t *testing.T) {
 	assert.Contains(t, logged.String(), "feed pull requests delivered", "the buffer captures the server logs")
 	assert.NotContains(t, logged.String(), token)
 	assert.NotContains(t, logged.String(), credential.Secret)
+}
+
+func TestIntegration_ReviewPartyDeliversWithinTheCap(t *testing.T) {
+	cfg := feedConfig(t, true)
+	logged := &lockedBuffer{}
+	clock := weekdayClock()
+	var db *gorm.DB
+	public, adminServer := buildFeedApp(t, cfg, clock, fx.Replace(slog.New(slog.NewTextHandler(logged, nil))), fx.Populate(&db))
+	require.NotNil(t, adminServer)
+	admin := httptest.NewServer(adminServer.Handler)
+	t.Cleanup(admin.Close)
+	adminAuth := map[string]string{"Authorization": "Bearer " + testAdminKey}
+	firstMember := map[string]string{"Authorization": "Bearer " + redeemAgentToken(t, public, admin, adminAuth)}
+	secondMember := map[string]string{"Authorization": "Bearer " + redeemAgentToken(t, public, admin, adminAuth)}
+	for _, member := range []map[string]string{firstMember, secondMember} {
+		status, _ := request(t, public, http.MethodPost, "/api/v1/subs", `{"repositories":["acme/api"],"type":"party"}`, member)
+		require.Equal(t, http.StatusOK, status)
+		require.Empty(t, listFeed(t, public, "", member))
+	}
+	sinceBeforeOpenedQuery := sinceQuery(clock)
+	require.Equal(t, http.StatusOK, deliverPullRequestEvent(t, public, cfg, pullRequestEvent("opened", openedHeadSHA)))
+
+	firstDelivered := listFeed(t, public, "", firstMember)
+	secondDelivered := listFeed(t, public, "", secondMember)
+	firstReceived := listFeed(t, public, sinceBeforeOpenedQuery, firstMember)
+	secondReceived := listFeed(t, public, sinceBeforeOpenedQuery, secondMember)
+
+	opened := []feedPullRequest{{Repository: feedRepository, Number: 42, HeadSHA: openedHeadSHA}}
+	assert.Equal(t, opened, firstDelivered)
+	assert.Empty(t, secondDelivered, "the cap of one party review is taken")
+	assert.Equal(t, opened, firstReceived)
+	assert.Empty(t, secondReceived, "a since read on a party repository returns only what the token received")
+	var polledTokens int64
+	require.NoError(t, db.Table("feed_polls").Count(&polledTokens).Error)
+	assert.Equal(t, int64(2), polledTokens)
+	assert.Regexp(t, `msg="feed pull requests delivered" user=alice token_id=[0-9a-f]+ count=1 party=1`, logged.String())
 }
 
 func TestIntegration_AgentAPIDisabled_NothingTracked(t *testing.T) {
