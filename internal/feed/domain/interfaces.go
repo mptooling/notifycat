@@ -50,6 +50,7 @@ type DeliveryStore interface {
 
 // PollStore records when tokens poll the feed.
 type PollStore interface {
+	// Record stores the poll time of the token. It keeps a stored time that is less than PollResolution older.
 	Record(ctx context.Context, tokenID string, polledAt time.Time) error
 }
 

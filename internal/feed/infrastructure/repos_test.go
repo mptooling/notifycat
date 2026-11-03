@@ -374,7 +374,7 @@ func TestDeliveryRepo_ClaimPartyBuildsTheRound(t *testing.T) {
 			TokenID: memberID, Repositories: []string{"acme/api"}, Type: domain.SubscriptionTypeParty, CreatedAt: repoBaseTime,
 		})
 		require.NoError(t, addErr)
-		require.NoError(t, polls.Record(ctx, memberID, repoBaseTime))
+		require.NoError(t, polls.Record(ctx, persistence.FeedPollRecord{TokenID: memberID, PolledAt: repoBaseTime}))
 	}
 	firstPullRequest := partyPullRequest(7, repoBaseTime, 2)
 	secondPullRequest := partyPullRequest(8, repoBaseTime.Add(time.Minute), 1)
@@ -455,17 +455,48 @@ func TestDeliveryRepo_ClaimPartyWithoutRepositoriesSkipsThePolicy(t *testing.T) 
 	assert.Zero(t, policy.calls, "the policy is not asked without repositories")
 }
 
-func TestPollRepo_Record(t *testing.T) {
-	db := newFeedDB(t)
-	repo := infrastructure.NewPollRepo(persistence.NewFeedPolls(db))
+func TestPollRepo_RecordWritesAtMostOncePerResolution(t *testing.T) {
+	testCases := []struct {
+		name         string
+		earlierPolls []time.Time
+		polledAt     time.Time
+		want         time.Time
+	}{
+		{
+			name:     "the first poll inserts",
+			polledAt: repoBaseTime,
+			want:     repoBaseTime,
+		},
+		{
+			name:         "a poll within the resolution keeps the stored time",
+			earlierPolls: []time.Time{repoBaseTime},
+			polledAt:     repoBaseTime.Add(domain.PollResolution - time.Second),
+			want:         repoBaseTime,
+		},
+		{
+			name:         "a poll after the resolution replaces the stored time",
+			earlierPolls: []time.Time{repoBaseTime},
+			polledAt:     repoBaseTime.Add(domain.PollResolution + time.Second),
+			want:         repoBaseTime.Add(domain.PollResolution + time.Second),
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			db := newFeedDB(t)
+			repo := infrastructure.NewPollRepo(persistence.NewFeedPolls(db))
+			ctx := context.Background()
+			for _, earlierPoll := range testCase.earlierPolls {
+				require.NoError(t, repo.Record(ctx, "t1", earlierPoll))
+			}
 
-	err := repo.Record(context.Background(), "t1", repoBaseTime)
-	var row persistence.FeedPoll
-	rowErr := db.Where("token_id = ?", "t1").Take(&row).Error
+			err := repo.Record(ctx, "t1", testCase.polledAt)
 
-	require.NoError(t, err)
-	require.NoError(t, rowErr)
-	assert.WithinDuration(t, repoBaseTime, row.PolledAt, 0)
+			require.NoError(t, err)
+			var row persistence.FeedPoll
+			require.NoError(t, db.Where("token_id = ?", "t1").Take(&row).Error)
+			assert.WithinDuration(t, testCase.want, row.PolledAt, 0)
+		})
+	}
 }
 
 func TestConfigPartySettings_ReturnsTheGlobalSettings(t *testing.T) {

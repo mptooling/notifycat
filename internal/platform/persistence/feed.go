@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -595,14 +594,17 @@ func NewFeedPolls(db *gorm.DB) *FeedPolls {
 	return &FeedPolls{db: db}
 }
 
-// Record stores the poll time of the token, replacing an earlier one.
-func (r *FeedPolls) Record(ctx context.Context, tokenID string, polledAt time.Time) error {
+// Record stores the poll time of the token, replacing a stored time before ReplaceBefore.
+func (r *FeedPolls) Record(ctx context.Context, record FeedPollRecord) error {
 	err := r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "token_id"}},
 			DoUpdates: clause.AssignmentColumns([]string{"polled_at"}),
+			Where: clause.Where{Exprs: []clause.Expression{
+				clause.Expr{SQL: "feed_polls.polled_at < ?", Vars: []any{record.ReplaceBefore.UTC()}},
+			}},
 		}).
-		Create(&FeedPoll{TokenID: tokenID, PolledAt: polledAt.UTC()}).Error
+		Create(&FeedPoll{TokenID: record.TokenID, PolledAt: record.PolledAt.UTC()}).Error
 	if err != nil {
 		return fmt.Errorf("store: record feed poll: %w", err)
 	}

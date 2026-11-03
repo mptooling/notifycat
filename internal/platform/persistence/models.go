@@ -183,6 +183,13 @@ type FeedPoll struct {
 // TableName pins the table name.
 func (FeedPoll) TableName() string { return "feed_polls" }
 
+// FeedPollRecord is a poll time to store. A stored poll time at or after ReplaceBefore stays.
+type FeedPollRecord struct {
+	TokenID       string
+	PolledAt      time.Time
+	ReplaceBefore time.Time
+}
+
 // FeedPartyLoad counts the party deliveries of a token for a repository on a day.
 type FeedPartyLoad struct {
 	TokenID    string `gorm:"column:token_id;primaryKey"`

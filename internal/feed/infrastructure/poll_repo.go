@@ -23,7 +23,12 @@ func NewPollRepo(polls *persistence.FeedPolls) *PollRepo {
 
 // Record implements domain.PollStore.
 func (repo *PollRepo) Record(ctx context.Context, tokenID string, polledAt time.Time) error {
-	if err := repo.polls.Record(ctx, tokenID, polledAt); err != nil {
+	err := repo.polls.Record(ctx, persistence.FeedPollRecord{
+		TokenID:       tokenID,
+		PolledAt:      polledAt,
+		ReplaceBefore: polledAt.Add(-domain.PollResolution),
+	})
+	if err != nil {
 		return fmt.Errorf("feed: record poll: %w", err)
 	}
 	return nil

@@ -145,7 +145,7 @@ func TestFeedTables_TokenDeleteCascades(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, 1, countTable(t, db, "feed_subscriptions", "token_id = ?", "t1"))
 	require.EqualValues(t, 1, countTable(t, db, "feed_deliveries", "token_id = ?", "t1"))
-	require.NoError(t, persistence.NewFeedPolls(db).Record(ctx, "t1", accessBaseTime))
+	require.NoError(t, persistence.NewFeedPolls(db).Record(ctx, persistence.FeedPollRecord{TokenID: "t1", PolledAt: accessBaseTime}))
 	require.NoError(t, db.Create(&persistence.FeedPartyLoad{TokenID: "t1", Repository: "acme/api", Day: "2026-10-28", Taken: 1}).Error)
 	require.EqualValues(t, 1, countTable(t, db, "feed_polls", "token_id = ?", "t1"))
 	require.EqualValues(t, 1, countTable(t, db, "feed_party_loads", "token_id = ?", "t1"))
@@ -502,20 +502,35 @@ func TestFeedSubscriptions_SetTypeWithoutRepositoriesChangesEveryRow(t *testing.
 	assert.Equal(t, map[string]string{"acme/api": "solo"}, subscriptionTypes(t, subscriptions, "t2"))
 }
 
-func TestFeedPolls_RecordUpserts(t *testing.T) {
-	db := newFeedDB(t)
-	polls := persistence.NewFeedPolls(db)
-	ctx := context.Background()
-	later := accessBaseTime.Add(time.Hour)
+func TestFeedPolls_RecordReplacesOnlyATimeBeforeReplaceBefore(t *testing.T) {
+	storedAt := accessBaseTime
+	polledAt := storedAt.Add(30 * time.Second)
+	testCases := []struct {
+		name          string
+		replaceBefore time.Time
+		want          time.Time
+	}{
+		{name: "a stored time before ReplaceBefore is replaced", replaceBefore: storedAt.Add(time.Second), want: polledAt},
+		{name: "a stored time at ReplaceBefore stays", replaceBefore: storedAt, want: storedAt},
+		{name: "a stored time after ReplaceBefore stays", replaceBefore: storedAt.Add(-time.Second), want: storedAt},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			db := newFeedDB(t)
+			polls := persistence.NewFeedPolls(db)
+			ctx := context.Background()
+			require.NoError(t, polls.Record(ctx, persistence.FeedPollRecord{TokenID: "t1", PolledAt: storedAt}))
 
-	require.NoError(t, polls.Record(ctx, "t1", accessBaseTime))
-	require.NoError(t, polls.Record(ctx, "t1", later))
+			err := polls.Record(ctx, persistence.FeedPollRecord{TokenID: "t1", PolledAt: polledAt, ReplaceBefore: testCase.replaceBefore})
 
-	var stored []persistence.FeedPoll
-	require.NoError(t, db.Find(&stored).Error)
-	require.Len(t, stored, 1)
-	assert.Equal(t, "t1", stored[0].TokenID)
-	assert.WithinDuration(t, later, stored[0].PolledAt, 0)
+			require.NoError(t, err)
+			var stored []persistence.FeedPoll
+			require.NoError(t, db.Find(&stored).Error)
+			require.Len(t, stored, 1)
+			assert.Equal(t, "t1", stored[0].TokenID)
+			assert.WithinDuration(t, testCase.want, stored[0].PolledAt, 0)
+		})
+	}
 }
 
 func TestFeedPolls_RecordStoresNonUTCTimesInUTC(t *testing.T) {
@@ -523,7 +538,9 @@ func TestFeedPolls_RecordStoresNonUTCTimesInUTC(t *testing.T) {
 	polls := persistence.NewFeedPolls(db)
 	offset := time.FixedZone("plus2", 2*60*60)
 
-	require.NoError(t, polls.Record(context.Background(), "t1", time.Date(2026, 10, 28, 12, 0, 0, 0, offset)))
+	require.NoError(t, polls.Record(context.Background(), persistence.FeedPollRecord{
+		TokenID: "t1", PolledAt: time.Date(2026, 10, 28, 12, 0, 0, 0, offset),
+	}))
 
 	assert.EqualValues(t, 1, countTable(t, db, "feed_polls", "polled_at = ?", time.Date(2026, 10, 28, 10, 0, 0, 0, time.UTC)),
 		"12:00+02:00 is stored as 10:00Z")
@@ -832,7 +849,9 @@ func subscribe(t *testing.T, db *gorm.DB, tokenID string, subscriptionType strin
 
 func recordPoll(t *testing.T, db *gorm.DB, tokenID string, polledAt time.Time) {
 	t.Helper()
-	require.NoError(t, persistence.NewFeedPolls(db).Record(context.Background(), tokenID, polledAt))
+	require.NoError(t, persistence.NewFeedPolls(db).Record(context.Background(), persistence.FeedPollRecord{
+		TokenID: tokenID, PolledAt: polledAt, ReplaceBefore: polledAt,
+	}))
 }
 
 func seedDeliveries(t *testing.T, db *gorm.DB, deliveries ...persistence.FeedDelivery) {

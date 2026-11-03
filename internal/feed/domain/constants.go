@@ -8,6 +8,9 @@ const RecordTimeout = 3 * time.Second
 // AwayAfter is how long a party member stays a candidate after its last poll.
 const AwayAfter = 24 * time.Hour
 
+// PollResolution is how old a stored poll time must be before a poll writes a new one.
+const PollResolution = time.Minute
+
 // Feed limits, the repository name rule, routes and parameter names.
 const (
 	AllRepositories          = "*"
