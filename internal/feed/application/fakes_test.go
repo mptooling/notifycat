@@ -337,10 +337,15 @@ type fakePartySettings struct {
 	onlyForKey *domain.PullRequestKey
 	calls      int
 	keys       []domain.PullRequestKey
+	// beforeAnswer runs when the resolver is called, before it answers.
+	beforeAnswer func()
 }
 
 func (resolver *fakePartySettings) Resolve(_ context.Context, key domain.PullRequestKey) domain.PartyResolution {
 	resolver.calls++
+	if resolver.beforeAnswer != nil {
+		resolver.beforeAnswer()
+	}
 	resolver.keys = append(resolver.keys, key)
 	if resolver.onlyForKey != nil && *resolver.onlyForKey != key {
 		return domain.PartyResolution{}

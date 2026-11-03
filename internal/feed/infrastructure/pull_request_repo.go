@@ -120,6 +120,7 @@ func pullRequestToRow(pullRequest domain.PullRequest) persistence.FeedPullReques
 		PartyReviewers:  pullRequest.Party.Reviewers,
 		RecordedAt:      timePointer(pullRequest.Party.RecordedAt),
 		PartyDeadlineAt: timePointer(pullRequest.Party.DeadlineAt),
+		KeepStoredParty: pullRequest.KeepStoredParty,
 	}
 }
 

@@ -278,6 +278,21 @@ func TestPullRequestRepo_PartyStateRoundTrips(t *testing.T) {
 	}
 }
 
+func TestPullRequestRepo_KeepStoredPartyGuardsARecordedRow(t *testing.T) {
+	repo := infrastructure.NewPullRequestRepo(persistence.NewFeedPullRequests(newFeedDB(t)))
+	ctx := context.Background()
+	stored := partyPullRequest(7, repoBaseTime, 4)
+	guarded := partyPullRequest(7, repoBaseTime.Add(time.Minute), 1)
+	guarded.KeepStoredParty = true
+	require.NoError(t, repo.Upsert(ctx, stored))
+
+	require.NoError(t, repo.Upsert(ctx, guarded))
+	found, _, findErr := repo.Find(ctx, domain.PullRequestKey{Repository: "acme/api", Number: 7})
+
+	require.NoError(t, findErr)
+	assert.Equal(t, 4, found.Party.Reviewers, "the flag reaches the store")
+}
+
 func TestPullRequestRepo_ZeroPartyTimesAreNull(t *testing.T) {
 	db := newFeedDB(t)
 	repo := infrastructure.NewPullRequestRepo(persistence.NewFeedPullRequests(db))

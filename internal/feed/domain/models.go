@@ -34,6 +34,8 @@ type PullRequest struct {
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 	Party        PartyState
+	// KeepStoredParty tells the store not to overwrite the party columns of a row that has a record time.
+	KeepStoredParty bool
 }
 
 // ConfiguredRepositories is what a token can subscribe to.

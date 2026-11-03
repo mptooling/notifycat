@@ -220,7 +220,6 @@ func TestRecorder_ReturnsFindError(t *testing.T) {
 	err := fixture.recorder.Record(t.Context(), openEvent)
 
 	require.ErrorIs(t, err, findErr)
-	assert.Zero(t, fixture.settings.calls, "a failed lookup never resolves settings")
 	assert.Empty(t, fixture.store.upserts)
 }
 
@@ -236,6 +235,42 @@ func TestRecorder_FallbackKeepsTheStoredPartyState(t *testing.T) {
 	require.Len(t, fixture.store.upserts, 1)
 	assert.Equal(t, storedParty, fixture.store.upserts[0].Party, "a failed files read never lowers a stored cap or moves the timer")
 	assert.Empty(t, fixture.calendar.addCalls)
+}
+
+func TestRecorder_ReadsTheStoredRowAfterTheSettingsResolve(t *testing.T) {
+	fixture := newRecorderFixture(defaultPartySettings)
+	storedParty := domain.PartyState{Reviewers: 4, RecordedAt: now.Add(-2 * time.Hour), DeadlineAt: now.Add(time.Hour)}
+	fixture.settings.resolution = domain.PartyResolution{Settings: domain.PartySettings{Reviewers: 1, Deadline: time.Hour}, Fallback: true}
+	fixture.settings.beforeAnswer = func() { fixture.store.stored = &domain.PullRequest{Party: storedParty} }
+
+	err := fixture.recorder.Record(t.Context(), openEvent)
+
+	require.NoError(t, err)
+	require.Len(t, fixture.store.upserts, 1)
+	assert.Equal(t, storedParty, fixture.store.upserts[0].Party, "a row written while the files were read is the one the recorder keeps")
+}
+
+func TestRecorder_FlagsAFallbackSoTheStoreKeepsTheStoredParty(t *testing.T) {
+	testCases := []struct {
+		name     string
+		fallback bool
+	}{
+		{name: "fallback", fallback: true},
+		{name: "resolved", fallback: false},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := newRecorderFixture(defaultPartySettings)
+			fixture.settings.resolution = domain.PartyResolution{Settings: defaultPartySettings, Fallback: testCase.fallback}
+
+			err := fixture.recorder.Record(t.Context(), openEvent)
+
+			require.NoError(t, err)
+			require.Len(t, fixture.store.upserts, 1)
+			assert.Equal(t, testCase.fallback, fixture.store.upserts[0].KeepStoredParty)
+		})
+	}
 }
 
 func TestRecorder_FallbackOnANewPullRequestUsesTheResolvedSettings(t *testing.T) {
