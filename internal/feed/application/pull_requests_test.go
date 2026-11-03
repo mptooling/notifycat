@@ -341,9 +341,10 @@ func TestPullRequests_Since(t *testing.T) {
 		assert.Len(t, changed, 1)
 		require.Len(t, fixture.pullRequests.changedCalls, 1)
 		call := fixture.pullRequests.changedCalls[0]
-		assert.ElementsMatch(t, []string{"acme/api", "acme/new"}, call.repositories)
-		assert.Equal(t, time.UTC, call.since.Location())
-		assert.True(t, since.Equal(call.since))
+		assert.Equal(t, tokenID, call.TokenID)
+		assert.ElementsMatch(t, []string{"acme/api", "acme/new"}, call.Repositories)
+		assert.Equal(t, time.UTC, call.Since.Location())
+		assert.True(t, since.Equal(call.Since))
 		assert.Empty(t, fixture.pullRequests.receivedCalls)
 		assert.Empty(t, fixture.deliveries.claims)
 		assert.Empty(t, fixture.deliveries.partyClaims)
@@ -384,7 +385,7 @@ func TestPullRequests_SinceOnPartyRepositories(t *testing.T) {
 		{Repository: "acme/web", Number: 1},
 	}, pullRequestKeys(changed))
 	require.Len(t, fixture.pullRequests.changedCalls, 1)
-	assert.Equal(t, []string{"acme/api"}, fixture.pullRequests.changedCalls[0].repositories)
+	assert.Equal(t, []string{"acme/api"}, fixture.pullRequests.changedCalls[0].Repositories)
 	require.Len(t, fixture.pullRequests.receivedCalls, 1)
 	received := fixture.pullRequests.receivedCalls[0]
 	assert.Equal(t, tokenID, received.TokenID)

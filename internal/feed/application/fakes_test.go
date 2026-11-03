@@ -140,9 +140,9 @@ type fakePullRequestStore struct {
 	deletes               []deleteCall
 	repositories          []string
 	changed               []domain.PullRequest
-	changedCalls          []changedCall
+	changedCalls          []domain.SinceQuery
 	received              []domain.PullRequest
-	receivedCalls         []domain.ReceivedQuery
+	receivedCalls         []domain.SinceQuery
 	deleteAllCalls        int
 	deletedRepositories   [][]string
 	removedCount          int
@@ -169,14 +169,9 @@ func (store *fakePullRequestStore) Find(_ context.Context, key domain.PullReques
 	return *store.stored, true, nil
 }
 
-func (store *fakePullRequestStore) ReceivedSince(_ context.Context, query domain.ReceivedQuery) ([]domain.PullRequest, error) {
+func (store *fakePullRequestStore) ReceivedSince(_ context.Context, query domain.SinceQuery) ([]domain.PullRequest, error) {
 	store.receivedCalls = append(store.receivedCalls, query)
 	return store.received, nil
-}
-
-type changedCall struct {
-	repositories []string
-	since        time.Time
 }
 
 func (store *fakePullRequestStore) Upsert(_ context.Context, pullRequest domain.PullRequest) error {
@@ -215,8 +210,8 @@ func (store *fakePullRequestStore) Repositories(context.Context) ([]string, erro
 	return store.repositories, store.repositoryErr
 }
 
-func (store *fakePullRequestStore) ChangedSince(_ context.Context, repositories []string, since time.Time) ([]domain.PullRequest, error) {
-	store.changedCalls = append(store.changedCalls, changedCall{repositories: repositories, since: since})
+func (store *fakePullRequestStore) ChangedSince(_ context.Context, query domain.SinceQuery) ([]domain.PullRequest, error) {
+	store.changedCalls = append(store.changedCalls, query)
 	return store.changed, nil
 }
 

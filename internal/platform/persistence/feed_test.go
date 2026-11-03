@@ -172,7 +172,7 @@ func TestFeedPullRequests_UpsertUpdatesInPlaceAndKeepsDeliveries(t *testing.T) {
 
 	require.NoError(t, pullRequests.Upsert(ctx, updated))
 
-	stored, err := pullRequests.ChangedSince(ctx, []string{"acme/api"}, accessBaseTime.Add(-time.Hour))
+	stored, err := pullRequests.ChangedSince(ctx, persistence.FeedSinceQuery{Repositories: []string{"acme/api"}, Since: accessBaseTime.Add(-time.Hour)})
 	require.NoError(t, err)
 	require.Len(t, stored, 1)
 	assert.Equal(t, "sha-2", stored[0].HeadSHA)
@@ -192,7 +192,7 @@ func TestFeedPullRequests_UpsertWithoutCreatedAtKeepsStoredCreatedAt(t *testing.
 
 	require.NoError(t, pullRequests.Upsert(ctx, feedPullRequest("acme/api", 42, accessBaseTime.Add(time.Hour))))
 
-	stored, err := pullRequests.ChangedSince(ctx, []string{"acme/api"}, accessBaseTime.Add(-time.Hour))
+	stored, err := pullRequests.ChangedSince(ctx, persistence.FeedSinceQuery{Repositories: []string{"acme/api"}, Since: accessBaseTime.Add(-time.Hour)})
 	require.NoError(t, err)
 	require.Len(t, stored, 1)
 	require.NotNil(t, stored[0].CreatedAt, "an event without a creation time keeps the stored one")
@@ -336,9 +336,9 @@ func TestFeedPullRequests_ChangedSince(t *testing.T) {
 	)
 	offset := time.FixedZone("plus2", 2*60*60)
 
-	utcResult, utcErr := pullRequests.ChangedSince(ctx, []string{"acme/api"}, atHour(10))
-	offsetResult, offsetErr := pullRequests.ChangedSince(ctx, []string{"acme/api"}, time.Date(2026, 10, 28, 12, 0, 0, 0, offset))
-	emptyResult, emptyErr := pullRequests.ChangedSince(ctx, nil, atHour(0))
+	utcResult, utcErr := pullRequests.ChangedSince(ctx, persistence.FeedSinceQuery{Repositories: []string{"acme/api"}, Since: atHour(10)})
+	offsetResult, offsetErr := pullRequests.ChangedSince(ctx, persistence.FeedSinceQuery{Repositories: []string{"acme/api"}, Since: time.Date(2026, 10, 28, 12, 0, 0, 0, offset)})
+	emptyResult, emptyErr := pullRequests.ChangedSince(ctx, persistence.FeedSinceQuery{Since: atHour(0)})
 
 	require.NoError(t, utcErr)
 	require.NoError(t, offsetErr)
@@ -354,8 +354,8 @@ func TestFeedPullRequests_UpsertStoresNonUTCTimesInUTC(t *testing.T) {
 	offset := time.FixedZone("plus2", 2*60*60)
 	upsertAll(t, pullRequests, feedPullRequest("acme/api", 1, time.Date(2026, 10, 28, 12, 0, 0, 0, offset)))
 
-	atBoundary, boundaryErr := pullRequests.ChangedSince(ctx, []string{"acme/api"}, time.Date(2026, 10, 28, 10, 0, 0, 0, time.UTC))
-	afterBoundary, afterErr := pullRequests.ChangedSince(ctx, []string{"acme/api"}, time.Date(2026, 10, 28, 10, 30, 0, 0, time.UTC))
+	atBoundary, boundaryErr := pullRequests.ChangedSince(ctx, persistence.FeedSinceQuery{Repositories: []string{"acme/api"}, Since: time.Date(2026, 10, 28, 10, 0, 0, 0, time.UTC)})
+	afterBoundary, afterErr := pullRequests.ChangedSince(ctx, persistence.FeedSinceQuery{Repositories: []string{"acme/api"}, Since: time.Date(2026, 10, 28, 10, 30, 0, 0, time.UTC)})
 
 	require.NoError(t, boundaryErr)
 	require.NoError(t, afterErr)
@@ -694,18 +694,18 @@ func TestFeedPullRequests_ReceivedSince(t *testing.T) {
 		TokenID: "t1", Repository: "acme/api", Number: 2, DeliveredAt: since, Party: true,
 	}).Error)
 	require.NoError(t, db.Create(&persistence.FeedDelivery{
-		TokenID: "t1", Repository: "acme/api", Number: 4, DeliveredAt: since,
+		TokenID: "t1", Repository: "acme/api", Number: 4, DeliveredAt: since.Add(-time.Minute),
 	}).Error)
 
-	received, err := pullRequests.ReceivedSince(ctx, persistence.FeedReceivedQuery{
+	received, err := pullRequests.ReceivedSince(ctx, persistence.FeedSinceQuery{
 		TokenID: "t1", Repositories: []string{"acme/api"}, Since: since,
 	})
-	other, otherErr := pullRequests.ReceivedSince(ctx, persistence.FeedReceivedQuery{
+	other, otherErr := pullRequests.ReceivedSince(ctx, persistence.FeedSinceQuery{
 		TokenID: "t2", Repositories: []string{"acme/api"}, Since: since,
 	})
-	none, noneErr := pullRequests.ReceivedSince(ctx, persistence.FeedReceivedQuery{TokenID: "t1", Since: since})
+	none, noneErr := pullRequests.ReceivedSince(ctx, persistence.FeedSinceQuery{TokenID: "t1", Since: since})
 	offsetSince := time.Date(2026, 10, 28, 14, 0, 0, 0, time.FixedZone("plus2", 2*60*60))
-	offsetReceived, offsetErr := pullRequests.ReceivedSince(ctx, persistence.FeedReceivedQuery{
+	offsetReceived, offsetErr := pullRequests.ReceivedSince(ctx, persistence.FeedSinceQuery{
 		TokenID: "t1", Repositories: []string{"acme/api"}, Since: offsetSince,
 	})
 
@@ -718,6 +718,57 @@ func TestFeedPullRequests_ReceivedSince(t *testing.T) {
 	assert.Empty(t, other)
 	assert.NotNil(t, none)
 	assert.Empty(t, none)
+}
+
+func TestFeedPullRequests_ReceivedSinceReturnsAPartyPullRequestDeliveredAfterItsChange(t *testing.T) {
+	db := newFeedDB(t)
+	pullRequests := persistence.NewFeedPullRequests(db)
+	openedAt := time.Date(2026, 11, 3, 10, 0, 0, 0, time.UTC)
+	lastGoodPoll := openedAt.Add(30 * time.Minute)
+	upsertAll(t, pullRequests,
+		feedPullRequest("acme/api", 1, openedAt),
+		feedPullRequest("acme/api", 2, openedAt),
+		feedPullRequest("acme/api", 3, openedAt),
+	)
+	deliveredAt := map[int]time.Time{1: openedAt.Add(35 * time.Minute), 2: lastGoodPoll, 3: lastGoodPoll.Add(-time.Second)}
+	for number, at := range deliveredAt {
+		require.NoError(t, db.Create(&persistence.FeedDelivery{
+			TokenID: "t1", Repository: "acme/api", Number: number, DeliveredAt: at, Party: true,
+		}).Error)
+	}
+
+	received, err := pullRequests.ReceivedSince(context.Background(), persistence.FeedSinceQuery{
+		TokenID: "t1", Repositories: []string{"acme/api"}, Since: lastGoodPoll,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, []int{1, 2}, pullRequestNumbers(received), "a delivery at or after since counts even when the pull request changed before it")
+}
+
+func TestFeedPullRequests_ChangedSinceReturnsAPullRequestDeliveredAfterTheWeekend(t *testing.T) {
+	db := newFeedDB(t)
+	pullRequests := persistence.NewFeedPullRequests(db)
+	ctx := context.Background()
+	openedOnSaturday := time.Date(2026, 10, 31, 15, 0, 0, 0, time.UTC)
+	mondayPoll := time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)
+	upsertAll(t, pullRequests, feedPullRequest("acme/api", 1, openedOnSaturday))
+	_, claimErr := persistence.NewFeedDeliveries(db).Claim(ctx, persistence.FeedClaim{
+		TokenID: "t1", Repositories: []string{"acme/api"}, DeliveredAt: mondayPoll,
+	})
+	require.NoError(t, claimErr)
+	beforeMondayPoll := mondayPoll.Add(-time.Minute)
+
+	delivered, err := pullRequests.ChangedSince(ctx, persistence.FeedSinceQuery{
+		TokenID: "t1", Repositories: []string{"acme/api"}, Since: beforeMondayPoll,
+	})
+	notDelivered, notDeliveredErr := pullRequests.ChangedSince(ctx, persistence.FeedSinceQuery{
+		TokenID: "t2", Repositories: []string{"acme/api"}, Since: beforeMondayPoll,
+	})
+
+	require.NoError(t, err)
+	require.NoError(t, notDeliveredErr)
+	assert.Equal(t, []int{1}, pullRequestNumbers(delivered))
+	assert.Empty(t, notDelivered, "a delivery to another token does not count")
 }
 
 var partyBaseTime = time.Date(2026, 11, 3, 10, 0, 0, 0, time.UTC)

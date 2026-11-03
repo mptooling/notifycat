@@ -66,8 +66,8 @@ func (repo *PullRequestRepo) Repositories(ctx context.Context) ([]string, error)
 }
 
 // ChangedSince implements domain.PullRequestStore.
-func (repo *PullRequestRepo) ChangedSince(ctx context.Context, repositories []string, since time.Time) ([]domain.PullRequest, error) {
-	rows, err := repo.pullRequests.ChangedSince(ctx, repositories, since)
+func (repo *PullRequestRepo) ChangedSince(ctx context.Context, query domain.SinceQuery) ([]domain.PullRequest, error) {
+	rows, err := repo.pullRequests.ChangedSince(ctx, sinceQueryToRow(query))
 	if err != nil {
 		return nil, fmt.Errorf("feed: changed pull requests: %w", err)
 	}
@@ -87,16 +87,20 @@ func (repo *PullRequestRepo) Find(ctx context.Context, key domain.PullRequestKey
 }
 
 // ReceivedSince implements domain.PullRequestStore.
-func (repo *PullRequestRepo) ReceivedSince(ctx context.Context, query domain.ReceivedQuery) ([]domain.PullRequest, error) {
-	rows, err := repo.pullRequests.ReceivedSince(ctx, persistence.FeedReceivedQuery{
-		TokenID:      query.TokenID,
-		Repositories: query.Repositories,
-		Since:        query.Since,
-	})
+func (repo *PullRequestRepo) ReceivedSince(ctx context.Context, query domain.SinceQuery) ([]domain.PullRequest, error) {
+	rows, err := repo.pullRequests.ReceivedSince(ctx, sinceQueryToRow(query))
 	if err != nil {
 		return nil, fmt.Errorf("feed: received pull requests: %w", err)
 	}
 	return pullRequestsFromRows(rows), nil
+}
+
+func sinceQueryToRow(query domain.SinceQuery) persistence.FeedSinceQuery {
+	return persistence.FeedSinceQuery{
+		TokenID:      query.TokenID,
+		Repositories: query.Repositories,
+		Since:        query.Since,
+	}
 }
 
 func pullRequestToRow(pullRequest domain.PullRequest) persistence.FeedPullRequest {

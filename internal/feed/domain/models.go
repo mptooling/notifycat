@@ -169,8 +169,8 @@ type TypeChange struct {
 	Type         SubscriptionType
 }
 
-// ReceivedQuery asks for the pull requests a token received that changed since a time.
-type ReceivedQuery struct {
+// SinceQuery asks for the pull requests of the repositories that changed, or reached the token, at or after Since.
+type SinceQuery struct {
 	TokenID      string
 	Repositories []string
 	Since        time.Time

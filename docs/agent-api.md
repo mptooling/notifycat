@@ -174,7 +174,12 @@ To change some subscriptions, add `repositories`:
 
 A call without a query is a normal poll. It returns the open, non-draft PRs of your subscribed repositories that your token has not received yet. Notifycat marks them as received in the same step. On a party repository, the [party rule](#review-as-a-party) decides which PRs you get. On a day off, a normal poll returns an empty list. See [Days off](#days-off).
 
-`?since=<time>` returns every open PR of your solo repositories with `updated_at` at or after that time, whether you received it or not. On a party repository, it returns only the PRs that your token received, solo or party. It marks nothing as received.
+`?since=<time>` reads PRs again. It returns each open PR that matches one of these rules:
+
+- The PR changed at or after that time (`updated_at`). On a solo repository, this rule applies whether you received the PR or not.
+- Your token received the PR at or after that time.
+
+On a party repository, it returns only the PRs that your token received, solo or party. It marks nothing as received.
 
 `since` must be RFC 3339. Use the `Z` form, or write `+` as `%2B`. An unencoded `+` turns into a space and gives `400 invalid_since`. Let curl encode it:
 
@@ -185,7 +190,7 @@ curl --fail-with-body -sS --get --data-urlencode "since=2026-10-28T09:00:00Z" \
 
 An empty `since`, a value that is not RFC 3339, or a query that cannot be parsed (for example `?since=%zz`) gives `400 invalid_since`. Other query parameters are ignored.
 
-`HEAD /api/v1/subs/prs` gives `405 method_not_allowed` with `Allow: GET`. A request that fails never marks PRs as received. But once the server has answered, its PRs are marked, even if the response is lost on the way to you. See [Recover a lost list](#recover-a-lost-list).
+`HEAD /api/v1/subs/prs` gives `405 method_not_allowed` with `Allow: GET`. A `4xx` error never marks PRs as received. A `5xx` error can come after the server marked PRs. Once the server answers, its PRs stay marked, even if the response is lost on the way to you. See [Recover a lost list](#recover-a-lost-list).
 
 ## Errors
 
@@ -230,7 +235,9 @@ If a run crashed after the poll and before it finished the reviews, the PRs are 
 
 If a normal poll returns a 5xx error, the server may have marked PRs before it failed. Call `GET /api/v1/subs/prs?since=<time of the last good poll>` to get the PRs that the failed poll may have marked. On a party repository, `since` returns only PRs that this token received.
 
-`since` matches a PR's last change (`updated_at`), not the time it was delivered. So use a time a few minutes before the last good poll that came before the lost one, or any earlier time. Do not use the exact time: `updated_at` comes from the notifycat server's clock, and a webhook can still be recording while you poll. An earlier time only returns more PRs. The time of the lost poll itself is too late: it misses the PRs that changed before it.
+`since` matches the time that notifycat delivered a PR to your token. The lost poll came after the last good poll. So the time of the last good poll returns every PR that the lost poll marked. This includes a PR that changed long before the lost poll. An example is a PR that waited for a party turn or a working day.
+
+`since` also matches the last change of a PR (`updated_at`). A webhook can still record a change while you poll, and `updated_at` comes from the clock of the notifycat server. To get these changes too, use a time a few minutes before the last good poll. An earlier time only returns more PRs.
 
 ```sh
 curl --fail-with-body -sS --get --data-urlencode "since=2026-10-28T09:00:00Z" \
@@ -294,6 +301,7 @@ PR 43 opens on Friday at 23:50 with a 30-minute timer. The weekend does not coun
 
 - The feed does not know which token belongs to the author of a PR. An agent can get a PR of its own user.
 - A member that gets a PR and never reviews it keeps the slot. The timer only ends the turns. It never takes a PR back.
+- A revoked token frees its party slots. Another member can then get those PRs.
 - A member that joins during the day starts with load 0. It gets most party PRs until its load reaches the others.
 - When parties first go live, no token has polled yet, so every member is away until its first poll. The first agent that polls can take the PRs that waited. The same happens on Monday morning, after a weekend without polls.
 - Party settings change nothing in Slack.

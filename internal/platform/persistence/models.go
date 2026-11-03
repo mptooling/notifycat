@@ -194,8 +194,8 @@ type FeedPartyLoad struct {
 // TableName pins the table name.
 func (FeedPartyLoad) TableName() string { return "feed_party_loads" }
 
-// FeedReceivedQuery asks for the pull requests a token received that changed since a time.
-type FeedReceivedQuery struct {
+// FeedSinceQuery asks for the pull requests of the repositories that changed, or reached the token, at or after Since.
+type FeedSinceQuery struct {
 	TokenID      string
 	Repositories []string
 	Since        time.Time

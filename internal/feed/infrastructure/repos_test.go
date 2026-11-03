@@ -57,7 +57,7 @@ func TestPullRequestRepo_RoundTripsEveryField(t *testing.T) {
 	want := fullPullRequest()
 
 	require.NoError(t, repo.Upsert(ctx, want))
-	got, err := repo.ChangedSince(ctx, []string{"acme/api"}, repoBaseTime.Add(-time.Minute))
+	got, err := repo.ChangedSince(ctx, domain.SinceQuery{Repositories: []string{"acme/api"}, Since: repoBaseTime.Add(-time.Minute)})
 
 	require.NoError(t, err)
 	require.Len(t, got, 1)
@@ -81,7 +81,7 @@ func TestPullRequestRepo_ZeroCreatedAtRoundTripsAsZero(t *testing.T) {
 	pullRequest.CreatedAt = time.Time{}
 
 	require.NoError(t, repo.Upsert(ctx, pullRequest))
-	got, err := repo.ChangedSince(ctx, []string{"acme/api"}, repoBaseTime.Add(-time.Minute))
+	got, err := repo.ChangedSince(ctx, domain.SinceQuery{Repositories: []string{"acme/api"}, Since: repoBaseTime.Add(-time.Minute)})
 
 	require.NoError(t, err)
 	require.Len(t, got, 1)
@@ -262,7 +262,7 @@ func TestPullRequestRepo_PartyStateRoundTrips(t *testing.T) {
 
 	require.NoError(t, repo.Upsert(ctx, want))
 	found, isFound, findErr := repo.Find(ctx, domain.PullRequestKey{Repository: "acme/api", Number: 7})
-	changed, changedErr := repo.ChangedSince(ctx, []string{"acme/api"}, repoBaseTime.Add(-time.Minute))
+	changed, changedErr := repo.ChangedSince(ctx, domain.SinceQuery{Repositories: []string{"acme/api"}, Since: repoBaseTime.Add(-time.Minute)})
 
 	require.NoError(t, findErr)
 	require.NoError(t, changedErr)
@@ -333,7 +333,7 @@ func TestPullRequestRepo_ReceivedSince(t *testing.T) {
 		TokenID: "t1", Repository: "acme/api", Number: 10, DeliveredAt: repoBaseTime, Party: true,
 	}).Error)
 
-	received, err := pullRequests.ReceivedSince(ctx, domain.ReceivedQuery{
+	received, err := pullRequests.ReceivedSince(ctx, domain.SinceQuery{
 		TokenID: "t1", Repositories: []string{"acme/api"}, Since: repoBaseTime.Add(time.Minute),
 	})
 

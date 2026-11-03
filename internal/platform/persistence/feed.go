@@ -215,14 +215,19 @@ func (r *FeedPullRequests) Repositories(ctx context.Context) ([]string, error) {
 	return repositories, nil
 }
 
-// ChangedSince returns pull requests of the repositories updated at or after since.
-func (r *FeedPullRequests) ChangedSince(ctx context.Context, repositories []string, since time.Time) ([]FeedPullRequest, error) {
-	if len(repositories) == 0 {
+// ChangedSince returns pull requests of the repositories updated at or after since, or delivered to the token at or after since.
+func (r *FeedPullRequests) ChangedSince(ctx context.Context, query FeedSinceQuery) ([]FeedPullRequest, error) {
+	if len(query.Repositories) == 0 {
 		return []FeedPullRequest{}, nil
 	}
+	since := query.Since.UTC()
 	var pullRequests []FeedPullRequest
 	err := r.db.WithContext(ctx).
-		Where("repository IN ? AND updated_at >= ?", repositories, since.UTC()).
+		Where(`repository IN ? AND (updated_at >= ? OR EXISTS (
+			SELECT 1 FROM feed_deliveries own_delivery WHERE own_delivery.token_id = ?
+			AND own_delivery.repository = feed_pull_requests.repository
+			AND own_delivery.number = feed_pull_requests.number
+			AND own_delivery.delivered_at >= ?))`, query.Repositories, since, query.TokenID, since).
 		Order("updated_at, repository, number").
 		Find(&pullRequests).Error
 	if err != nil {
@@ -231,16 +236,18 @@ func (r *FeedPullRequests) ChangedSince(ctx context.Context, repositories []stri
 	return pullRequests, nil
 }
 
-// ReceivedSince returns pull requests of the repositories updated at or after since that the token received.
-func (r *FeedPullRequests) ReceivedSince(ctx context.Context, query FeedReceivedQuery) ([]FeedPullRequest, error) {
+// ReceivedSince returns pull requests of the repositories that the token received, updated or delivered at or after since.
+func (r *FeedPullRequests) ReceivedSince(ctx context.Context, query FeedSinceQuery) ([]FeedPullRequest, error) {
 	if len(query.Repositories) == 0 {
 		return []FeedPullRequest{}, nil
 	}
+	since := query.Since.UTC()
 	var pullRequests []FeedPullRequest
 	err := r.db.WithContext(ctx).
 		Joins(`JOIN feed_deliveries ON feed_deliveries.repository = feed_pull_requests.repository
 			AND feed_deliveries.number = feed_pull_requests.number AND feed_deliveries.token_id = ?`, query.TokenID).
-		Where("feed_pull_requests.repository IN ? AND feed_pull_requests.updated_at >= ?", query.Repositories, query.Since.UTC()).
+		Where("feed_pull_requests.repository IN ? AND (feed_pull_requests.updated_at >= ? OR feed_deliveries.delivered_at >= ?)",
+			query.Repositories, since, since).
 		Order("feed_pull_requests.updated_at, feed_pull_requests.repository, feed_pull_requests.number").
 		Find(&pullRequests).Error
 	if err != nil {

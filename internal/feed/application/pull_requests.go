@@ -132,13 +132,17 @@ func (feed *PullRequests) Since(ctx context.Context, subscriber domain.Subscribe
 	since = since.UTC()
 	var changed, received []domain.PullRequest
 	if len(repositories.solo) > 0 {
-		changed, err = feed.pullRequests.ChangedSince(ctx, repositories.solo, since)
+		changed, err = feed.pullRequests.ChangedSince(ctx, domain.SinceQuery{
+			TokenID:      subscriber.TokenID,
+			Repositories: repositories.solo,
+			Since:        since,
+		})
 		if err != nil {
 			return nil, fmt.Errorf("pull requests changed since: %w", err)
 		}
 	}
 	if len(repositories.party) > 0 {
-		received, err = feed.pullRequests.ReceivedSince(ctx, domain.ReceivedQuery{
+		received, err = feed.pullRequests.ReceivedSince(ctx, domain.SinceQuery{
 			TokenID:      subscriber.TokenID,
 			Repositories: repositories.party,
 			Since:        since,

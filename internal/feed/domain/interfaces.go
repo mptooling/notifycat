@@ -32,11 +32,12 @@ type PullRequestStore interface {
 	DeleteRepositories(ctx context.Context, repositories []string) (int, error)
 	// Repositories returns every repository that has a stored pull request.
 	Repositories(ctx context.Context) ([]string, error)
-	ChangedSince(ctx context.Context, repositories []string, since time.Time) ([]PullRequest, error)
+	// ChangedSince returns pull requests that changed at or after Since, and those delivered to the token at or after Since.
+	ChangedSince(ctx context.Context, query SinceQuery) ([]PullRequest, error)
 	// Find returns false when the pull request is not stored.
 	Find(ctx context.Context, key PullRequestKey) (PullRequest, bool, error)
-	// ReceivedSince returns pull requests changed since the time that the token received, solo or party.
-	ReceivedSince(ctx context.Context, query ReceivedQuery) ([]PullRequest, error)
+	// ReceivedSince returns pull requests the token received, solo or party, that changed or reached it at or after Since.
+	ReceivedSince(ctx context.Context, query SinceQuery) ([]PullRequest, error)
 }
 
 // DeliveryStore records which pull requests were delivered to which token.
