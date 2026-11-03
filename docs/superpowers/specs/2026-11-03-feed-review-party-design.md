@@ -28,6 +28,7 @@ Alice, Bob and Carol subscribe their agents to `cover42/billingservice` as a **p
 - **No feed notifications on weekends.** On Saturday and Sunday a normal poll returns an empty list. It marks nothing. This applies to solo and party.
 - **Days off use the digest calendar**: `digest.timezone` (default UTC), and public holidays when `digest.country` is set. A day off is a whole calendar day. Working time is every hour of the other days. The digest and the `scheduled` strategy already use it.
 - **`?since=` works on days off.** It is a manual recovery read, not a notification.
+- **Away comes from poll events only. It does not use the calendar.** A token is away until its first poll. The first poll makes it active at once. A token that does not poll for 24 hours of clock time is away again.
 - **A party with one member has no real cap.** That member gets every PR.
 - **A new endpoint changes a subscription's type**, so a developer can join or leave a party without deleting the subscription.
 - The git host's "default reviewer" rule is out of scope. The team decides how it uses parties.
@@ -40,7 +41,7 @@ Alice, Bob and Carol subscribe their agents to `cover42/billingservice` as a **p
 3. **A member is a token.** Two tokens of one person are two members.
 4. **The most specific subscription sets the type.** A token's subscription to `cover42/api` sets its type for that repository. Its `*` subscription sets the type only for repositories it has no own subscription for.
 5. **Load** is the number of PRs a member got through the party of that repository in the **last 7 days**. Load stays when a PR closes or merges. Load is per repository, not across all repositories.
-6. **Away** means the token made no normal `GET /api/v1/subs/prs` call (without `since`) in the **last 24 hours of working time**. Days off do not count toward the 24 hours. An away member is not a candidate, so a member on leave never holds PRs back. Other calls do not count as polls.
+6. **A poll** is a normal `GET /api/v1/subs/prs` call without `since`. Other calls do not change the away state. An away member is not a candidate, so a member on leave never holds PRs back. At release no token has polled, so every member starts as away. Notifycat fills nothing from older data.
 7. **The turn rule** is in "How it works". A PR that a member takes in one poll raises that member's load for the rest of the same poll. So one poll takes at most a fair share, not every waiting PR.
 8. **`POST /api/v1/subs` takes an optional `type`.** It applies only to the repositories that call adds. An existing subscription keeps its type; `PATCH` changes it.
 9. **`PATCH /api/v1/subs` changes the type of many subscriptions in one call.** A developer with 50 repositories should not need 50 calls. See "API changes".
@@ -74,6 +75,7 @@ Named parties. More than one party per repository. Fairness across repositories.
 - Weekends, and holidays when `digest.country` is set, do not count toward `party_deadline`.
 - A normal poll on a day off returns an empty list and marks nothing, for solo and party.
 - An away member never makes others wait.
+- A token that never polled is away. Its first poll makes it a candidate.
 - A party where only one member is not away gets every PR at once.
 - `party_deadline` below 15 minutes or above 24 hours fails at startup.
 - The most specific `party_reviewers` wins: path, then repository, then org `"*"`, then global, then 1.
@@ -90,7 +92,7 @@ Named parties. More than one party per repository. Fairness across repositories.
 - **Party delivery**: a PR that a member got through the party rule.
 - **Cap of P**: the `party_reviewers` value stored with PR P.
 - **Load of T in R**: party deliveries T got in R in the last 7 days.
-- **Away**: no normal poll in the last 24 hours of working time.
+- **Away**: no poll yet, or no poll in the last 24 hours of clock time.
 - **Timer of P**: the `party_deadline` value stored with PR P. It runs out when that much working time has passed since notifycat first recorded P.
 
 ### A normal poll by token T
@@ -158,7 +160,7 @@ mappings:
 
 ### `internal/feed`
 
-- `domain`: a `SubscriptionType` enum (`solo`, `party`) in `enums.go`. The 7-day load window and the 24-hour away window go in `constants.go`. New ports for the poll time, load history, the cap and timer lookup, and the work calendar. The calendar adapter reuses the calendar of the digest and the `scheduled` strategy. A use case for changing types, with its interface in `interfaces.go`.
+- `domain`: a `SubscriptionType` enum (`solo`, `party`) in `enums.go`. The 7-day load window and the 24-hour away window go in `constants.go`. New ports for the poll time, load history, the cap and timer lookup, and the work calendar. The calendar adapter reuses the calendar of the digest and the `scheduled` strategy. Only the days-off rule and the timer use the calendar. The turn rule is a pure domain function: it takes a snapshot (candidates, their loads, the cap, the deliveries of P) and returns the PRs that T takes. A use case for changing types, with its interface in `interfaces.go`.
 - `application`: `Subscriptions` gets the type on add and the change-type use case. `PullRequests.Next` checks for a day off and splits repositories into solo and party. `Since` filters party repositories. `Recorder` stores the cap, the timer and the first record time with the PR.
 - `infrastructure`: the `PATCH` handler, `type` in the JSON, and an adapter that finds the cap and the timer through the `routing` domain.
 
@@ -174,7 +176,8 @@ New migration `00012`:
 - `feed_pull_requests.party_reviewers INTEGER NOT NULL DEFAULT 1`, `party_deadline_minutes INTEGER NOT NULL DEFAULT 60`, and `recorded_at DATETIME`: the first record time, where the timer starts. The existing `created_at` is the git host's PR time, so it cannot be used.
 - `feed_deliveries.party BOOLEAN NOT NULL DEFAULT 0`: true for a party delivery. The cap counts these rows. They go when the PR closes, as today.
 - `feed_party_turns (token_id, repository, number, taken_at)`: the load history. It has no foreign key to the PR, so it stays when the PR closes. It is deleted when the token is deleted. Rows older than 7 days are removed at startup and every 24 hours.
-- `feed_polls (token_id PRIMARY KEY, polled_at)`: the last normal poll. It is deleted when the token is deleted.
+- `feed_polls (token_id PRIMARY KEY, polled_at)`: the last normal poll, one upsert per poll. It has a foreign key to `access_tokens` with `ON DELETE CASCADE`. No backfill. The away check is plain SQL: a member is a candidate when `polled_at >= now - 24h`. No state column and no background job.
+- The party claim runs in one SQLite write transaction. The store loads the snapshot, calls the domain turn function, and inserts the deliveries. SQLite has one writer at a time, so two polls cannot both pass the cap.
 
 ### Config (`internal/platform/config`)
 
@@ -202,7 +205,9 @@ New migration `00012`:
 1. **An agent can get its own user's PR.** The feed does not know which token belongs to which `author_id`. With a cap of 1, that PR may then get no real review.
 2. **A winner that never reviews keeps the slot.** The timer only ends the turns. It never takes a PR back.
 3. **A PR opened on a weekend waits until Monday.** That is the weekend rule.
-4. **A new member catches up.** It starts with load 0. So it gets most party PRs until its load reaches the others' loads, within the 7-day window.
+4. **Monday morning is loose.** An agent that does not poll on the weekend is away by Monday morning. Until the other agents poll again, the first agent that polls can take the PRs that waited since Friday.
+5. **The first minutes after the release are loose too.** Every member is away until its first poll.
+6. **A new member catches up.** It starts with load 0. So it gets most party PRs until its load reaches the others' loads, within the 7-day window.
 
 ## Delivery in 2 PRs
 
