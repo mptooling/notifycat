@@ -15,13 +15,18 @@ var _ domain.EntryLister = (*Provider)(nil)
 type Provider struct {
 	defaults domain.Defaults
 	file     domain.File
+	party    map[string]partyTier
 }
 
 // NewProvider builds a Provider from already-decoded sections (config.yaml's
 // `mappings:` map and `digest:` block), the in-memory counterpart to Load.
 // A nil digest leaves the feature off by default (see Digest).
 func NewProvider(defaults domain.Defaults, m map[string]domain.Org, digest *domain.DigestConfig) *Provider {
-	return &Provider{defaults: defaults, file: domain.File{Mappings: slackMappings(m), Digest: digest}}
+	return &Provider{
+		defaults: defaults,
+		file:     domain.File{Mappings: slackMappings(m), Digest: digest},
+		party:    buildPartyIndex(m),
+	}
 }
 
 // Digest returns the effective stuck-PR digest configuration. The feature is

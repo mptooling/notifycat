@@ -34,7 +34,7 @@ func TestModule_GraphResolves(t *testing.T) {
 			Mappings: map[string]domain.Org{},
 			Digest:   nil,
 		}),
-		fx.Invoke(func(domain.RoutingProvider, domain.TargetResolver) {}),
+		fx.Invoke(func(domain.RoutingProvider, domain.TargetResolver, domain.PartyRules) {}),
 	)
 
 	app.RequireStart()
