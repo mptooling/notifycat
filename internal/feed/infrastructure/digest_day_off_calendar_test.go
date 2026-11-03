@@ -20,6 +20,7 @@ func TestDigestDayOffCalendar_IsDayOff(t *testing.T) {
 	}{
 		{"weekday", "", time.Date(2026, 11, 3, 10, 0, 0, 0, time.UTC), false},
 		{"saturday", "", time.Date(2026, 11, 7, 10, 0, 0, 0, time.UTC), true},
+		{"public holiday without a country", "", time.Date(2026, 12, 25, 10, 0, 0, 0, time.UTC), false},
 		{"public holiday", "DE", time.Date(2026, 12, 25, 10, 0, 0, 0, time.UTC), true},
 	}
 

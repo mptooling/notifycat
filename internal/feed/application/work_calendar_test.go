@@ -53,29 +53,75 @@ func TestWorkCalendar_AddWorkingTime(t *testing.T) {
 
 			got := calendar.AddWorkingTime(testCase.start, testCase.workingTime)
 
-			assert.True(t, testCase.want.Equal(got), "want %s got %s", testCase.want, got)
+			assert.WithinDuration(t, testCase.want, got, 0)
 		})
 	}
 }
 
-func TestWorkCalendar_UsesTheLocation(t *testing.T) {
+func TestWorkCalendar_AddWorkingTimeUsesTheLocation(t *testing.T) {
 	berlin, err := time.LoadLocation("Europe/Berlin")
 	require.NoError(t, err)
 	calendar := application.NewWorkCalendar(domain.WorkCalendarParams{DaysOff: daysOffFake{}, Location: berlin})
 	fridayNightBerlin := utc(2026, 11, 6, 22, 50)
-	saturdayEarlyBerlin := utc(2026, 11, 6, 23, 30)
 
 	got := calendar.AddWorkingTime(fridayNightBerlin, 30*time.Minute)
 
-	assert.True(t, utc(2026, 11, 8, 23, 20).Equal(got), "got %s", got)
-	assert.True(t, calendar.IsDayOff(saturdayEarlyBerlin))
-	assert.Equal(t, "2026-11-07", calendar.Day(saturdayEarlyBerlin))
+	assert.WithinDuration(t, utc(2026, 11, 8, 23, 20), got, 0)
+}
+
+func TestWorkCalendar_AddWorkingTimeAcrossASkippedLocalMidnight(t *testing.T) {
+	santiago, err := time.LoadLocation("America/Santiago")
+	require.NoError(t, err)
+	testCases := []struct {
+		name        string
+		workingTime time.Duration
+		want        time.Time
+	}{
+		{"short time", 30 * time.Minute, time.Date(2026, 9, 7, 0, 20, 0, 0, santiago)},
+		{"a full day", 24 * time.Hour, time.Date(2026, 9, 7, 23, 50, 0, 0, santiago)},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			calendar := application.NewWorkCalendar(domain.WorkCalendarParams{DaysOff: daysOffFake{}, Location: santiago})
+			fridayNight := time.Date(2026, 9, 4, 23, 50, 0, 0, santiago)
+
+			got := calendar.AddWorkingTime(fridayNight, testCase.workingTime)
+
+			assert.WithinDuration(t, testCase.want, got, 0)
+		})
+	}
+}
+
+func TestWorkCalendar_IsDayOffUsesTheLocation(t *testing.T) {
+	berlin, err := time.LoadLocation("Europe/Berlin")
+	require.NoError(t, err)
+	calendar := application.NewWorkCalendar(domain.WorkCalendarParams{DaysOff: daysOffFake{}, Location: berlin})
+	saturdayEarlyBerlin := utc(2026, 11, 6, 23, 30)
+
+	got := calendar.IsDayOff(saturdayEarlyBerlin)
+
+	assert.True(t, got)
+}
+
+func TestWorkCalendar_DayUsesTheLocation(t *testing.T) {
+	berlin, err := time.LoadLocation("Europe/Berlin")
+	require.NoError(t, err)
+	calendar := application.NewWorkCalendar(domain.WorkCalendarParams{DaysOff: daysOffFake{}, Location: berlin})
+	saturdayEarlyBerlin := utc(2026, 11, 6, 23, 30)
+
+	got := calendar.Day(saturdayEarlyBerlin)
+
+	assert.Equal(t, "2026-11-07", got)
 }
 
 func TestWorkCalendar_NilLocationIsUTC(t *testing.T) {
 	calendar := application.NewWorkCalendar(domain.WorkCalendarParams{DaysOff: daysOffFake{}})
 	saturdayUTC := utc(2026, 11, 7, 0, 30)
 
-	assert.True(t, calendar.IsDayOff(saturdayUTC))
-	assert.Equal(t, "2026-11-07", calendar.Day(saturdayUTC))
+	isDayOff := calendar.IsDayOff(saturdayUTC)
+	day := calendar.Day(saturdayUTC)
+
+	assert.True(t, isDayOff)
+	assert.Equal(t, "2026-11-07", day)
 }

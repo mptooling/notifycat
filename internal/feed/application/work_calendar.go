@@ -21,22 +21,22 @@ func NewWorkCalendar(params domain.WorkCalendarParams) *WorkCalendar {
 	return &WorkCalendar{daysOff: params.DaysOff, location: location}
 }
 
-// IsDayOff implements WorkCalendar.
+// IsDayOff implements domain.WorkCalendar.
 func (calendar *WorkCalendar) IsDayOff(moment time.Time) bool {
 	return calendar.daysOff.IsDayOff(moment.In(calendar.location))
 }
 
-// Day implements WorkCalendar.
+// Day implements domain.WorkCalendar.
 func (calendar *WorkCalendar) Day(moment time.Time) string {
 	return moment.In(calendar.location).Format(domain.DayLayout)
 }
 
-// AddWorkingTime implements WorkCalendar.
+// AddWorkingTime implements domain.WorkCalendar.
 func (calendar *WorkCalendar) AddWorkingTime(start time.Time, workingTime time.Duration) time.Time {
 	cursor := start.In(calendar.location)
 	remaining := workingTime
 	for range domain.MaxWorkingTimeSearchDays {
-		nextMidnight := time.Date(cursor.Year(), cursor.Month(), cursor.Day()+1, 0, 0, 0, 0, calendar.location)
+		nextMidnight := startOfNextDay(cursor)
 		if calendar.daysOff.IsDayOff(cursor) {
 			cursor = nextMidnight
 			continue
@@ -49,4 +49,12 @@ func (calendar *WorkCalendar) AddWorkingTime(start time.Time, workingTime time.D
 		cursor = nextMidnight
 	}
 	return start.Add(workingTime)
+}
+
+func startOfNextDay(moment time.Time) time.Time {
+	nextDay := time.Date(moment.Year(), moment.Month(), moment.Day()+1, 0, 0, 0, 0, moment.Location())
+	if nextDay.Day() == moment.Day() {
+		_, nextDay = nextDay.ZoneBounds()
+	}
+	return nextDay
 }

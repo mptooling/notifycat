@@ -13,7 +13,8 @@ import (
 )
 
 // Module binds the feed ports to their adapters and the use cases. It
-// expects the composition root to supply a domain.Settings, a domain.DayOffCalendar, *persistence.FeedSubscriptions,
+// expects the composition root to supply a domain.Settings, a
+// domain.DayOffCalendar, *persistence.FeedSubscriptions,
 // *persistence.FeedPullRequests, *persistence.FeedDeliveries,
 // routingdomain.EntryLister and a *slog.Logger.
 var Module = fx.Module("feed",
