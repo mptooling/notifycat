@@ -82,6 +82,9 @@ type Config struct {
 
 	AgentAPIEnabled bool
 	AdminKeyHash    Secret
+
+	PartyReviewers int
+	PartyDeadline  time.Duration
 }
 
 // Reactions configures Slack reaction emoji names per PR lifecycle event.
@@ -129,7 +132,9 @@ type fileSchema struct {
 		AdminAddr string `yaml:"admin_addr"`
 	} `yaml:"server"`
 	AgentAPI struct {
-		Enabled *bool `yaml:"enabled"`
+		Enabled        *bool  `yaml:"enabled"`
+		PartyReviewers *int   `yaml:"party_reviewers"`
+		PartyDeadline  string `yaml:"party_deadline"`
 	} `yaml:"agent_api"`
 	Database struct {
 		URL string `yaml:"url"`
@@ -183,6 +188,8 @@ func defaults() Config {
 		DeleteOnClose:    false,
 		IgnoreAIReviews:  false,
 		DependabotFormat: true,
+		PartyReviewers:   routingdomain.DefaultPartyReviewers,
+		PartyDeadline:    routingdomain.DefaultPartyDeadline,
 		Reactions: Reactions{
 			Enabled:       true,
 			NewPR:         "eyes",
@@ -266,6 +273,9 @@ func Load() (Config, error) {
 	if err := validateAgentAPI(cfg); err != nil {
 		return Config{}, err
 	}
+	if err := applyPartySettings(&cfg, fs); err != nil {
+		return Config{}, err
+	}
 	if cfg.MessageTTLDays <= 0 {
 		return Config{}, fmt.Errorf("config: cleanup.message_ttl_days must be > 0, got %d", cfg.MessageTTLDays)
 	}
@@ -345,6 +355,23 @@ func trimSingleQuotes(value string) string {
 		return value[1 : len(value)-1]
 	}
 	return value
+}
+
+func applyPartySettings(cfg *Config, fs fileSchema) error {
+	if fs.AgentAPI.PartyReviewers != nil {
+		if err := routingdomain.ValidatePartyReviewers(*fs.AgentAPI.PartyReviewers); err != nil {
+			return fmt.Errorf("config: agent_api.party_reviewers: %w", err)
+		}
+		cfg.PartyReviewers = *fs.AgentAPI.PartyReviewers
+	}
+	if fs.AgentAPI.PartyDeadline != "" {
+		deadline, err := routingdomain.ParsePartyDeadline(fs.AgentAPI.PartyDeadline)
+		if err != nil {
+			return fmt.Errorf("config: agent_api.party_deadline: %w", err)
+		}
+		cfg.PartyDeadline = deadline
+	}
+	return nil
 }
 
 func validateAgentAPI(cfg Config) error {
