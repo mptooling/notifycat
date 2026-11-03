@@ -93,3 +93,10 @@ type SubscriptionCleaner interface {
 type Recorder interface {
 	Record(ctx context.Context, event kernel.Event) error
 }
+
+// TurnPolicy decides which waiting pull requests the poller may take in a party round.
+type TurnPolicy interface {
+	// Choose keeps the input order in Take. Taken counts pull requests at their cap; Waiting counts those
+	// where another member has the turn. The caller's Loads map is not changed.
+	Choose(round PartyRound) PartyDecision
+}

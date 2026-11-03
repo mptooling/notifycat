@@ -81,3 +81,46 @@ type RemovedSubscriptions struct {
 	// Repositories are the repositories whose subscriptions were removed, sorted.
 	Repositories []string
 }
+
+// PullRequestKey names one pull request.
+type PullRequestKey struct {
+	Repository string
+	Number     int
+}
+
+// PartyState is the party record of a pull request. A zero DeadlineAt means the timer ran out.
+type PartyState struct {
+	Reviewers  int
+	RecordedAt time.Time
+	DeadlineAt time.Time
+}
+
+// PartyMember is one token inside one repository.
+type PartyMember struct {
+	TokenID    string
+	Repository string
+}
+
+// WaitingPullRequest is a pull request a party poller could take.
+type WaitingPullRequest struct {
+	Key             PullRequestKey
+	Party           PartyState
+	PartyDeliveries int
+	// Candidates are the other members of the repository, not away, without a delivery of this pull request.
+	Candidates []string
+}
+
+// PartyRound is the input of one party claim.
+type PartyRound struct {
+	TokenID      string
+	Now          time.Time
+	PullRequests []WaitingPullRequest
+	Loads        map[PartyMember]int
+}
+
+// PartyDecision is the outcome of one party claim.
+type PartyDecision struct {
+	Take    []PullRequestKey
+	Taken   int
+	Waiting int
+}

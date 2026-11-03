@@ -28,6 +28,7 @@ var Module = fx.Module("feed",
 		fx.Annotate(application.NewRecorder, fx.As(new(domain.Recorder))),
 		fx.Annotate(application.NewPullRequestCleaner, fx.As(new(domain.PullRequestCleaner))),
 		fx.Annotate(application.NewSubscriptionCleaner, fx.As(new(domain.SubscriptionCleaner))),
+		fx.Annotate(application.NewTurnPolicy, fx.As(new(domain.TurnPolicy))),
 	),
 )
 
