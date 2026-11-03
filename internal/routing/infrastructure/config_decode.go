@@ -633,21 +633,24 @@ func decodePathRule(rule *domain.PathRule, node *yaml.Node) error {
 }
 
 func decodePartyKey(key string, node *yaml.Node, party *domain.PartyOverride) error {
+	if node.Kind != yaml.ScalarNode {
+		return fmt.Errorf("%s: must be a single value", key)
+	}
+	var text string
+	if err := node.Decode(&text); err != nil {
+		return fmt.Errorf("%s: %w", key, err)
+	}
+	if text == "" {
+		return nil
+	}
 	switch key {
 	case "party_reviewers":
-		if node.Kind != yaml.ScalarNode || node.Tag != "!!int" {
-			return fmt.Errorf("%s: %q must be a whole number of %d or more", key, node.Value, domain.MinPartyReviewers)
-		}
-		reviewers, err := domain.ParsePartyReviewers(node.Value)
+		reviewers, err := domain.ParsePartyReviewers(text)
 		if err != nil {
 			return fmt.Errorf("%s: %w", key, err)
 		}
 		party.Reviewers = &reviewers
 	case "party_deadline":
-		var text string
-		if err := node.Decode(&text); err != nil {
-			return fmt.Errorf("%s: %w", key, err)
-		}
 		deadline, err := domain.ParsePartyDeadline(text)
 		if err != nil {
 			return fmt.Errorf("%s: %w", key, err)

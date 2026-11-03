@@ -417,8 +417,7 @@ func TestRepoConfig_PartyReviewersRejected(t *testing.T) {
 		{name: "zero", value: "0", rule: "1 or more"},
 		{name: "negative", value: "-1", rule: "1 or more"},
 		{name: "fraction", value: "2.5", rule: "whole number"},
-		{name: "quoted", value: `"2"`, rule: "whole number"},
-		{name: "null", value: "null", rule: "whole number"},
+		{name: "word", value: "two", rule: "whole number"},
 	}
 
 	for _, testCase := range testCases {
@@ -432,4 +431,64 @@ func TestRepoConfig_PartyReviewersRejected(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestRepoConfig_PartyReviewersAcceptsQuotedNumber(t *testing.T) {
+	for place, body := range partyKeyPlacements(`party_reviewers: "2"`) {
+		t.Run(place, func(t *testing.T) {
+			api := decodeOrg(t, body)["api"].toDomain()
+			party := api.Party
+			if place == "path" {
+				party = api.Paths[0].Party
+			}
+
+			require.NotNil(t, party.Reviewers)
+			assert.Equal(t, 2, *party.Reviewers)
+		})
+	}
+}
+
+func TestRepoConfig_PartyEmptyValuesMeanNotSet(t *testing.T) {
+	testCases := []struct {
+		name  string
+		value string
+	}{
+		{name: "null", value: "null"},
+		{name: "empty string", value: `""`},
+	}
+
+	for _, testCase := range testCases {
+		for place, body := range partyKeyPlacements("party_reviewers: " + testCase.value + "\n  party_deadline: " + testCase.value) {
+			t.Run(testCase.name+" on "+place, func(t *testing.T) {
+				api := decodeOrg(t, body)["api"].toDomain()
+				party := api.Party
+				if place == "path" {
+					party = api.Paths[0].Party
+				}
+
+				assert.Nil(t, party.Reviewers)
+				assert.Nil(t, party.Deadline)
+			})
+		}
+	}
+
+	t.Run("empty reviewers keeps the deadline", func(t *testing.T) {
+		org := decodeOrg(t, "api:\n  channel: C0API\n  party_reviewers: null\n  party_deadline: 2h\n")
+
+		party := org["api"].toDomain().Party
+
+		assert.Nil(t, party.Reviewers)
+		require.NotNil(t, party.Deadline)
+		assert.Equal(t, 2*time.Hour, *party.Deadline)
+	})
+}
+
+func TestRepoConfig_PartyOnlyStarTier(t *testing.T) {
+	org := decodeOrg(t, "\"*\":\n  party_reviewers: 3\n")
+
+	star := org["*"].toDomain()
+
+	require.NotNil(t, star.Party.Reviewers)
+	assert.Equal(t, 3, *star.Party.Reviewers)
+	assert.True(t, star.PartyOnly())
 }
