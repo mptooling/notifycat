@@ -72,6 +72,19 @@ func TestListHookEvents_APIError(t *testing.T) {
 	assert.Equal(t, "Not Found", apiErr.Message)
 }
 
+func TestListHookEvents_DecodeErrorKeepsTheBodyOut(t *testing.T) {
+	const marker = "body-marker-7731"
+	client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `[{"id":1,"config":{"url":"`+marker)
+	})
+
+	_, err := client.ListHookEvents(context.Background(), "acme", "widgets", "/webhook/github")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "list-hooks", "the error names the method")
+	assert.NotContains(t, err.Error(), marker, "a response body never reaches an error or a log")
+}
+
 func TestListOrgRepos_SinglePage(t *testing.T) {
 	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/orgs/acme/repos", r.URL.Path)
