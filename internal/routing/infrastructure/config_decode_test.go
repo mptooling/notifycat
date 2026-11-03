@@ -3,6 +3,7 @@ package infrastructure
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -320,5 +321,115 @@ func TestRepoConfig_NotificationsRejected(t *testing.T) {
 
 			require.ErrorContains(t, err, testCase.wantErr)
 		})
+	}
+}
+
+func TestRepoConfig_PartyKeys(t *testing.T) {
+	org := decodeOrg(t, `
+api:
+  channel: C0API
+  party_reviewers: 2
+  party_deadline: 1h30m
+  paths:
+    billing:
+      party_reviewers: 4
+      party_deadline: 15m
+"*":
+  channel: C0STAR
+  party_reviewers: 3
+`)
+
+	api := org["api"].toDomain()
+	star := org["*"].toDomain()
+
+	require.NotNil(t, api.Party.Reviewers)
+	require.NotNil(t, api.Party.Deadline)
+	require.Len(t, api.Paths, 1)
+	require.NotNil(t, api.Paths[0].Party.Reviewers)
+	require.NotNil(t, api.Paths[0].Party.Deadline)
+	require.NotNil(t, star.Party.Reviewers)
+	assert.Equal(t, 2, *api.Party.Reviewers)
+	assert.Equal(t, 90*time.Minute, *api.Party.Deadline)
+	assert.Equal(t, 4, *api.Paths[0].Party.Reviewers)
+	assert.Equal(t, 15*time.Minute, *api.Paths[0].Party.Deadline)
+	assert.Equal(t, 3, *star.Party.Reviewers)
+	assert.Nil(t, star.Party.Deadline)
+}
+
+func partyKeyPlacements(line string) map[string]string {
+	return map[string]string{
+		"tier": "api:\n  channel: C0API\n  " + line + "\n",
+		"path": "api:\n  channel: C0API\n  paths:\n    billing:\n      " + line + "\n",
+	}
+}
+
+func TestRepoConfig_PartyDeadlineLimits(t *testing.T) {
+	accepted := []struct {
+		value string
+		want  time.Duration
+	}{
+		{value: "15m", want: 15 * time.Minute},
+		{value: "24h", want: 24 * time.Hour},
+	}
+	for _, testCase := range accepted {
+		for place, body := range partyKeyPlacements("party_deadline: " + testCase.value) {
+			t.Run("accepts "+testCase.value+" on "+place, func(t *testing.T) {
+				api := decodeOrg(t, body)["api"].toDomain()
+				party := api.Party
+				if place == "path" {
+					party = api.Paths[0].Party
+				}
+
+				require.NotNil(t, party.Deadline)
+				assert.Equal(t, testCase.want, *party.Deadline)
+			})
+		}
+	}
+
+	rejected := []struct {
+		value string
+		rule  string
+	}{
+		{value: "14m", rule: "15m to 24h"},
+		{value: "25h", rule: "15m to 24h"},
+		{value: "30s", rule: "hours and minutes"},
+	}
+	for _, testCase := range rejected {
+		for place, body := range partyKeyPlacements("party_deadline: " + testCase.value) {
+			t.Run("rejects "+testCase.value+" on "+place, func(t *testing.T) {
+				err := decodeOrgError(body)
+
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "party_deadline")
+				assert.Contains(t, err.Error(), testCase.value)
+				assert.Contains(t, err.Error(), testCase.rule)
+			})
+		}
+	}
+}
+
+func TestRepoConfig_PartyReviewersRejected(t *testing.T) {
+	testCases := []struct {
+		name  string
+		value string
+		rule  string
+	}{
+		{name: "zero", value: "0", rule: "1 or more"},
+		{name: "negative", value: "-1", rule: "1 or more"},
+		{name: "fraction", value: "2.5", rule: "whole number"},
+		{name: "quoted", value: `"2"`, rule: "whole number"},
+		{name: "null", value: "null", rule: "whole number"},
+	}
+
+	for _, testCase := range testCases {
+		for place, body := range partyKeyPlacements("party_reviewers: " + testCase.value) {
+			t.Run(testCase.name+" on "+place, func(t *testing.T) {
+				err := decodeOrgError(body)
+
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "party_reviewers")
+				assert.Contains(t, err.Error(), testCase.rule)
+			})
+		}
 	}
 }
