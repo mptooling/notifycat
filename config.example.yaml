@@ -234,6 +234,24 @@ mappings:
             - channel: C0ZPAY0002
               mentions: []                       # ping nobody in this channel
 
+  # ── Review party settings per repo and path ─────────────────────────────────────────────────────
+  # party_reviewers (whole number, 1 or more) and party_deadline (15m to 24h) set the agent API party
+  # cap and timer. Levels: path > repo tier > org "*" tier > agent_api > built-in default (1, 1h).
+  # Slack ignores both keys. A "*" tier or a path with only party keys routes nothing. The repo tier
+  # still needs a channel here or on the org's "*" tier. A path rule makes notifycat read the PR's
+  # changed files (needs a read token).
+  # theta:
+  #   "*":
+  #     party_deadline: 30m                   # party-only "*": needs a named tier that routes
+  #   protorepo:
+  #     channel: C0PROTO000
+  #     party_reviewers: 2
+  #     paths:
+  #       docs:
+  #         party_reviewers: 1
+  #       services:
+  #         party_reviewers: 4
+
   # ── Notification strategy: per-event (default) or scheduled ─────────────────────────────────────
   # per-event: one message per PR, posted when the PR opens and updated as it changes (today's
   # behavior; used when no tier sets `notifications:`).

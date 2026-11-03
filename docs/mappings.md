@@ -96,7 +96,9 @@ A repository tier (and the `"*"` tier) may override behavioral settings that oth
 - **Digest:** `digest.enabled`, `digest.schedule` — but **not** `digest.timezone`, which is global only and rejected on a tier
 - **Notifications:** `notifications.strategy` (`per-event` or `scheduled`), `notifications.mode` (`hourly`, `at`, or `cron`), `notifications.at`, `notifications.cron` — tier only, there is no global section. See [Notification strategies](notification-strategies.md).
 
-Inheritance, most-specific wins: repository tier → org `"*"` tier → global section → built-in default. The `notifications:` block is the exception: it is **atomic**, so the most specific tier that sets it replaces the whole block, and its keys never merge across tiers. Not overridable per repository: `server.*`, `database.url`, `slack.base_url`, `github.base_url` / `bitbucket.base_url`, `cleanup.message_ttl_days`.
+- **Party:** `party_reviewers` and `party_deadline` for the [agent API](agent-api.md#review-as-a-party). `party_reviewers` is a whole number of 1 or more. A quoted `"3"` works, and `2.5` fails at startup. `party_deadline` uses hours and minutes, from `15m` to `24h`. A null or empty value means the key is not set. Slack ignores both keys.
+
+Inheritance, most-specific wins: repository tier → org `"*"` tier → global section → built-in default. The party keys have one more level on top: a path rule. See [Party settings per path](monorepo.md#party-settings-per-path). The `notifications:` block is the exception: it is **atomic**, so the most specific tier that sets it replaces the whole block, and its keys never merge across tiers. Not overridable per repository: `server.*`, `database.url`, `slack.base_url`, `github.base_url` / `bitbucket.base_url`, `cleanup.message_ttl_days`.
 
 ## Per-path routing (monorepos)
 
@@ -107,6 +109,8 @@ A **named** repository tier may add a `paths:` block; how PRs select channels at
 | `channel` | Optional. Omitted → inherits the repository tier's primary channel. If set, matches `^[CGD][A-Z0-9]{2,}$`. Mutually exclusive with `channels:` on the same path entry. |
 | `channels` | Optional. List form: `{ channel, mentions }` entries, same schema and rules as at the tier level. Mutually exclusive with `channel:` and `mentions:` on the same path entry. When a matched path rule declares `channels:`, those channels **replace the repository's base channel set** for that PR (replace-on-match). |
 | `mentions` | Optional. Same tri-state as a repository tier; `null` rejected. Not allowed alongside `channels:`. |
+| `party_reviewers` | Optional. Same rule as on a repository tier. Slack ignores it. |
+| `party_deadline` | Optional. Same rule as on a repository tier. Slack ignores it. |
 
 Parse-time validation — the server fails fast on any violation:
 
@@ -116,6 +120,17 @@ Parse-time validation — the server fails fast on any violation:
 - Empty keys, the root `/`, and any key containing a `..` segment are rejected.
 - Duplicate keys within a tier or path node are an error, never a silent last-wins.
 - A repository with `paths:` must still resolve a base channel from its own tier or `"*"`, so an unmatched PR always has a destination.
+
+## Party-only entries
+
+A tier or a path can set only party keys. Such an entry routes nothing. It never changes Slack routing, the validation checks, or the `config.lock` hashes. It never adds a repository to the feed.
+
+Two startup errors protect this rule:
+
+- A named tier with only party keys fails when no tier routes the repository. Set a channel on the tier or on the org's `"*"` tier. The error reads `sets only party keys, but no tier routes this repository`.
+- A `"*"` tier with only party keys fails when no named tier of the org routes a repository. The error reads `the "*" entry sets only party keys, but no tier of the org routes a repository`.
+
+Path entries on a `"*"` tier fail, as before.
 
 ## Lock file
 
