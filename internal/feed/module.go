@@ -28,7 +28,7 @@ var Module = fx.Module("feed",
 		fx.Annotate(infrastructure.NewSystemClock, fx.As(new(domain.Clock))),
 		fx.Annotate(provideSubscriptions, fx.As(new(domain.Subscriptions))),
 		fx.Annotate(providePullRequests, fx.As(new(domain.PullRequests))),
-		fx.Annotate(application.NewRecorder, fx.As(new(domain.Recorder))),
+		fx.Annotate(provideRecorder, fx.As(new(domain.Recorder))),
 		fx.Annotate(application.NewPullRequestCleaner, fx.As(new(domain.PullRequestCleaner))),
 		fx.Annotate(application.NewSubscriptionCleaner, fx.As(new(domain.SubscriptionCleaner))),
 		fx.Annotate(application.NewTurnPolicy, fx.As(new(domain.TurnPolicy))),
@@ -79,5 +79,24 @@ func providePullRequests(params pullRequestsParams) *application.PullRequests {
 		Calendar:      params.Calendar,
 		Clock:         params.Clock,
 		Logger:        params.Logger,
+	})
+}
+
+type recorderParams struct {
+	fx.In
+	PullRequests  domain.PullRequestStore
+	Catalog       domain.RepositoryCatalog
+	Clock         domain.Clock
+	Calendar      domain.WorkCalendar
+	PartySettings domain.PartySettingsResolver
+}
+
+func provideRecorder(params recorderParams) *application.Recorder {
+	return application.NewRecorder(domain.RecorderParams{
+		PullRequests:  params.PullRequests,
+		Catalog:       params.Catalog,
+		Clock:         params.Clock,
+		Calendar:      params.Calendar,
+		PartySettings: params.PartySettings,
 	})
 }

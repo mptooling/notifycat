@@ -151,10 +151,22 @@ type fakePullRequestStore struct {
 	repositoryErr         error
 	deleteAllErr          error
 	deleteRepositoriesErr error
+	stored                *domain.PullRequest
+	findErr               error
+	findCalls             int
+	calls                 *callLog
 }
 
 func (store *fakePullRequestStore) Find(context.Context, domain.PullRequestKey) (domain.PullRequest, bool, error) {
-	return domain.PullRequest{}, false, nil
+	store.findCalls++
+	store.calls.add("find")
+	if store.findErr != nil {
+		return domain.PullRequest{}, false, store.findErr
+	}
+	if store.stored == nil {
+		return domain.PullRequest{}, false, nil
+	}
+	return *store.stored, true, nil
 }
 
 func (store *fakePullRequestStore) ReceivedSince(_ context.Context, query domain.ReceivedQuery) ([]domain.PullRequest, error) {
@@ -168,6 +180,7 @@ type changedCall struct {
 }
 
 func (store *fakePullRequestStore) Upsert(_ context.Context, pullRequest domain.PullRequest) error {
+	store.calls.add("upsert")
 	if store.upsertErr != nil {
 		return store.upsertErr
 	}
@@ -271,6 +284,13 @@ type fakeWorkCalendar struct {
 	day          string
 	dayOffChecks []time.Time
 	dayMoments   []time.Time
+	deadline     time.Time
+	addCalls     []addWorkingTimeCall
+}
+
+type addWorkingTimeCall struct {
+	start       time.Time
+	workingTime time.Duration
 }
 
 func (calendar *fakeWorkCalendar) IsDayOff(moment time.Time) bool {
@@ -284,6 +304,10 @@ func (calendar *fakeWorkCalendar) Day(moment time.Time) string {
 }
 
 func (calendar *fakeWorkCalendar) AddWorkingTime(start time.Time, workingTime time.Duration) time.Time {
+	calendar.addCalls = append(calendar.addCalls, addWorkingTimeCall{start: start, workingTime: workingTime})
+	if !calendar.deadline.IsZero() {
+		return calendar.deadline
+	}
 	return start.Add(workingTime)
 }
 
@@ -311,6 +335,19 @@ func (catalog *fakeCatalog) Configured(repositories []string) []string {
 		}
 	}
 	return configured
+}
+
+type fakePartySettings struct {
+	settings domain.PartySettings
+	err      error
+	calls    int
+	callLog  *callLog
+}
+
+func (resolver *fakePartySettings) Resolve(context.Context, domain.PullRequestKey) (domain.PartySettings, error) {
+	resolver.calls++
+	resolver.callLog.add("resolve")
+	return resolver.settings, resolver.err
 }
 
 type fakeClock struct {

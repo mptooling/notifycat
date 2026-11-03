@@ -11,16 +11,24 @@ import (
 
 // Recorder implements domain.Recorder.
 type Recorder struct {
-	pullRequests domain.PullRequestStore
-	catalog      domain.RepositoryCatalog
-	clock        domain.Clock
+	pullRequests  domain.PullRequestStore
+	catalog       domain.RepositoryCatalog
+	clock         domain.Clock
+	calendar      domain.WorkCalendar
+	partySettings domain.PartySettingsResolver
 }
 
 var _ domain.Recorder = (*Recorder)(nil)
 
 // NewRecorder builds a Recorder.
-func NewRecorder(pullRequests domain.PullRequestStore, catalog domain.RepositoryCatalog, clock domain.Clock) *Recorder {
-	return &Recorder{pullRequests: pullRequests, catalog: catalog, clock: clock}
+func NewRecorder(params domain.RecorderParams) *Recorder {
+	return &Recorder{
+		pullRequests:  params.PullRequests,
+		catalog:       params.Catalog,
+		clock:         params.Clock,
+		calendar:      params.Calendar,
+		partySettings: params.PartySettings,
+	}
 }
 
 // Record implements domain.Recorder.
@@ -31,7 +39,13 @@ func (recorder *Recorder) Record(ctx context.Context, event kernel.Event) error 
 	}
 	switch event.Kind {
 	case kernel.KindOpened, kernel.KindReadyForReview, kernel.KindUpdated, kernel.KindReopened:
-		if err := recorder.pullRequests.Upsert(ctx, recorder.feedPullRequest(repository, event.PR)); err != nil {
+		feedPullRequest := recorder.feedPullRequest(repository, event.PR)
+		party, err := recorder.partyState(ctx, domain.PullRequestKey{Repository: repository, Number: event.PR.Number})
+		if err != nil {
+			return err
+		}
+		feedPullRequest.Party = party
+		if err := recorder.pullRequests.Upsert(ctx, feedPullRequest); err != nil {
 			return fmt.Errorf("upsert feed pull request: %w", err)
 		}
 	case kernel.KindClosed, kernel.KindMerged, kernel.KindConvertedToDraft:
@@ -41,6 +55,26 @@ func (recorder *Recorder) Record(ctx context.Context, event kernel.Event) error 
 	default:
 	}
 	return nil
+}
+
+func (recorder *Recorder) partyState(ctx context.Context, key domain.PullRequestKey) (domain.PartyState, error) {
+	stored, found, err := recorder.pullRequests.Find(ctx, key)
+	if err != nil {
+		return domain.PartyState{}, fmt.Errorf("find feed pull request: %w", err)
+	}
+	recordedAt := recorder.clock.Now().UTC()
+	if found && !stored.Party.RecordedAt.IsZero() {
+		recordedAt = stored.Party.RecordedAt
+	}
+	settings, err := recorder.partySettings.Resolve(ctx, key)
+	if err != nil {
+		return domain.PartyState{}, fmt.Errorf("resolve party settings: %w", err)
+	}
+	return domain.PartyState{
+		Reviewers:  settings.Reviewers,
+		RecordedAt: recordedAt,
+		DeadlineAt: recorder.calendar.AddWorkingTime(recordedAt, settings.Deadline),
+	}, nil
 }
 
 func (recorder *Recorder) feedPullRequest(repository string, pullRequest kernel.PR) domain.PullRequest {

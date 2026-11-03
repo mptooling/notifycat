@@ -14,8 +14,39 @@ import (
 	"github.com/mptooling/notifycat/internal/kernel"
 )
 
+var defaultPartySettings = domain.PartySettings{Reviewers: 1, Deadline: time.Hour}
+
+type recorderFixture struct {
+	store    *fakePullRequestStore
+	calendar *fakeWorkCalendar
+	settings *fakePartySettings
+	recorder *application.Recorder
+}
+
+func newRecorderFixture(partySettings domain.PartySettings) recorderFixture {
+	fixture := recorderFixture{
+		store:    &fakePullRequestStore{},
+		calendar: &fakeWorkCalendar{},
+		settings: &fakePartySettings{settings: partySettings},
+	}
+	fixture.recorder = application.NewRecorder(domain.RecorderParams{
+		PullRequests:  fixture.store,
+		Catalog:       &fakeCatalog{repositories: []string{"acme/api"}},
+		Clock:         &fakeClock{now: now},
+		Calendar:      fixture.calendar,
+		PartySettings: fixture.settings,
+	})
+	return fixture
+}
+
 func newRecorder(store *fakePullRequestStore, catalog *fakeCatalog) *application.Recorder {
-	return application.NewRecorder(store, catalog, &fakeClock{now: now})
+	return application.NewRecorder(domain.RecorderParams{
+		PullRequests:  store,
+		Catalog:       catalog,
+		Clock:         &fakeClock{now: now},
+		Calendar:      &fakeWorkCalendar{},
+		PartySettings: &fakePartySettings{settings: defaultPartySettings},
+	})
 }
 
 func TestRecorder_Record(t *testing.T) {
@@ -91,6 +122,7 @@ func TestRecorder_StoresFeedFields(t *testing.T) {
 		Repository: "acme/api", Number: 42, Title: "Add feed", Description: "the body",
 		URL: "https://example.test/pr/42", AuthorID: "9001", SourceBranch: "feat/x", TargetBranch: "main",
 		HeadSHA: "abc123", CreatedAt: createdAt.UTC(), UpdatedAt: now,
+		Party: domain.PartyState{Reviewers: 1, RecordedAt: now, DeadlineAt: now.Add(time.Hour)},
 	}, stored)
 	assert.Equal(t, time.UTC, stored.CreatedAt.Location())
 	assert.NotContains(t, fmt.Sprintf("%+v", stored), "octocat", "the feed never stores an author name")
@@ -127,4 +159,84 @@ func TestRecorder_ReturnsDeleteError(t *testing.T) {
 	err := recorder.Record(t.Context(), kernel.Event{Kind: kernel.KindClosed, Repository: "acme/api", PR: kernel.PR{Number: 1}})
 
 	require.ErrorIs(t, err, storeErr)
+}
+
+var openEvent = kernel.Event{Kind: kernel.KindOpened, Repository: "acme/api", PR: kernel.PR{Number: 42}}
+
+func TestRecorder_StoresThePartyState(t *testing.T) {
+	fixture := newRecorderFixture(domain.PartySettings{Reviewers: 2, Deadline: 30 * time.Minute})
+	deadline := now.Add(3 * time.Hour)
+	fixture.calendar.deadline = deadline
+
+	err := fixture.recorder.Record(t.Context(), openEvent)
+
+	require.NoError(t, err)
+	require.Len(t, fixture.store.upserts, 1)
+	party := fixture.store.upserts[0].Party
+	assert.Equal(t, 2, party.Reviewers)
+	assert.WithinDuration(t, now, party.RecordedAt, 0)
+	assert.WithinDuration(t, deadline, party.DeadlineAt, 0)
+	require.Len(t, fixture.calendar.addCalls, 1)
+	assert.WithinDuration(t, now, fixture.calendar.addCalls[0].start, 0)
+	assert.Equal(t, 30*time.Minute, fixture.calendar.addCalls[0].workingTime)
+}
+
+func TestRecorder_KeepsTheFirstRecordTime(t *testing.T) {
+	fixture := newRecorderFixture(defaultPartySettings)
+	firstRecordedAt := now.Add(-48 * time.Hour)
+	fixture.store.stored = &domain.PullRequest{Party: domain.PartyState{RecordedAt: firstRecordedAt}}
+
+	err := fixture.recorder.Record(t.Context(), kernel.Event{Kind: kernel.KindUpdated, Repository: "acme/api", PR: kernel.PR{Number: 42}})
+
+	require.NoError(t, err)
+	require.Len(t, fixture.store.upserts, 1)
+	assert.WithinDuration(t, firstRecordedAt, fixture.store.upserts[0].Party.RecordedAt, 0)
+	require.Len(t, fixture.calendar.addCalls, 1)
+	assert.WithinDuration(t, firstRecordedAt, fixture.calendar.addCalls[0].start, 0)
+}
+
+func TestRecorder_StoredRowWithoutRecordTimeStartsNow(t *testing.T) {
+	fixture := newRecorderFixture(defaultPartySettings)
+	fixture.store.stored = &domain.PullRequest{}
+
+	err := fixture.recorder.Record(t.Context(), openEvent)
+
+	require.NoError(t, err)
+	require.Len(t, fixture.store.upserts, 1)
+	assert.WithinDuration(t, now, fixture.store.upserts[0].Party.RecordedAt, 0)
+	require.Len(t, fixture.calendar.addCalls, 1)
+	assert.WithinDuration(t, now, fixture.calendar.addCalls[0].start, 0)
+}
+
+func TestRecorder_ReturnsFindError(t *testing.T) {
+	findErr := errors.New("db locked")
+	fixture := newRecorderFixture(defaultPartySettings)
+	fixture.store.findErr = findErr
+
+	err := fixture.recorder.Record(t.Context(), openEvent)
+
+	require.ErrorIs(t, err, findErr)
+	assert.Zero(t, fixture.settings.calls, "a failed lookup never resolves settings")
+	assert.Empty(t, fixture.store.upserts)
+}
+
+func TestRecorder_ReturnsResolverError(t *testing.T) {
+	resolveErr := errors.New("no settings")
+	fixture := newRecorderFixture(defaultPartySettings)
+	fixture.settings.err = resolveErr
+
+	err := fixture.recorder.Record(t.Context(), openEvent)
+
+	require.ErrorIs(t, err, resolveErr)
+	assert.Empty(t, fixture.store.upserts)
+}
+
+func TestRecorder_CloseEventNeitherFindsNorResolves(t *testing.T) {
+	fixture := newRecorderFixture(defaultPartySettings)
+
+	err := fixture.recorder.Record(t.Context(), kernel.Event{Kind: kernel.KindClosed, Repository: "acme/api", PR: kernel.PR{Number: 42}})
+
+	require.NoError(t, err)
+	assert.Zero(t, fixture.store.findCalls)
+	assert.Zero(t, fixture.settings.calls)
 }

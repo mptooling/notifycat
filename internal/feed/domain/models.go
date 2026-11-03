@@ -85,6 +85,15 @@ type PullRequestsParams struct {
 	Logger        *slog.Logger
 }
 
+// RecorderParams are the dependencies of the recorder.
+type RecorderParams struct {
+	PullRequests  PullRequestStore
+	Catalog       RepositoryCatalog
+	Clock         Clock
+	Calendar      WorkCalendar
+	PartySettings PartySettingsResolver
+}
+
 // RemovedSubscriptions reports what a subscription cleanup removed.
 type RemovedSubscriptions struct {
 	// Count is the number of removed subscription rows, across all tokens.
