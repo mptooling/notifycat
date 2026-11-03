@@ -13,7 +13,7 @@ import (
 )
 
 // Module binds the feed ports to their adapters and the use cases. It
-// expects the composition root to supply *persistence.FeedSubscriptions,
+// expects the composition root to supply a domain.Settings, a domain.DayOffCalendar, *persistence.FeedSubscriptions,
 // *persistence.FeedPullRequests, *persistence.FeedDeliveries,
 // routingdomain.EntryLister and a *slog.Logger.
 var Module = fx.Module("feed",
@@ -29,8 +29,13 @@ var Module = fx.Module("feed",
 		fx.Annotate(application.NewPullRequestCleaner, fx.As(new(domain.PullRequestCleaner))),
 		fx.Annotate(application.NewSubscriptionCleaner, fx.As(new(domain.SubscriptionCleaner))),
 		fx.Annotate(application.NewTurnPolicy, fx.As(new(domain.TurnPolicy))),
+		fx.Annotate(provideWorkCalendar, fx.As(new(domain.WorkCalendar))),
 	),
 )
+
+func provideWorkCalendar(settings domain.Settings, daysOff domain.DayOffCalendar) *application.WorkCalendar {
+	return application.NewWorkCalendar(domain.WorkCalendarParams{DaysOff: daysOff, Location: settings.Location})
+}
 
 type subscriptionsParams struct {
 	fx.In

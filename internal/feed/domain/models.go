@@ -124,3 +124,21 @@ type PartyDecision struct {
 	Taken   int
 	Waiting int
 }
+
+// PartySettings are the global review party settings.
+type PartySettings struct {
+	Reviewers int
+	Deadline  time.Duration
+}
+
+// Settings are the feed settings built from the config.
+type Settings struct {
+	Party    PartySettings
+	Location *time.Location
+}
+
+// WorkCalendarParams are the dependencies of the work calendar.
+type WorkCalendarParams struct {
+	DaysOff  DayOffCalendar
+	Location *time.Location
+}

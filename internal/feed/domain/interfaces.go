@@ -100,3 +100,17 @@ type TurnPolicy interface {
 	// where another member has the turn. The caller's Loads map is not changed.
 	Choose(round PartyRound) PartyDecision
 }
+
+// WorkCalendar tells which moments are days off in the team's timezone and moves a start by working time.
+type WorkCalendar interface {
+	IsDayOff(moment time.Time) bool
+	// Day returns the date of the moment as YYYY-MM-DD in the team's timezone.
+	Day(moment time.Time) string
+	// AddWorkingTime returns the instant at which workingTime has passed, not counting days off.
+	AddWorkingTime(start time.Time, workingTime time.Duration) time.Time
+}
+
+// DayOffCalendar decides whether a day is a day off; localMoment is already in the team's timezone.
+type DayOffCalendar interface {
+	IsDayOff(localMoment time.Time) bool
+}
