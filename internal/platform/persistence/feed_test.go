@@ -77,11 +77,22 @@ func TestFeedSubscriptions_AddKeepsExisting(t *testing.T) {
 		repositories = append(repositories, subscription.Repository)
 	}
 	assert.Equal(t, []string{"acme/api", "acme/web", "acme/ops"}, repositories)
+}
 
-	_, err = subscriptions.Add(ctx, persistence.FeedSubscriptionBatch{
-		TokenID: "t1", Repositories: []string{"acme/api"}, CreatedAt: accessBaseTime, Type: "party",
+func TestFeedSubscriptions_AddKeepsExistingType(t *testing.T) {
+	subscriptions := persistence.NewFeedSubscriptions(newFeedDB(t))
+	ctx := context.Background()
+	_, err := subscriptions.Add(ctx, persistence.FeedSubscriptionBatch{
+		TokenID: "t1", Repositories: []string{"acme/api"}, CreatedAt: accessBaseTime,
 	})
 	require.NoError(t, err)
+
+	added, err := subscriptions.Add(ctx, persistence.FeedSubscriptionBatch{
+		TokenID: "t1", Repositories: []string{"acme/api"}, CreatedAt: accessBaseTime, Type: "party",
+	})
+
+	require.NoError(t, err)
+	assert.Zero(t, added)
 	assert.Equal(t, "solo", subscriptionTypes(t, subscriptions, "t1")["acme/api"], "an existing row keeps its type")
 }
 
@@ -408,7 +419,7 @@ func TestFeedSubscriptions_AddStoresTypeAndDefaultsToSolo(t *testing.T) {
 	assert.Equal(t, "solo", listed[1].Type)
 }
 
-func seedTypedSubscriptions(t *testing.T, subscriptions *persistence.FeedSubscriptions) {
+func seedSoloSubscriptions(t *testing.T, subscriptions *persistence.FeedSubscriptions) {
 	t.Helper()
 	ctx := context.Background()
 	_, err := subscriptions.Add(ctx, persistence.FeedSubscriptionBatch{
@@ -434,7 +445,7 @@ func subscriptionTypes(t *testing.T, subscriptions *persistence.FeedSubscription
 
 func TestFeedSubscriptions_SetTypeChangesOnlyTheNamedRows(t *testing.T) {
 	subscriptions := persistence.NewFeedSubscriptions(newFeedDB(t))
-	seedTypedSubscriptions(t, subscriptions)
+	seedSoloSubscriptions(t, subscriptions)
 
 	changed, err := subscriptions.SetType(context.Background(), persistence.FeedTypeChange{
 		TokenID: "t1", Repositories: []string{"acme/api", "*"}, Type: "party",
@@ -446,9 +457,22 @@ func TestFeedSubscriptions_SetTypeChangesOnlyTheNamedRows(t *testing.T) {
 	assert.Equal(t, map[string]string{"acme/api": "solo"}, subscriptionTypes(t, subscriptions, "t2"))
 }
 
+func TestFeedSubscriptions_SetTypeCountsOnlyChangedRows(t *testing.T) {
+	subscriptions := persistence.NewFeedSubscriptions(newFeedDB(t))
+	seedSoloSubscriptions(t, subscriptions)
+	change := persistence.FeedTypeChange{TokenID: "t1", Type: "party"}
+	_, err := subscriptions.SetType(context.Background(), change)
+	require.NoError(t, err)
+
+	changed, err := subscriptions.SetType(context.Background(), change)
+
+	require.NoError(t, err)
+	assert.Zero(t, changed)
+}
+
 func TestFeedSubscriptions_SetTypeWithoutRepositoriesChangesEveryRow(t *testing.T) {
 	subscriptions := persistence.NewFeedSubscriptions(newFeedDB(t))
-	seedTypedSubscriptions(t, subscriptions)
+	seedSoloSubscriptions(t, subscriptions)
 
 	changed, err := subscriptions.SetType(context.Background(), persistence.FeedTypeChange{TokenID: "t1", Type: "party"})
 
@@ -471,7 +495,18 @@ func TestFeedPolls_RecordUpserts(t *testing.T) {
 	require.NoError(t, db.Find(&stored).Error)
 	require.Len(t, stored, 1)
 	assert.Equal(t, "t1", stored[0].TokenID)
-	assert.True(t, later.Equal(stored[0].PolledAt), "the later poll wins")
+	assert.WithinDuration(t, later, stored[0].PolledAt, 0)
+}
+
+func TestFeedPolls_RecordStoresNonUTCTimesInUTC(t *testing.T) {
+	db := newFeedDB(t)
+	polls := persistence.NewFeedPolls(db)
+	offset := time.FixedZone("plus2", 2*60*60)
+
+	require.NoError(t, polls.Record(context.Background(), "t1", time.Date(2026, 10, 28, 12, 0, 0, 0, offset)))
+
+	assert.EqualValues(t, 1, countTable(t, db, "feed_polls", "polled_at = ?", time.Date(2026, 10, 28, 10, 0, 0, 0, time.UTC)),
+		"12:00+02:00 is stored as 10:00Z")
 }
 
 func TestFeedPullRequests_Repositories(t *testing.T) {

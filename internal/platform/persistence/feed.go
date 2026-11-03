@@ -69,7 +69,7 @@ func (r *FeedSubscriptions) Delete(ctx context.Context, tokenID string, id int64
 
 // SetType changes the type of the token's subscriptions and returns how many rows it changed.
 func (r *FeedSubscriptions) SetType(ctx context.Context, change FeedTypeChange) (int, error) {
-	query := r.db.WithContext(ctx).Model(&FeedSubscription{}).Where("token_id = ?", change.TokenID)
+	query := r.db.WithContext(ctx).Model(&FeedSubscription{}).Where("token_id = ? AND type <> ?", change.TokenID, change.Type)
 	if change.Repositories != nil {
 		query = query.Where("repository IN ?", change.Repositories)
 	}
