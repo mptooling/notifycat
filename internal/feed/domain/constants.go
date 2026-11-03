@@ -26,3 +26,6 @@ const (
 	DayLayout                = "2006-01-02"
 	MaxWorkingTimeSearchDays = 31
 )
+
+// DefaultPartyReviewers is the reviewer cap of a pull request recorded without party settings.
+const DefaultPartyReviewers = 1

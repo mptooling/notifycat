@@ -39,7 +39,7 @@ func TestModule_GraphResolves(t *testing.T) {
 			func() routingdomain.EntryLister { return noMappings{} },
 			func() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) },
 		),
-		fx.Invoke(func(domain.Subscriptions, domain.PullRequests, domain.Recorder, domain.PullRequestCleaner, domain.WorkCalendar) {
+		fx.Invoke(func(domain.Subscriptions, domain.PullRequests, domain.Recorder, domain.PullRequestCleaner, domain.WorkCalendar, domain.PollStore, domain.PartySettingsResolver) {
 		}),
 	)
 

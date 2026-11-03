@@ -16,6 +16,7 @@ type Subscription struct {
 	ID         int64
 	TokenID    string
 	Repository string
+	Type       SubscriptionType
 	CreatedAt  time.Time
 }
 
@@ -32,6 +33,7 @@ type PullRequest struct {
 	HeadSHA      string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+	Party        PartyState
 }
 
 // ConfiguredRepositories is what a token can subscribe to.
@@ -46,6 +48,7 @@ type ConfiguredRepositories struct {
 type NewSubscriptions struct {
 	TokenID      string
 	Repositories []string
+	Type         SubscriptionType
 	CreatedAt    time.Time
 }
 
@@ -141,4 +144,33 @@ type Settings struct {
 type WorkCalendarParams struct {
 	DaysOff  DayOffCalendar
 	Location *time.Location
+}
+
+// TypeChange sets the type of a token's subscriptions; nil Repositories means every subscription.
+type TypeChange struct {
+	Repositories []string
+	Type         SubscriptionType
+}
+
+// ReceivedQuery asks for the pull requests a token received that changed since a time.
+type ReceivedQuery struct {
+	TokenID      string
+	Repositories []string
+	Since        time.Time
+}
+
+// PartyClaim asks the store to deliver party pull requests to a token.
+type PartyClaim struct {
+	TokenID      string
+	Repositories []string
+	DeliveredAt  time.Time
+	Day          string
+	ActiveSince  time.Time
+}
+
+// PartyClaimResult is what a party claim delivered and how the turn rule judged the rest.
+type PartyClaimResult struct {
+	Delivered []PullRequest
+	Taken     int
+	Waiting   int
 }

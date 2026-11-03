@@ -108,6 +108,10 @@ func (store *fakeSubscriptionStore) Delete(_ context.Context, token string, id i
 	return domain.Subscription{}, domain.ErrSubscriptionNotFound
 }
 
+func (store *fakeSubscriptionStore) SetType(context.Context, string, domain.TypeChange) (int, error) {
+	return 0, nil
+}
+
 type deleteCall struct {
 	repository string
 	number     int
@@ -127,6 +131,14 @@ type fakePullRequestStore struct {
 	repositoryErr         error
 	deleteAllErr          error
 	deleteRepositoriesErr error
+}
+
+func (store *fakePullRequestStore) Find(context.Context, domain.PullRequestKey) (domain.PullRequest, bool, error) {
+	return domain.PullRequest{}, false, nil
+}
+
+func (store *fakePullRequestStore) ReceivedSince(context.Context, domain.ReceivedQuery) ([]domain.PullRequest, error) {
+	return nil, nil
 }
 
 type changedCall struct {
@@ -183,6 +195,10 @@ type fakeDeliveryStore struct {
 func (store *fakeDeliveryStore) Claim(_ context.Context, claim domain.Claim) ([]domain.PullRequest, error) {
 	store.claims = append(store.claims, claim)
 	return store.claimed, nil
+}
+
+func (store *fakeDeliveryStore) ClaimParty(context.Context, domain.PartyClaim) (domain.PartyClaimResult, error) {
+	return domain.PartyClaimResult{}, nil
 }
 
 type fakeCatalog struct {

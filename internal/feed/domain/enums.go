@@ -23,3 +23,17 @@ const (
 	CleanupReasonAgentAPIOff CleanupReason = "agent_api_off"
 	CleanupReasonUnmapped    CleanupReason = "unmapped"
 )
+
+// SubscriptionType says whether a subscription receives every pull request or shares review turns with a party.
+type SubscriptionType string
+
+// Subscription types.
+const (
+	SubscriptionTypeSolo  SubscriptionType = "solo"
+	SubscriptionTypeParty SubscriptionType = "party"
+)
+
+// Valid reports whether the type is one of the known subscription types.
+func (subscriptionType SubscriptionType) Valid() bool {
+	return subscriptionType == SubscriptionTypeSolo || subscriptionType == SubscriptionTypeParty
+}

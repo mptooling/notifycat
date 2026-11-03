@@ -19,15 +19,20 @@ var repoBaseTime = time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
 func newFeedDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db := persistence.NewTestDB(t)
+	addToken(t, db, "t1")
+	return db
+}
+
+func addToken(t *testing.T, db *gorm.DB, tokenID string) {
+	t.Helper()
 	invites := persistence.NewAccessInvites(db)
 	invite := persistence.AccessInvite{
-		ID: "invite-t1", User: "alice", SecretHash: "invite-hash",
+		ID: "invite-" + tokenID, User: "user-" + tokenID, SecretHash: "invite-hash-" + tokenID,
 		ExpiresAt: repoBaseTime.Add(time.Hour), CreatedAt: repoBaseTime,
 	}
 	require.NoError(t, invites.Create(context.Background(), invite))
-	token := persistence.AccessToken{ID: "t1", User: "alice", SecretHash: "token-hash", CreatedAt: repoBaseTime}
-	require.NoError(t, invites.Redeem(context.Background(), "invite-t1", token))
-	return db
+	token := persistence.AccessToken{ID: tokenID, User: "user-" + tokenID, SecretHash: "token-hash-" + tokenID, CreatedAt: repoBaseTime}
+	require.NoError(t, invites.Redeem(context.Background(), "invite-"+tokenID, token))
 }
 
 func fullPullRequest() domain.PullRequest {
@@ -144,7 +149,7 @@ func TestSubscriptionRepo_DeleteUnknownIsErrSubscriptionNotFound(t *testing.T) {
 func TestDeliveryRepo_ClaimReturnsDomainPullRequestsOnce(t *testing.T) {
 	db := newFeedDB(t)
 	pullRequests := infrastructure.NewPullRequestRepo(persistence.NewFeedPullRequests(db))
-	deliveries := infrastructure.NewDeliveryRepo(persistence.NewFeedDeliveries(db))
+	deliveries := infrastructure.NewDeliveryRepo(persistence.NewFeedDeliveries(db), &recordingTurnPolicy{})
 	ctx := context.Background()
 	want := fullPullRequest()
 	require.NoError(t, pullRequests.Upsert(ctx, want))
@@ -166,4 +171,243 @@ func TestSystemClock_NowIsUTC(t *testing.T) {
 
 	assert.Equal(t, time.UTC, now.Location())
 	assert.WithinDuration(t, time.Now(), now, time.Minute)
+}
+
+func partyPullRequest(number int, updatedAt time.Time, reviewers int) domain.PullRequest {
+	pullRequest := fullPullRequest()
+	pullRequest.Number = number
+	pullRequest.UpdatedAt = updatedAt
+	pullRequest.Party = domain.PartyState{
+		Reviewers:  reviewers,
+		RecordedAt: updatedAt.Add(-time.Hour),
+		DeadlineAt: updatedAt.Add(time.Hour),
+	}
+	return pullRequest
+}
+
+func TestSubscriptionRepo_TypeRoundTrips(t *testing.T) {
+	repo := infrastructure.NewSubscriptionRepo(persistence.NewFeedSubscriptions(newFeedDB(t)))
+	ctx := context.Background()
+
+	_, addErr := repo.Add(ctx, domain.NewSubscriptions{
+		TokenID: "t1", Repositories: []string{"acme/api"}, Type: domain.SubscriptionTypeParty, CreatedAt: repoBaseTime,
+	})
+	listed, listErr := repo.List(ctx, "t1")
+
+	require.NoError(t, addErr)
+	require.NoError(t, listErr)
+	require.Len(t, listed, 1)
+	assert.Equal(t, domain.SubscriptionTypeParty, listed[0].Type)
+}
+
+func TestSubscriptionRepo_SetType(t *testing.T) {
+	repo := infrastructure.NewSubscriptionRepo(persistence.NewFeedSubscriptions(newFeedDB(t)))
+	ctx := context.Background()
+	_, addErr := repo.Add(ctx, domain.NewSubscriptions{
+		TokenID: "t1", Repositories: []string{"acme/api", "acme/web"}, Type: domain.SubscriptionTypeSolo, CreatedAt: repoBaseTime,
+	})
+	require.NoError(t, addErr)
+
+	changedOne, oneErr := repo.SetType(ctx, "t1", domain.TypeChange{Repositories: []string{"acme/api"}, Type: domain.SubscriptionTypeParty})
+	unchanged, unchangedErr := repo.SetType(ctx, "t1", domain.TypeChange{Repositories: []string{"acme/api"}, Type: domain.SubscriptionTypeParty})
+	changedAll, allErr := repo.SetType(ctx, "t1", domain.TypeChange{Type: domain.SubscriptionTypeParty})
+	listed, listErr := repo.List(ctx, "t1")
+
+	require.NoError(t, oneErr)
+	require.NoError(t, unchangedErr)
+	require.NoError(t, allErr)
+	require.NoError(t, listErr)
+	assert.Equal(t, 1, changedOne)
+	assert.Equal(t, 0, unchanged, "a subscription that already has the type is not counted")
+	assert.Equal(t, 1, changedAll, "nil repositories change every subscription of the token")
+	for _, subscription := range listed {
+		assert.Equal(t, domain.SubscriptionTypeParty, subscription.Type)
+	}
+}
+
+func TestPullRequestRepo_PartyStateRoundTrips(t *testing.T) {
+	repo := infrastructure.NewPullRequestRepo(persistence.NewFeedPullRequests(newFeedDB(t)))
+	ctx := context.Background()
+	want := partyPullRequest(7, repoBaseTime, 3)
+
+	require.NoError(t, repo.Upsert(ctx, want))
+	found, isFound, findErr := repo.Find(ctx, domain.PullRequestKey{Repository: "acme/api", Number: 7})
+	changed, changedErr := repo.ChangedSince(ctx, []string{"acme/api"}, repoBaseTime.Add(-time.Minute))
+
+	require.NoError(t, findErr)
+	require.NoError(t, changedErr)
+	require.True(t, isFound)
+	require.Len(t, changed, 1)
+	for _, got := range []domain.PullRequest{found, changed[0]} {
+		assert.Equal(t, 3, got.Party.Reviewers)
+		assert.WithinDuration(t, want.Party.RecordedAt, got.Party.RecordedAt, 0)
+		assert.WithinDuration(t, want.Party.DeadlineAt, got.Party.DeadlineAt, 0)
+	}
+}
+
+func TestPullRequestRepo_ZeroPartyTimesAreNull(t *testing.T) {
+	db := newFeedDB(t)
+	repo := infrastructure.NewPullRequestRepo(persistence.NewFeedPullRequests(db))
+	ctx := context.Background()
+	pullRequest := partyPullRequest(7, repoBaseTime, 2)
+	pullRequest.Party.DeadlineAt = time.Time{}
+	pullRequest.Party.RecordedAt = time.Time{}
+
+	require.NoError(t, repo.Upsert(ctx, pullRequest))
+	found, isFound, findErr := repo.Find(ctx, domain.PullRequestKey{Repository: "acme/api", Number: 7})
+	var row persistence.FeedPullRequest
+	rowErr := db.Take(&row).Error
+
+	require.NoError(t, findErr)
+	require.NoError(t, rowErr)
+	require.True(t, isFound)
+	assert.Nil(t, row.PartyDeadlineAt, "a zero deadline is stored as NULL")
+	assert.True(t, found.Party.DeadlineAt.IsZero())
+	assert.True(t, found.Party.RecordedAt.IsZero())
+	assert.Equal(t, 2, found.Party.Reviewers)
+}
+
+func TestPullRequestRepo_MissingPartyReviewersStoreTheDefault(t *testing.T) {
+	repo := infrastructure.NewPullRequestRepo(persistence.NewFeedPullRequests(newFeedDB(t)))
+	ctx := context.Background()
+
+	require.NoError(t, repo.Upsert(ctx, fullPullRequest()))
+	found, _, err := repo.Find(ctx, domain.PullRequestKey{Repository: "acme/api", Number: 7})
+
+	require.NoError(t, err)
+	assert.Equal(t, domain.DefaultPartyReviewers, found.Party.Reviewers)
+}
+
+func TestPullRequestRepo_FindMissingIsNotFound(t *testing.T) {
+	repo := infrastructure.NewPullRequestRepo(persistence.NewFeedPullRequests(newFeedDB(t)))
+
+	_, found, err := repo.Find(context.Background(), domain.PullRequestKey{Repository: "acme/api", Number: 99})
+
+	require.NoError(t, err)
+	assert.False(t, found)
+}
+
+func TestPullRequestRepo_ReceivedSince(t *testing.T) {
+	db := newFeedDB(t)
+	pullRequests := infrastructure.NewPullRequestRepo(persistence.NewFeedPullRequests(db))
+	deliveries := infrastructure.NewDeliveryRepo(persistence.NewFeedDeliveries(db), &recordingTurnPolicy{})
+	ctx := context.Background()
+	require.NoError(t, pullRequests.Upsert(ctx, partyPullRequest(7, repoBaseTime, 1)))
+	require.NoError(t, pullRequests.Upsert(ctx, partyPullRequest(8, repoBaseTime.Add(time.Minute), 1)))
+	_, claimErr := deliveries.Claim(ctx, domain.Claim{TokenID: "t1", Repositories: []string{"acme/api"}, DeliveredAt: repoBaseTime})
+	require.NoError(t, claimErr)
+	require.NoError(t, pullRequests.Upsert(ctx, partyPullRequest(9, repoBaseTime.Add(2*time.Minute), 1)))
+
+	received, err := pullRequests.ReceivedSince(ctx, domain.ReceivedQuery{
+		TokenID: "t1", Repositories: []string{"acme/api"}, Since: repoBaseTime.Add(time.Minute),
+	})
+
+	require.NoError(t, err)
+	require.Len(t, received, 1)
+	assert.Equal(t, 8, received[0].Number, "only a received pull request changed since the time")
+	assert.Equal(t, 1, received[0].Party.Reviewers)
+}
+
+type recordingTurnPolicy struct {
+	round domain.PartyRound
+}
+
+func (policy *recordingTurnPolicy) Choose(round domain.PartyRound) domain.PartyDecision {
+	policy.round = round
+	if len(round.PullRequests) == 0 {
+		return domain.PartyDecision{}
+	}
+	return domain.PartyDecision{Take: []domain.PullRequestKey{round.PullRequests[0].Key}, Taken: 4, Waiting: 5}
+}
+
+func TestDeliveryRepo_ClaimPartyBuildsTheRound(t *testing.T) {
+	db := newFeedDB(t)
+	for _, memberID := range []string{"t2", "t3", "t4"} {
+		addToken(t, db, memberID)
+	}
+	ctx := context.Background()
+	subscriptions := infrastructure.NewSubscriptionRepo(persistence.NewFeedSubscriptions(db))
+	pullRequests := infrastructure.NewPullRequestRepo(persistence.NewFeedPullRequests(db))
+	polls := persistence.NewFeedPolls(db)
+	policy := &recordingTurnPolicy{}
+	deliveries := infrastructure.NewDeliveryRepo(persistence.NewFeedDeliveries(db), policy)
+	for _, memberID := range []string{"t1", "t2", "t3", "t4"} {
+		_, addErr := subscriptions.Add(ctx, domain.NewSubscriptions{
+			TokenID: memberID, Repositories: []string{"acme/api"}, Type: domain.SubscriptionTypeParty, CreatedAt: repoBaseTime,
+		})
+		require.NoError(t, addErr)
+		require.NoError(t, polls.Record(ctx, memberID, repoBaseTime))
+	}
+	firstPullRequest := partyPullRequest(7, repoBaseTime, 2)
+	secondPullRequest := partyPullRequest(8, repoBaseTime.Add(time.Minute), 1)
+	require.NoError(t, pullRequests.Upsert(ctx, firstPullRequest))
+	require.NoError(t, pullRequests.Upsert(ctx, secondPullRequest))
+	require.NoError(t, db.Create(&persistence.FeedDelivery{
+		TokenID: "t2", Repository: "acme/api", Number: 7, DeliveredAt: repoBaseTime, Party: true,
+	}).Error)
+	require.NoError(t, db.Create(&persistence.FeedDelivery{
+		TokenID: "t3", Repository: "acme/api", Number: 7, DeliveredAt: repoBaseTime, Party: false,
+	}).Error)
+	require.NoError(t, db.Create(&persistence.FeedPartyLoad{TokenID: "t2", Repository: "acme/api", Day: "2026-10-28", Taken: 3}).Error)
+	deliveredAt := repoBaseTime.Add(time.Hour)
+
+	result, err := deliveries.ClaimParty(ctx, domain.PartyClaim{
+		TokenID: "t1", Repositories: []string{"acme/api"}, DeliveredAt: deliveredAt,
+		Day: "2026-10-28", ActiveSince: repoBaseTime.Add(-time.Hour),
+	})
+
+	require.NoError(t, err)
+	round := policy.round
+	require.Len(t, round.PullRequests, 2)
+	assert.Equal(t, "t1", round.TokenID)
+	assert.WithinDuration(t, deliveredAt, round.Now, 0)
+	assert.Equal(t, domain.PullRequestKey{Repository: "acme/api", Number: 7}, round.PullRequests[0].Key)
+	assert.Equal(t, domain.PullRequestKey{Repository: "acme/api", Number: 8}, round.PullRequests[1].Key)
+	assert.Equal(t, 2, round.PullRequests[0].Party.Reviewers)
+	assert.WithinDuration(t, firstPullRequest.Party.DeadlineAt, round.PullRequests[0].Party.DeadlineAt, 0)
+	assert.Equal(t, 1, round.PullRequests[0].PartyDeliveries, "a solo delivery is not a party delivery")
+	assert.Equal(t, []string{"t4"}, round.PullRequests[0].Candidates, "members with a delivery of the pull request are not candidates")
+	assert.Equal(t, 0, round.PullRequests[1].PartyDeliveries)
+	assert.Equal(t, []string{"t2", "t3", "t4"}, round.PullRequests[1].Candidates)
+	assert.Equal(t, map[domain.PartyMember]int{{TokenID: "t2", Repository: "acme/api"}: 3}, round.Loads)
+	require.Len(t, result.Delivered, 1)
+	assert.Equal(t, 7, result.Delivered[0].Number)
+	assert.Equal(t, 4, result.Taken)
+	assert.Equal(t, 5, result.Waiting)
+}
+
+func TestDeliveryRepo_ClaimPartyWithoutRepositoriesSkipsThePolicy(t *testing.T) {
+	policy := &recordingTurnPolicy{}
+	deliveries := infrastructure.NewDeliveryRepo(persistence.NewFeedDeliveries(newFeedDB(t)), policy)
+
+	result, err := deliveries.ClaimParty(context.Background(), domain.PartyClaim{TokenID: "t1", DeliveredAt: repoBaseTime})
+
+	require.NoError(t, err)
+	assert.Empty(t, result.Delivered)
+	assert.Zero(t, result.Taken)
+	assert.Zero(t, result.Waiting)
+	assert.Empty(t, policy.round.TokenID, "the policy was not called")
+}
+
+func TestPollRepo_Record(t *testing.T) {
+	db := newFeedDB(t)
+	repo := infrastructure.NewPollRepo(persistence.NewFeedPolls(db))
+
+	err := repo.Record(context.Background(), "t1", repoBaseTime)
+	var row persistence.FeedPoll
+	rowErr := db.Where("token_id = ?", "t1").Take(&row).Error
+
+	require.NoError(t, err)
+	require.NoError(t, rowErr)
+	assert.WithinDuration(t, repoBaseTime, row.PolledAt, 0)
+}
+
+func TestConfigPartySettings_ReturnsTheGlobalSettings(t *testing.T) {
+	settings := domain.Settings{Party: domain.PartySettings{Reviewers: 2, Deadline: 90 * time.Minute}}
+	resolver := infrastructure.NewConfigPartySettings(settings)
+
+	got, err := resolver.Resolve(context.Background(), domain.PullRequestKey{Repository: "acme/api", Number: 7})
+
+	require.NoError(t, err)
+	assert.Equal(t, settings.Party, got)
 }

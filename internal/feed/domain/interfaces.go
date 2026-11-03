@@ -18,6 +18,8 @@ type SubscriptionStore interface {
 	DeleteRepositories(ctx context.Context, repositories []string) (int, error)
 	// Repositories returns every repository that has a subscription.
 	Repositories(ctx context.Context) ([]string, error)
+	// SetType returns how many subscriptions changed type; subscriptions that already have the type do not count.
+	SetType(ctx context.Context, tokenID string, change TypeChange) (int, error)
 }
 
 // PullRequestStore persists open pull requests for the feed.
@@ -31,12 +33,28 @@ type PullRequestStore interface {
 	// Repositories returns every repository that has a stored pull request.
 	Repositories(ctx context.Context) ([]string, error)
 	ChangedSince(ctx context.Context, repositories []string, since time.Time) ([]PullRequest, error)
+	// Find returns false when the pull request is not stored.
+	Find(ctx context.Context, key PullRequestKey) (PullRequest, bool, error)
+	// ReceivedSince returns pull requests changed since the time that the token received, solo or party.
+	ReceivedSince(ctx context.Context, query ReceivedQuery) ([]PullRequest, error)
 }
 
 // DeliveryStore records which pull requests were delivered to which token.
 type DeliveryStore interface {
 	// Claim returns only pull requests not yet delivered to the token, marking them delivered at most once.
 	Claim(ctx context.Context, claim Claim) ([]PullRequest, error)
+	// ClaimParty delivers the pull requests the turn rule lets the token take, at most once each, in one atomic step.
+	ClaimParty(ctx context.Context, claim PartyClaim) (PartyClaimResult, error)
+}
+
+// PollStore records when tokens poll the feed.
+type PollStore interface {
+	Record(ctx context.Context, tokenID string, polledAt time.Time) error
+}
+
+// PartySettingsResolver gives the party settings that apply to a pull request.
+type PartySettingsResolver interface {
+	Resolve(ctx context.Context, key PullRequestKey) (PartySettings, error)
 }
 
 // RepositoryCatalog answers which repositories the operator configured.

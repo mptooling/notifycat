@@ -15,13 +15,15 @@ import (
 // Module binds the feed ports to their adapters and the use cases. It
 // expects the composition root to supply a domain.Settings, a
 // domain.DayOffCalendar, *persistence.FeedSubscriptions,
-// *persistence.FeedPullRequests, *persistence.FeedDeliveries,
+// *persistence.FeedPullRequests, *persistence.FeedDeliveries, *persistence.FeedPolls,
 // routingdomain.EntryLister and a *slog.Logger.
 var Module = fx.Module("feed",
 	fx.Provide(
 		fx.Annotate(infrastructure.NewSubscriptionRepo, fx.As(new(domain.SubscriptionStore))),
 		fx.Annotate(infrastructure.NewPullRequestRepo, fx.As(new(domain.PullRequestStore))),
 		fx.Annotate(infrastructure.NewDeliveryRepo, fx.As(new(domain.DeliveryStore))),
+		fx.Annotate(infrastructure.NewPollRepo, fx.As(new(domain.PollStore))),
+		fx.Annotate(infrastructure.NewConfigPartySettings, fx.As(new(domain.PartySettingsResolver))),
 		fx.Annotate(infrastructure.NewRoutingCatalog, fx.As(new(domain.RepositoryCatalog))),
 		fx.Annotate(infrastructure.NewSystemClock, fx.As(new(domain.Clock))),
 		fx.Annotate(provideSubscriptions, fx.As(new(domain.Subscriptions))),
