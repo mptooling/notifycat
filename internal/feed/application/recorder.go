@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/mptooling/notifycat/internal/feed/domain"
 	"github.com/mptooling/notifycat/internal/kernel"
@@ -39,8 +40,9 @@ func (recorder *Recorder) Record(ctx context.Context, event kernel.Event) error 
 	}
 	switch event.Kind {
 	case kernel.KindOpened, kernel.KindReadyForReview, kernel.KindUpdated, kernel.KindReopened:
-		feedPullRequest := recorder.feedPullRequest(repository, event.PR)
-		party, err := recorder.partyState(ctx, domain.PullRequestKey{Repository: repository, Number: event.PR.Number})
+		moment := recorder.clock.Now().UTC()
+		feedPullRequest := recorder.feedPullRequest(repository, event.PR, moment)
+		party, err := recorder.partyState(ctx, domain.PullRequestKey{Repository: repository, Number: event.PR.Number}, moment)
 		if err != nil {
 			return err
 		}
@@ -57,12 +59,12 @@ func (recorder *Recorder) Record(ctx context.Context, event kernel.Event) error 
 	return nil
 }
 
-func (recorder *Recorder) partyState(ctx context.Context, key domain.PullRequestKey) (domain.PartyState, error) {
+func (recorder *Recorder) partyState(ctx context.Context, key domain.PullRequestKey, now time.Time) (domain.PartyState, error) {
 	stored, found, err := recorder.pullRequests.Find(ctx, key)
 	if err != nil {
 		return domain.PartyState{}, fmt.Errorf("find feed pull request: %w", err)
 	}
-	recordedAt := recorder.clock.Now().UTC()
+	recordedAt := now
 	if found && !stored.Party.RecordedAt.IsZero() {
 		recordedAt = stored.Party.RecordedAt
 	}
@@ -77,7 +79,7 @@ func (recorder *Recorder) partyState(ctx context.Context, key domain.PullRequest
 	}, nil
 }
 
-func (recorder *Recorder) feedPullRequest(repository string, pullRequest kernel.PR) domain.PullRequest {
+func (recorder *Recorder) feedPullRequest(repository string, pullRequest kernel.PR, now time.Time) domain.PullRequest {
 	return domain.PullRequest{
 		Repository:   repository,
 		Number:       pullRequest.Number,
@@ -89,6 +91,6 @@ func (recorder *Recorder) feedPullRequest(repository string, pullRequest kernel.
 		TargetBranch: pullRequest.TargetBranch,
 		HeadSHA:      pullRequest.HeadSHA,
 		CreatedAt:    pullRequest.CreatedAt.UTC(),
-		UpdatedAt:    recorder.clock.Now().UTC(),
+		UpdatedAt:    now,
 	}
 }

@@ -32,7 +32,7 @@ func newRecorderFixture(partySettings domain.PartySettings) recorderFixture {
 	fixture.recorder = application.NewRecorder(domain.RecorderParams{
 		PullRequests:  fixture.store,
 		Catalog:       &fakeCatalog{repositories: []string{"acme/api"}},
-		Clock:         &fakeClock{now: now},
+		Clock:         &fakeClock{now: now, tick: time.Minute},
 		Calendar:      fixture.calendar,
 		PartySettings: fixture.settings,
 	})
@@ -161,7 +161,7 @@ func TestRecorder_ReturnsDeleteError(t *testing.T) {
 	require.ErrorIs(t, err, storeErr)
 }
 
-var openEvent = kernel.Event{Kind: kernel.KindOpened, Repository: "acme/api", PR: kernel.PR{Number: 42}}
+var openEvent = kernel.Event{Kind: kernel.KindOpened, Repository: "Acme/API", PR: kernel.PR{Number: 42}}
 
 func TestRecorder_StoresThePartyState(t *testing.T) {
 	fixture := newRecorderFixture(domain.PartySettings{Reviewers: 2, Deadline: 30 * time.Minute})
@@ -175,7 +175,11 @@ func TestRecorder_StoresThePartyState(t *testing.T) {
 	party := fixture.store.upserts[0].Party
 	assert.Equal(t, 2, party.Reviewers)
 	assert.WithinDuration(t, now, party.RecordedAt, 0)
+	assert.WithinDuration(t, fixture.store.upserts[0].UpdatedAt, party.RecordedAt, 0, "a first record reads the clock once")
 	assert.WithinDuration(t, deadline, party.DeadlineAt, 0)
+	wantKey := domain.PullRequestKey{Repository: "acme/api", Number: 42}
+	assert.Equal(t, []domain.PullRequestKey{wantKey}, fixture.store.findKeys)
+	assert.Equal(t, []domain.PullRequestKey{wantKey}, fixture.settings.keys)
 	require.Len(t, fixture.calendar.addCalls, 1)
 	assert.WithinDuration(t, now, fixture.calendar.addCalls[0].start, 0)
 	assert.Equal(t, 30*time.Minute, fixture.calendar.addCalls[0].workingTime)

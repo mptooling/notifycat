@@ -154,12 +154,12 @@ type fakePullRequestStore struct {
 	stored                *domain.PullRequest
 	findErr               error
 	findCalls             int
-	calls                 *callLog
+	findKeys              []domain.PullRequestKey
 }
 
-func (store *fakePullRequestStore) Find(context.Context, domain.PullRequestKey) (domain.PullRequest, bool, error) {
+func (store *fakePullRequestStore) Find(_ context.Context, key domain.PullRequestKey) (domain.PullRequest, bool, error) {
 	store.findCalls++
-	store.calls.add("find")
+	store.findKeys = append(store.findKeys, key)
 	if store.findErr != nil {
 		return domain.PullRequest{}, false, store.findErr
 	}
@@ -180,7 +180,6 @@ type changedCall struct {
 }
 
 func (store *fakePullRequestStore) Upsert(_ context.Context, pullRequest domain.PullRequest) error {
-	store.calls.add("upsert")
 	if store.upsertErr != nil {
 		return store.upsertErr
 	}
@@ -341,20 +340,25 @@ type fakePartySettings struct {
 	settings domain.PartySettings
 	err      error
 	calls    int
-	callLog  *callLog
+	keys     []domain.PullRequestKey
 }
 
-func (resolver *fakePartySettings) Resolve(context.Context, domain.PullRequestKey) (domain.PartySettings, error) {
+func (resolver *fakePartySettings) Resolve(_ context.Context, key domain.PullRequestKey) (domain.PartySettings, error) {
 	resolver.calls++
-	resolver.callLog.add("resolve")
+	resolver.keys = append(resolver.keys, key)
 	return resolver.settings, resolver.err
 }
 
 type fakeClock struct {
-	now time.Time
+	now  time.Time
+	tick time.Duration
 }
 
-func (clock *fakeClock) Now() time.Time { return clock.now }
+func (clock *fakeClock) Now() time.Time {
+	current := clock.now
+	clock.now = clock.now.Add(clock.tick)
+	return current
+}
 
 func captureLogger() (*slog.Logger, *bytes.Buffer) {
 	buffer := &bytes.Buffer{}
