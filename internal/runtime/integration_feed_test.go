@@ -107,13 +107,13 @@ func numberedPullRequestEvent(action string, number int, headSHA string) string 
 		"repository": {"full_name": %q},
 		"pull_request": {
 			"number": %d, "title": "Retry failed deliveries", "body": "Adds a retry loop.",
-			"html_url": "https://github.com/acme/api/pull/42",
+			"html_url": %q,
 			"user": {"login": "bob", "id": 1001}, "draft": false, "merged": false,
 			"created_at": "2026-10-28T09:00:00Z",
 			"head": {"sha": %q, "ref": "feature/retries"},
 			"base": {"ref": "main"}
 		}
-	}`, action, feedRepository, number, headSHA)
+	}`, action, feedRepository, number, fmt.Sprintf("https://github.com/%s/pull/%d", feedRepository, number), headSHA)
 }
 
 func deliverPullRequestEvent(t *testing.T, public *httptest.Server, cfg config.Config, payload string) int {

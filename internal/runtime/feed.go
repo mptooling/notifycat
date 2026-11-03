@@ -94,7 +94,7 @@ func provideFeedSettings(cfg config.Config) feeddomain.Settings {
 		location = time.UTC
 	}
 	reviewers := cfg.PartyReviewers
-	if reviewers < 1 {
+	if reviewers < routingdomain.MinPartyReviewers {
 		reviewers = routingdomain.DefaultPartyReviewers
 	}
 	deadline := cfg.PartyDeadline

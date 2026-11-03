@@ -1,6 +1,8 @@
 package domain
 
 import (
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,46 +32,81 @@ func TestParsePartyDeadline(t *testing.T) {
 }
 
 func TestParsePartyDeadline_Rejects(t *testing.T) {
+	const formatRule = "use hours and minutes, like 15m, 2h or 1h30m"
+	const rangeRule = "must be from " + PartyDeadlineRangeText
 	testCases := []struct {
-		name  string
-		value string
+		name     string
+		value    string
+		wantRule string
 	}{
-		{name: "below minimum", value: "14m"},
-		{name: "above maximum hours", value: "25h"},
-		{name: "above maximum by a minute", value: "24h1m"},
-		{name: "seconds", value: "30s"},
-		{name: "sixty seconds", value: "60s"},
-		{name: "trailing zero seconds", value: "1h30m0s"},
-		{name: "fraction", value: "1.5h"},
-		{name: "no unit", value: "90"},
-		{name: "negative", value: "-1h"},
-		{name: "empty", value: ""},
+		{name: "below minimum", value: "14m", wantRule: rangeRule},
+		{name: "above maximum hours", value: "25h", wantRule: rangeRule},
+		{name: "above maximum by a minute", value: "24h1m", wantRule: rangeRule},
+		{name: "seconds", value: "30s", wantRule: formatRule},
+		{name: "sixty seconds", value: "60s", wantRule: formatRule},
+		{name: "trailing zero seconds", value: "1h30m0s", wantRule: formatRule},
+		{name: "fraction", value: "1.5h", wantRule: formatRule},
+		{name: "no unit", value: "90", wantRule: formatRule},
+		{name: "negative", value: "-1h", wantRule: formatRule},
+		{name: "empty", value: "", wantRule: formatRule},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			_, err := ParsePartyDeadline(testCase.value)
 
-			assert.Error(t, err)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "party deadline "+strconv.Quote(testCase.value))
+			assert.ErrorContains(t, err, testCase.wantRule)
 		})
 	}
 }
 
+func TestPartyDeadlineRangeText_MatchesTheBounds(t *testing.T) {
+	lowestText, highestText, found := strings.Cut(PartyDeadlineRangeText, " to ")
+	require.True(t, found)
+
+	lowest, lowestErr := ParsePartyDeadline(lowestText)
+	highest, highestErr := ParsePartyDeadline(highestText)
+
+	require.NoError(t, lowestErr)
+	require.NoError(t, highestErr)
+	assert.Equal(t, MinPartyDeadline, lowest)
+	assert.Equal(t, MaxPartyDeadline, highest)
+}
+
 func TestValidatePartyReviewers(t *testing.T) {
 	testCases := []struct {
-		name    string
-		value   int
-		wantErr bool
+		name  string
+		value int
 	}{
-		{name: "one", value: 1},
+		{name: "the minimum", value: MinPartyReviewers},
 		{name: "five", value: 5},
-		{name: "zero", value: 0, wantErr: true},
-		{name: "negative", value: -1, wantErr: true},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			err := ValidatePartyReviewers(testCase.value)
 
-			assert.Equal(t, testCase.wantErr, err != nil)
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestValidatePartyReviewers_Rejects(t *testing.T) {
+	testCases := []struct {
+		name      string
+		value     int
+		wantValue string
+	}{
+		{name: "zero", value: 0, wantValue: "party reviewers 0"},
+		{name: "negative", value: -1, wantValue: "party reviewers -1"},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			err := ValidatePartyReviewers(testCase.value)
+
+			require.Error(t, err)
+			assert.ErrorContains(t, err, testCase.wantValue)
+			assert.ErrorContains(t, err, "must be 1 or more")
 		})
 	}
 }

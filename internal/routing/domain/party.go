@@ -23,10 +23,10 @@ func ParsePartyDeadline(value string) (time.Duration, error) {
 	return deadline, nil
 }
 
-// ValidatePartyReviewers checks that a party needs at least one reviewer.
+// ValidatePartyReviewers checks that a party needs at least MinPartyReviewers reviewers.
 func ValidatePartyReviewers(value int) error {
-	if value < 1 {
-		return fmt.Errorf("party reviewers %d: must be 1 or more", value)
+	if value < MinPartyReviewers {
+		return fmt.Errorf("party reviewers %d: must be %d or more", value, MinPartyReviewers)
 	}
 	return nil
 }

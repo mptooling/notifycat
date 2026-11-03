@@ -16,9 +16,10 @@ const AtTimeLayout = "15:04"
 // atCronFormat turns one `at:` time into a daily cron spec (minute, hour).
 const atCronFormat = "%d %d * * *"
 
-// Party defaults and the allowed range of the party deadline.
+// Party defaults, the smallest cap and the allowed range of the party deadline.
 const (
 	DefaultPartyReviewers = 1
+	MinPartyReviewers     = 1
 	DefaultPartyDeadline  = time.Hour
 	MinPartyDeadline      = 15 * time.Minute
 	MaxPartyDeadline      = 24 * time.Hour
