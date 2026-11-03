@@ -37,7 +37,7 @@ func (r *FeedSubscriptions) Add(ctx context.Context, batch FeedSubscriptionBatch
 	createdAt := batch.CreatedAt.UTC()
 	rows := make([]FeedSubscription, 0, len(batch.Repositories))
 	for _, repository := range batch.Repositories {
-		rows = append(rows, FeedSubscription{TokenID: batch.TokenID, Repository: repository, CreatedAt: createdAt})
+		rows = append(rows, FeedSubscription{TokenID: batch.TokenID, Repository: repository, CreatedAt: createdAt, Type: batch.Type})
 	}
 	result := r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
@@ -55,7 +55,7 @@ func (r *FeedSubscriptions) Add(ctx context.Context, batch FeedSubscriptionBatch
 func (r *FeedSubscriptions) Delete(ctx context.Context, tokenID string, id int64) (FeedSubscription, error) {
 	var deleted []FeedSubscription
 	err := r.db.WithContext(ctx).Raw(
-		"DELETE FROM feed_subscriptions WHERE id = ? AND token_id = ? RETURNING id, token_id, repository, created_at",
+		"DELETE FROM feed_subscriptions WHERE id = ? AND token_id = ? RETURNING id, token_id, repository, type, created_at",
 		id, tokenID,
 	).Scan(&deleted).Error
 	if err != nil {
@@ -65,6 +65,19 @@ func (r *FeedSubscriptions) Delete(ctx context.Context, tokenID string, id int64
 		return FeedSubscription{}, ErrNotFound
 	}
 	return deleted[0], nil
+}
+
+// SetType changes the type of the token's subscriptions and returns how many rows it changed.
+func (r *FeedSubscriptions) SetType(ctx context.Context, change FeedTypeChange) (int, error) {
+	query := r.db.WithContext(ctx).Model(&FeedSubscription{}).Where("token_id = ?", change.TokenID)
+	if change.Repositories != nil {
+		query = query.Where("repository IN ?", change.Repositories)
+	}
+	result := query.Update("type", change.Type)
+	if result.Error != nil {
+		return 0, fmt.Errorf("store: set feed subscription type: %w", result.Error)
+	}
+	return int(result.RowsAffected), nil
 }
 
 // DeleteRepositories removes the repositories' subscriptions of every token and returns how many rows went.
@@ -234,4 +247,28 @@ func (r *FeedDeliveries) Claim(ctx context.Context, claim FeedClaim) ([]FeedPull
 		return nil, fmt.Errorf("store: claim feed pull requests: %w", err)
 	}
 	return claimed, nil
+}
+
+// FeedPolls records when each token last polled the feed.
+type FeedPolls struct {
+	db *gorm.DB
+}
+
+// NewFeedPolls constructs a FeedPolls repository bound to db.
+func NewFeedPolls(db *gorm.DB) *FeedPolls {
+	return &FeedPolls{db: db}
+}
+
+// Record stores the poll time of the token, replacing an earlier one.
+func (r *FeedPolls) Record(ctx context.Context, tokenID string, polledAt time.Time) error {
+	err := r.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "token_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"polled_at"}),
+		}).
+		Create(&FeedPoll{TokenID: tokenID, PolledAt: polledAt.UTC()}).Error
+	if err != nil {
+		return fmt.Errorf("store: record feed poll: %w", err)
+	}
+	return nil
 }

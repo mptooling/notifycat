@@ -77,6 +77,12 @@ func TestFeedSubscriptions_AddKeepsExisting(t *testing.T) {
 		repositories = append(repositories, subscription.Repository)
 	}
 	assert.Equal(t, []string{"acme/api", "acme/web", "acme/ops"}, repositories)
+
+	_, err = subscriptions.Add(ctx, persistence.FeedSubscriptionBatch{
+		TokenID: "t1", Repositories: []string{"acme/api"}, CreatedAt: accessBaseTime, Type: "party",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "solo", subscriptionTypes(t, subscriptions, "t1")["acme/api"], "an existing row keeps its type")
 }
 
 func TestFeedSubscriptions_AddEmptyBatch(t *testing.T) {
@@ -128,11 +134,17 @@ func TestFeedTables_TokenDeleteCascades(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, 1, countTable(t, db, "feed_subscriptions", "token_id = ?", "t1"))
 	require.EqualValues(t, 1, countTable(t, db, "feed_deliveries", "token_id = ?", "t1"))
+	require.NoError(t, persistence.NewFeedPolls(db).Record(ctx, "t1", accessBaseTime))
+	require.NoError(t, db.Create(&persistence.FeedPartyLoad{TokenID: "t1", Repository: "acme/api", Day: "2026-10-28", Taken: 1}).Error)
+	require.EqualValues(t, 1, countTable(t, db, "feed_polls", "token_id = ?", "t1"))
+	require.EqualValues(t, 1, countTable(t, db, "feed_party_loads", "token_id = ?", "t1"))
 
 	require.NoError(t, persistence.NewAccessTokens(db).Delete(ctx, "t1"))
 
 	assert.Zero(t, countTable(t, db, "feed_subscriptions", "token_id = ?", "t1"))
 	assert.Zero(t, countTable(t, db, "feed_deliveries", "token_id = ?", "t1"))
+	assert.Zero(t, countTable(t, db, "feed_polls", "token_id = ?", "t1"))
+	assert.Zero(t, countTable(t, db, "feed_party_loads", "token_id = ?", "t1"))
 }
 
 func TestFeedPullRequests_UpsertUpdatesInPlaceAndKeepsDeliveries(t *testing.T) {
@@ -346,13 +358,120 @@ func TestMigration00011_DownDropsFeedTables(t *testing.T) {
 	const countSQL = "SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('feed_subscriptions','feed_pull_requests','feed_deliveries')"
 	var tableCount int
 
-	require.NoError(t, persistence.MigrateDown(ctx, db))
+	require.NoError(t, persistence.MigrateDown(ctx, db)) // 00012
+	require.NoError(t, persistence.MigrateDown(ctx, db)) // 00011
 	require.NoError(t, db.Raw(countSQL).Scan(&tableCount).Error)
 	assert.Zero(t, tableCount)
 
 	require.NoError(t, persistence.MigrateUp(ctx, db))
 	require.NoError(t, db.Raw(countSQL).Scan(&tableCount).Error)
 	assert.Equal(t, 3, tableCount)
+}
+
+func TestMigration00012_DownRemovesPartyTablesAndColumns(t *testing.T) {
+	db := persistence.NewTestDB(t)
+	ctx := context.Background()
+	const tablesSQL = "SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('feed_polls','feed_party_loads')"
+	const typeColumnSQL = "SELECT count(*) FROM pragma_table_info('feed_subscriptions') WHERE name = 'type'"
+	var tableCount, typeColumnCount int
+
+	require.NoError(t, persistence.MigrateDown(ctx, db))
+	require.NoError(t, db.Raw(tablesSQL).Scan(&tableCount).Error)
+	require.NoError(t, db.Raw(typeColumnSQL).Scan(&typeColumnCount).Error)
+	assert.Zero(t, tableCount)
+	assert.Zero(t, typeColumnCount)
+
+	require.NoError(t, persistence.MigrateUp(ctx, db))
+	require.NoError(t, db.Raw(tablesSQL).Scan(&tableCount).Error)
+	require.NoError(t, db.Raw(typeColumnSQL).Scan(&typeColumnCount).Error)
+	assert.Equal(t, 2, tableCount)
+	assert.Equal(t, 1, typeColumnCount)
+}
+
+func TestFeedSubscriptions_AddStoresTypeAndDefaultsToSolo(t *testing.T) {
+	subscriptions := persistence.NewFeedSubscriptions(newFeedDB(t))
+	ctx := context.Background()
+	_, err := subscriptions.Add(ctx, persistence.FeedSubscriptionBatch{
+		TokenID: "t1", Repositories: []string{"acme/api"}, CreatedAt: accessBaseTime, Type: "party",
+	})
+	require.NoError(t, err)
+	_, err = subscriptions.Add(ctx, persistence.FeedSubscriptionBatch{
+		TokenID: "t1", Repositories: []string{"acme/web"}, CreatedAt: accessBaseTime,
+	})
+	require.NoError(t, err)
+
+	listed, err := subscriptions.List(ctx, "t1")
+
+	require.NoError(t, err)
+	require.Len(t, listed, 2)
+	assert.Equal(t, "party", listed[0].Type)
+	assert.Equal(t, "solo", listed[1].Type)
+}
+
+func seedTypedSubscriptions(t *testing.T, subscriptions *persistence.FeedSubscriptions) {
+	t.Helper()
+	ctx := context.Background()
+	_, err := subscriptions.Add(ctx, persistence.FeedSubscriptionBatch{
+		TokenID: "t1", Repositories: []string{"acme/api", "acme/web", "*"}, CreatedAt: accessBaseTime,
+	})
+	require.NoError(t, err)
+	_, err = subscriptions.Add(ctx, persistence.FeedSubscriptionBatch{
+		TokenID: "t2", Repositories: []string{"acme/api"}, CreatedAt: accessBaseTime,
+	})
+	require.NoError(t, err)
+}
+
+func subscriptionTypes(t *testing.T, subscriptions *persistence.FeedSubscriptions, tokenID string) map[string]string {
+	t.Helper()
+	listed, err := subscriptions.List(context.Background(), tokenID)
+	require.NoError(t, err)
+	types := make(map[string]string, len(listed))
+	for _, subscription := range listed {
+		types[subscription.Repository] = subscription.Type
+	}
+	return types
+}
+
+func TestFeedSubscriptions_SetTypeChangesOnlyTheNamedRows(t *testing.T) {
+	subscriptions := persistence.NewFeedSubscriptions(newFeedDB(t))
+	seedTypedSubscriptions(t, subscriptions)
+
+	changed, err := subscriptions.SetType(context.Background(), persistence.FeedTypeChange{
+		TokenID: "t1", Repositories: []string{"acme/api", "*"}, Type: "party",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 2, changed)
+	assert.Equal(t, map[string]string{"acme/api": "party", "acme/web": "solo", "*": "party"}, subscriptionTypes(t, subscriptions, "t1"))
+	assert.Equal(t, map[string]string{"acme/api": "solo"}, subscriptionTypes(t, subscriptions, "t2"))
+}
+
+func TestFeedSubscriptions_SetTypeWithoutRepositoriesChangesEveryRow(t *testing.T) {
+	subscriptions := persistence.NewFeedSubscriptions(newFeedDB(t))
+	seedTypedSubscriptions(t, subscriptions)
+
+	changed, err := subscriptions.SetType(context.Background(), persistence.FeedTypeChange{TokenID: "t1", Type: "party"})
+
+	require.NoError(t, err)
+	assert.Equal(t, 3, changed)
+	assert.Equal(t, map[string]string{"acme/api": "party", "acme/web": "party", "*": "party"}, subscriptionTypes(t, subscriptions, "t1"))
+	assert.Equal(t, map[string]string{"acme/api": "solo"}, subscriptionTypes(t, subscriptions, "t2"))
+}
+
+func TestFeedPolls_RecordUpserts(t *testing.T) {
+	db := newFeedDB(t)
+	polls := persistence.NewFeedPolls(db)
+	ctx := context.Background()
+	later := accessBaseTime.Add(time.Hour)
+
+	require.NoError(t, polls.Record(ctx, "t1", accessBaseTime))
+	require.NoError(t, polls.Record(ctx, "t1", later))
+
+	var stored []persistence.FeedPoll
+	require.NoError(t, db.Find(&stored).Error)
+	require.Len(t, stored, 1)
+	assert.Equal(t, "t1", stored[0].TokenID)
+	assert.True(t, later.Equal(stored[0].PolledAt), "the later poll wins")
 }
 
 func TestFeedPullRequests_Repositories(t *testing.T) {

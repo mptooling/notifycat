@@ -118,6 +118,7 @@ type FeedSubscription struct {
 	ID         int64     `gorm:"primaryKey;autoIncrement"`
 	TokenID    string    `gorm:"column:token_id;not null"`
 	Repository string    `gorm:"column:repository;not null"`
+	Type       string    `gorm:"column:type;not null;default:solo"`
 	CreatedAt  time.Time `gorm:"column:created_at;not null;autoCreateTime:false"`
 }
 
@@ -158,7 +159,35 @@ type FeedSubscriptionBatch struct {
 	TokenID      string
 	Repositories []string
 	CreatedAt    time.Time
+	Type         string
 }
+
+// FeedTypeChange sets the type of a token's subscriptions; nil Repositories means every subscription.
+type FeedTypeChange struct {
+	TokenID      string
+	Repositories []string
+	Type         string
+}
+
+// FeedPoll is the last time a token polled the feed.
+type FeedPoll struct {
+	TokenID  string    `gorm:"column:token_id;primaryKey"`
+	PolledAt time.Time `gorm:"column:polled_at;not null"`
+}
+
+// TableName pins the table name.
+func (FeedPoll) TableName() string { return "feed_polls" }
+
+// FeedPartyLoad counts the party deliveries of a token for a repository on a day.
+type FeedPartyLoad struct {
+	TokenID    string `gorm:"column:token_id;primaryKey"`
+	Repository string `gorm:"column:repository;primaryKey"`
+	Day        string `gorm:"column:day;primaryKey"`
+	Taken      int    `gorm:"column:taken;not null"`
+}
+
+// TableName pins the table name.
+func (FeedPartyLoad) TableName() string { return "feed_party_loads" }
 
 // FeedClaim asks for the pull requests a token has not received yet.
 type FeedClaim struct {

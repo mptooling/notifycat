@@ -33,6 +33,7 @@ func TestModule_GraphResolves(t *testing.T) {
 			func() *persistence.FeedSubscriptions { return persistence.NewFeedSubscriptions(db) },
 			func() *persistence.FeedPullRequests { return persistence.NewFeedPullRequests(db) },
 			func() *persistence.FeedDeliveries { return persistence.NewFeedDeliveries(db) },
+			func() *persistence.FeedPolls { return persistence.NewFeedPolls(db) },
 			func() domain.Settings { return domain.Settings{Location: time.UTC} },
 			func() domain.DayOffCalendar { return noDaysOff{} },
 			func() routingdomain.EntryLister { return noMappings{} },
