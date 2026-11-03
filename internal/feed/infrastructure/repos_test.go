@@ -200,26 +200,56 @@ func TestSubscriptionRepo_TypeRoundTrips(t *testing.T) {
 	assert.Equal(t, domain.SubscriptionTypeParty, listed[0].Type)
 }
 
-func TestSubscriptionRepo_SetType(t *testing.T) {
+func newSoloSubscriptions(t *testing.T) (*infrastructure.SubscriptionRepo, context.Context) {
+	t.Helper()
 	repo := infrastructure.NewSubscriptionRepo(persistence.NewFeedSubscriptions(newFeedDB(t)))
 	ctx := context.Background()
-	_, addErr := repo.Add(ctx, domain.NewSubscriptions{
+	_, err := repo.Add(ctx, domain.NewSubscriptions{
 		TokenID: "t1", Repositories: []string{"acme/api", "acme/web"}, Type: domain.SubscriptionTypeSolo, CreatedAt: repoBaseTime,
 	})
-	require.NoError(t, addErr)
+	require.NoError(t, err)
+	return repo, ctx
+}
 
-	changedOne, oneErr := repo.SetType(ctx, "t1", domain.TypeChange{Repositories: []string{"acme/api"}, Type: domain.SubscriptionTypeParty})
-	unchanged, unchangedErr := repo.SetType(ctx, "t1", domain.TypeChange{Repositories: []string{"acme/api"}, Type: domain.SubscriptionTypeParty})
-	changedAll, allErr := repo.SetType(ctx, "t1", domain.TypeChange{Type: domain.SubscriptionTypeParty})
+func TestSubscriptionRepo_SetTypeChangesTheNamedRepository(t *testing.T) {
+	repo, ctx := newSoloSubscriptions(t)
+
+	changed, err := repo.SetType(ctx, "t1", domain.TypeChange{Repositories: []string{"acme/api"}, Type: domain.SubscriptionTypeParty})
 	listed, listErr := repo.List(ctx, "t1")
 
-	require.NoError(t, oneErr)
-	require.NoError(t, unchangedErr)
-	require.NoError(t, allErr)
+	require.NoError(t, err)
 	require.NoError(t, listErr)
-	assert.Equal(t, 1, changedOne)
-	assert.Equal(t, 0, unchanged, "a subscription that already has the type is not counted")
-	assert.Equal(t, 1, changedAll, "nil repositories change every subscription of the token")
+	require.Len(t, listed, 2)
+	assert.Equal(t, 1, changed)
+	typesByRepository := map[string]domain.SubscriptionType{}
+	for _, subscription := range listed {
+		typesByRepository[subscription.Repository] = subscription.Type
+	}
+	assert.Equal(t, map[string]domain.SubscriptionType{
+		"acme/api": domain.SubscriptionTypeParty,
+		"acme/web": domain.SubscriptionTypeSolo,
+	}, typesByRepository)
+}
+
+func TestSubscriptionRepo_SetTypeCountsNothingWhenTheTypeIsAlreadySet(t *testing.T) {
+	repo, ctx := newSoloSubscriptions(t)
+
+	changed, err := repo.SetType(ctx, "t1", domain.TypeChange{Repositories: []string{"acme/api"}, Type: domain.SubscriptionTypeSolo})
+
+	require.NoError(t, err)
+	assert.Equal(t, 0, changed, "a subscription that already has the type is not counted")
+}
+
+func TestSubscriptionRepo_SetTypeWithNilRepositoriesChangesEverySubscription(t *testing.T) {
+	repo, ctx := newSoloSubscriptions(t)
+
+	changed, err := repo.SetType(ctx, "t1", domain.TypeChange{Type: domain.SubscriptionTypeParty})
+	listed, listErr := repo.List(ctx, "t1")
+
+	require.NoError(t, err)
+	require.NoError(t, listErr)
+	require.Len(t, listed, 2)
+	assert.Equal(t, 2, changed)
 	for _, subscription := range listed {
 		assert.Equal(t, domain.SubscriptionTypeParty, subscription.Type)
 	}
@@ -262,12 +292,13 @@ func TestPullRequestRepo_ZeroPartyTimesAreNull(t *testing.T) {
 	require.NoError(t, rowErr)
 	require.True(t, isFound)
 	assert.Nil(t, row.PartyDeadlineAt, "a zero deadline is stored as NULL")
-	assert.True(t, found.Party.DeadlineAt.IsZero())
-	assert.True(t, found.Party.RecordedAt.IsZero())
+	assert.Nil(t, row.RecordedAt, "a zero record time is stored as NULL")
+	assert.Zero(t, found.Party.DeadlineAt)
+	assert.Zero(t, found.Party.RecordedAt)
 	assert.Equal(t, 2, found.Party.Reviewers)
 }
 
-func TestPullRequestRepo_MissingPartyReviewersStoreTheDefault(t *testing.T) {
+func TestPullRequestRepo_ZeroReviewersStoreThePersistenceDefault(t *testing.T) {
 	repo := infrastructure.NewPullRequestRepo(persistence.NewFeedPullRequests(newFeedDB(t)))
 	ctx := context.Background()
 
@@ -275,7 +306,7 @@ func TestPullRequestRepo_MissingPartyReviewersStoreTheDefault(t *testing.T) {
 	found, _, err := repo.Find(ctx, domain.PullRequestKey{Repository: "acme/api", Number: 7})
 
 	require.NoError(t, err)
-	assert.Equal(t, domain.DefaultPartyReviewers, found.Party.Reviewers)
+	assert.Equal(t, 1, found.Party.Reviewers)
 }
 
 func TestPullRequestRepo_FindMissingIsNotFound(t *testing.T) {
@@ -297,23 +328,30 @@ func TestPullRequestRepo_ReceivedSince(t *testing.T) {
 	_, claimErr := deliveries.Claim(ctx, domain.Claim{TokenID: "t1", Repositories: []string{"acme/api"}, DeliveredAt: repoBaseTime})
 	require.NoError(t, claimErr)
 	require.NoError(t, pullRequests.Upsert(ctx, partyPullRequest(9, repoBaseTime.Add(2*time.Minute), 1)))
+	require.NoError(t, pullRequests.Upsert(ctx, partyPullRequest(10, repoBaseTime.Add(3*time.Minute), 1)))
+	require.NoError(t, db.Create(&persistence.FeedDelivery{
+		TokenID: "t1", Repository: "acme/api", Number: 10, DeliveredAt: repoBaseTime, Party: true,
+	}).Error)
 
 	received, err := pullRequests.ReceivedSince(ctx, domain.ReceivedQuery{
 		TokenID: "t1", Repositories: []string{"acme/api"}, Since: repoBaseTime.Add(time.Minute),
 	})
 
 	require.NoError(t, err)
-	require.Len(t, received, 1)
-	assert.Equal(t, 8, received[0].Number, "only a received pull request changed since the time")
-	assert.Equal(t, 1, received[0].Party.Reviewers)
+	require.Len(t, received, 2)
+	assert.Equal(t, 8, received[0].Number, "a solo delivery counts as received")
+	assert.Equal(t, 10, received[1].Number, "a party delivery counts as received")
+	assert.Equal(t, 1, received[1].Party.Reviewers)
 }
 
 type recordingTurnPolicy struct {
 	round domain.PartyRound
+	calls int
 }
 
 func (policy *recordingTurnPolicy) Choose(round domain.PartyRound) domain.PartyDecision {
 	policy.round = round
+	policy.calls++
 	if len(round.PullRequests) == 0 {
 		return domain.PartyDecision{}
 	}
@@ -386,7 +424,7 @@ func TestDeliveryRepo_ClaimPartyWithoutRepositoriesSkipsThePolicy(t *testing.T) 
 	assert.Empty(t, result.Delivered)
 	assert.Zero(t, result.Taken)
 	assert.Zero(t, result.Waiting)
-	assert.Empty(t, policy.round.TokenID, "the policy was not called")
+	assert.Zero(t, policy.calls, "the policy is not asked without repositories")
 }
 
 func TestPollRepo_Record(t *testing.T) {

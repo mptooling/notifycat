@@ -100,10 +100,6 @@ func (repo *PullRequestRepo) ReceivedSince(ctx context.Context, query domain.Rec
 }
 
 func pullRequestToRow(pullRequest domain.PullRequest) persistence.FeedPullRequest {
-	partyReviewers := pullRequest.Party.Reviewers
-	if partyReviewers < domain.DefaultPartyReviewers {
-		partyReviewers = domain.DefaultPartyReviewers
-	}
 	return persistence.FeedPullRequest{
 		Repository:   pullRequest.Repository,
 		Number:       pullRequest.Number,
@@ -117,7 +113,7 @@ func pullRequestToRow(pullRequest domain.PullRequest) persistence.FeedPullReques
 		CreatedAt:    timePointer(pullRequest.CreatedAt),
 		UpdatedAt:    pullRequest.UpdatedAt,
 
-		PartyReviewers:  partyReviewers,
+		PartyReviewers:  pullRequest.Party.Reviewers,
 		RecordedAt:      timePointer(pullRequest.Party.RecordedAt),
 		PartyDeadlineAt: timePointer(pullRequest.Party.DeadlineAt),
 	}
