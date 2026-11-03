@@ -37,7 +37,7 @@ func (repo *DeliveryRepo) Claim(ctx context.Context, claim domain.Claim) ([]doma
 // ClaimParty implements domain.DeliveryStore.
 func (repo *DeliveryRepo) ClaimParty(ctx context.Context, claim domain.PartyClaim) (domain.PartyClaimResult, error) {
 	var decision domain.PartyDecision
-	rows, err := repo.deliveries.ClaimParty(ctx, persistence.FeedPartyClaim{
+	result, err := repo.deliveries.ClaimParty(ctx, persistence.FeedPartyClaim{
 		TokenID:      claim.TokenID,
 		Repositories: claim.Repositories,
 		DeliveredAt:  claim.DeliveredAt,
@@ -52,8 +52,8 @@ func (repo *DeliveryRepo) ClaimParty(ctx context.Context, claim domain.PartyClai
 		return domain.PartyClaimResult{}, fmt.Errorf("feed: claim party pull requests: %w", err)
 	}
 	return domain.PartyClaimResult{
-		Delivered: pullRequestsFromRows(rows),
-		Taken:     decision.Taken,
+		Delivered: pullRequestsFromRows(result.Claimed),
+		Taken:     result.Taken + decision.Taken,
 		Waiting:   decision.Waiting,
 	}, nil
 }
@@ -73,14 +73,13 @@ func partyRoundFromSnapshot(claim domain.PartyClaim, snapshot persistence.FeedPa
 		key := persistence.FeedPullRequestKey{Repository: delivery.Repository, Number: delivery.Number}
 		deliveriesByKey[key] = append(deliveriesByKey[key], delivery)
 	}
-	for _, row := range snapshot.Waiting {
-		pullRequest := pullRequestFromRow(row)
-		key := persistence.FeedPullRequestKey{Repository: row.Repository, Number: row.Number}
+	for _, waiting := range snapshot.Waiting {
+		key := persistence.FeedPullRequestKey{Repository: waiting.Repository, Number: waiting.Number}
 		round.PullRequests = append(round.PullRequests, domain.WaitingPullRequest{
-			Key:             domain.PullRequestKey{Repository: row.Repository, Number: row.Number},
-			Party:           pullRequest.Party,
+			Key:             domain.PullRequestKey{Repository: waiting.Repository, Number: waiting.Number},
+			Party:           domain.PartyState{Reviewers: waiting.PartyReviewers, DeadlineAt: timeFromPointer(waiting.PartyDeadlineAt)},
 			PartyDeliveries: countPartyDeliveries(deliveriesByKey[key]),
-			Candidates:      candidatesWithoutDelivery(snapshot.Members[row.Repository], deliveriesByKey[key], claim.TokenID),
+			Candidates:      candidatesWithoutDelivery(snapshot.Members[waiting.Repository], deliveriesByKey[key], claim.TokenID),
 		})
 	}
 	return round

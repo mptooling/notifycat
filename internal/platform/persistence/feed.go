@@ -310,6 +310,17 @@ const partyMembersSQL = `WITH claim_repositories(repository) AS (SELECT value FR
 	WHERE subscription.type = ? AND subscription.token_id <> ?
 	ORDER BY claim_repositories.repository, subscription.token_id`
 
+const notReceivedPartySQL = `feed_pull_requests.repository IN ? AND NOT EXISTS (
+		SELECT 1 FROM feed_deliveries own_delivery WHERE own_delivery.token_id = ?
+		AND own_delivery.repository = feed_pull_requests.repository
+		AND own_delivery.number = feed_pull_requests.number)`
+
+const partyDeliveryCountSQL = `(SELECT COUNT(*) FROM feed_deliveries party_delivery WHERE party_delivery.party
+		AND party_delivery.repository = feed_pull_requests.repository
+		AND party_delivery.number = feed_pull_requests.number)`
+
+const keysFromJSONSQL = `(SELECT json_extract(value, '$.repository'), json_extract(value, '$.number') FROM json_each(?))`
+
 type partyMemberRow struct {
 	Repository string
 	TokenID    string
@@ -317,19 +328,27 @@ type partyMemberRow struct {
 
 // ClaimParty reads the snapshot and records what Choose picks in one transaction that writes first,
 // so members that poll at the same moment never pass the cap.
-func (r *FeedDeliveries) ClaimParty(ctx context.Context, claim FeedPartyClaim) ([]FeedPullRequest, error) {
+func (r *FeedDeliveries) ClaimParty(ctx context.Context, claim FeedPartyClaim) (FeedPartyClaimResult, error) {
+	result := FeedPartyClaimResult{Claimed: []FeedPullRequest{}}
 	if len(claim.Repositories) == 0 {
-		return []FeedPullRequest{}, nil
+		return result, nil
 	}
-	claimed := []FeedPullRequest{}
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		deleteErr := tx.Exec("DELETE FROM feed_party_loads WHERE day < ?", claim.Day).Error
 		if deleteErr != nil {
 			return fmt.Errorf("delete earlier party loads: %w", deleteErr)
 		}
+		taken, takenErr := countTakenPartyPullRequests(tx, claim)
+		if takenErr != nil {
+			return takenErr
+		}
+		result.Taken = taken
 		snapshot, snapshotErr := readPartySnapshot(tx, claim)
 		if snapshotErr != nil {
 			return snapshotErr
+		}
+		if len(snapshot.Waiting) == 0 {
+			return nil
 		}
 		chosen := keepWaitingKeys(snapshot.Waiting, claim.Choose(snapshot))
 		if len(chosen) == 0 {
@@ -345,46 +364,62 @@ func (r *FeedDeliveries) ClaimParty(ctx context.Context, claim FeedPartyClaim) (
 		if loadErr := addPartyLoads(tx, claim, inserted); loadErr != nil {
 			return loadErr
 		}
-		var readErr error
-		claimed, readErr = readPullRequestsInOrder(tx, inserted)
-		return readErr
+		claimed, readErr := readPullRequestsInOrder(tx, inserted)
+		if readErr != nil {
+			return readErr
+		}
+		result.Claimed = claimed
+		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("store: claim feed party pull requests: %w", err)
+		return FeedPartyClaimResult{}, fmt.Errorf("store: claim feed party pull requests: %w", err)
 	}
-	return claimed, nil
+	return result, nil
+}
+
+func countTakenPartyPullRequests(tx *gorm.DB, claim FeedPartyClaim) (int, error) {
+	var taken int64
+	err := tx.Table("feed_pull_requests").
+		Where(notReceivedPartySQL+" AND "+partyDeliveryCountSQL+" >= feed_pull_requests.party_reviewers",
+			claim.Repositories, claim.TokenID).
+		Count(&taken).Error
+	if err != nil {
+		return 0, fmt.Errorf("count taken party pull requests: %w", err)
+	}
+	return int(taken), nil
 }
 
 func readPartySnapshot(tx *gorm.DB, claim FeedPartyClaim) (FeedPartySnapshot, error) {
 	var snapshot FeedPartySnapshot
-	waitingErr := tx.
-		Where(`feed_pull_requests.repository IN ? AND NOT EXISTS (
-			SELECT 1 FROM feed_deliveries WHERE feed_deliveries.token_id = ?
-			AND feed_deliveries.repository = feed_pull_requests.repository
-			AND feed_deliveries.number = feed_pull_requests.number)`, claim.Repositories, claim.TokenID).
+	waitingErr := tx.Table("feed_pull_requests").
+		Select("repository, number, updated_at, party_reviewers, party_deadline_at").
+		Where(notReceivedPartySQL+" AND "+partyDeliveryCountSQL+" < feed_pull_requests.party_reviewers",
+			claim.Repositories, claim.TokenID).
 		Order("updated_at, repository, number").
 		Find(&snapshot.Waiting).Error
 	if waitingErr != nil {
 		return FeedPartySnapshot{}, fmt.Errorf("read waiting pull requests: %w", waitingErr)
 	}
-	if len(snapshot.Waiting) > 0 {
-		waitingKeys := make([]FeedPullRequestKey, 0, len(snapshot.Waiting))
-		for _, pullRequest := range snapshot.Waiting {
-			waitingKeys = append(waitingKeys, pullRequestKey(pullRequest))
-		}
-		deliveriesErr := tx.Where("(repository, number) IN ?", keyArguments(waitingKeys)).
-			Order("repository, number, token_id").
-			Find(&snapshot.Deliveries).Error
-		if deliveriesErr != nil {
-			return FeedPartySnapshot{}, fmt.Errorf("read deliveries of waiting pull requests: %w", deliveriesErr)
-		}
+	if len(snapshot.Waiting) == 0 {
+		return snapshot, nil
 	}
-	members, membersErr := readPartyMembers(tx, claim)
+	waitingKeys, encodeErr := keysJSON(waitingKeysOf(snapshot.Waiting))
+	if encodeErr != nil {
+		return FeedPartySnapshot{}, encodeErr
+	}
+	deliveriesErr := tx.Where("(repository, number) IN "+keysFromJSONSQL, waitingKeys).
+		Order("repository, number, token_id").
+		Find(&snapshot.Deliveries).Error
+	if deliveriesErr != nil {
+		return FeedPartySnapshot{}, fmt.Errorf("read deliveries of waiting pull requests: %w", deliveriesErr)
+	}
+	repositories := waitingRepositories(snapshot.Waiting)
+	members, membersErr := readPartyMembers(tx, claim, repositories)
 	if membersErr != nil {
 		return FeedPartySnapshot{}, membersErr
 	}
 	snapshot.Members = members
-	loadsErr := tx.Where("day = ? AND repository IN ?", claim.Day, claim.Repositories).
+	loadsErr := tx.Where("day = ? AND repository IN ?", claim.Day, repositories).
 		Order("repository, token_id").
 		Find(&snapshot.Loads).Error
 	if loadsErr != nil {
@@ -393,14 +428,14 @@ func readPartySnapshot(tx *gorm.DB, claim FeedPartyClaim) (FeedPartySnapshot, er
 	return snapshot, nil
 }
 
-func readPartyMembers(tx *gorm.DB, claim FeedPartyClaim) (map[string][]string, error) {
-	repositories, encodeErr := json.Marshal(claim.Repositories)
+func readPartyMembers(tx *gorm.DB, claim FeedPartyClaim, repositories []string) (map[string][]string, error) {
+	encodedRepositories, encodeErr := json.Marshal(repositories)
 	if encodeErr != nil {
 		return nil, fmt.Errorf("encode party repositories: %w", encodeErr)
 	}
 	var rows []partyMemberRow
 	readErr := tx.Raw(partyMembersSQL,
-		string(repositories), wildcardRepository, claim.ActiveSince.UTC(), partySubscriptionType, claim.TokenID,
+		string(encodedRepositories), wildcardRepository, claim.ActiveSince.UTC(), partySubscriptionType, claim.TokenID,
 	).Scan(&rows).Error
 	if readErr != nil {
 		return nil, fmt.Errorf("read party members: %w", readErr)
@@ -412,10 +447,30 @@ func readPartyMembers(tx *gorm.DB, claim FeedPartyClaim) (map[string][]string, e
 	return membersByRepository, nil
 }
 
-func keepWaitingKeys(waiting []FeedPullRequest, chosen []FeedPullRequestKey) []FeedPullRequestKey {
+func waitingKeysOf(waiting []FeedWaitingPullRequest) []FeedPullRequestKey {
+	keys := make([]FeedPullRequestKey, 0, len(waiting))
+	for _, pullRequest := range waiting {
+		keys = append(keys, waitingKey(pullRequest))
+	}
+	return keys
+}
+
+func waitingRepositories(waiting []FeedWaitingPullRequest) []string {
+	isListed := map[string]bool{}
+	repositories := []string{}
+	for _, pullRequest := range waiting {
+		if !isListed[pullRequest.Repository] {
+			isListed[pullRequest.Repository] = true
+			repositories = append(repositories, pullRequest.Repository)
+		}
+	}
+	return repositories
+}
+
+func keepWaitingKeys(waiting []FeedWaitingPullRequest, chosen []FeedPullRequestKey) []FeedPullRequestKey {
 	notYetKept := make(map[FeedPullRequestKey]bool, len(waiting))
 	for _, pullRequest := range waiting {
-		notYetKept[pullRequestKey(pullRequest)] = true
+		notYetKept[waitingKey(pullRequest)] = true
 	}
 	kept := make([]FeedPullRequestKey, 0, len(chosen))
 	for _, key := range chosen {
@@ -428,12 +483,16 @@ func keepWaitingKeys(waiting []FeedPullRequest, chosen []FeedPullRequestKey) []F
 }
 
 func insertPartyDeliveries(tx *gorm.DB, claim FeedPartyClaim, chosen []FeedPullRequestKey) ([]FeedPullRequestKey, error) {
+	chosenKeys, encodeErr := keysJSON(chosen)
+	if encodeErr != nil {
+		return nil, encodeErr
+	}
 	var insertedKeys []FeedPullRequestKey
 	insertErr := tx.Raw(
 		`INSERT INTO feed_deliveries (token_id, repository, number, delivered_at, party)
-		 SELECT ?, repository, number, ?, 1 FROM feed_pull_requests WHERE (repository, number) IN ?
+		 SELECT ?, repository, number, ?, 1 FROM feed_pull_requests WHERE (repository, number) IN `+keysFromJSONSQL+`
 		 ON CONFLICT DO NOTHING RETURNING repository, number`,
-		claim.TokenID, claim.DeliveredAt.UTC(), keyArguments(chosen),
+		claim.TokenID, claim.DeliveredAt.UTC(), chosenKeys,
 	).Scan(&insertedKeys).Error
 	if insertErr != nil {
 		return nil, fmt.Errorf("insert party deliveries: %w", insertErr)
@@ -476,8 +535,12 @@ func addPartyLoads(tx *gorm.DB, claim FeedPartyClaim, inserted []FeedPullRequest
 }
 
 func readPullRequestsInOrder(tx *gorm.DB, keys []FeedPullRequestKey) ([]FeedPullRequest, error) {
+	encodedKeys, encodeErr := keysJSON(keys)
+	if encodeErr != nil {
+		return nil, encodeErr
+	}
 	var found []FeedPullRequest
-	if err := tx.Where("(repository, number) IN ?", keyArguments(keys)).Find(&found).Error; err != nil {
+	if err := tx.Where("(repository, number) IN "+keysFromJSONSQL, encodedKeys).Find(&found).Error; err != nil {
 		return nil, fmt.Errorf("read claimed pull requests: %w", err)
 	}
 	foundByKey := make(map[FeedPullRequestKey]FeedPullRequest, len(found))
@@ -489,6 +552,18 @@ func readPullRequestsInOrder(tx *gorm.DB, keys []FeedPullRequestKey) ([]FeedPull
 		ordered = append(ordered, foundByKey[key])
 	}
 	return ordered, nil
+}
+
+func keysJSON(keys []FeedPullRequestKey) (string, error) {
+	encoded, err := json.Marshal(keys)
+	if err != nil {
+		return "", fmt.Errorf("encode pull request keys: %w", err)
+	}
+	return string(encoded), nil
+}
+
+func waitingKey(pullRequest FeedWaitingPullRequest) FeedPullRequestKey {
+	return FeedPullRequestKey{Repository: pullRequest.Repository, Number: pullRequest.Number}
 }
 
 func pullRequestKey(pullRequest FeedPullRequest) FeedPullRequestKey {

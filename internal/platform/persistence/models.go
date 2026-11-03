@@ -210,17 +210,34 @@ type FeedClaim struct {
 
 // FeedPullRequestKey names one feed pull request.
 type FeedPullRequestKey struct {
-	Repository string
-	Number     int
+	Repository string `json:"repository"`
+	Number     int    `json:"number"`
 }
 
-// FeedPartySnapshot is what a party claim reads before Choose: the waiting pull requests in feed order,
-// every delivery of them, the other active party members per repository, and the loads of the day.
+// FeedWaitingPullRequest holds the columns of a waiting pull request that the turn rule reads.
+type FeedWaitingPullRequest struct {
+	Repository      string
+	Number          int
+	UpdatedAt       time.Time
+	PartyReviewers  int
+	PartyDeadlineAt *time.Time
+}
+
+// FeedPartySnapshot is what a party claim reads before Choose: the pull requests the token did not
+// receive that are below their cap, in feed order, every delivery of them, and the other active party
+// members and the loads of the day for their repositories.
 type FeedPartySnapshot struct {
-	Waiting    []FeedPullRequest
+	Waiting    []FeedWaitingPullRequest
 	Deliveries []FeedDelivery
 	Members    map[string][]string
 	Loads      []FeedPartyLoad
+}
+
+// FeedPartyClaimResult is what a party claim delivered, and how many pull requests the token did not
+// receive are already at their cap.
+type FeedPartyClaimResult struct {
+	Claimed []FeedPullRequest
+	Taken   int
 }
 
 // FeedPartyClaim asks for the party pull requests that Choose picks for a token.

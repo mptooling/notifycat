@@ -813,6 +813,22 @@ func pullRequestLabels(items []persistence.FeedPullRequest) []string {
 	return labels
 }
 
+func waitingNumbers(items []persistence.FeedWaitingPullRequest) []int {
+	numbers := make([]int, 0, len(items))
+	for _, item := range items {
+		numbers = append(numbers, item.Number)
+	}
+	return numbers
+}
+
+func waitingLabels(items []persistence.FeedWaitingPullRequest) []string {
+	labels := make([]string, 0, len(items))
+	for _, item := range items {
+		labels = append(labels, fmt.Sprintf("%s#%d", item.Repository, item.Number))
+	}
+	return labels
+}
+
 func deliveryLabels(deliveries []persistence.FeedDelivery) []string {
 	labels := make([]string, 0, len(deliveries))
 	for _, delivery := range deliveries {
@@ -838,6 +854,7 @@ func TestFeedDeliveries_ClaimPartySnapshotMembers(t *testing.T) {
 		recordPoll(t, db, tokenID, partyBaseTime)
 	}
 	recordPoll(t, db, "t3", partyBaseTime.Add(-time.Second))
+	upsertAll(t, persistence.NewFeedPullRequests(db), feedPullRequest("acme/api", 1, partyBaseTime))
 	var snapshot persistence.FeedPartySnapshot
 	claim := newPartyClaim("t1", captureSnapshot(&snapshot))
 	claim.ActiveSince = partyBaseTime.In(time.FixedZone("plus2", 2*60*60))
@@ -852,32 +869,38 @@ func TestFeedDeliveries_ClaimPartySnapshotMembers(t *testing.T) {
 func TestFeedDeliveries_ClaimPartySnapshotWaiting(t *testing.T) {
 	db := newFeedDB(t)
 	seedToken(t, db, "t3", accessBaseTime)
+	belowTheCap := feedPullRequest("acme/api", 2, partyBaseTime.Add(time.Minute))
+	belowTheCap.PartyReviewers = 2
 	upsertAll(t, persistence.NewFeedPullRequests(db),
 		feedPullRequest("acme/api", 1, partyBaseTime),
-		feedPullRequest("acme/api", 2, partyBaseTime.Add(time.Minute)),
+		belowTheCap,
 		feedPullRequest("acme/api", 5, partyBaseTime),
 		feedPullRequest("acme/api", 3, partyBaseTime),
 		feedPullRequest("acme/web", 4, partyBaseTime),
+		feedPullRequest("acme/api", 6, partyBaseTime),
 	)
 	seedDeliveries(t, db,
 		persistence.FeedDelivery{TokenID: "t1", Repository: "acme/api", Number: 1, DeliveredAt: partyBaseTime},
 		persistence.FeedDelivery{TokenID: "t2", Repository: "acme/api", Number: 1, DeliveredAt: partyBaseTime, Party: true},
 		persistence.FeedDelivery{TokenID: "t2", Repository: "acme/api", Number: 2, DeliveredAt: partyBaseTime, Party: true},
 		persistence.FeedDelivery{TokenID: "t3", Repository: "acme/api", Number: 2, DeliveredAt: partyBaseTime},
+		persistence.FeedDelivery{TokenID: "t2", Repository: "acme/api", Number: 6, DeliveredAt: partyBaseTime, Party: true},
+		persistence.FeedDelivery{TokenID: "t3", Repository: "acme/api", Number: 5, DeliveredAt: partyBaseTime},
 	)
 	var snapshot persistence.FeedPartySnapshot
 
 	_, err := persistence.NewFeedDeliveries(db).ClaimParty(context.Background(), newPartyClaim("t1", captureSnapshot(&snapshot)))
 
 	require.NoError(t, err)
-	assert.Equal(t, []int{3, 5, 2}, pullRequestNumbers(snapshot.Waiting),
-		"ordered by updated_at, then number, without the PR the claimant has as a solo delivery")
-	assert.ElementsMatch(t, []string{"t2 acme/api#2 party=true", "t3 acme/api#2 party=false"}, deliveryLabels(snapshot.Deliveries),
-		"every row of a waiting PR, solo rows too, and no row of a PR that is not waiting")
+	assert.Equal(t, []int{3, 5, 2}, waitingNumbers(snapshot.Waiting),
+		"ordered by updated_at, then number, without the PR the claimant has as a solo delivery or a PR at its cap")
+	assert.ElementsMatch(t, []string{"t3 acme/api#5 party=false", "t2 acme/api#2 party=true", "t3 acme/api#2 party=false"},
+		deliveryLabels(snapshot.Deliveries), "every row of a waiting PR, solo rows too, and no row of a PR that is not waiting")
 }
 
 func TestFeedDeliveries_ClaimPartySnapshotLoads(t *testing.T) {
 	db := newFeedDB(t)
+	upsertAll(t, persistence.NewFeedPullRequests(db), feedPullRequest("acme/api", 1, partyBaseTime))
 	seedPartyLoads(t, db,
 		persistence.FeedPartyLoad{TokenID: "t1", Repository: "acme/api", Day: partyDay, Taken: 2},
 		persistence.FeedPartyLoad{TokenID: "t2", Repository: "acme/api", Day: partyDay, Taken: 1},
@@ -885,14 +908,63 @@ func TestFeedDeliveries_ClaimPartySnapshotLoads(t *testing.T) {
 		persistence.FeedPartyLoad{TokenID: "t2", Repository: "acme/api", Day: "2026-11-04", Taken: 4},
 	)
 	var snapshot persistence.FeedPartySnapshot
+	claim := newPartyClaim("t1", captureSnapshot(&snapshot))
+	claim.Repositories = []string{"acme/api", "acme/web"}
 
-	_, err := persistence.NewFeedDeliveries(db).ClaimParty(context.Background(), newPartyClaim("t1", captureSnapshot(&snapshot)))
+	_, err := persistence.NewFeedDeliveries(db).ClaimParty(context.Background(), claim)
 
 	require.NoError(t, err)
 	assert.Equal(t, []persistence.FeedPartyLoad{
 		{TokenID: "t1", Repository: "acme/api", Day: partyDay, Taken: 2},
 		{TokenID: "t2", Repository: "acme/api", Day: partyDay, Taken: 1},
-	}, snapshot.Loads)
+	}, snapshot.Loads, "only the loads of the day for repositories with a waiting PR")
+}
+
+func TestFeedDeliveries_ClaimPartyWithOnlyCappedPullRequests(t *testing.T) {
+	db := newFeedDB(t)
+	upsertAll(t, persistence.NewFeedPullRequests(db),
+		feedPullRequest("acme/api", 1, partyBaseTime),
+		feedPullRequest("acme/api", 2, partyBaseTime),
+	)
+	seedDeliveries(t, db,
+		persistence.FeedDelivery{TokenID: "t2", Repository: "acme/api", Number: 1, DeliveredAt: partyBaseTime, Party: true},
+		persistence.FeedDelivery{TokenID: "t1", Repository: "acme/api", Number: 2, DeliveredAt: partyBaseTime, Party: true},
+	)
+	chooseCalled := false
+	claim := newPartyClaim("t1", func(persistence.FeedPartySnapshot) []persistence.FeedPullRequestKey {
+		chooseCalled = true
+		return []persistence.FeedPullRequestKey{{Repository: "acme/api", Number: 1}}
+	})
+
+	result, err := persistence.NewFeedDeliveries(db).ClaimParty(context.Background(), claim)
+
+	require.NoError(t, err)
+	assert.Empty(t, result.Claimed)
+	assert.Equal(t, 1, result.Taken, "a PR the claimant received is not taken by others")
+	assert.False(t, chooseCalled, "a PR at its cap is never offered")
+}
+
+func TestFeedDeliveries_ClaimPartyBeyondTheSQLiteVariableLimit(t *testing.T) {
+	db := newFeedDB(t)
+	const waitingCount = 16_400
+	require.NoError(t, db.Exec(`WITH RECURSIVE pull_request_numbers(number) AS (
+			SELECT 1 UNION ALL SELECT number + 1 FROM pull_request_numbers WHERE number < ?)
+		INSERT INTO feed_pull_requests (repository, number, head_sha, updated_at, party_reviewers)
+		SELECT 'acme/api', number, 'sha-1', ?, 2 FROM pull_request_numbers`, waitingCount, partyBaseTime).Error)
+	seedDeliveries(t, db, persistence.FeedDelivery{TokenID: "t2", Repository: "acme/api", Number: 1, DeliveredAt: partyBaseTime, Party: true})
+	var snapshot persistence.FeedPartySnapshot
+	claim := newPartyClaim("t1", func(seen persistence.FeedPartySnapshot) []persistence.FeedPullRequestKey {
+		snapshot = seen
+		return takeBelowTheCap(seen)
+	})
+
+	result, err := persistence.NewFeedDeliveries(db).ClaimParty(context.Background(), claim)
+
+	require.NoError(t, err)
+	assert.Len(t, snapshot.Waiting, waitingCount)
+	assert.Equal(t, []string{"t2 acme/api#1 party=true"}, deliveryLabels(snapshot.Deliveries))
+	assert.Len(t, result.Claimed, waitingCount)
+	assert.Equal(t, waitingCount, partyLoadTaken(t, db, "t1", "acme/api"))
 }
 
 func TestFeedDeliveries_ClaimPartyRecordsDeliveriesAndLoad(t *testing.T) {
@@ -918,8 +990,8 @@ func TestFeedDeliveries_ClaimPartyRecordsDeliveriesAndLoad(t *testing.T) {
 	require.NoError(t, pullRequests.Delete(ctx, "acme/api", 2))
 	takenAfterDelete := partyLoadTaken(t, db, "t1", "acme/api")
 
-	assert.Equal(t, []int{1}, pullRequestNumbers(first))
-	assert.Equal(t, []int{2}, pullRequestNumbers(second))
+	assert.Equal(t, []int{1}, pullRequestNumbers(first.Claimed))
+	assert.Equal(t, []int{2}, pullRequestNumbers(second.Claimed))
 	assert.EqualValues(t, 2, partyRows, "party rows store delivered_at in UTC")
 	assert.Equal(t, 1, takenAfterFirst)
 	assert.Equal(t, 2, takenAfterSecond)
@@ -943,10 +1015,10 @@ func TestFeedDeliveries_ClaimPartySkipsDeliveredKeysAndKeepsTheChosenOrder(t *te
 		}
 	})
 
-	claimed, err := persistence.NewFeedDeliveries(db).ClaimParty(context.Background(), claim)
+	result, err := persistence.NewFeedDeliveries(db).ClaimParty(context.Background(), claim)
 
 	require.NoError(t, err)
-	assert.Equal(t, []int{2, 1}, pullRequestNumbers(claimed))
+	assert.Equal(t, []int{2, 1}, pullRequestNumbers(result.Claimed))
 	assert.Equal(t, 2, partyLoadTaken(t, db, "t1", "acme/api"), "only inserted rows add to the load")
 	assert.EqualValues(t, 2, countTable(t, db, "feed_deliveries", "token_id = ? AND party = ?", "t1", true),
 		"an earlier solo delivery stays solo")
@@ -966,10 +1038,10 @@ func TestFeedDeliveries_ClaimPartyDeliversOnlyWaitingKeys(t *testing.T) {
 		}
 	})
 
-	claimed, err := persistence.NewFeedDeliveries(db).ClaimParty(context.Background(), claim)
+	result, err := persistence.NewFeedDeliveries(db).ClaimParty(context.Background(), claim)
 
 	require.NoError(t, err)
-	assert.Equal(t, []string{"acme/api#1"}, pullRequestLabels(claimed))
+	assert.Equal(t, []string{"acme/api#1"}, pullRequestLabels(result.Claimed))
 	assert.EqualValues(t, 1, countTable(t, db, "feed_deliveries", "token_id = ?", "t1"),
 		"a key outside the claimant's waiting set is never delivered")
 	assert.Zero(t, countTable(t, db, "feed_party_loads", "repository = ?", "acme/web"))
@@ -1009,13 +1081,13 @@ func TestFeedDeliveries_ClaimPartyAcrossRepositories(t *testing.T) {
 	})
 	claim.Repositories = []string{"acme/api", "acme/web"}
 
-	claimed, err := persistence.NewFeedDeliveries(db).ClaimParty(context.Background(), claim)
+	result, err := persistence.NewFeedDeliveries(db).ClaimParty(context.Background(), claim)
 
 	require.NoError(t, err)
-	assert.Equal(t, []string{"acme/web#4", "acme/api#2", "acme/api#3", "acme/web#1", "acme/api#9"}, pullRequestLabels(snapshot.Waiting),
+	assert.Equal(t, []string{"acme/web#4", "acme/api#2", "acme/api#3", "acme/web#1", "acme/api#9"}, waitingLabels(snapshot.Waiting),
 		"ordered by updated_at, then repository, then number")
 	assert.Equal(t, map[string][]string{"acme/api": {"t2", "t3"}, "acme/web": {"t3", "t4"}}, snapshot.Members)
-	assert.Equal(t, []string{"acme/api#2", "acme/web#1", "acme/api#3"}, pullRequestLabels(claimed))
+	assert.Equal(t, []string{"acme/api#2", "acme/web#1", "acme/api#3"}, pullRequestLabels(result.Claimed))
 	assert.Equal(t, 3, partyLoadTaken(t, db, "t1", "acme/api"))
 	assert.Equal(t, 6, partyLoadTaken(t, db, "t1", "acme/web"))
 }
@@ -1043,11 +1115,12 @@ func TestFeedDeliveries_ClaimPartyWithoutRepositories(t *testing.T) {
 	})
 	claim.Repositories = nil
 
-	claimed, err := persistence.NewFeedDeliveries(newFeedDB(t)).ClaimParty(context.Background(), claim)
+	result, err := persistence.NewFeedDeliveries(newFeedDB(t)).ClaimParty(context.Background(), claim)
 
 	require.NoError(t, err)
-	assert.NotNil(t, claimed)
-	assert.Empty(t, claimed)
+	assert.NotNil(t, result.Claimed)
+	assert.Empty(t, result.Claimed)
+	assert.Zero(t, result.Taken)
 	assert.False(t, chooseCalled)
 }
 
@@ -1081,8 +1154,8 @@ func TestFeedDeliveries_ClaimPartyConcurrentMembersNeverPassTheCap(t *testing.T)
 		go func() {
 			defer group.Done()
 			<-start
-			claimed, err := deliveries.ClaimParty(ctx, newPartyClaim(tokenID, takeBelowTheCap))
-			outcomes[index] = outcome{claimed: claimed, err: err}
+			result, err := deliveries.ClaimParty(ctx, newPartyClaim(tokenID, takeBelowTheCap))
+			outcomes[index] = outcome{claimed: result.Claimed, err: err}
 		}()
 	}
 

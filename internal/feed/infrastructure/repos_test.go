@@ -414,6 +414,34 @@ func TestDeliveryRepo_ClaimPartyBuildsTheRound(t *testing.T) {
 	assert.Equal(t, 5, result.Waiting)
 }
 
+func TestDeliveryRepo_ClaimPartyCountsCappedPullRequestsAsTaken(t *testing.T) {
+	db := newFeedDB(t)
+	addToken(t, db, "t2")
+	ctx := context.Background()
+	pullRequests := infrastructure.NewPullRequestRepo(persistence.NewFeedPullRequests(db))
+	policy := &recordingTurnPolicy{}
+	deliveries := infrastructure.NewDeliveryRepo(persistence.NewFeedDeliveries(db), policy)
+	require.NoError(t, pullRequests.Upsert(ctx, partyPullRequest(7, repoBaseTime, 1)))
+	require.NoError(t, pullRequests.Upsert(ctx, partyPullRequest(8, repoBaseTime, 1)))
+	require.NoError(t, db.Create(&persistence.FeedDelivery{
+		TokenID: "t2", Repository: "acme/api", Number: 7, DeliveredAt: repoBaseTime, Party: true,
+	}).Error)
+	require.NoError(t, db.Create(&persistence.FeedDelivery{
+		TokenID: "t1", Repository: "acme/api", Number: 8, DeliveredAt: repoBaseTime,
+	}).Error)
+
+	result, err := deliveries.ClaimParty(ctx, domain.PartyClaim{
+		TokenID: "t1", Repositories: []string{"acme/api"}, DeliveredAt: repoBaseTime.Add(time.Hour),
+		Day: "2026-10-28", ActiveSince: repoBaseTime.Add(-time.Hour),
+	})
+
+	require.NoError(t, err)
+	assert.Empty(t, result.Delivered, "a PR at its cap is never delivered, whatever the policy picks")
+	assert.Equal(t, 1, result.Taken, "a PR the token already received is not taken by others")
+	assert.Zero(t, result.Waiting)
+	assert.Zero(t, policy.calls, "the policy is not asked without a PR below its cap")
+}
+
 func TestDeliveryRepo_ClaimPartyWithoutRepositoriesSkipsThePolicy(t *testing.T) {
 	policy := &recordingTurnPolicy{}
 	deliveries := infrastructure.NewDeliveryRepo(persistence.NewFeedDeliveries(newFeedDB(t)), policy)
