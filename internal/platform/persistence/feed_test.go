@@ -600,3 +600,88 @@ func TestFeedDeliveries_ClaimWithoutRepositories(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, claimed)
 }
+
+func TestFeedPullRequests_UpsertKeepsTheFirstRecordedAt(t *testing.T) {
+	pullRequests := persistence.NewFeedPullRequests(newFeedDB(t))
+	ctx := context.Background()
+	firstRecordedAt := accessBaseTime
+	laterRecordedAt := accessBaseTime.Add(time.Hour)
+	first := feedPullRequest("acme/api", 1, accessBaseTime)
+	first.RecordedAt = &firstRecordedAt
+	second := feedPullRequest("acme/api", 1, accessBaseTime.Add(time.Minute))
+	second.RecordedAt = &laterRecordedAt
+	upsertAll(t, pullRequests, first, second)
+
+	stored, err := pullRequests.Find(ctx, "acme/api", 1)
+
+	require.NoError(t, err)
+	require.NotNil(t, stored.RecordedAt)
+	assert.True(t, firstRecordedAt.Equal(*stored.RecordedAt), "the first record time stays")
+}
+
+func TestFeedPullRequests_UpsertReplacesPartySettings(t *testing.T) {
+	pullRequests := persistence.NewFeedPullRequests(newFeedDB(t))
+	ctx := context.Background()
+	firstDeadline := accessBaseTime.Add(time.Hour)
+	secondDeadline := accessBaseTime.Add(3 * time.Hour)
+	first := feedPullRequest("acme/api", 1, accessBaseTime)
+	first.PartyReviewers = 1
+	first.PartyDeadlineAt = &firstDeadline
+	second := feedPullRequest("acme/api", 1, accessBaseTime.Add(time.Minute))
+	second.PartyReviewers = 3
+	second.PartyDeadlineAt = &secondDeadline
+	upsertAll(t, pullRequests, first, second)
+
+	stored, err := pullRequests.Find(ctx, "acme/api", 1)
+
+	require.NoError(t, err)
+	require.NotNil(t, stored.PartyDeadlineAt)
+	assert.Equal(t, 3, stored.PartyReviewers)
+	assert.True(t, secondDeadline.Equal(*stored.PartyDeadlineAt))
+}
+
+func TestFeedPullRequests_FindMissingIsErrNotFound(t *testing.T) {
+	pullRequests := persistence.NewFeedPullRequests(newFeedDB(t))
+
+	_, err := pullRequests.Find(context.Background(), "acme/api", 1)
+
+	require.ErrorIs(t, err, persistence.ErrNotFound)
+}
+
+func TestFeedPullRequests_ReceivedSince(t *testing.T) {
+	db := newFeedDB(t)
+	pullRequests := persistence.NewFeedPullRequests(db)
+	ctx := context.Background()
+	since := accessBaseTime
+	upsertAll(t, pullRequests,
+		feedPullRequest("acme/api", 1, since.Add(time.Minute)),
+		feedPullRequest("acme/api", 2, since.Add(2*time.Minute)),
+		feedPullRequest("acme/api", 3, since.Add(3*time.Minute)),
+		feedPullRequest("acme/api", 4, since.Add(-time.Minute)),
+	)
+	require.NoError(t, db.Create(&persistence.FeedDelivery{
+		TokenID: "t1", Repository: "acme/api", Number: 1, DeliveredAt: since,
+	}).Error)
+	require.NoError(t, db.Create(&persistence.FeedDelivery{
+		TokenID: "t1", Repository: "acme/api", Number: 2, DeliveredAt: since, Party: true,
+	}).Error)
+	require.NoError(t, db.Create(&persistence.FeedDelivery{
+		TokenID: "t1", Repository: "acme/api", Number: 4, DeliveredAt: since,
+	}).Error)
+
+	received, err := pullRequests.ReceivedSince(ctx, persistence.FeedReceivedQuery{
+		TokenID: "t1", Repositories: []string{"acme/api"}, Since: since,
+	})
+	other, otherErr := pullRequests.ReceivedSince(ctx, persistence.FeedReceivedQuery{
+		TokenID: "t2", Repositories: []string{"acme/api"}, Since: since,
+	})
+	none, noneErr := pullRequests.ReceivedSince(ctx, persistence.FeedReceivedQuery{TokenID: "t1", Since: since})
+
+	require.NoError(t, err)
+	require.NoError(t, otherErr)
+	require.NoError(t, noneErr)
+	assert.Equal(t, []int{1, 2}, pullRequestNumbers(received))
+	assert.Empty(t, other)
+	assert.NotNil(t, none)
+	assert.Empty(t, none)
+}

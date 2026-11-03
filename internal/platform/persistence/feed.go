@@ -2,6 +2,7 @@ package persistence
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -120,14 +121,26 @@ func (r *FeedPullRequests) Upsert(ctx context.Context, pullRequest FeedPullReque
 		createdAt := pullRequest.CreatedAt.UTC()
 		pullRequest.CreatedAt = &createdAt
 	}
+	if pullRequest.RecordedAt != nil {
+		recordedAt := pullRequest.RecordedAt.UTC()
+		pullRequest.RecordedAt = &recordedAt
+	}
+	if pullRequest.PartyDeadlineAt != nil {
+		partyDeadlineAt := pullRequest.PartyDeadlineAt.UTC()
+		pullRequest.PartyDeadlineAt = &partyDeadlineAt
+	}
 	assignments := append(
 		clause.AssignmentColumns([]string{
 			"title", "description", "url", "author_id", "source_branch",
-			"target_branch", "head_sha", "updated_at",
+			"target_branch", "head_sha", "updated_at", "party_reviewers", "party_deadline_at",
 		}),
 		clause.Assignment{
 			Column: clause.Column{Name: "created_at"},
 			Value:  gorm.Expr("COALESCE(excluded.created_at, feed_pull_requests.created_at)"),
+		},
+		clause.Assignment{
+			Column: clause.Column{Name: "recorded_at"},
+			Value:  gorm.Expr("COALESCE(feed_pull_requests.recorded_at, excluded.recorded_at)"),
 		},
 	)
 	err := r.db.WithContext(ctx).
@@ -140,6 +153,21 @@ func (r *FeedPullRequests) Upsert(ctx context.Context, pullRequest FeedPullReque
 		return fmt.Errorf("store: upsert feed pull request: %w", err)
 	}
 	return nil
+}
+
+// Find returns the pull request, or ErrNotFound.
+func (r *FeedPullRequests) Find(ctx context.Context, repository string, number int) (FeedPullRequest, error) {
+	var pullRequest FeedPullRequest
+	err := r.db.WithContext(ctx).
+		Where("repository = ? AND number = ?", repository, number).
+		Take(&pullRequest).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return FeedPullRequest{}, ErrNotFound
+	}
+	if err != nil {
+		return FeedPullRequest{}, fmt.Errorf("store: find feed pull request: %w", err)
+	}
+	return pullRequest, nil
 }
 
 // Delete removes the pull request and its deliveries; a missing row is fine.
@@ -197,6 +225,24 @@ func (r *FeedPullRequests) ChangedSince(ctx context.Context, repositories []stri
 		Find(&pullRequests).Error
 	if err != nil {
 		return nil, fmt.Errorf("store: feed pull requests changed since: %w", err)
+	}
+	return pullRequests, nil
+}
+
+// ReceivedSince returns pull requests of the repositories updated at or after since that the token received.
+func (r *FeedPullRequests) ReceivedSince(ctx context.Context, query FeedReceivedQuery) ([]FeedPullRequest, error) {
+	if len(query.Repositories) == 0 {
+		return []FeedPullRequest{}, nil
+	}
+	var pullRequests []FeedPullRequest
+	err := r.db.WithContext(ctx).
+		Joins(`JOIN feed_deliveries ON feed_deliveries.repository = feed_pull_requests.repository
+			AND feed_deliveries.number = feed_pull_requests.number AND feed_deliveries.token_id = ?`, query.TokenID).
+		Where("feed_pull_requests.repository IN ? AND feed_pull_requests.updated_at >= ?", query.Repositories, query.Since.UTC()).
+		Order("feed_pull_requests.updated_at, feed_pull_requests.repository, feed_pull_requests.number").
+		Find(&pullRequests).Error
+	if err != nil {
+		return nil, fmt.Errorf("store: feed pull requests received since: %w", err)
 	}
 	return pullRequests, nil
 }

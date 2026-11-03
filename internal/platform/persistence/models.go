@@ -138,6 +138,10 @@ type FeedPullRequest struct {
 	HeadSHA      string     `gorm:"column:head_sha;not null"`
 	CreatedAt    *time.Time `gorm:"column:created_at;autoCreateTime:false"`
 	UpdatedAt    time.Time  `gorm:"column:updated_at;not null;autoUpdateTime:false"`
+
+	PartyReviewers  int        `gorm:"column:party_reviewers;not null;default:1"`
+	RecordedAt      *time.Time `gorm:"column:recorded_at;autoCreateTime:false"`
+	PartyDeadlineAt *time.Time `gorm:"column:party_deadline_at;autoCreateTime:false"`
 }
 
 // TableName pins the table name.
@@ -149,6 +153,7 @@ type FeedDelivery struct {
 	Repository  string    `gorm:"column:repository;primaryKey"`
 	Number      int       `gorm:"column:number;primaryKey"`
 	DeliveredAt time.Time `gorm:"column:delivered_at;not null;autoCreateTime:false"`
+	Party       bool      `gorm:"column:party;not null;default:false"`
 }
 
 // TableName pins the table name.
@@ -188,6 +193,13 @@ type FeedPartyLoad struct {
 
 // TableName pins the table name.
 func (FeedPartyLoad) TableName() string { return "feed_party_loads" }
+
+// FeedReceivedQuery asks for the pull requests a token received that changed since a time.
+type FeedReceivedQuery struct {
+	TokenID      string
+	Repositories []string
+	Since        time.Time
+}
 
 // FeedClaim asks for the pull requests a token has not received yet.
 type FeedClaim struct {
