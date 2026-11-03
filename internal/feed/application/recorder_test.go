@@ -304,6 +304,8 @@ func TestRecorder_FallbackOnARowWithoutRecordTimeUsesTheResolvedSettings(t *test
 	assert.Equal(t, 2, party.Reviewers)
 	assert.WithinDuration(t, now, party.RecordedAt, 0)
 	require.Len(t, fixture.calendar.addCalls, 1)
+	assert.Equal(t, 30*time.Minute, fixture.calendar.addCalls[0].workingTime)
+	assert.WithinDuration(t, now, fixture.calendar.addCalls[0].start, 0)
 }
 
 func TestRecorder_ResolvesWithTheLowerCasedKey(t *testing.T) {

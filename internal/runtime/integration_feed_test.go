@@ -596,7 +596,7 @@ func TestIntegration_PartySettingsFromMappings(t *testing.T) {
 	assert.Equal(t, []int{42}, bobDelivered, "the billing path sets a cap of 2")
 	assert.Equal(t, http.StatusBadRequest, starStatus, "a party-only star adds no repository")
 	assert.Contains(t, starBody, "unknown_repository")
-	assert.Equal(t, []string{billingFilesPath}, githubFake.requestedPaths(), "no hooks call means the lock hashes did not change, and the Slack router read no files")
+	assert.Equal(t, []string{billingFilesPath}, githubFake.requestedPaths(), "the Slack router read no files")
 	postCall, posted := slackFake.findCall("/api/chat.postMessage")
 	require.True(t, posted)
 	assert.Equal(t, "C123ABCDE", postCall.Body["channel"])
@@ -619,6 +619,7 @@ func TestIntegration_PartyFilesReadFailureFallsBack(t *testing.T) {
 	assert.Equal(t, []int{42}, aliceDelivered)
 	assert.Equal(t, []int{}, bobDelivered, "the fallback takes the repository cap of 1")
 	assert.Regexp(t, `msg="feed party settings fallback".*repository=acme/api.*number=42`, logged.String())
+	assert.NotContains(t, logged.String(), "gh-read-only", "the read token never reaches the log")
 	_, posted := slackFake.findCall("/api/chat.postMessage")
 	assert.True(t, posted)
 }

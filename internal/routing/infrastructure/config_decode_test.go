@@ -356,10 +356,10 @@ api:
 	assert.Nil(t, star.Party.Deadline)
 }
 
-func partyKeyPlacements(line string) map[string]string {
+func partyKeyPlacements(lines ...string) map[string]string {
 	return map[string]string{
-		"tier": "api:\n  channel: C0API\n  " + line + "\n",
-		"path": "api:\n  channel: C0API\n  paths:\n    billing:\n      " + line + "\n",
+		"tier": "api:\n  channel: C0API\n  " + strings.Join(lines, "\n  ") + "\n",
+		"path": "api:\n  channel: C0API\n  paths:\n    billing:\n      " + strings.Join(lines, "\n      ") + "\n",
 	}
 }
 
@@ -458,7 +458,7 @@ func TestRepoConfig_PartyEmptyValuesMeanNotSet(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		for place, body := range partyKeyPlacements("party_reviewers: " + testCase.value + "\n  party_deadline: " + testCase.value) {
+		for place, body := range partyKeyPlacements("party_reviewers: "+testCase.value, "party_deadline: "+testCase.value) {
 			t.Run(testCase.name+" on "+place, func(t *testing.T) {
 				api := decodeOrg(t, body)["api"].toDomain()
 				party := api.Party
@@ -468,6 +468,7 @@ func TestRepoConfig_PartyEmptyValuesMeanNotSet(t *testing.T) {
 
 				assert.Nil(t, party.Reviewers)
 				assert.Nil(t, party.Deadline)
+				assert.True(t, party.Declared)
 			})
 		}
 	}
