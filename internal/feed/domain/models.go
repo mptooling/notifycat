@@ -44,6 +44,12 @@ type ConfiguredRepositories struct {
 	Organizations []string
 }
 
+// SubscriptionRequest asks to subscribe to repositories; an empty Type means solo.
+type SubscriptionRequest struct {
+	Repositories []string
+	Type         SubscriptionType
+}
+
 // NewSubscriptions asks the store to subscribe a token to repositories.
 type NewSubscriptions struct {
 	TokenID      string

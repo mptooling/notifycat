@@ -53,13 +53,13 @@ func TestSubscriptions_Add(t *testing.T) {
 			store.seed(testCase.existing...)
 			subscriptions, _ := subscriptionsWithLog(store)
 
-			listed, err := subscriptions.Add(t.Context(), subscriber, testCase.requested)
+			listed, err := subscriptions.Add(t.Context(), subscriber, domain.SubscriptionRequest{Repositories: testCase.requested})
 
 			require.NoError(t, err)
 			assert.Equal(t, testCase.wantListed, repositoriesOf(listed))
 			require.Len(t, store.addCalls, testCase.wantAddCalls)
 			if testCase.wantAddCalls == 1 {
-				assert.Equal(t, domain.NewSubscriptions{TokenID: tokenID, Repositories: testCase.wantAdded, CreatedAt: now}, store.addCalls[0])
+				assert.Equal(t, domain.NewSubscriptions{TokenID: tokenID, Repositories: testCase.wantAdded, Type: domain.SubscriptionTypeSolo, CreatedAt: now}, store.addCalls[0])
 			}
 		})
 	}
@@ -90,7 +90,7 @@ func TestSubscriptions_AddRejects(t *testing.T) {
 			}
 			subscriptions, _ := subscriptionsWithLog(store)
 
-			_, err := subscriptions.Add(t.Context(), subscriber, testCase.requested)
+			_, err := subscriptions.Add(t.Context(), subscriber, domain.SubscriptionRequest{Repositories: testCase.requested})
 
 			require.Error(t, err)
 			if testCase.wantErr != nil {
@@ -115,7 +115,7 @@ func TestSubscriptions_AddAcceptsAtTheLimitWhenOneIsAlreadySubscribed(t *testing
 	store.seed("acme/api")
 	subscriptions, _ := subscriptionsWithLog(store)
 
-	listed, err := subscriptions.Add(t.Context(), subscriber, []string{"acme/api", "acme/web"})
+	listed, err := subscriptions.Add(t.Context(), subscriber, domain.SubscriptionRequest{Repositories: []string{"acme/api", "acme/web"}})
 
 	require.NoError(t, err)
 	assert.Len(t, listed, domain.MaxSubscriptionsPerToken)
@@ -128,7 +128,7 @@ func TestSubscriptions_AddAllRepositoriesCountsAsOne(t *testing.T) {
 	}
 	subscriptions, _ := subscriptionsWithLog(store)
 
-	listed, err := subscriptions.Add(t.Context(), subscriber, []string{"*"})
+	listed, err := subscriptions.Add(t.Context(), subscriber, domain.SubscriptionRequest{Repositories: []string{"*"}})
 
 	require.NoError(t, err)
 	assert.Len(t, listed, domain.MaxSubscriptionsPerToken)
@@ -139,7 +139,7 @@ func TestSubscriptions_AddLogs(t *testing.T) {
 		store := &fakeSubscriptionStore{}
 		subscriptions, logs := subscriptionsWithLog(store)
 
-		_, err := subscriptions.Add(t.Context(), subscriber, []string{"acme/api", "acme/web"})
+		_, err := subscriptions.Add(t.Context(), subscriber, domain.SubscriptionRequest{Repositories: []string{"acme/api", "acme/web"}})
 
 		require.NoError(t, err)
 		assert.Contains(t, logs.String(), "feed subscriptions added")
@@ -153,7 +153,7 @@ func TestSubscriptions_AddLogs(t *testing.T) {
 		store.seed("acme/api")
 		subscriptions, logs := subscriptionsWithLog(store)
 
-		_, err := subscriptions.Add(t.Context(), subscriber, []string{"acme/api"})
+		_, err := subscriptions.Add(t.Context(), subscriber, domain.SubscriptionRequest{Repositories: []string{"acme/api"}})
 
 		require.NoError(t, err)
 		assert.NotContains(t, logs.String(), "feed subscriptions added")
@@ -212,4 +212,146 @@ func TestSubscriptions_Available(t *testing.T) {
 	available := subscriptions.Available()
 
 	assert.Equal(t, domain.ConfiguredRepositories{Repositories: []string{"acme/api", "acme/web", "acme/ops"}}, available)
+}
+
+func TestSubscriptions_AddStoresTheType(t *testing.T) {
+	store := &fakeSubscriptionStore{}
+	subscriptions, _ := subscriptionsWithLog(store)
+
+	_, err := subscriptions.Add(t.Context(), subscriber, domain.SubscriptionRequest{Repositories: []string{"acme/api"}, Type: domain.SubscriptionTypeParty})
+
+	require.NoError(t, err)
+	require.Len(t, store.addCalls, 1)
+	assert.Equal(t, domain.SubscriptionTypeParty, store.addCalls[0].Type)
+}
+
+func TestSubscriptions_AddWithoutTypeIsSolo(t *testing.T) {
+	store := &fakeSubscriptionStore{}
+	subscriptions, _ := subscriptionsWithLog(store)
+
+	_, err := subscriptions.Add(t.Context(), subscriber, domain.SubscriptionRequest{Repositories: []string{"acme/api"}})
+
+	require.NoError(t, err)
+	require.Len(t, store.addCalls, 1)
+	assert.Equal(t, domain.SubscriptionTypeSolo, store.addCalls[0].Type)
+}
+
+func TestSubscriptions_AddInvalidTypeAddsNothing(t *testing.T) {
+	store := &fakeSubscriptionStore{}
+	subscriptions, _ := subscriptionsWithLog(store)
+
+	_, err := subscriptions.Add(t.Context(), subscriber, domain.SubscriptionRequest{Repositories: []string{"acme/api"}, Type: "team"})
+
+	require.ErrorIs(t, err, domain.ErrInvalidType)
+	assert.Empty(t, store.addCalls)
+}
+
+func TestSubscriptions_ChangeType(t *testing.T) {
+	testCases := []struct {
+		name            string
+		change          domain.TypeChange
+		wantErr         error
+		wantNotSubbed   []string
+		wantStoreChange *domain.TypeChange
+		wantTypes       map[string]domain.SubscriptionType
+	}{
+		{
+			name:            "every subscription",
+			change:          domain.TypeChange{Type: domain.SubscriptionTypeParty},
+			wantStoreChange: &domain.TypeChange{Type: domain.SubscriptionTypeParty},
+			wantTypes:       map[string]domain.SubscriptionType{"acme/api": domain.SubscriptionTypeParty, "acme/web": domain.SubscriptionTypeParty},
+		},
+		{
+			name:            "named repository matches the stored lower case one",
+			change:          domain.TypeChange{Repositories: []string{"Acme/API"}, Type: domain.SubscriptionTypeParty},
+			wantStoreChange: &domain.TypeChange{Repositories: []string{"acme/api"}, Type: domain.SubscriptionTypeParty},
+			wantTypes:       map[string]domain.SubscriptionType{"acme/api": domain.SubscriptionTypeParty, "acme/web": domain.SubscriptionTypeSolo},
+		},
+		{
+			name:            "all repositories subscription",
+			change:          domain.TypeChange{Repositories: []string{"*"}, Type: domain.SubscriptionTypeParty},
+			wantStoreChange: &domain.TypeChange{Repositories: []string{"*"}, Type: domain.SubscriptionTypeParty},
+		},
+		{
+			name:          "not subscribed",
+			change:        domain.TypeChange{Repositories: []string{"acme/api", "acme/ops", "ACME/Docs"}, Type: domain.SubscriptionTypeParty},
+			wantNotSubbed: []string{"acme/docs", "acme/ops"},
+		},
+		{name: "empty type", change: domain.TypeChange{Type: ""}, wantErr: domain.ErrInvalidType},
+		{name: "unknown type", change: domain.TypeChange{Type: "team"}, wantErr: domain.ErrInvalidType},
+		{name: "empty repository list", change: domain.TypeChange{Repositories: []string{}, Type: domain.SubscriptionTypeParty}, wantErr: domain.ErrNoRepositories},
+		{name: "only blank entries", change: domain.TypeChange{Repositories: []string{" "}, Type: domain.SubscriptionTypeParty}, wantErr: domain.ErrNoRepositories},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			store := &fakeSubscriptionStore{}
+			store.seed("acme/api", "acme/web")
+			if testCase.name == "all repositories subscription" {
+				store.seed("*")
+			}
+			subscriptions, _ := subscriptionsWithLog(store)
+
+			listed, err := subscriptions.ChangeType(t.Context(), subscriber, testCase.change)
+
+			switch {
+			case testCase.wantErr != nil:
+				require.ErrorIs(t, err, testCase.wantErr)
+				assert.Empty(t, store.setTypeCalls)
+			case testCase.wantNotSubbed != nil:
+				var notSubscribed *domain.NotSubscribedError
+				require.ErrorAs(t, err, &notSubscribed)
+				assert.Equal(t, testCase.wantNotSubbed, notSubscribed.Repositories)
+				assert.NotEmpty(t, notSubscribed.Error())
+				assert.Empty(t, store.setTypeCalls, "nothing changes when a repository is not subscribed")
+			default:
+				require.NoError(t, err)
+				require.Len(t, store.setTypeCalls, 1)
+				assert.Equal(t, *testCase.wantStoreChange, store.setTypeCalls[0])
+				for _, subscription := range listed {
+					if want, ok := testCase.wantTypes[subscription.Repository]; ok {
+						assert.Equal(t, want, subscription.Type, subscription.Repository)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestSubscriptions_ChangeTypeLogs(t *testing.T) {
+	t.Run("rows changed", func(t *testing.T) {
+		store := &fakeSubscriptionStore{}
+		store.seed("acme/api", "acme/web")
+		subscriptions, logs := subscriptionsWithLog(store)
+
+		_, err := subscriptions.ChangeType(t.Context(), subscriber, domain.TypeChange{Type: domain.SubscriptionTypeParty})
+
+		require.NoError(t, err)
+		assert.Contains(t, logs.String(), "feed subscriptions changed")
+		assert.Contains(t, logs.String(), "user=alice")
+		assert.Contains(t, logs.String(), "token_id="+tokenID)
+		assert.Contains(t, logs.String(), "type=party")
+		assert.Contains(t, logs.String(), "count=2")
+	})
+
+	t.Run("no row changes", func(t *testing.T) {
+		store := &fakeSubscriptionStore{}
+		store.seed("acme/api")
+		subscriptions, logs := subscriptionsWithLog(store)
+
+		_, err := subscriptions.ChangeType(t.Context(), subscriber, domain.TypeChange{Type: domain.SubscriptionTypeSolo})
+
+		require.NoError(t, err)
+		assert.NotContains(t, logs.String(), "feed subscriptions changed")
+	})
+}
+
+func TestSubscriptions_ChangeTypeStoreFailure(t *testing.T) {
+	storeErr := errors.New("boom")
+	store := &fakeSubscriptionStore{setTypeErr: storeErr}
+	store.seed("acme/api")
+	subscriptions, _ := subscriptionsWithLog(store)
+
+	_, err := subscriptions.ChangeType(t.Context(), subscriber, domain.TypeChange{Type: domain.SubscriptionTypeParty})
+
+	require.ErrorIs(t, err, storeErr)
 }

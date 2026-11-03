@@ -19,6 +19,8 @@ var subscriber = domain.Subscriber{TokenID: tokenID, User: "alice"}
 type fakeSubscriptionStore struct {
 	subscriptions []domain.Subscription
 	addCalls      []domain.NewSubscriptions
+	setTypeCalls  []domain.TypeChange
+	setTypeErr    error
 	deleteErr     error
 	listErr       error
 	addErr        error
@@ -58,7 +60,7 @@ func (store *fakeSubscriptionStore) seed(repositories ...string) {
 	for _, repository := range repositories {
 		store.nextID++
 		store.subscriptions = append(store.subscriptions, domain.Subscription{
-			ID: store.nextID, TokenID: tokenID, Repository: repository, CreatedAt: now,
+			ID: store.nextID, TokenID: tokenID, Repository: repository, Type: domain.SubscriptionTypeSolo, CreatedAt: now,
 		})
 	}
 }
@@ -108,8 +110,20 @@ func (store *fakeSubscriptionStore) Delete(_ context.Context, token string, id i
 	return domain.Subscription{}, domain.ErrSubscriptionNotFound
 }
 
-func (store *fakeSubscriptionStore) SetType(context.Context, string, domain.TypeChange) (int, error) {
-	return 0, nil
+func (store *fakeSubscriptionStore) SetType(_ context.Context, token string, change domain.TypeChange) (int, error) {
+	store.setTypeCalls = append(store.setTypeCalls, change)
+	if store.setTypeErr != nil {
+		return 0, store.setTypeErr
+	}
+	changed := 0
+	for index, subscription := range store.subscriptions {
+		matches := subscription.TokenID == token && (change.Repositories == nil || slices.Contains(change.Repositories, subscription.Repository))
+		if matches && subscription.Type != change.Type {
+			store.subscriptions[index].Type = change.Type
+			changed++
+		}
+	}
+	return changed, nil
 }
 
 type deleteCall struct {

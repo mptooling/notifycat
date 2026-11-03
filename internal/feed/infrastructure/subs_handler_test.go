@@ -16,10 +16,10 @@ import (
 )
 
 func sampleSubscriptions() []domain.Subscription {
-	return []domain.Subscription{{ID: 17, TokenID: "t1", Repository: "acme/api", CreatedAt: time.Date(2026, 10, 28, 9, 0, 0, 0, time.UTC)}}
+	return []domain.Subscription{{ID: 17, TokenID: "t1", Repository: "acme/api", Type: domain.SubscriptionTypeSolo, CreatedAt: time.Date(2026, 10, 28, 9, 0, 0, 0, time.UTC)}}
 }
 
-const sampleSubscriptionsJSON = `{"subscriptions":[{"id":17,"repository":"acme/api","created_at":"2026-10-28T09:00:00Z"}]}`
+const sampleSubscriptionsJSON = `{"subscriptions":[{"id":17,"repository":"acme/api","type":"solo","created_at":"2026-10-28T09:00:00Z"}]}`
 
 func TestSubs_List(t *testing.T) {
 	fixture := newFeedFixture()
@@ -30,6 +30,15 @@ func TestSubs_List(t *testing.T) {
 	assert.Equal(t, http.StatusOK, recorder.Code)
 	assert.JSONEq(t, sampleSubscriptionsJSON, recorder.Body.String())
 	assert.Equal(t, aliceSubscriber, fixture.subscriptions.gotSubscriber)
+}
+
+func TestSubs_ListShowsType(t *testing.T) {
+	fixture := newFeedFixture()
+	fixture.subscriptions.subscriptions = []domain.Subscription{{ID: 1, Repository: "acme/api", Type: domain.SubscriptionTypeParty}}
+
+	recorder := fixture.do(http.MethodGet, "/api/v1/subs", "")
+
+	assert.Contains(t, recorder.Body.String(), `"type":"party"`)
 }
 
 func TestSubs_List_EmptyIsEmptyArray(t *testing.T) {
@@ -51,6 +60,97 @@ func TestSubs_Add(t *testing.T) {
 	assert.JSONEq(t, sampleSubscriptionsJSON, recorder.Body.String())
 	assert.Equal(t, []string{"acme/api", "acme/web"}, fixture.subscriptions.gotRepositories)
 	assert.Equal(t, aliceSubscriber, fixture.subscriptions.gotSubscriber)
+}
+
+func TestSubs_AddPassesType(t *testing.T) {
+	testCases := []struct {
+		name     string
+		body     string
+		wantType domain.SubscriptionType
+	}{
+		{name: "party", body: `{"repositories":["acme/api"],"type":"party"}`, wantType: domain.SubscriptionTypeParty},
+		{name: "absent", body: `{"repositories":["acme/api"]}`, wantType: ""},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := newFeedFixture()
+
+			recorder := fixture.do(http.MethodPost, "/api/v1/subs", testCase.body)
+
+			assert.Equal(t, http.StatusOK, recorder.Code)
+			assert.Equal(t, domain.SubscriptionRequest{Repositories: []string{"acme/api"}, Type: testCase.wantType}, fixture.subscriptions.gotRequest)
+		})
+	}
+}
+
+func TestSubs_Add_InvalidTypeIs400(t *testing.T) {
+	fixture := newFeedFixture()
+	fixture.subscriptions.err = domain.ErrInvalidType
+
+	recorder := fixture.do(http.MethodPost, "/api/v1/subs", `{"repositories":["acme/api"],"type":"team"}`)
+
+	assert.Equal(t, http.StatusBadRequest, recorder.Code)
+	assert.JSONEq(t, `{"error":"invalid_type"}`, recorder.Body.String())
+}
+
+func TestSubs_Change(t *testing.T) {
+	testCases := []struct {
+		name       string
+		body       string
+		wantChange domain.TypeChange
+	}{
+		{name: "every subscription", body: `{"type":"party"}`, wantChange: domain.TypeChange{Type: domain.SubscriptionTypeParty}},
+		{
+			name: "named repositories", body: `{"repositories":["Acme/API"],"type":"solo"}`,
+			wantChange: domain.TypeChange{Repositories: []string{"Acme/API"}, Type: domain.SubscriptionTypeSolo},
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := newFeedFixture()
+			fixture.subscriptions.subscriptions = sampleSubscriptions()
+
+			recorder := fixture.do(http.MethodPatch, "/api/v1/subs", testCase.body)
+
+			assert.Equal(t, http.StatusOK, recorder.Code)
+			assert.JSONEq(t, sampleSubscriptionsJSON, recorder.Body.String())
+			assert.Equal(t, testCase.wantChange, fixture.subscriptions.gotChange)
+			assert.Equal(t, aliceSubscriber, fixture.subscriptions.gotSubscriber)
+		})
+	}
+}
+
+func TestSubs_Change_BadRequests(t *testing.T) {
+	testCases := []struct {
+		name       string
+		body       string
+		useCaseErr error
+		wantBody   string
+	}{
+		{name: "missing type", body: `{"repositories":["acme/api"]}`, useCaseErr: domain.ErrInvalidType, wantBody: `{"error":"invalid_type"}`},
+		{name: "unknown type", body: `{"type":"team"}`, useCaseErr: domain.ErrInvalidType, wantBody: `{"error":"invalid_type"}`},
+		{name: "unknown field", body: `{"type":"party","extra":1}`, wantBody: `{"error":"invalid_body"}`},
+		{name: "not json", body: `nope`, wantBody: `{"error":"invalid_body"}`},
+		{name: "empty repositories", body: `{"repositories":[],"type":"party"}`, useCaseErr: domain.ErrNoRepositories, wantBody: `{"error":"invalid_body"}`},
+		{name: "trailing data", body: `{"type":"party"} x`, wantBody: `{"error":"invalid_body"}`},
+		{
+			name: "not subscribed", body: `{"repositories":["acme/web"],"type":"party"}`,
+			useCaseErr: &domain.NotSubscribedError{Repositories: []string{"acme/web"}},
+			wantBody:   `{"error":"not_subscribed","repositories":["acme/web"]}`,
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := newFeedFixture()
+			fixture.subscriptions.err = testCase.useCaseErr
+
+			recorder := fixture.do(http.MethodPatch, "/api/v1/subs", testCase.body)
+
+			assert.Equal(t, http.StatusBadRequest, recorder.Code)
+			assert.JSONEq(t, testCase.wantBody, recorder.Body.String())
+			assert.Empty(t, fixture.logs.String(), "client errors are not logged")
+		})
+	}
 }
 
 func TestSubs_Add_BadRequests(t *testing.T) {
@@ -130,6 +230,7 @@ func TestSubs_UseCaseFailureIs500AndLogged(t *testing.T) {
 	testCases := []struct{ name, method, target, body string }{
 		{name: "list", method: http.MethodGet, target: "/api/v1/subs"},
 		{name: "add", method: http.MethodPost, target: "/api/v1/subs", body: `{"repositories":["acme/api"]}`},
+		{name: "change", method: http.MethodPatch, target: "/api/v1/subs", body: `{"type":"party"}`},
 		{name: "remove", method: http.MethodDelete, target: "/api/v1/subs/17"},
 	}
 	for _, testCase := range testCases {
@@ -160,6 +261,7 @@ func TestSubs_NoPrincipalIs401(t *testing.T) {
 	testCases := []struct{ name, method, target, body string }{
 		{name: "list", method: http.MethodGet, target: "/api/v1/subs"},
 		{name: "add", method: http.MethodPost, target: "/api/v1/subs", body: `{"repositories":["acme/api"]}`},
+		{name: "change", method: http.MethodPatch, target: "/api/v1/subs", body: `{"type":"party"}`},
 		{name: "remove", method: http.MethodDelete, target: "/api/v1/subs/17"},
 	}
 	for _, testCase := range testCases {
@@ -172,7 +274,7 @@ func TestSubs_NoPrincipalIs401(t *testing.T) {
 
 			require.Equal(t, http.StatusUnauthorized, recorder.Code)
 			assert.JSONEq(t, `{"error":"unauthorized"}`, recorder.Body.String())
-			assert.Zero(t, fixture.subscriptions.listCalls+fixture.subscriptions.addCalls+fixture.subscriptions.removeCalls)
+			assert.Zero(t, fixture.subscriptions.listCalls+fixture.subscriptions.addCalls+fixture.subscriptions.changeCalls+fixture.subscriptions.removeCalls)
 		})
 	}
 }

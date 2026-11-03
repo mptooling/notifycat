@@ -76,8 +76,11 @@ type Clock interface {
 // Subscriptions manages a token's repository subscriptions.
 type Subscriptions interface {
 	List(ctx context.Context, subscriber Subscriber) ([]Subscription, error)
-	// Add subscribes to the repositories and returns the full list; it adds nothing when any request is rejected.
-	Add(ctx context.Context, subscriber Subscriber, repositories []string) ([]Subscription, error)
+	// Add subscribes to the repositories with the requested type and returns the full list; it adds nothing when any request is rejected.
+	Add(ctx context.Context, subscriber Subscriber, request SubscriptionRequest) ([]Subscription, error)
+	// ChangeType sets the type of the subscriber's subscriptions (nil Repositories: every one) and returns the full list.
+	// It returns ErrInvalidType for an unknown type and NotSubscribedError when a named repository is not subscribed; nothing changes then.
+	ChangeType(ctx context.Context, subscriber Subscriber, change TypeChange) ([]Subscription, error)
 	// Remove returns ErrSubscriptionNotFound when the id is not the subscriber's.
 	Remove(ctx context.Context, subscriber Subscriber, id int64) error
 	// Available returns the repositories and organizations a subscriber can subscribe to.

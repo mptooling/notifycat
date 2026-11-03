@@ -27,6 +27,9 @@ type fakeSubscriptions struct {
 	availableCalls  int
 	gotSubscriber   domain.Subscriber
 	gotRepositories []string
+	gotRequest      domain.SubscriptionRequest
+	gotChange       domain.TypeChange
+	changeCalls     int
 	gotID           int64
 }
 
@@ -36,10 +39,18 @@ func (fake *fakeSubscriptions) List(_ context.Context, subscriber domain.Subscri
 	return fake.subscriptions, fake.err
 }
 
-func (fake *fakeSubscriptions) Add(_ context.Context, subscriber domain.Subscriber, repositories []string) ([]domain.Subscription, error) {
+func (fake *fakeSubscriptions) Add(_ context.Context, subscriber domain.Subscriber, request domain.SubscriptionRequest) ([]domain.Subscription, error) {
 	fake.addCalls++
 	fake.gotSubscriber = subscriber
-	fake.gotRepositories = repositories
+	fake.gotRepositories = request.Repositories
+	fake.gotRequest = request
+	return fake.subscriptions, fake.err
+}
+
+func (fake *fakeSubscriptions) ChangeType(_ context.Context, subscriber domain.Subscriber, change domain.TypeChange) ([]domain.Subscription, error) {
+	fake.changeCalls++
+	fake.gotSubscriber = subscriber
+	fake.gotChange = change
 	return fake.subscriptions, fake.err
 }
 

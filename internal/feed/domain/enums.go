@@ -9,6 +9,8 @@ const (
 	ErrorCodeInvalidBody          ErrorCode = "invalid_body"
 	ErrorCodeUnknownRepository    ErrorCode = "unknown_repository"
 	ErrorCodeTooManySubscriptions ErrorCode = "too_many_subscriptions"
+	ErrorCodeInvalidType          ErrorCode = "invalid_type"
+	ErrorCodeNotSubscribed        ErrorCode = "not_subscribed"
 	ErrorCodeInvalidSince         ErrorCode = "invalid_since"
 	ErrorCodeNotFound             ErrorCode = "not_found"
 	ErrorCodeInternal             ErrorCode = "internal_error"
