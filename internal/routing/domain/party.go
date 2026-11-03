@@ -3,6 +3,7 @@ package domain
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"time"
 )
 
@@ -21,6 +22,18 @@ func ParsePartyDeadline(value string) (time.Duration, error) {
 		return 0, fmt.Errorf("party deadline %q: must be from %s", value, PartyDeadlineRangeText)
 	}
 	return deadline, nil
+}
+
+// ParsePartyReviewers parses a party cap written as a whole number.
+func ParsePartyReviewers(value string) (int, error) {
+	reviewers, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("party reviewers %q: must be a whole number of %d or more", value, MinPartyReviewers)
+	}
+	if err := ValidatePartyReviewers(reviewers); err != nil {
+		return 0, err
+	}
+	return reviewers, nil
 }
 
 // ValidatePartyReviewers checks that a party needs at least MinPartyReviewers reviewers.

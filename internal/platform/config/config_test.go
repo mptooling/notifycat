@@ -510,6 +510,26 @@ func TestLoad_AgentAPI_PartyReviewersBelowOne(t *testing.T) {
 	assert.ErrorContains(t, err, "agent_api.party_reviewers")
 }
 
+func TestLoad_AgentAPI_PartyReviewersFraction(t *testing.T) {
+	testCases := []struct {
+		name  string
+		value string
+	}{
+		{name: "above two", value: "2.9"},
+		{name: "above one", value: "1.5"},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			_, err := loadConfigured(t, minimalConfig+"agent_api:\n  party_reviewers: "+testCase.value+"\n")
+
+			require.Error(t, err, "a fraction fails at startup and is never cut to a whole number")
+			assert.ErrorContains(t, err, "agent_api.party_reviewers")
+			assert.ErrorContains(t, err, `party reviewers "`+testCase.value+`"`)
+			assert.ErrorContains(t, err, "must be a whole number of 1 or more")
+		})
+	}
+}
+
 func TestLoad_AgentAPI_PartyDeadlineOutOfRange(t *testing.T) {
 	_, err := loadConfigured(t, minimalConfig+"agent_api:\n  party_deadline: 14m\n")
 

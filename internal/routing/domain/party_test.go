@@ -74,6 +74,49 @@ func TestPartyDeadlineRangeText_MatchesTheBounds(t *testing.T) {
 	assert.Equal(t, MaxPartyDeadline, highest)
 }
 
+func TestParsePartyReviewers(t *testing.T) {
+	testCases := []struct {
+		name  string
+		value string
+		want  int
+	}{
+		{name: "the minimum", value: "1", want: MinPartyReviewers},
+		{name: "three", value: "3", want: 3},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			got, err := ParsePartyReviewers(testCase.value)
+
+			require.NoError(t, err)
+			assert.Equal(t, testCase.want, got)
+		})
+	}
+}
+
+func TestParsePartyReviewers_Rejects(t *testing.T) {
+	const wholeNumberRule = "must be a whole number of 1 or more"
+	testCases := []struct {
+		name      string
+		value     string
+		wantValue string
+		wantRule  string
+	}{
+		{name: "fraction", value: "2.9", wantValue: `party reviewers "2.9"`, wantRule: wholeNumberRule},
+		{name: "whole fraction", value: "2.0", wantValue: `party reviewers "2.0"`, wantRule: wholeNumberRule},
+		{name: "text", value: "two", wantValue: `party reviewers "two"`, wantRule: wholeNumberRule},
+		{name: "zero", value: "0", wantValue: "party reviewers 0", wantRule: "must be 1 or more"},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			_, err := ParsePartyReviewers(testCase.value)
+
+			require.Error(t, err)
+			assert.ErrorContains(t, err, testCase.wantValue)
+			assert.ErrorContains(t, err, testCase.wantRule)
+		})
+	}
+}
+
 func TestValidatePartyReviewers(t *testing.T) {
 	testCases := []struct {
 		name  string

@@ -133,7 +133,7 @@ type fileSchema struct {
 	} `yaml:"server"`
 	AgentAPI struct {
 		Enabled        *bool  `yaml:"enabled"`
-		PartyReviewers *int   `yaml:"party_reviewers"`
+		PartyReviewers string `yaml:"party_reviewers"`
 		PartyDeadline  string `yaml:"party_deadline"`
 	} `yaml:"agent_api"`
 	Database struct {
@@ -358,11 +358,12 @@ func trimSingleQuotes(value string) string {
 }
 
 func applyPartySettings(cfg *Config, fs fileSchema) error {
-	if fs.AgentAPI.PartyReviewers != nil {
-		if err := routingdomain.ValidatePartyReviewers(*fs.AgentAPI.PartyReviewers); err != nil {
+	if fs.AgentAPI.PartyReviewers != "" {
+		reviewers, err := routingdomain.ParsePartyReviewers(fs.AgentAPI.PartyReviewers)
+		if err != nil {
 			return fmt.Errorf("config: agent_api.party_reviewers: %w", err)
 		}
-		cfg.PartyReviewers = *fs.AgentAPI.PartyReviewers
+		cfg.PartyReviewers = reviewers
 	}
 	if fs.AgentAPI.PartyDeadline != "" {
 		deadline, err := routingdomain.ParsePartyDeadline(fs.AgentAPI.PartyDeadline)
