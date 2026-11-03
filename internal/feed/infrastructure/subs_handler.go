@@ -18,8 +18,8 @@ type addSubscriptionsRequest struct {
 }
 
 type changeSubscriptionsRequest struct {
-	Repositories *[]string `json:"repositories"`
-	Type         string    `json:"type"`
+	Repositories json.RawMessage `json:"repositories"`
+	Type         string          `json:"type"`
 }
 
 type subscriptionResponse struct {
@@ -89,10 +89,12 @@ func (handler *subsHandler) change(w http.ResponseWriter, request *http.Request)
 		httpx.WriteError(w, http.StatusBadRequest, string(domain.ErrorCodeInvalidBody))
 		return
 	}
-	change := domain.TypeChange{Type: domain.SubscriptionType(body.Type)}
-	if body.Repositories != nil {
-		change.Repositories = append([]string{}, *body.Repositories...)
+	repositories, ok := decodeChangeRepositories(body.Repositories)
+	if !ok {
+		httpx.WriteError(w, http.StatusBadRequest, string(domain.ErrorCodeInvalidBody))
+		return
 	}
+	change := domain.TypeChange{Repositories: repositories, Type: domain.SubscriptionType(body.Type)}
 	subscriptions, err := handler.subscriptions.ChangeType(request.Context(), subscriber, change)
 	if handler.writeSubscriptionsError(w, request, err) {
 		return
@@ -149,6 +151,17 @@ func (handler *subsHandler) remove(w http.ResponseWriter, request *http.Request)
 		return
 	}
 	httpx.WriteNoContent(w)
+}
+
+func decodeChangeRepositories(raw json.RawMessage) ([]string, bool) {
+	if raw == nil {
+		return nil, true
+	}
+	var repositories []string
+	if err := json.Unmarshal(raw, &repositories); err != nil || repositories == nil {
+		return nil, false
+	}
+	return repositories, true
 }
 
 func decodeSubscriptionsBody[Body any](w http.ResponseWriter, request *http.Request) (Body, bool) {

@@ -18,19 +18,18 @@ import (
 func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
 
 type fakeSubscriptions struct {
-	subscriptions   []domain.Subscription
-	available       domain.ConfiguredRepositories
-	err             error
-	listCalls       int
-	addCalls        int
-	removeCalls     int
-	availableCalls  int
-	gotSubscriber   domain.Subscriber
-	gotRepositories []string
-	gotRequest      domain.SubscriptionRequest
-	gotChange       domain.TypeChange
-	changeCalls     int
-	gotID           int64
+	subscriptions  []domain.Subscription
+	available      domain.ConfiguredRepositories
+	err            error
+	listCalls      int
+	addCalls       int
+	removeCalls    int
+	availableCalls int
+	gotSubscriber  domain.Subscriber
+	gotRequest     domain.SubscriptionRequest
+	gotChange      domain.TypeChange
+	changeCalls    int
+	gotID          int64
 }
 
 func (fake *fakeSubscriptions) List(_ context.Context, subscriber domain.Subscriber) ([]domain.Subscription, error) {
@@ -42,7 +41,6 @@ func (fake *fakeSubscriptions) List(_ context.Context, subscriber domain.Subscri
 func (fake *fakeSubscriptions) Add(_ context.Context, subscriber domain.Subscriber, request domain.SubscriptionRequest) ([]domain.Subscription, error) {
 	fake.addCalls++
 	fake.gotSubscriber = subscriber
-	fake.gotRepositories = request.Repositories
 	fake.gotRequest = request
 	return fake.subscriptions, fake.err
 }

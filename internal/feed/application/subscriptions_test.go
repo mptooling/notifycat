@@ -237,7 +237,7 @@ func TestSubscriptions_AddWithoutTypeIsSolo(t *testing.T) {
 }
 
 func TestSubscriptions_AddInvalidTypeAddsNothing(t *testing.T) {
-	store := &fakeSubscriptionStore{}
+	store := &fakeSubscriptionStore{listErr: errors.New("list must not run")}
 	subscriptions, _ := subscriptionsWithLog(store)
 
 	_, err := subscriptions.Add(t.Context(), subscriber, domain.SubscriptionRequest{Repositories: []string{"acme/api"}, Type: "team"})
@@ -248,35 +248,75 @@ func TestSubscriptions_AddInvalidTypeAddsNothing(t *testing.T) {
 
 func TestSubscriptions_ChangeType(t *testing.T) {
 	testCases := []struct {
-		name            string
-		change          domain.TypeChange
-		wantErr         error
-		wantNotSubbed   []string
-		wantStoreChange *domain.TypeChange
-		wantTypes       map[string]domain.SubscriptionType
+		name              string
+		existing          []string
+		change            domain.TypeChange
+		wantNotSubscribed []string
+		wantStoreChange   domain.TypeChange
+		wantTypes         map[string]domain.SubscriptionType
 	}{
 		{
 			name:            "every subscription",
+			existing:        []string{"acme/api", "acme/web"},
 			change:          domain.TypeChange{Type: domain.SubscriptionTypeParty},
-			wantStoreChange: &domain.TypeChange{Type: domain.SubscriptionTypeParty},
+			wantStoreChange: domain.TypeChange{Type: domain.SubscriptionTypeParty},
 			wantTypes:       map[string]domain.SubscriptionType{"acme/api": domain.SubscriptionTypeParty, "acme/web": domain.SubscriptionTypeParty},
 		},
 		{
 			name:            "named repository matches the stored lower case one",
+			existing:        []string{"acme/api", "acme/web"},
 			change:          domain.TypeChange{Repositories: []string{"Acme/API"}, Type: domain.SubscriptionTypeParty},
-			wantStoreChange: &domain.TypeChange{Repositories: []string{"acme/api"}, Type: domain.SubscriptionTypeParty},
+			wantStoreChange: domain.TypeChange{Repositories: []string{"acme/api"}, Type: domain.SubscriptionTypeParty},
 			wantTypes:       map[string]domain.SubscriptionType{"acme/api": domain.SubscriptionTypeParty, "acme/web": domain.SubscriptionTypeSolo},
 		},
 		{
 			name:            "all repositories subscription",
+			existing:        []string{"acme/api", "*"},
 			change:          domain.TypeChange{Repositories: []string{"*"}, Type: domain.SubscriptionTypeParty},
-			wantStoreChange: &domain.TypeChange{Repositories: []string{"*"}, Type: domain.SubscriptionTypeParty},
+			wantStoreChange: domain.TypeChange{Repositories: []string{"*"}, Type: domain.SubscriptionTypeParty},
+			wantTypes:       map[string]domain.SubscriptionType{"acme/api": domain.SubscriptionTypeSolo, "*": domain.SubscriptionTypeParty},
 		},
 		{
-			name:          "not subscribed",
-			change:        domain.TypeChange{Repositories: []string{"acme/api", "acme/ops", "ACME/Docs"}, Type: domain.SubscriptionTypeParty},
-			wantNotSubbed: []string{"acme/docs", "acme/ops"},
+			name:              "not subscribed",
+			existing:          []string{"acme/api", "acme/web"},
+			change:            domain.TypeChange{Repositories: []string{"acme/api", "acme/ops", "ACME/Docs"}, Type: domain.SubscriptionTypeParty},
+			wantNotSubscribed: []string{"acme/docs", "acme/ops"},
 		},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			store := &fakeSubscriptionStore{}
+			store.seed(testCase.existing...)
+			subscriptions, _ := subscriptionsWithLog(store)
+
+			listed, err := subscriptions.ChangeType(t.Context(), subscriber, testCase.change)
+
+			if testCase.wantNotSubscribed != nil {
+				var notSubscribed *domain.NotSubscribedError
+				require.ErrorAs(t, err, &notSubscribed)
+				assert.Equal(t, testCase.wantNotSubscribed, notSubscribed.Repositories)
+				assert.NotEmpty(t, notSubscribed.Error())
+				assert.Empty(t, store.setTypeCalls, "nothing changes when a repository is not subscribed")
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, store.setTypeCalls, 1)
+			assert.Equal(t, testCase.wantStoreChange, store.setTypeCalls[0])
+			gotTypes := map[string]domain.SubscriptionType{}
+			for _, subscription := range listed {
+				gotTypes[subscription.Repository] = subscription.Type
+			}
+			assert.Equal(t, testCase.wantTypes, gotTypes)
+		})
+	}
+}
+
+func TestSubscriptions_ChangeTypeRejects(t *testing.T) {
+	testCases := []struct {
+		name    string
+		change  domain.TypeChange
+		wantErr error
+	}{
 		{name: "empty type", change: domain.TypeChange{Type: ""}, wantErr: domain.ErrInvalidType},
 		{name: "unknown type", change: domain.TypeChange{Type: "team"}, wantErr: domain.ErrInvalidType},
 		{name: "empty repository list", change: domain.TypeChange{Repositories: []string{}, Type: domain.SubscriptionTypeParty}, wantErr: domain.ErrNoRepositories},
@@ -284,35 +324,13 @@ func TestSubscriptions_ChangeType(t *testing.T) {
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			store := &fakeSubscriptionStore{}
-			store.seed("acme/api", "acme/web")
-			if testCase.name == "all repositories subscription" {
-				store.seed("*")
-			}
+			store := &fakeSubscriptionStore{listErr: errors.New("list must not run")}
 			subscriptions, _ := subscriptionsWithLog(store)
 
-			listed, err := subscriptions.ChangeType(t.Context(), subscriber, testCase.change)
+			_, err := subscriptions.ChangeType(t.Context(), subscriber, testCase.change)
 
-			switch {
-			case testCase.wantErr != nil:
-				require.ErrorIs(t, err, testCase.wantErr)
-				assert.Empty(t, store.setTypeCalls)
-			case testCase.wantNotSubbed != nil:
-				var notSubscribed *domain.NotSubscribedError
-				require.ErrorAs(t, err, &notSubscribed)
-				assert.Equal(t, testCase.wantNotSubbed, notSubscribed.Repositories)
-				assert.NotEmpty(t, notSubscribed.Error())
-				assert.Empty(t, store.setTypeCalls, "nothing changes when a repository is not subscribed")
-			default:
-				require.NoError(t, err)
-				require.Len(t, store.setTypeCalls, 1)
-				assert.Equal(t, *testCase.wantStoreChange, store.setTypeCalls[0])
-				for _, subscription := range listed {
-					if want, ok := testCase.wantTypes[subscription.Repository]; ok {
-						assert.Equal(t, want, subscription.Type, subscription.Repository)
-					}
-				}
-			}
+			require.ErrorIs(t, err, testCase.wantErr)
+			assert.Empty(t, store.setTypeCalls)
 		})
 	}
 }
