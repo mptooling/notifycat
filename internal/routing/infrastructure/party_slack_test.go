@@ -2,6 +2,7 @@ package infrastructure_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -22,6 +23,7 @@ mappings:
       paths:
         services: {mentions: ["<@U0S>"]}
         services/billing: {party_reviewers: 4}
+        services/ledger: {party_reviewers: null}
         docs: {channel: C0DOCS00000, party_reviewers: 1}
         tools: {party_deadline: 30m}
     web:
@@ -31,6 +33,11 @@ mappings:
       party_reviewers: 2
     api:
       channel: C0BETA00000
+  gamma:
+    "*":
+      party_deadline: ""
+    api:
+      channel: C0GAMMA0000
 `
 
 const slackOnlyDocument = `
@@ -46,13 +53,16 @@ mappings:
   beta:
     api:
       channel: C0BETA00000
+  gamma:
+    api:
+      channel: C0GAMMA0000
 `
 
 func TestProvider_PartyOnlyEntriesLeaveSlackRoutingUnchanged(t *testing.T) {
 	ctx := context.Background()
 	slackProvider := providerFromDoc(t, slackOnlyDocument)
 	partyProvider := providerFromDoc(t, partyDocument)
-	repositories := []string{"acme/the-monorepo", "acme/web", "acme/other", "beta/api", "beta/other"}
+	repositories := []string{"acme/the-monorepo", "acme/web", "acme/other", "beta/api", "beta/other", "gamma/api", "gamma/other"}
 	fileSets := [][]string{
 		{"services/billing/x.go"},
 		{"tools/run.sh"},
@@ -85,6 +95,36 @@ func TestProvider_PartyOnlyEntriesLeaveSlackRoutingUnchanged(t *testing.T) {
 	require.Equal(t, slackEntries, partyEntries, "party keys must not add or change validation entries")
 	for index := range slackEntries {
 		assert.Equal(t, slackEntries[index].Hash(), partyEntries[index].Hash(), "config.lock hash of %s", slackEntries[index].Key())
+	}
+}
+
+func TestProvider_PartyKeyEditKeepsSlackTargets(t *testing.T) {
+	const document = `
+mappings:
+  acme:
+    api:
+      channel: C0API000000
+      mentions: ["<@U0BASE>"]
+      paths:
+        services: {mentions: ["<@U0S>"]}
+        services/billing: %s
+`
+	files := []string{"services/billing/x.go"}
+	withCap := providerFromDoc(t, fmt.Sprintf(document, "{party_reviewers: 4}")).TargetsForFiles("acme/api", files)
+	testCases := []struct {
+		name string
+		rule string
+	}{
+		{name: "party key set to null", rule: "{party_reviewers: null}"},
+		{name: "party key set to empty", rule: `{party_deadline: ""}`},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			targets := providerFromDoc(t, fmt.Sprintf(document, testCase.rule)).TargetsForFiles("acme/api", files)
+
+			assert.Equal(t, withCap, targets, "changing a party key must not change a Slack notification")
+		})
 	}
 }
 

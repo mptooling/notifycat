@@ -23,6 +23,8 @@ func TestPathRule_PartyOnly(t *testing.T) {
 		{name: "party and mentions", rule: PathRule{Party: PartyOverride{Reviewers: partyReviewers(2)}, MentionsPresent: true}, want: false},
 		{name: "party and channels", rule: PathRule{Party: PartyOverride{Reviewers: partyReviewers(2)}, Channels: []ChannelSpec{{Channel: "C0A"}}}, want: false},
 		{name: "empty rule", rule: PathRule{}, want: false},
+		{name: "declared but empty override", rule: PathRule{Party: PartyOverride{Declared: true}}, want: true},
+		{name: "declared empty override and channel", rule: PathRule{Party: PartyOverride{Declared: true}, Channel: "C0A"}, want: false},
 	}
 
 	for _, testCase := range testCases {
@@ -58,6 +60,10 @@ func TestRepoConfig_PartyOnly(t *testing.T) {
 		{name: "party and slack path", tier: RepoConfig{Party: party, Paths: []PathRule{slackPath}}, want: false},
 		{name: "party-only path and slack path", tier: RepoConfig{Paths: []PathRule{partyOnlyPath, slackPath}}, want: false},
 		{name: "empty tier", tier: RepoConfig{}, want: false},
+		{name: "declared but empty party", tier: RepoConfig{Party: PartyOverride{Declared: true}}, want: true},
+		{name: "declared empty party and channel", tier: RepoConfig{Party: PartyOverride{Declared: true}, Channel: "C0A"}, want: false},
+		{name: "declared empty party-only path", tier: RepoConfig{Paths: []PathRule{{Dir: "billing", Party: PartyOverride{Declared: true}}}}, want: true},
+		{name: "declared empty party path and slack path", tier: RepoConfig{Paths: []PathRule{{Dir: "billing", Party: PartyOverride{Declared: true}}, slackPath}}, want: false},
 	}
 
 	for _, testCase := range testCases {
@@ -71,4 +77,5 @@ func TestPartyOverride_IsSet(t *testing.T) {
 	assert.False(t, PartyOverride{}.IsSet())
 	assert.True(t, PartyOverride{Reviewers: partyReviewers(1)}.IsSet())
 	assert.True(t, PartyOverride{Deadline: partyDeadline(time.Hour)}.IsSet())
+	assert.False(t, PartyOverride{Declared: true}.IsSet(), "a declared empty override stays inert")
 }

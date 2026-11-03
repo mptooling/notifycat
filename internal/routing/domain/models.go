@@ -94,11 +94,17 @@ type PathRule struct {
 type PartyOverride struct {
 	Reviewers *int
 	Deadline  *time.Duration
+	// Declared is true when the entry names a party key, even with an empty value.
+	Declared bool
 }
 
 // IsSet reports whether the override sets a cap or a timer.
 func (override PartyOverride) IsSet() bool {
 	return override.Reviewers != nil || override.Deadline != nil
+}
+
+func (override PartyOverride) isPartyEntry() bool {
+	return override.IsSet() || override.Declared
 }
 
 // PartySettings is the resolved party cap and timer of a repository.
@@ -109,7 +115,7 @@ type PartySettings struct {
 
 // PartyOnly reports whether the rule sets party keys and no Slack routing.
 func (rule PathRule) PartyOnly() bool {
-	return rule.Party.IsSet() && rule.Channel == "" && !rule.MentionsPresent && len(rule.Channels) == 0
+	return rule.Party.isPartyEntry() && rule.Channel == "" && !rule.MentionsPresent && len(rule.Channels) == 0
 }
 
 // PartyOnly reports whether the tier and all its path rules set party keys and
@@ -126,7 +132,7 @@ func (tier RepoConfig) PartyOnly() bool {
 			return false
 		}
 	}
-	return tier.Party.IsSet() || len(tier.Paths) > 0
+	return tier.Party.isPartyEntry() || len(tier.Paths) > 0
 }
 
 // ChannelSpec is one entry in a tier's or path rule's `channels:` list: a Slack

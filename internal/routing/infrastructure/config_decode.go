@@ -636,6 +636,7 @@ func decodePartyKey(key string, node *yaml.Node, party *domain.PartyOverride) er
 	if node.Kind != yaml.ScalarNode {
 		return fmt.Errorf("%s: must be a single value", key)
 	}
+	party.Declared = true
 	var text string
 	if err := node.Decode(&text); err != nil {
 		return fmt.Errorf("%s: %w", key, err)
