@@ -465,7 +465,7 @@ func addPartyLoads(tx *gorm.DB, claim FeedPartyClaim, inserted []FeedPullRequest
 	}
 	err := tx.
 		Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "token_id"}, {Name: "repository"}, {Name: "day"}},
+			Columns:   []clause.Column{{Name: "day"}, {Name: "repository"}, {Name: "token_id"}},
 			DoUpdates: clause.Assignments(map[string]any{"taken": gorm.Expr("feed_party_loads.taken + excluded.taken")}),
 		}).
 		Create(&loads).Error

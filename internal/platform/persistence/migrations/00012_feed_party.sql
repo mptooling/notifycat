@@ -10,7 +10,7 @@ CREATE TABLE feed_party_loads (
     repository TEXT    NOT NULL,
     day        TEXT    NOT NULL,
     taken      INTEGER NOT NULL,
-    PRIMARY KEY (token_id, repository, day)
+    PRIMARY KEY (day, repository, token_id)
 );
 
 CREATE TABLE feed_polls (
@@ -18,7 +18,10 @@ CREATE TABLE feed_polls (
     polled_at DATETIME NOT NULL
 );
 
+CREATE INDEX feed_subscriptions_repository_type ON feed_subscriptions(repository, type, token_id);
+
 -- +goose Down
+DROP INDEX feed_subscriptions_repository_type;
 DROP TABLE feed_polls;
 DROP TABLE feed_party_loads;
 ALTER TABLE feed_deliveries DROP COLUMN party;

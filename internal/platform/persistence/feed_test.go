@@ -384,19 +384,39 @@ func TestMigration00012_DownRemovesPartyTablesAndColumns(t *testing.T) {
 	ctx := context.Background()
 	const tablesSQL = "SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('feed_polls','feed_party_loads')"
 	const typeColumnSQL = "SELECT count(*) FROM pragma_table_info('feed_subscriptions') WHERE name = 'type'"
-	var tableCount, typeColumnCount int
+	const typeIndexSQL = "SELECT count(*) FROM sqlite_master WHERE type='index' AND name = 'feed_subscriptions_repository_type'"
+	var tableCount, typeColumnCount, typeIndexCount int
 
 	require.NoError(t, persistence.MigrateDown(ctx, db))
 	require.NoError(t, db.Raw(tablesSQL).Scan(&tableCount).Error)
 	require.NoError(t, db.Raw(typeColumnSQL).Scan(&typeColumnCount).Error)
+	require.NoError(t, db.Raw(typeIndexSQL).Scan(&typeIndexCount).Error)
 	assert.Zero(t, tableCount)
 	assert.Zero(t, typeColumnCount)
+	assert.Zero(t, typeIndexCount)
 
 	require.NoError(t, persistence.MigrateUp(ctx, db))
 	require.NoError(t, db.Raw(tablesSQL).Scan(&tableCount).Error)
 	require.NoError(t, db.Raw(typeColumnSQL).Scan(&typeColumnCount).Error)
+	require.NoError(t, db.Raw(typeIndexSQL).Scan(&typeIndexCount).Error)
 	assert.Equal(t, 2, tableCount)
 	assert.Equal(t, 1, typeColumnCount)
+	assert.Equal(t, 1, typeIndexCount)
+}
+
+func TestMigration00012_KeysThePartyLookups(t *testing.T) {
+	db := persistence.NewTestDB(t)
+	var typeIndexColumns, loadKeyColumns []string
+
+	typeIndexErr := db.Raw("SELECT name FROM pragma_index_info('feed_subscriptions_repository_type') ORDER BY seqno").
+		Scan(&typeIndexColumns).Error
+	loadKeyErr := db.Raw("SELECT name FROM pragma_table_info('feed_party_loads') WHERE pk > 0 ORDER BY pk").
+		Scan(&loadKeyColumns).Error
+
+	require.NoError(t, typeIndexErr)
+	require.NoError(t, loadKeyErr)
+	assert.Equal(t, []string{"repository", "type", "token_id"}, typeIndexColumns)
+	assert.Equal(t, []string{"day", "repository", "token_id"}, loadKeyColumns, "the claim filters loads by day, then repository")
 }
 
 func TestFeedSubscriptions_AddStoresTypeAndDefaultsToSolo(t *testing.T) {
