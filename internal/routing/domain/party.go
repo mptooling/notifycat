@@ -18,7 +18,7 @@ func ParsePartyDeadline(value string) (time.Duration, error) {
 		return 0, fmt.Errorf("party deadline %q: use hours and minutes, like 15m, 2h or 1h30m: %w", value, err)
 	}
 	if deadline < MinPartyDeadline || deadline > MaxPartyDeadline {
-		return 0, fmt.Errorf("party deadline %q: must be from %s to %s", value, MinPartyDeadline, MaxPartyDeadline)
+		return 0, fmt.Errorf("party deadline %q: must be from %s", value, PartyDeadlineRangeText)
 	}
 	return deadline, nil
 }

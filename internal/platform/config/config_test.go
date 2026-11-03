@@ -514,4 +514,5 @@ func TestLoad_AgentAPI_PartyDeadlineOutOfRange(t *testing.T) {
 	_, err := loadConfigured(t, minimalConfig+"agent_api:\n  party_deadline: 14m\n")
 
 	assert.ErrorContains(t, err, "agent_api.party_deadline")
+	assert.ErrorContains(t, err, "must be from 15m to 24h")
 }

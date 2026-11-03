@@ -23,6 +23,9 @@ const (
 	MinPartyDeadline      = 15 * time.Minute
 	MaxPartyDeadline      = 24 * time.Hour
 
+	// PartyDeadlineRangeText spells the bounds in the format the parser accepts.
+	PartyDeadlineRangeText = "15m to 24h"
+
 	// PartyDeadlinePattern allows hours and minutes only, like 15m, 2h or 1h30m.
 	PartyDeadlinePattern = "^(?:[0-9]+h)?(?:[0-9]+m)?$"
 )
