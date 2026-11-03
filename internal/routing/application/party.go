@@ -103,7 +103,7 @@ func (p *Provider) repositoryParty(star, repo partyTier) domain.PartySettings {
 }
 
 func fileParty(rules []domain.PathRule, base domain.PartySettings, file string) domain.PartySettings {
-	file = strings.TrimPrefix(strings.TrimSpace(file), "/")
+	file = normalizeChangedFile(file)
 	settings := base
 	var reviewersDir, deadlineDir string
 	reviewersFound, deadlineFound := false, false

@@ -108,7 +108,8 @@ func TestProvider_PartySettingsAcrossPaths(t *testing.T) {
 		{"spec example 2", []string{"services/billing/x.go"}, domain.PartySettings{Reviewers: 4, Deadline: 30 * time.Minute}},
 		{"each key from its most specific rule", []string{"services/search/y.go"}, domain.PartySettings{Reviewers: 4, Deadline: 3 * time.Hour}},
 		{"highest cap, shortest timer", []string{"tools/a.sh", "services/billing/x.go"}, domain.PartySettings{Reviewers: 4, Deadline: 30 * time.Minute}},
-		{"a file outside the paths counts", []string{"tools/a.sh", "README.md"}, domain.PartySettings{Reviewers: 3, Deadline: time.Hour}},
+		{"a file outside the paths sets the timer", []string{"services/search/y.go", "README.md"}, domain.PartySettings{Reviewers: 4, Deadline: 2 * time.Hour}},
+		{"cap and timer from different files", []string{"tools/a.sh", "services/search/y.go"}, domain.PartySettings{Reviewers: 4, Deadline: time.Hour}},
 		{"segment match only", []string{"toolsx/a.sh"}, domain.PartySettings{Reviewers: 2, Deadline: 2 * time.Hour}},
 	}
 
@@ -167,9 +168,9 @@ func TestProvider_PartySettingsPartyOnlyEntriesStayInLookup(t *testing.T) {
 mappings:
   acme:
     "*":
-      channel: C0STAR00000
       party_reviewers: 3
     mono:
+      channel: C0MONO00000
       paths:
         tools: {party_deadline: 30m}
 `, domain.PartySettings{})
@@ -194,4 +195,22 @@ mappings:
 
 	assert.Equal(t, domain.PartySettings{Reviewers: 2, Deadline: 20 * time.Minute}, got,
 		"the most specific rule wins even when it lowers the values")
+}
+
+func TestProvider_PartySettingsDuplicateKeysAfterFoldingFirstSortedWins(t *testing.T) {
+	provider := partyProviderFromDoc(t, `
+mappings:
+  Acme:
+    API:
+      channel: C0UPPER0000
+      party_reviewers: 3
+  acme:
+    api:
+      channel: C0LOWER0000
+      party_reviewers: 5
+`, domain.PartySettings{})
+
+	got := provider.PartySettings("Acme/API", nil)
+
+	assert.Equal(t, 3, got.Reviewers, "the first key in sorted order wins and the input folds to lower case")
 }
