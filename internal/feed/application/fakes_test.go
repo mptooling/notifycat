@@ -270,6 +270,7 @@ type fakeWorkCalendar struct {
 	dayOff       bool
 	day          string
 	dayOffChecks []time.Time
+	dayMoments   []time.Time
 }
 
 func (calendar *fakeWorkCalendar) IsDayOff(moment time.Time) bool {
@@ -277,7 +278,10 @@ func (calendar *fakeWorkCalendar) IsDayOff(moment time.Time) bool {
 	return calendar.dayOff
 }
 
-func (calendar *fakeWorkCalendar) Day(time.Time) string { return calendar.day }
+func (calendar *fakeWorkCalendar) Day(moment time.Time) string {
+	calendar.dayMoments = append(calendar.dayMoments, moment)
+	return calendar.day
+}
 
 func (calendar *fakeWorkCalendar) AddWorkingTime(start time.Time, workingTime time.Duration) time.Time {
 	return start.Add(workingTime)

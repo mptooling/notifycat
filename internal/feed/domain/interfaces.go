@@ -89,9 +89,11 @@ type Subscriptions interface {
 
 // PullRequests serves a token's feed of open pull requests.
 type PullRequests interface {
-	// Next returns pull requests not yet delivered to the subscriber and marks them delivered.
+	// Next returns pull requests not yet delivered to the subscriber and marks them delivered. It returns nothing on a day off,
+	// delivers party repositories by the turn rule within the cap, and records the poll.
 	Next(ctx context.Context, subscriber Subscriber) ([]PullRequest, error)
 	// Since returns pull requests changed after the given time without marking anything delivered.
+	// On party repositories it returns only pull requests the token received.
 	Since(ctx context.Context, subscriber Subscriber, since time.Time) ([]PullRequest, error)
 }
 

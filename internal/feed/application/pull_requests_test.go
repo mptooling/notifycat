@@ -132,7 +132,31 @@ func TestPullRequests_NextSplitsSoloAndParty(t *testing.T) {
 	assert.Equal(t, tokenID, partyClaim.TokenID)
 	assert.Equal(t, now, partyClaim.DeliveredAt)
 	assert.Equal(t, "2026-11-03", partyClaim.Day)
+	assert.Equal(t, []time.Time{now}, fixture.calendar.dayMoments)
 	assert.Equal(t, now.Add(-24*time.Hour), partyClaim.ActiveSince)
+}
+
+func TestPullRequests_NextDropsUnconfiguredPartyRepositories(t *testing.T) {
+	fixture := newPullRequestsFixture()
+	fixture.subscriptions.seedOfType(domain.SubscriptionTypeParty, "*")
+	fixture.pullRequests.repositories = []string{"acme/web", "old/gone"}
+
+	_, err := fixture.useCase.Next(t.Context(), subscriber)
+
+	require.NoError(t, err)
+	require.Len(t, fixture.deliveries.partyClaims, 1)
+	assert.Equal(t, []string{"acme/web"}, fixture.deliveries.partyClaims[0].Repositories)
+}
+
+func TestPullRequests_NextWithOnlyPartyRepositoriesMakesNoSoloClaim(t *testing.T) {
+	fixture := newPullRequestsFixture()
+	fixture.subscriptions.seedOfType(domain.SubscriptionTypeParty, "acme/web")
+
+	_, err := fixture.useCase.Next(t.Context(), subscriber)
+
+	require.NoError(t, err)
+	assert.Empty(t, fixture.deliveries.claims)
+	assert.Len(t, fixture.deliveries.partyClaims, 1)
 }
 
 func TestPullRequests_NextOwnSubscriptionOverridesAll(t *testing.T) {
