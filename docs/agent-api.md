@@ -81,8 +81,9 @@ All routes need `Authorization: Bearer nct_<id>_<secret>`. Every feed response w
 
 | Route | Result |
 | --- | --- |
-| `GET /api/v1/subs` | `200 {"subscriptions":[{"id":17,"repository":"acme/api","created_at":"2026-10-27T16:40:12Z"}]}`, ordered by `id`. |
+| `GET /api/v1/subs` | `200 {"subscriptions":[{"id":17,"repository":"acme/api","type":"solo","created_at":"2026-10-27T16:40:12Z"}]}`, ordered by `id`. `type` is `solo` or `party`. |
 | `POST /api/v1/subs` | Adds repositories. `200` with the full list, in the same shape as `GET`. |
+| `PATCH /api/v1/subs` | Changes the type of subscriptions. `200` with the full list, in the same shape as `GET`. See below. |
 | `DELETE /api/v1/subs/{id}` | `204`. `404 not_found` if the id is unknown, belongs to another token, or is not a positive integer. |
 | `GET /api/v1/subs/prs` | The pull requests. See below. |
 | `GET /api/v1/repos` | The repositories you can subscribe to. See below. |
@@ -102,6 +103,36 @@ The body is `{"repositories":["acme/api","acme/web"]}`. Use `["*"]` to subscribe
 - An org tier such as `acme/*` cannot be subscribed to. It gives `400 unknown_repository`. Use `*` for all repositories, or list them.
 - More than 200 subscriptions for one token gives `400 too_many_subscriptions`. Nothing is added. Repositories you already follow do not count.
 - The body can be at most 16 KiB.
+- The body can also have `"type":"solo"` or `"type":"party"`. The default is `solo`. The type applies only to the repositories that this call adds. A repository you already follow keeps its type. Any other value gives `400 invalid_type`, and nothing is added.
+
+### Change the type
+
+`PATCH /api/v1/subs` changes the type of subscriptions that already exist. Use it to join or leave a party without a delete. There are two body forms.
+
+To change every subscription of the token, send only `type`:
+
+```json
+{"type": "party"}
+```
+
+To change some subscriptions, add `repositories`:
+
+```json
+{"repositories": ["acme/api"], "type": "solo"}
+```
+
+- Only an absent `repositories` key means every subscription. `"repositories": []` and `"repositories": null` give `400 invalid_body`.
+- Names are trimmed, lower-cased, and de-duplicated, as in `POST`. `"*"` means your `*` subscription.
+- A missing or unknown `type` gives `400 invalid_type`.
+- A repository that you do not follow gives `400 not_subscribed` with the list of these names, lower case and sorted. Nothing changes.
+
+    ```json
+    {"error":"not_subscribed","repositories":["acme/web"]}
+    ```
+
+- An unknown field, data after the JSON object, or invalid JSON gives `400 invalid_body`.
+- The body can be at most 16 KiB.
+- A change of type never sends a PR again and never takes one back. See [Switch the type](#switch-the-type).
 
 ### List repositories
 
@@ -139,11 +170,11 @@ The body is `{"repositories":["acme/api","acme/web"]}`. Use `["*"]` to subscribe
 - `created_at` is when the PR was opened on the git host. It is `null` when the webhook did not carry it.
 - `updated_at` is when notifycat last saw a change to the PR.
 - The list is ordered by `updated_at` (oldest first), then repository, then number.
-- Nothing new, or no subscriptions, gives an empty list.
+- - Nothing new, or no subscriptions, gives an empty list.
 
-A call without a query returns the open, non-draft PRs of your subscribed repositories that your token has not received yet. Notifycat marks them as received in the same step.
+A call without a query is a normal poll. It returns the open, non-draft PRs of your subscribed repositories that your token has not received yet. Notifycat marks them as received in the same step. On a party repository, the [party rule](#review-as-a-party) decides which PRs you get. On a day off, a normal poll returns an empty list. See [Days off](#days-off).
 
-`?since=<time>` returns every open PR of those repositories with `updated_at` at or after that time, whether you received it or not. It marks nothing as received.
+`?since=<time>` returns every open PR of your solo repositories with `updated_at` at or after that time, whether you received it or not. On a party repository, it returns only the PRs that your token received, solo or party. It marks nothing as received.
 
 `since` must be RFC 3339. Use the `Z` form, or write `+` as `%2B`. An unencoded `+` turns into a space and gives `400 invalid_since`. Let curl encode it:
 
@@ -163,8 +194,10 @@ The feed routes answer errors as `{"error":"<code>"}` with `Cache-Control: no-st
 | Code | Status | When |
 | --- | --- | --- |
 | `unauthorized` | 401 | The token is missing, malformed, unknown, or wrong. The response has `WWW-Authenticate: Bearer`. |
-| `invalid_body` | 400 | The `POST /subs` body is not valid. |
+| `invalid_body` | 400 | The `POST /subs` or `PATCH /subs` body is not valid. |
+| `invalid_type` | 400 | `type` is not `solo` or `party`. On `PATCH`, a missing `type` gives this code too. |
 | `unknown_repository` | 400 | A repository is not configured. The body adds a `repositories` list. |
+| `not_subscribed` | 400 | A `PATCH` names a repository that the token does not follow. The body adds a `repositories` list. |
 | `too_many_subscriptions` | 400 | The token would pass 200 subscriptions. |
 | `invalid_since` | 400 | `since` or the query is not valid. |
 | `not_found` | 404 | The subscription id is unknown or not yours. |
@@ -181,12 +214,21 @@ A path that is not a feed route gets the plain-text 404 or 405 of the Go HTTP se
 - New commits on a PR do not send it again. Use `?since=` to read a PR again.
 - A draft PR is never delivered.
 - `?since=` re-reads and records nothing.
+- On a party repository, the party rule limits who gets a PR. See [Review as a party](#review-as-a-party).
 - The first poll after you subscribe returns every open PR that notifycat knows for those repositories. There is no paging: they all come in one response.
 - If you unsubscribe and subscribe again, PRs you already received are not sent again. You get only the PRs that are new to your token.
+
+### Days off
+
+On Saturday and Sunday, a normal poll returns an empty list and marks nothing. This is true for solo and party subscriptions. When `digest.country` is set, public holidays are days off too. A day off is a whole calendar day in `digest.timezone`, or in UTC when that key is not set. The [digest calendar](digest.md#weekends-and-holidays) decides this.
+
+A PR that opens on a day off waits for the next working day. `?since=` still works on a day off, because it is a manual read.
 
 ### Recover a lost list
 
 If a run crashed after the poll and before it finished the reviews, the PRs are already marked as received. The same is true when the response was lost on the way to you. Ask for them again with `?since=`.
+
+If a normal poll returns a 5xx error, the server may have marked PRs before it failed. Call `GET /api/v1/subs/prs?since=<time of the last good poll>` to get the PRs that the failed poll may have marked. On a party repository, `since` returns only PRs that this token received.
 
 `since` matches a PR's last change (`updated_at`), not the time it was delivered. So use a time a few minutes before the last good poll that came before the lost one, or any earlier time. Do not use the exact time: `updated_at` comes from the notifycat server's clock, and a webhook can still be recording while you poll. An earlier time only returns more PRs. The time of the lost poll itself is too late: it misses the PRs that changed before it.
 
@@ -196,6 +238,65 @@ curl --fail-with-body -sS --get --data-urlencode "since=2026-10-28T09:00:00Z" \
 ```
 
 If the lost poll was your first one, or your first after a new subscription, use an old time such as `1970-01-01T00:00:00Z`. Then skip the PRs you already reviewed.
+
+## Review as a party
+
+By default every subscription is `solo`. A solo agent gets every PR, as described above. Solo deliveries never count toward a party.
+
+Many agents can follow the same repository. A team can limit how many agents review each PR. For this, the agents subscribe with the type `party`.
+
+- **Party**: all tokens with a `party` subscription to one repository. A repository has one party. Parties have no names.
+- **Member**: a token. Two tokens of one person are two members.
+- **Cap**: the number of party members that get each PR. The setting is [`agent_api.party_reviewers`](configuration.md#agent_api). The default is 1.
+- **Load**: the number of PRs that a member got through the party of that repository today. Load counts per repository. Load stays when a PR closes. It starts again at 0 each day.
+- **Away**: a token that has not polled yet, or has not polled for 24 hours. An away member is not a candidate. A member on leave never holds PRs back.
+- **Timer**: the setting [`agent_api.party_deadline`](configuration.md#agent_api). The default is 1 hour. The timer of a PR starts when notifycat first records the PR. A push does not restart it. Days off do not count.
+
+A normal poll treats each open PR that you have not received on a party repository in this order. The oldest `updated_at` comes first.
+
+1. If the PR already went to as many members as the cap allows, skip it.
+2. If the timer of the PR ran out, turns stop. You get the PR, within the cap.
+3. Find the candidates. These are you and the other members that are not away and have not received the PR.
+4. Count the free slots. This is the cap minus the members that already got the PR.
+5. If the candidates with a lower load than yours could fill all free slots, skip the PR. It is not your turn.
+6. Otherwise you get the PR, and your load goes up by 1. This also counts for the other PRs in the same poll.
+
+Notifycat does all of this in one atomic step. Two members that poll at the same moment never pass the cap. With a cap of 1, a PR is skipped when any candidate has a lower load.
+
+A party with one candidate has no real cap. That member gets every PR at once.
+
+### Example
+
+The cap is 1 and the timer is 30 minutes. Alice, Bob, and Carol are not away. Their loads today are 3, 1, and 1. PR 42 opens on Tuesday at 10:00.
+
+| Time | Who polls | Result |
+| --- | --- | --- |
+| 10:00 | Alice | Skipped. Bob and Carol have a lower load. |
+| 10:05 | Bob | Gets PR 42. His load is now 2. |
+| 10:06 | Carol | Skipped. PR 42 is taken. |
+
+If Bob and Carol are busy with long reviews and do not poll, Alice is skipped until 10:30. At 10:30 the timer runs out, and Alice gets PR 42 on her next poll.
+
+If Bob and Carol are away, Alice is the only candidate. She gets PR 42 at 10:00.
+
+With a cap of 3, Alice gets PR 42 at once. Only two candidates have a lower load, and three slots are free.
+
+PR 43 opens on Friday at 23:50 with a 30-minute timer. The weekend does not count, so its timer runs out on Monday at 00:20. No agent gets it on Saturday or Sunday.
+
+### Switch the type
+
+- The most specific subscription sets the type. The type of a subscription to `acme/api` is the type for that repository. Your `*` subscription sets the type only for repositories that you have no own subscription for.
+- Party to solo: you then get every PR that you have not received yet. This includes PRs that the party gave to other members.
+- Solo to party: the PRs that you got as solo do not count toward the cap or your load.
+- A reopened PR goes to the party again. Closing a PR removes its deliveries, but its count for the day stays.
+
+### Limits of a party
+
+- The feed does not know which token belongs to the author of a PR. An agent can get a PR of its own user.
+- A member that gets a PR and never reviews it keeps the slot. The timer only ends the turns. It never takes a PR back.
+- A member that joins during the day starts with load 0. It gets most party PRs until its load reaches the others.
+- After a release, every member is away until its first poll. The first agent that polls can take the PRs that waited. The same happens on Monday morning, after a weekend without polls.
+- Party settings change nothing in Slack.
 
 ## Review with Claude Code
 
@@ -242,4 +343,4 @@ The agent needs a credential for your git host. That is separate from the notify
 
 ## Logs
 
-The feed logs `feed subscriptions added`, `feed subscription removed`, `feed pull requests delivered`, `feed pull request not recorded`, `feed pull requests removed`, `feed subscriptions removed`, and `feed cleanup failed`. See [Operations](operations.md#logging).
+The feed logs `feed subscriptions added`, `feed subscriptions changed`, `feed subscription removed`, `feed pull requests delivered`, `feed party pull requests held`, `feed day off`, `feed pull request not recorded`, `feed pull requests removed`, `feed subscriptions removed`, and `feed cleanup failed`. See [Operations](operations.md#logging).

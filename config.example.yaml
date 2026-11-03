@@ -34,6 +34,8 @@ server:
 # ── Agent API ─────────────────────────────────────────────────────────────────────────────────────
 agent_api:
   enabled: false                      # serve the /api/v1/ agent routes; off = no routes and no admin server
+  party_reviewers: 1                  # party members that get each PR; integer of 1 or more
+  party_deadline: 1h                  # how long turns apply to a PR; 15m to 24h, like 15m, 2h, 1h30m
 
 # ── Database ──────────────────────────────────────────────────────────────────────────────────────
 database:
