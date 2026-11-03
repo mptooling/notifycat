@@ -114,7 +114,8 @@ func NewFeedPullRequests(db *gorm.DB) *FeedPullRequests {
 	return &FeedPullRequests{db: db}
 }
 
-// Upsert inserts or updates the pull request in place, keeping its deliveries and a known created_at.
+// Upsert inserts or updates the pull request in place, keeping its deliveries, a known created_at and
+// the first recorded_at, and replacing the party settings.
 func (r *FeedPullRequests) Upsert(ctx context.Context, pullRequest FeedPullRequest) error {
 	pullRequest.UpdatedAt = pullRequest.UpdatedAt.UTC()
 	if pullRequest.CreatedAt != nil {

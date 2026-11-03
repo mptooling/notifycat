@@ -616,16 +616,20 @@ func TestFeedPullRequests_UpsertKeepsTheFirstRecordedAt(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, stored.RecordedAt)
-	assert.True(t, firstRecordedAt.Equal(*stored.RecordedAt), "the first record time stays")
+	assert.WithinDuration(t, firstRecordedAt, *stored.RecordedAt, 0, "the first record time stays")
 }
 
 func TestFeedPullRequests_UpsertReplacesPartySettings(t *testing.T) {
-	pullRequests := persistence.NewFeedPullRequests(newFeedDB(t))
+	db := newFeedDB(t)
+	pullRequests := persistence.NewFeedPullRequests(db)
 	ctx := context.Background()
+	offset := time.FixedZone("plus2", 2*60*60)
 	firstDeadline := accessBaseTime.Add(time.Hour)
-	secondDeadline := accessBaseTime.Add(3 * time.Hour)
+	secondDeadline := time.Date(2026, 10, 28, 17, 0, 0, 0, offset)
+	recordedAt := time.Date(2026, 10, 28, 14, 0, 0, 0, offset)
 	first := feedPullRequest("acme/api", 1, accessBaseTime)
 	first.PartyReviewers = 1
+	first.RecordedAt = &recordedAt
 	first.PartyDeadlineAt = &firstDeadline
 	second := feedPullRequest("acme/api", 1, accessBaseTime.Add(time.Minute))
 	second.PartyReviewers = 3
@@ -637,7 +641,11 @@ func TestFeedPullRequests_UpsertReplacesPartySettings(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, stored.PartyDeadlineAt)
 	assert.Equal(t, 3, stored.PartyReviewers)
-	assert.True(t, secondDeadline.Equal(*stored.PartyDeadlineAt))
+	assert.WithinDuration(t, secondDeadline, *stored.PartyDeadlineAt, 0)
+	assert.EqualValues(t, 1, countTable(t, db, "feed_pull_requests", "party_deadline_at = ?",
+		time.Date(2026, 10, 28, 15, 0, 0, 0, time.UTC)), "17:00+02:00 is stored as 15:00Z")
+	assert.EqualValues(t, 1, countTable(t, db, "feed_pull_requests", "recorded_at = ?",
+		time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)), "14:00+02:00 is stored as 12:00Z")
 }
 
 func TestFeedPullRequests_FindMissingIsErrNotFound(t *testing.T) {
@@ -676,11 +684,17 @@ func TestFeedPullRequests_ReceivedSince(t *testing.T) {
 		TokenID: "t2", Repositories: []string{"acme/api"}, Since: since,
 	})
 	none, noneErr := pullRequests.ReceivedSince(ctx, persistence.FeedReceivedQuery{TokenID: "t1", Since: since})
+	offsetSince := time.Date(2026, 10, 28, 14, 0, 0, 0, time.FixedZone("plus2", 2*60*60))
+	offsetReceived, offsetErr := pullRequests.ReceivedSince(ctx, persistence.FeedReceivedQuery{
+		TokenID: "t1", Repositories: []string{"acme/api"}, Since: offsetSince,
+	})
 
 	require.NoError(t, err)
 	require.NoError(t, otherErr)
 	require.NoError(t, noneErr)
+	require.NoError(t, offsetErr)
 	assert.Equal(t, []int{1, 2}, pullRequestNumbers(received))
+	assert.Equal(t, []int{1, 2}, pullRequestNumbers(offsetReceived), "an offset since is compared in UTC")
 	assert.Empty(t, other)
 	assert.NotNil(t, none)
 	assert.Empty(t, none)
