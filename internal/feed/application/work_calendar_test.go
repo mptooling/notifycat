@@ -93,6 +93,30 @@ func TestWorkCalendar_AddWorkingTimeAcrossASkippedLocalMidnight(t *testing.T) {
 	}
 }
 
+func TestWorkCalendar_AddWorkingTimeAcrossACairoClockChange(t *testing.T) {
+	cairo, err := time.LoadLocation("Africa/Cairo")
+	require.NoError(t, err)
+	testCases := []struct {
+		name        string
+		start       time.Time
+		workingTime time.Duration
+		want        time.Time
+	}{
+		{"friday 2026-04-24 starts at 01:00 and has 23 hours", utc(2026, 4, 23, 10, 0), 36 * time.Hour, utc(2026, 4, 26, 22, 0)},
+		{"thursday 2026-10-29 repeats 23:00 and has 25 hours", utc(2026, 10, 29, 9, 0), 13*time.Hour + 30*time.Minute, utc(2026, 10, 29, 22, 30)},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			calendar := application.NewWorkCalendar(domain.WorkCalendarParams{DaysOff: daysOffFake{}, Location: cairo})
+
+			got := calendar.AddWorkingTime(testCase.start, testCase.workingTime)
+
+			assert.WithinDuration(t, testCase.want, got, 0)
+		})
+	}
+}
+
 func TestWorkCalendar_IsDayOffUsesTheLocation(t *testing.T) {
 	berlin, err := time.LoadLocation("Europe/Berlin")
 	require.NoError(t, err)

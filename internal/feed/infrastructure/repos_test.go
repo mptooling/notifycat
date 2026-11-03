@@ -2,6 +2,8 @@ package infrastructure_test
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -9,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/mptooling/notifycat/internal/feed/application"
 	"github.com/mptooling/notifycat/internal/feed/domain"
 	"github.com/mptooling/notifycat/internal/feed/infrastructure"
 	"github.com/mptooling/notifycat/internal/platform/persistence"
@@ -453,6 +456,118 @@ func TestDeliveryRepo_ClaimPartyWithoutRepositoriesSkipsThePolicy(t *testing.T) 
 	assert.Zero(t, result.Taken)
 	assert.Zero(t, result.Waiting)
 	assert.Zero(t, policy.calls, "the policy is not asked without repositories")
+}
+
+func seedPartyMembers(t *testing.T, db *gorm.DB, polledAt time.Time, tokenIDs ...string) {
+	t.Helper()
+	ctx := context.Background()
+	subscriptions := infrastructure.NewSubscriptionRepo(persistence.NewFeedSubscriptions(db))
+	polls := infrastructure.NewPollRepo(persistence.NewFeedPolls(db))
+	for _, tokenID := range tokenIDs {
+		if tokenID != "t1" {
+			addToken(t, db, tokenID)
+		}
+		_, addErr := subscriptions.Add(ctx, domain.NewSubscriptions{
+			TokenID: tokenID, Repositories: []string{"acme/api"}, Type: domain.SubscriptionTypeParty, CreatedAt: polledAt,
+		})
+		require.NoError(t, addErr)
+		require.NoError(t, polls.Record(ctx, tokenID, polledAt))
+	}
+}
+
+func TestDeliveryRepo_ClaimPartyConcurrentMembersFollowTheTurnRule(t *testing.T) {
+	db := newFeedDB(t)
+	ctx := context.Background()
+	const day = "2026-10-28"
+	tokenIDs := make([]string, 0, 8)
+	for member := 1; member <= 8; member++ {
+		tokenIDs = append(tokenIDs, fmt.Sprintf("t%d", member))
+	}
+	seedPartyMembers(t, db, repoBaseTime, tokenIDs...)
+	lightestMembers := []string{"t7", "t8"}
+	for _, tokenID := range tokenIDs[:len(tokenIDs)-len(lightestMembers)] {
+		require.NoError(t, db.Create(&persistence.FeedPartyLoad{TokenID: tokenID, Repository: "acme/api", Day: day, Taken: 1}).Error)
+	}
+	pullRequests := infrastructure.NewPullRequestRepo(persistence.NewFeedPullRequests(db))
+	require.NoError(t, pullRequests.Upsert(ctx, partyPullRequest(7, repoBaseTime, 2)))
+	deliveries := infrastructure.NewDeliveryRepo(persistence.NewFeedDeliveries(db), application.NewTurnPolicy())
+	results := make([]domain.PartyClaimResult, len(tokenIDs))
+	claimErrors := make([]error, len(tokenIDs))
+	start := make(chan struct{})
+	var group sync.WaitGroup
+	for index, tokenID := range tokenIDs {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			<-start
+			results[index], claimErrors[index] = deliveries.ClaimParty(ctx, domain.PartyClaim{
+				TokenID: tokenID, Repositories: []string{"acme/api"}, DeliveredAt: repoBaseTime.Add(time.Minute),
+				Day: day, ActiveSince: repoBaseTime.Add(-domain.AwayAfter),
+			})
+		}()
+	}
+
+	close(start)
+	group.Wait()
+
+	var receivers []string
+	for index, tokenID := range tokenIDs {
+		require.NoError(t, claimErrors[index])
+		if len(results[index].Delivered) > 0 {
+			receivers = append(receivers, tokenID)
+		}
+	}
+	assert.ElementsMatch(t, lightestMembers, receivers, "the two members with the lowest load fill the cap, whatever the poll order")
+	var partyDeliveries int64
+	require.NoError(t, db.Model(&persistence.FeedDelivery{}).Where("party").Count(&partyDeliveries).Error)
+	assert.EqualValues(t, 2, partyDeliveries)
+}
+
+type noDaysOff struct{}
+
+func (noDaysOff) IsDayOff(time.Time) bool { return false }
+
+func TestDeliveryRepo_ClaimPartyStartsTheLoadsAtLocalMidnight(t *testing.T) {
+	berlin, err := time.LoadLocation("Europe/Berlin")
+	require.NoError(t, err)
+	tuesdayEveningUTC := time.Date(2026, 11, 3, 22, 0, 0, 0, time.UTC)
+	testCases := []struct {
+		name          string
+		now           time.Time
+		wantDelivered []int
+	}{
+		{name: "before midnight in Berlin the load of the day holds the turn", now: time.Date(2026, 11, 3, 22, 30, 0, 0, time.UTC), wantDelivered: []int{}},
+		{name: "after midnight in Berlin the loads start again", now: time.Date(2026, 11, 3, 23, 30, 0, 0, time.UTC), wantDelivered: []int{7}},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			db := newFeedDB(t)
+			ctx := context.Background()
+			seedPartyMembers(t, db, tuesdayEveningUTC, "t1", "t2")
+			require.NoError(t, db.Create(&persistence.FeedPartyLoad{TokenID: "t1", Repository: "acme/api", Day: "2026-11-03", Taken: 1}).Error)
+			pullRequest := partyPullRequest(7, tuesdayEveningUTC, 1)
+			pullRequest.Party.DeadlineAt = tuesdayEveningUTC.Add(12 * time.Hour)
+			require.NoError(t, infrastructure.NewPullRequestRepo(persistence.NewFeedPullRequests(db)).Upsert(ctx, pullRequest))
+			calendar := application.NewWorkCalendar(domain.WorkCalendarParams{DaysOff: noDaysOff{}, Location: berlin})
+			deliveries := infrastructure.NewDeliveryRepo(persistence.NewFeedDeliveries(db), application.NewTurnPolicy())
+
+			result, claimErr := deliveries.ClaimParty(ctx, domain.PartyClaim{
+				TokenID: "t1", Repositories: []string{"acme/api"}, DeliveredAt: testCase.now,
+				Day: calendar.Day(testCase.now), ActiveSince: testCase.now.Add(-domain.AwayAfter),
+			})
+
+			require.NoError(t, claimErr)
+			assert.Equal(t, testCase.wantDelivered, deliveredNumbers(result.Delivered))
+		})
+	}
+}
+
+func deliveredNumbers(pullRequests []domain.PullRequest) []int {
+	numbers := make([]int, 0, len(pullRequests))
+	for _, pullRequest := range pullRequests {
+		numbers = append(numbers, pullRequest.Number)
+	}
+	return numbers
 }
 
 func TestPollRepo_RecordWritesAtMostOncePerResolution(t *testing.T) {
