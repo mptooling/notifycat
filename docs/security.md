@@ -34,9 +34,9 @@ It deliberately never requires org-admin access, write-scoped tokens, a GitHub A
 
 By default neither `GITHUB_TOKEN` nor `BITBUCKET_TOKEN` is used by the server. They are read by `notifycat-config validate` (and the doctor) to query webhook configuration and confirm the expected PR events are subscribed. Without them those checks are skipped and everything else works.
 
-The one runtime use for either token is **[per-path routing](monorepo.md)**: when a repository's mapping has a `paths:` block, the server reads each PR's changed files to pick the path channel. Without a token, path rules are inert and PRs route to the repository tier.
+The one runtime use for either token is **[per-path routing](monorepo.md)**: when a repository's mapping has a `paths:` block, the server reads each PR's changed files to pick the path channel. The server also reads a PR's changed files for the party path rules of the agent API. Without a token, path rules are inert and PRs route to the repository tier.
 
-For GitHub: a fine-grained token with **Webhooks: Read** is enough for validation; add **Pull requests: Read** for per-path routing. See [GitHub webhook setup](github-webhook.md#security-notes) for details. For Bitbucket: an access token with `repository` + `pullrequest` + `webhook` scopes covers both uses; a scoped Atlassian API token with the equivalent `read:*:bitbucket` scopes works too. See [Bitbucket webhook setup](bitbucket-webhook.md#access-token-scopes) for the full options including the Free-plan Basic-auth path.
+For GitHub: a fine-grained token with **Webhooks: Read** is enough for validation; add **Pull requests: Read** for per-path routing and for party path rules. See [GitHub webhook setup](github-webhook.md#security-notes) for details. For Bitbucket: an access token with `repository` + `pullrequest` + `webhook` scopes covers both uses; a scoped Atlassian API token with the equivalent `read:*:bitbucket` scopes works too. See [Bitbucket webhook setup](bitbucket-webhook.md#access-token-scopes) for the full options including the Free-plan Basic-auth path.
 
 ## Generating the webhook secret
 

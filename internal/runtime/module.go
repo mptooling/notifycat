@@ -297,8 +297,7 @@ func digestCountry(provider *routingapp.Provider) string {
 
 // buildRouter builds the per-PR target router. Path routing needs a GitHub
 // token to read a PR's changed files; without one the router has no fetcher and
-// resolves to the repo/org tier. The validation client is scoped to startup, so
-// this builds a dedicated long-lived files fetcher.
+// resolves to the repo/org tier.
 func buildRouter(provider *routingapp.Provider, files routingdomain.ChangedFilesReader, logger *slog.Logger) *routingapp.Router {
 	return routingapp.NewRouter(provider, files, logger)
 }

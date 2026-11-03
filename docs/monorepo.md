@@ -85,11 +85,15 @@ Notifycat reads the changed files only when a path rule of that repository sets 
 - Without a read token, the PR takes the repository's values. Notifycat logs nothing.
 - When the read fails, a PR that is already stored keeps its cap and timer. A new PR takes the repository's values. Notifycat logs [`feed party settings fallback`](operations.md#logging).
 
+A PR with many changed files can need more than 2 seconds to read. The read then fails and the PR keeps the repository values.
+
 A fallback never lowers a stored cap.
 
 ## The token requirement
 
 Reading a PR's changed files takes an API call, so path routing needs a read token in `.env` — `GITHUB_TOKEN` on GitHub, `BITBUCKET_TOKEN` on Bitbucket ([scopes](bitbucket-webhook.md#access-token-scopes)). **Without one, path rules are inert**: every PR routes to the base tier as if `paths:` weren't there. This degradation is announced three ways — the [doctor](doctor.md) reports `SKIP` on its `path routing` check, `notifycat-config` prints a warning, and the server logs one at startup.
+
+Party path rules also need the token. Without it they are inert, and notifycat does not announce it. See [Party settings per path](#party-settings-per-path).
 
 The token is the only API read the server ever performs at webhook time; plain (non-`paths`) routing is resolved entirely in memory.
 
