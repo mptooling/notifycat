@@ -108,7 +108,7 @@ Routing comes from the **`mappings:` section of the declarative `config.yaml`**,
 
 ### Persistence
 
-`internal/platform/persistence` is GORM over SQLite. Tables: `pull_requests` (one row per PR) and `slack_messages` (PR ↔ Slack message timestamp), plus `code_reviews` (review sessions), `scheduled_notifications` (the queue of the `scheduled` notification strategy, one row per (PR, channel)), and `access_invites` / `access_tokens` (bcrypt-hashed agent invites and tokens). It also has `feed_subscriptions`, `feed_pull_requests`, `feed_deliveries`, `feed_party_loads` (party deliveries per token, repository and day) and `feed_polls` (the last poll of each token) for the agent PR feed. Migrations are embedded goose SQL applied at server startup (or via `notifycat-migrate`).
+`internal/platform/persistence` is GORM over SQLite. Tables: `pull_requests` (one row per PR) and `slack_messages` (PR ↔ Slack message timestamp), plus `code_reviews` (review sessions), `scheduled_notifications` (the queue of the `scheduled` notification strategy, one row per (PR, channel)), and `access_invites` / `access_tokens` (bcrypt-hashed agent invites and tokens). The agent PR feed has `feed_subscriptions`, `feed_pull_requests`, and `feed_deliveries`. It also has `feed_party_loads` (party deliveries per token, repository, and day) and `feed_polls` (the last poll of each token). Migrations are embedded goose SQL applied at server startup (or via `notifycat-migrate`).
 
 The `maintenance` domain deletes stale `slack_messages` rows older than `cleanup.message_ttl_days` (config.yaml) once at startup and every 24h. It only deletes the DB row — never the Slack message.
 

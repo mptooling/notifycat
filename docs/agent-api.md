@@ -121,7 +121,7 @@ To change some subscriptions, add `repositories`:
 {"repositories": ["acme/api"], "type": "solo"}
 ```
 
-- Only an absent `repositories` key means every subscription. `"repositories": []` and `"repositories": null` give `400 invalid_body`.
+- Only an absent `repositories` key means every subscription. `"repositories": []`, `"repositories": null`, and a list that is empty after trimming, such as `[""]`, give `400 invalid_body`.
 - Names are trimmed, lower-cased, and de-duplicated, as in `POST`. `"*"` means your `*` subscription.
 - A missing or unknown `type` gives `400 invalid_type`.
 - A repository that you do not follow gives `400 not_subscribed` with the list of these names, lower case and sorted. Nothing changes.
@@ -170,7 +170,7 @@ To change some subscriptions, add `repositories`:
 - `created_at` is when the PR was opened on the git host. It is `null` when the webhook did not carry it.
 - `updated_at` is when notifycat last saw a change to the PR.
 - The list is ordered by `updated_at` (oldest first), then repository, then number.
-- - Nothing new, or no subscriptions, gives an empty list.
+- Nothing new, or no subscriptions, gives an empty list.
 
 A call without a query is a normal poll. It returns the open, non-draft PRs of your subscribed repositories that your token has not received yet. Notifycat marks them as received in the same step. On a party repository, the [party rule](#review-as-a-party) decides which PRs you get. On a day off, a normal poll returns an empty list. See [Days off](#days-off).
 
@@ -220,7 +220,7 @@ A path that is not a feed route gets the plain-text 404 or 405 of the Go HTTP se
 
 ### Days off
 
-On Saturday and Sunday, a normal poll returns an empty list and marks nothing. This is true for solo and party subscriptions. When `digest.country` is set, public holidays are days off too. A day off is a whole calendar day in `digest.timezone`, or in UTC when that key is not set. The [digest calendar](digest.md#weekends-and-holidays) decides this.
+On Saturday and Sunday, a normal poll returns an empty list and marks no PR as received. It still records the poll time, so the poll counts for the away check. This is true for solo and party subscriptions. When `digest.country` is set, public holidays are days off too. A day off is a whole calendar day in `digest.timezone`, or in UTC when that key is not set. The [digest calendar](digest.md#weekends-and-holidays) decides this.
 
 A PR that opens on a day off waits for the next working day. `?since=` still works on a day off, because it is a manual read.
 
@@ -249,7 +249,7 @@ Many agents can follow the same repository. A team can limit how many agents rev
 - **Member**: a token. Two tokens of one person are two members.
 - **Cap**: the number of party members that get each PR. The setting is [`agent_api.party_reviewers`](configuration.md#agent_api). The default is 1.
 - **Load**: the number of PRs that a member got through the party of that repository today. Load counts per repository. Load stays when a PR closes. It starts again at 0 each day.
-- **Away**: a token that has not polled yet, or has not polled for 24 hours. An away member is not a candidate. A member on leave never holds PRs back.
+- **Away**: a token that has not polled yet, or has not polled for 24 hours. Only a normal poll counts. A `since` call does not change the away state. An away member is not a candidate and never holds PRs back.
 - **Timer**: the setting [`agent_api.party_deadline`](configuration.md#agent_api). The default is 1 hour. The timer of a PR starts when notifycat first records the PR. A push does not restart it. Days off do not count.
 
 A normal poll treats each open PR that you have not received on a party repository in this order. The oldest `updated_at` comes first.
@@ -295,7 +295,7 @@ PR 43 opens on Friday at 23:50 with a 30-minute timer. The weekend does not coun
 - The feed does not know which token belongs to the author of a PR. An agent can get a PR of its own user.
 - A member that gets a PR and never reviews it keeps the slot. The timer only ends the turns. It never takes a PR back.
 - A member that joins during the day starts with load 0. It gets most party PRs until its load reaches the others.
-- After a release, every member is away until its first poll. The first agent that polls can take the PRs that waited. The same happens on Monday morning, after a weekend without polls.
+- When parties first go live, no token has polled yet, so every member is away until its first poll. The first agent that polls can take the PRs that waited. The same happens on Monday morning, after a weekend without polls.
 - Party settings change nothing in Slack.
 
 ## Review with Claude Code

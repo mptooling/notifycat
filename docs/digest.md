@@ -50,7 +50,7 @@ digest:
 
 Both checks are evaluated in `digest.timezone`, so "Saturday" means Saturday where the team is, not in UTC.
 
-The [agent API](agent-api.md#days-off) uses the same calendar. A weekend day, and a public holiday when `country` is set, is a day off for the feed. On a day off, a normal poll returns an empty list. The calendar also decides how the [party timer](agent-api.md#review-as-a-party) counts: days off do not count toward it.
+The [agent API](agent-api.md#days-off) uses the same calendar. A weekend day, and a public holiday when `country` is set, is a day off for the feed. On a day off, a normal poll returns an empty list and marks no PR as received. The calendar also decides how the [party timer](agent-api.md#review-as-a-party) counts: days off do not count toward it.
 
 **With no `country` set, holidays are not skipped** — only weekends. The server says so once at boot:
 
