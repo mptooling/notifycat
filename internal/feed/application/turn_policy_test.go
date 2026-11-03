@@ -19,7 +19,7 @@ func TestTurnPolicy_Choose(t *testing.T) {
 	api := func(number int) domain.PullRequestKey {
 		return domain.PullRequestKey{Repository: "acme/api", Number: number}
 	}
-	waiting := func(key domain.PullRequestKey, reviewers, deliveries int, deadline time.Time, candidates ...string) domain.WaitingPullRequest {
+	waitingPullRequest := func(key domain.PullRequestKey, reviewers, deliveries int, deadline time.Time, candidates ...string) domain.WaitingPullRequest {
 		return domain.WaitingPullRequest{
 			Key:             key,
 			Party:           domain.PartyState{Reviewers: reviewers, RecordedAt: now, DeadlineAt: deadline},
@@ -39,69 +39,79 @@ func TestTurnPolicy_Choose(t *testing.T) {
 	}{
 		{
 			name:         "nobody else takes it",
-			pullRequests: []domain.WaitingPullRequest{waiting(web(1), 1, 0, future)},
+			pullRequests: []domain.WaitingPullRequest{waitingPullRequest(web(1), 1, 0, future)},
 			want:         domain.PartyDecision{Take: []domain.PullRequestKey{web(1)}},
 		},
 		{
 			name:         "a pull request at its cap is not taken",
-			pullRequests: []domain.WaitingPullRequest{waiting(web(1), 1, 1, future)},
+			pullRequests: []domain.WaitingPullRequest{waitingPullRequest(web(1), 1, 1, future)},
+			want:         domain.PartyDecision{Taken: 1},
+		},
+		{
+			name:         "a pull request at its cap stays taken after the timer ran out",
+			pullRequests: []domain.WaitingPullRequest{waitingPullRequest(web(1), 1, 1, now, "bob")},
+			want:         domain.PartyDecision{Taken: 1},
+		},
+		{
+			name:         "a pull request above its cap is not taken",
+			pullRequests: []domain.WaitingPullRequest{waitingPullRequest(web(1), 1, 2, future)},
 			want:         domain.PartyDecision{Taken: 1},
 		},
 		{
 			name:         "a lighter candidate has the turn",
-			pullRequests: []domain.WaitingPullRequest{waiting(web(1), 1, 0, future, "bob")},
+			pullRequests: []domain.WaitingPullRequest{waitingPullRequest(web(1), 1, 0, future, "bob")},
 			loads:        map[domain.PartyMember]int{member("alice", "acme/web"): 3, member("bob", "acme/web"): 1},
 			want:         domain.PartyDecision{Waiting: 1},
 		},
 		{
 			name:         "equal loads take it",
-			pullRequests: []domain.WaitingPullRequest{waiting(web(1), 1, 0, future, "bob")},
+			pullRequests: []domain.WaitingPullRequest{waitingPullRequest(web(1), 1, 0, future, "bob")},
 			loads:        map[domain.PartyMember]int{member("alice", "acme/web"): 2, member("bob", "acme/web"): 2},
 			want:         domain.PartyDecision{Take: []domain.PullRequestKey{web(1)}},
 		},
 		{
 			name:         "cap 3 with two lighter candidates takes it",
-			pullRequests: []domain.WaitingPullRequest{waiting(web(1), 3, 0, future, "bob", "carol")},
+			pullRequests: []domain.WaitingPullRequest{waitingPullRequest(web(1), 3, 0, future, "bob", "carol")},
 			loads:        map[domain.PartyMember]int{member("alice", "acme/web"): 2},
 			want:         domain.PartyDecision{Take: []domain.PullRequestKey{web(1)}},
 		},
 		{
 			name:         "cap 2 with no delivery and two lighter candidates waits",
-			pullRequests: []domain.WaitingPullRequest{waiting(web(1), 2, 0, future, "bob", "carol")},
+			pullRequests: []domain.WaitingPullRequest{waitingPullRequest(web(1), 2, 0, future, "bob", "carol")},
 			loads:        map[domain.PartyMember]int{member("alice", "acme/web"): 2},
 			want:         domain.PartyDecision{Waiting: 1},
 		},
 		{
 			name:         "cap 2 with one delivery and one lighter candidate waits",
-			pullRequests: []domain.WaitingPullRequest{waiting(web(1), 2, 1, future, "bob")},
+			pullRequests: []domain.WaitingPullRequest{waitingPullRequest(web(1), 2, 1, future, "bob")},
 			loads:        map[domain.PartyMember]int{member("alice", "acme/web"): 2},
 			want:         domain.PartyDecision{Waiting: 1},
 		},
 		{
 			name:         "a deadline equal to now has run out",
-			pullRequests: []domain.WaitingPullRequest{waiting(web(1), 1, 0, now, "bob")},
+			pullRequests: []domain.WaitingPullRequest{waitingPullRequest(web(1), 1, 0, now, "bob")},
 			loads:        map[domain.PartyMember]int{member("alice", "acme/web"): 2},
 			want:         domain.PartyDecision{Take: []domain.PullRequestKey{web(1)}},
 		},
 		{
 			name:         "a zero deadline has run out",
-			pullRequests: []domain.WaitingPullRequest{waiting(web(1), 1, 0, time.Time{}, "bob")},
+			pullRequests: []domain.WaitingPullRequest{waitingPullRequest(web(1), 1, 0, time.Time{}, "bob")},
 			loads:        map[domain.PartyMember]int{member("alice", "acme/web"): 2},
 			want:         domain.PartyDecision{Take: []domain.PullRequestKey{web(1)}},
 		},
 		{
 			name: "the load rises inside one round",
 			pullRequests: []domain.WaitingPullRequest{
-				waiting(web(1), 1, 0, future, "bob"),
-				waiting(web(2), 1, 0, future, "bob"),
+				waitingPullRequest(web(1), 1, 0, future, "bob"),
+				waitingPullRequest(web(2), 1, 0, future, "bob"),
 			},
 			want: domain.PartyDecision{Take: []domain.PullRequestKey{web(1)}, Waiting: 1},
 		},
 		{
 			name: "load is counted per repository",
 			pullRequests: []domain.WaitingPullRequest{
-				waiting(web(1), 1, 0, future, "bob"),
-				waiting(api(1), 1, 0, future, "bob"),
+				waitingPullRequest(web(1), 1, 0, future, "bob"),
+				waitingPullRequest(api(1), 1, 0, future, "bob"),
 			},
 			loads: map[domain.PartyMember]int{
 				member("alice", "acme/web"): 5,
@@ -113,9 +123,9 @@ func TestTurnPolicy_Choose(t *testing.T) {
 		{
 			name: "take keeps the input order",
 			pullRequests: []domain.WaitingPullRequest{
-				waiting(web(3), 1, 0, future),
-				waiting(api(7), 1, 0, future),
-				waiting(web(1), 1, 0, future),
+				waitingPullRequest(web(3), 1, 0, future),
+				waitingPullRequest(api(7), 1, 0, future),
+				waitingPullRequest(web(1), 1, 0, future),
 			},
 			want: domain.PartyDecision{Take: []domain.PullRequestKey{web(3), api(7), web(1)}},
 		},

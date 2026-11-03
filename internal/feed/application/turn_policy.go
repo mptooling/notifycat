@@ -18,26 +18,26 @@ func (policy *TurnPolicy) Choose(round domain.PartyRound) domain.PartyDecision {
 	}
 
 	var decision domain.PartyDecision
-	for _, waiting := range round.PullRequests {
-		if waiting.PartyDeliveries >= waiting.Party.Reviewers {
+	for _, pullRequest := range round.PullRequests {
+		if pullRequest.PartyDeliveries >= pullRequest.Party.Reviewers {
 			decision.Taken++
 			continue
 		}
-		pollerMember := domain.PartyMember{TokenID: round.TokenID, Repository: waiting.Key.Repository}
-		if round.Now.Before(waiting.Party.DeadlineAt) {
-			lighter := 0
-			for _, candidate := range waiting.Candidates {
-				candidateMember := domain.PartyMember{TokenID: candidate, Repository: waiting.Key.Repository}
+		pollerMember := domain.PartyMember{TokenID: round.TokenID, Repository: pullRequest.Key.Repository}
+		if round.Now.Before(pullRequest.Party.DeadlineAt) {
+			lighterCandidates := 0
+			for _, candidate := range pullRequest.Candidates {
+				candidateMember := domain.PartyMember{TokenID: candidate, Repository: pullRequest.Key.Repository}
 				if loads[candidateMember] < loads[pollerMember] {
-					lighter++
+					lighterCandidates++
 				}
 			}
-			if lighter >= waiting.Party.Reviewers-waiting.PartyDeliveries {
+			if lighterCandidates >= pullRequest.Party.Reviewers-pullRequest.PartyDeliveries {
 				decision.Waiting++
 				continue
 			}
 		}
-		decision.Take = append(decision.Take, waiting.Key)
+		decision.Take = append(decision.Take, pullRequest.Key)
 		loads[pollerMember]++
 	}
 	return decision
