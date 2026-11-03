@@ -296,6 +296,179 @@ func (r *FeedDeliveries) Claim(ctx context.Context, claim FeedClaim) ([]FeedPull
 	return claimed, nil
 }
 
+const partySubscriptionType = "party"
+
+const partyMembersSQL = `SELECT DISTINCT subscription.token_id FROM feed_subscriptions subscription
+	JOIN feed_polls poll ON poll.token_id = subscription.token_id AND poll.polled_at >= ?
+	WHERE subscription.type = ? AND subscription.token_id <> ?
+	AND (subscription.repository = ? OR (subscription.repository = '*' AND NOT EXISTS (
+		SELECT 1 FROM feed_subscriptions own_subscription
+		WHERE own_subscription.token_id = subscription.token_id AND own_subscription.repository = ?)))
+	ORDER BY subscription.token_id`
+
+// ClaimParty reads the snapshot and records what Choose picks in one transaction that writes first,
+// so members that poll at the same moment never pass the cap.
+func (r *FeedDeliveries) ClaimParty(ctx context.Context, claim FeedPartyClaim) ([]FeedPullRequest, error) {
+	if len(claim.Repositories) == 0 {
+		return []FeedPullRequest{}, nil
+	}
+	claimed := []FeedPullRequest{}
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		deleteErr := tx.Exec("DELETE FROM feed_party_loads WHERE day < ?", claim.Day).Error
+		if deleteErr != nil {
+			return fmt.Errorf("delete earlier party loads: %w", deleteErr)
+		}
+		snapshot, snapshotErr := readPartySnapshot(tx, claim)
+		if snapshotErr != nil {
+			return snapshotErr
+		}
+		inserted, insertErr := insertPartyDeliveries(tx, claim, claim.Choose(snapshot))
+		if insertErr != nil {
+			return insertErr
+		}
+		if len(inserted) == 0 {
+			return nil
+		}
+		if loadErr := addPartyLoads(tx, claim, inserted); loadErr != nil {
+			return loadErr
+		}
+		var readErr error
+		claimed, readErr = readPullRequestsInOrder(tx, inserted)
+		return readErr
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: claim feed party pull requests: %w", err)
+	}
+	return claimed, nil
+}
+
+func readPartySnapshot(tx *gorm.DB, claim FeedPartyClaim) (FeedPartySnapshot, error) {
+	var snapshot FeedPartySnapshot
+	waitingErr := tx.
+		Where(`feed_pull_requests.repository IN ? AND NOT EXISTS (
+			SELECT 1 FROM feed_deliveries WHERE feed_deliveries.token_id = ?
+			AND feed_deliveries.repository = feed_pull_requests.repository
+			AND feed_deliveries.number = feed_pull_requests.number)`, claim.Repositories, claim.TokenID).
+		Order("updated_at, repository, number").
+		Find(&snapshot.Waiting).Error
+	if waitingErr != nil {
+		return FeedPartySnapshot{}, fmt.Errorf("read waiting pull requests: %w", waitingErr)
+	}
+	if len(snapshot.Waiting) > 0 {
+		waitingKeys := make([]FeedPullRequestKey, 0, len(snapshot.Waiting))
+		for _, pullRequest := range snapshot.Waiting {
+			waitingKeys = append(waitingKeys, pullRequestKey(pullRequest))
+		}
+		deliveriesErr := tx.Where("(repository, number) IN ?", keyArguments(waitingKeys)).
+			Order("repository, number, token_id").
+			Find(&snapshot.Deliveries).Error
+		if deliveriesErr != nil {
+			return FeedPartySnapshot{}, fmt.Errorf("read deliveries of waiting pull requests: %w", deliveriesErr)
+		}
+	}
+	members, membersErr := readPartyMembers(tx, claim)
+	if membersErr != nil {
+		return FeedPartySnapshot{}, membersErr
+	}
+	snapshot.Members = members
+	loadsErr := tx.Where("day = ? AND repository IN ?", claim.Day, claim.Repositories).
+		Order("repository, token_id").
+		Find(&snapshot.Loads).Error
+	if loadsErr != nil {
+		return FeedPartySnapshot{}, fmt.Errorf("read party loads: %w", loadsErr)
+	}
+	return snapshot, nil
+}
+
+func readPartyMembers(tx *gorm.DB, claim FeedPartyClaim) (map[string][]string, error) {
+	activeSince := claim.ActiveSince.UTC()
+	membersByRepository := map[string][]string{}
+	for _, repository := range claim.Repositories {
+		var members []string
+		err := tx.Raw(partyMembersSQL, activeSince, partySubscriptionType, claim.TokenID, repository, repository).
+			Scan(&members).Error
+		if err != nil {
+			return nil, fmt.Errorf("read party members: %w", err)
+		}
+		if len(members) > 0 {
+			membersByRepository[repository] = members
+		}
+	}
+	return membersByRepository, nil
+}
+
+func insertPartyDeliveries(tx *gorm.DB, claim FeedPartyClaim, chosen []FeedPullRequestKey) ([]FeedPullRequestKey, error) {
+	deliveredAt := claim.DeliveredAt.UTC()
+	inserted := make([]FeedPullRequestKey, 0, len(chosen))
+	for _, key := range chosen {
+		var insertedRows []FeedDelivery
+		insertErr := tx.Raw(
+			`INSERT INTO feed_deliveries (token_id, repository, number, delivered_at, party) VALUES (?, ?, ?, ?, 1)
+			 ON CONFLICT DO NOTHING RETURNING repository, number`,
+			claim.TokenID, key.Repository, key.Number, deliveredAt,
+		).Scan(&insertedRows).Error
+		if insertErr != nil {
+			return nil, fmt.Errorf("insert party delivery: %w", insertErr)
+		}
+		if len(insertedRows) > 0 {
+			inserted = append(inserted, key)
+		}
+	}
+	return inserted, nil
+}
+
+func addPartyLoads(tx *gorm.DB, claim FeedPartyClaim, inserted []FeedPullRequestKey) error {
+	loads := []FeedPartyLoad{}
+	loadIndexByRepository := map[string]int{}
+	for _, key := range inserted {
+		loadIndex, found := loadIndexByRepository[key.Repository]
+		if !found {
+			loadIndex = len(loads)
+			loadIndexByRepository[key.Repository] = loadIndex
+			loads = append(loads, FeedPartyLoad{TokenID: claim.TokenID, Repository: key.Repository, Day: claim.Day})
+		}
+		loads[loadIndex].Taken++
+	}
+	err := tx.
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "token_id"}, {Name: "repository"}, {Name: "day"}},
+			DoUpdates: clause.Assignments(map[string]any{"taken": gorm.Expr("feed_party_loads.taken + excluded.taken")}),
+		}).
+		Create(&loads).Error
+	if err != nil {
+		return fmt.Errorf("add party loads: %w", err)
+	}
+	return nil
+}
+
+func readPullRequestsInOrder(tx *gorm.DB, keys []FeedPullRequestKey) ([]FeedPullRequest, error) {
+	var found []FeedPullRequest
+	if err := tx.Where("(repository, number) IN ?", keyArguments(keys)).Find(&found).Error; err != nil {
+		return nil, fmt.Errorf("read claimed pull requests: %w", err)
+	}
+	foundByKey := make(map[FeedPullRequestKey]FeedPullRequest, len(found))
+	for _, pullRequest := range found {
+		foundByKey[pullRequestKey(pullRequest)] = pullRequest
+	}
+	ordered := make([]FeedPullRequest, 0, len(keys))
+	for _, key := range keys {
+		ordered = append(ordered, foundByKey[key])
+	}
+	return ordered, nil
+}
+
+func pullRequestKey(pullRequest FeedPullRequest) FeedPullRequestKey {
+	return FeedPullRequestKey{Repository: pullRequest.Repository, Number: pullRequest.Number}
+}
+
+func keyArguments(keys []FeedPullRequestKey) [][]any {
+	arguments := make([][]any, 0, len(keys))
+	for _, key := range keys {
+		arguments = append(arguments, []any{key.Repository, key.Number})
+	}
+	return arguments
+}
+
 // FeedPolls records when each token last polled the feed.
 type FeedPolls struct {
 	db *gorm.DB

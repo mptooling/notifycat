@@ -699,3 +699,305 @@ func TestFeedPullRequests_ReceivedSince(t *testing.T) {
 	assert.NotNil(t, none)
 	assert.Empty(t, none)
 }
+
+var partyBaseTime = time.Date(2026, 11, 3, 10, 0, 0, 0, time.UTC)
+
+const partyDay = "2026-11-03"
+
+func newPartyClaim(tokenID string, choose func(persistence.FeedPartySnapshot) []persistence.FeedPullRequestKey) persistence.FeedPartyClaim {
+	return persistence.FeedPartyClaim{
+		TokenID:      tokenID,
+		Repositories: []string{"acme/api"},
+		DeliveredAt:  partyBaseTime,
+		Day:          partyDay,
+		ActiveSince:  partyBaseTime,
+		Choose:       choose,
+	}
+}
+
+func captureSnapshot(captured *persistence.FeedPartySnapshot) func(persistence.FeedPartySnapshot) []persistence.FeedPullRequestKey {
+	return func(snapshot persistence.FeedPartySnapshot) []persistence.FeedPullRequestKey {
+		*captured = snapshot
+		return nil
+	}
+}
+
+func takeNothing(persistence.FeedPartySnapshot) []persistence.FeedPullRequestKey {
+	return nil
+}
+
+func takeFirstWaiting(snapshot persistence.FeedPartySnapshot) []persistence.FeedPullRequestKey {
+	if len(snapshot.Waiting) == 0 {
+		return nil
+	}
+	first := snapshot.Waiting[0]
+	return []persistence.FeedPullRequestKey{{Repository: first.Repository, Number: first.Number}}
+}
+
+func takeBelowTheCap(snapshot persistence.FeedPartySnapshot) []persistence.FeedPullRequestKey {
+	partyDeliveries := map[persistence.FeedPullRequestKey]int{}
+	for _, delivery := range snapshot.Deliveries {
+		if delivery.Party {
+			partyDeliveries[persistence.FeedPullRequestKey{Repository: delivery.Repository, Number: delivery.Number}]++
+		}
+	}
+	taken := []persistence.FeedPullRequestKey{}
+	for _, pullRequest := range snapshot.Waiting {
+		key := persistence.FeedPullRequestKey{Repository: pullRequest.Repository, Number: pullRequest.Number}
+		if partyDeliveries[key] < pullRequest.PartyReviewers {
+			taken = append(taken, key)
+		}
+	}
+	return taken
+}
+
+func subscribe(t *testing.T, db *gorm.DB, tokenID string, subscriptionType string, repositories ...string) {
+	t.Helper()
+	_, err := persistence.NewFeedSubscriptions(db).Add(context.Background(), persistence.FeedSubscriptionBatch{
+		TokenID: tokenID, Repositories: repositories, CreatedAt: accessBaseTime, Type: subscriptionType,
+	})
+	require.NoError(t, err)
+}
+
+func recordPoll(t *testing.T, db *gorm.DB, tokenID string, polledAt time.Time) {
+	t.Helper()
+	require.NoError(t, persistence.NewFeedPolls(db).Record(context.Background(), tokenID, polledAt))
+}
+
+func seedDeliveries(t *testing.T, db *gorm.DB, deliveries ...persistence.FeedDelivery) {
+	t.Helper()
+	for _, delivery := range deliveries {
+		require.NoError(t, db.Create(&delivery).Error)
+	}
+}
+
+func seedPartyLoads(t *testing.T, db *gorm.DB, loads ...persistence.FeedPartyLoad) {
+	t.Helper()
+	for _, load := range loads {
+		require.NoError(t, db.Create(&load).Error)
+	}
+}
+
+func partyLoadTaken(t *testing.T, db *gorm.DB, tokenID string) int {
+	t.Helper()
+	var load persistence.FeedPartyLoad
+	require.NoError(t, db.Where("token_id = ? AND repository = ? AND day = ?", tokenID, "acme/api", partyDay).Take(&load).Error)
+	return load.Taken
+}
+
+func deliveryLabels(deliveries []persistence.FeedDelivery) []string {
+	labels := make([]string, 0, len(deliveries))
+	for _, delivery := range deliveries {
+		labels = append(labels, fmt.Sprintf("%s %s#%d party=%t", delivery.TokenID, delivery.Repository, delivery.Number, delivery.Party))
+	}
+	return labels
+}
+
+func TestFeedDeliveries_ClaimPartySnapshotMembers(t *testing.T) {
+	db := newFeedDB(t)
+	for _, tokenID := range []string{"t3", "t4", "t5", "t6", "t7"} {
+		seedToken(t, db, tokenID, accessBaseTime)
+	}
+	subscribe(t, db, "t1", "party", "acme/api")
+	subscribe(t, db, "t2", "party", "acme/api")
+	subscribe(t, db, "t3", "party", "acme/api")
+	subscribe(t, db, "t4", "party", "acme/api")
+	subscribe(t, db, "t5", "solo", "acme/api")
+	subscribe(t, db, "t6", "party", "*")
+	subscribe(t, db, "t7", "party", "*")
+	subscribe(t, db, "t7", "solo", "acme/api")
+	for _, tokenID := range []string{"t1", "t2", "t5", "t6", "t7"} {
+		recordPoll(t, db, tokenID, partyBaseTime)
+	}
+	recordPoll(t, db, "t3", partyBaseTime.Add(-time.Second))
+	var snapshot persistence.FeedPartySnapshot
+	claim := newPartyClaim("t1", captureSnapshot(&snapshot))
+	claim.ActiveSince = partyBaseTime.In(time.FixedZone("plus2", 2*60*60))
+
+	_, err := persistence.NewFeedDeliveries(db).ClaimParty(context.Background(), claim)
+
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]string{"acme/api": {"t2", "t6"}}, snapshot.Members,
+		"a poll at ActiveSince counts, and an offset ActiveSince is compared in UTC")
+}
+
+func TestFeedDeliveries_ClaimPartySnapshotWaiting(t *testing.T) {
+	db := newFeedDB(t)
+	seedToken(t, db, "t3", accessBaseTime)
+	upsertAll(t, persistence.NewFeedPullRequests(db),
+		feedPullRequest("acme/api", 1, partyBaseTime),
+		feedPullRequest("acme/api", 2, partyBaseTime.Add(time.Minute)),
+		feedPullRequest("acme/api", 5, partyBaseTime),
+		feedPullRequest("acme/api", 3, partyBaseTime),
+		feedPullRequest("acme/web", 4, partyBaseTime),
+	)
+	seedDeliveries(t, db,
+		persistence.FeedDelivery{TokenID: "t1", Repository: "acme/api", Number: 1, DeliveredAt: partyBaseTime},
+		persistence.FeedDelivery{TokenID: "t2", Repository: "acme/api", Number: 1, DeliveredAt: partyBaseTime, Party: true},
+		persistence.FeedDelivery{TokenID: "t2", Repository: "acme/api", Number: 2, DeliveredAt: partyBaseTime, Party: true},
+		persistence.FeedDelivery{TokenID: "t3", Repository: "acme/api", Number: 2, DeliveredAt: partyBaseTime},
+	)
+	var snapshot persistence.FeedPartySnapshot
+
+	_, err := persistence.NewFeedDeliveries(db).ClaimParty(context.Background(), newPartyClaim("t1", captureSnapshot(&snapshot)))
+
+	require.NoError(t, err)
+	assert.Equal(t, []int{3, 5, 2}, pullRequestNumbers(snapshot.Waiting),
+		"ordered by updated_at, then number, without the PR the claimant has as a solo delivery")
+	assert.ElementsMatch(t, []string{"t2 acme/api#2 party=true", "t3 acme/api#2 party=false"}, deliveryLabels(snapshot.Deliveries),
+		"every row of a waiting PR, solo rows too, and no row of a PR that is not waiting")
+}
+
+func TestFeedDeliveries_ClaimPartySnapshotLoads(t *testing.T) {
+	db := newFeedDB(t)
+	seedPartyLoads(t, db,
+		persistence.FeedPartyLoad{TokenID: "t1", Repository: "acme/api", Day: partyDay, Taken: 2},
+		persistence.FeedPartyLoad{TokenID: "t2", Repository: "acme/api", Day: partyDay, Taken: 1},
+		persistence.FeedPartyLoad{TokenID: "t2", Repository: "acme/web", Day: partyDay, Taken: 3},
+		persistence.FeedPartyLoad{TokenID: "t2", Repository: "acme/api", Day: "2026-11-04", Taken: 4},
+	)
+	var snapshot persistence.FeedPartySnapshot
+
+	_, err := persistence.NewFeedDeliveries(db).ClaimParty(context.Background(), newPartyClaim("t1", captureSnapshot(&snapshot)))
+
+	require.NoError(t, err)
+	assert.Equal(t, []persistence.FeedPartyLoad{
+		{TokenID: "t1", Repository: "acme/api", Day: partyDay, Taken: 2},
+		{TokenID: "t2", Repository: "acme/api", Day: partyDay, Taken: 1},
+	}, snapshot.Loads)
+}
+
+func TestFeedDeliveries_ClaimPartyRecordsDeliveriesAndLoad(t *testing.T) {
+	db := newFeedDB(t)
+	ctx := context.Background()
+	pullRequests := persistence.NewFeedPullRequests(db)
+	deliveries := persistence.NewFeedDeliveries(db)
+	upsertAll(t, pullRequests,
+		feedPullRequest("acme/api", 1, partyBaseTime),
+		feedPullRequest("acme/api", 2, partyBaseTime.Add(time.Minute)),
+	)
+	claim := newPartyClaim("t1", takeFirstWaiting)
+	claim.DeliveredAt = partyBaseTime.In(time.FixedZone("plus2", 2*60*60))
+
+	first, firstErr := deliveries.ClaimParty(ctx, claim)
+	takenAfterFirst := partyLoadTaken(t, db, "t1")
+	second, secondErr := deliveries.ClaimParty(ctx, claim)
+	takenAfterSecond := partyLoadTaken(t, db, "t1")
+	partyRows := countTable(t, db, "feed_deliveries", "token_id = ? AND party = ? AND delivered_at = ?", "t1", true, partyBaseTime)
+	require.NoError(t, pullRequests.Delete(ctx, "acme/api", 1))
+	require.NoError(t, pullRequests.Delete(ctx, "acme/api", 2))
+	takenAfterDelete := partyLoadTaken(t, db, "t1")
+
+	require.NoError(t, firstErr)
+	require.NoError(t, secondErr)
+	assert.Equal(t, []int{1}, pullRequestNumbers(first))
+	assert.Equal(t, []int{2}, pullRequestNumbers(second))
+	assert.EqualValues(t, 2, partyRows, "party rows store delivered_at in UTC")
+	assert.Equal(t, 1, takenAfterFirst)
+	assert.Equal(t, 2, takenAfterSecond)
+	assert.Equal(t, 2, takenAfterDelete, "the load outlives the pull requests")
+}
+
+func TestFeedDeliveries_ClaimPartySkipsDeliveredKeysAndKeepsTheChosenOrder(t *testing.T) {
+	db := newFeedDB(t)
+	upsertAll(t, persistence.NewFeedPullRequests(db),
+		feedPullRequest("acme/api", 1, partyBaseTime),
+		feedPullRequest("acme/api", 2, partyBaseTime),
+		feedPullRequest("acme/api", 3, partyBaseTime),
+	)
+	seedDeliveries(t, db, persistence.FeedDelivery{TokenID: "t1", Repository: "acme/api", Number: 3, DeliveredAt: partyBaseTime})
+	claim := newPartyClaim("t1", func(persistence.FeedPartySnapshot) []persistence.FeedPullRequestKey {
+		return []persistence.FeedPullRequestKey{
+			{Repository: "acme/api", Number: 2},
+			{Repository: "acme/api", Number: 3},
+			{Repository: "acme/api", Number: 1},
+			{Repository: "acme/api", Number: 2},
+		}
+	})
+
+	claimed, err := persistence.NewFeedDeliveries(db).ClaimParty(context.Background(), claim)
+
+	require.NoError(t, err)
+	assert.Equal(t, []int{2, 1}, pullRequestNumbers(claimed))
+	assert.Equal(t, 2, partyLoadTaken(t, db, "t1"), "only inserted rows add to the load")
+	assert.EqualValues(t, 2, countTable(t, db, "feed_deliveries", "token_id = ? AND party = ?", "t1", true),
+		"an earlier solo delivery stays solo")
+}
+
+func TestFeedDeliveries_ClaimPartyRemovesEarlierDays(t *testing.T) {
+	db := newFeedDB(t)
+	seedPartyLoads(t, db,
+		persistence.FeedPartyLoad{TokenID: "t1", Repository: "acme/api", Day: "2026-11-02", Taken: 1},
+		persistence.FeedPartyLoad{TokenID: "t2", Repository: "acme/web", Day: "2026-11-02", Taken: 1},
+		persistence.FeedPartyLoad{TokenID: "t1", Repository: "acme/api", Day: partyDay, Taken: 1},
+	)
+
+	_, err := persistence.NewFeedDeliveries(db).ClaimParty(context.Background(), newPartyClaim("t1", takeNothing))
+
+	require.NoError(t, err)
+	assert.Zero(t, countTable(t, db, "feed_party_loads", "day = ?", "2026-11-02"), "earlier rows of every token and repository go")
+	assert.EqualValues(t, 1, countTable(t, db, "feed_party_loads", "day = ?", partyDay))
+}
+
+func TestFeedDeliveries_ClaimPartyWithoutRepositories(t *testing.T) {
+	chooseCalled := false
+	claim := newPartyClaim("t1", func(persistence.FeedPartySnapshot) []persistence.FeedPullRequestKey {
+		chooseCalled = true
+		return nil
+	})
+	claim.Repositories = nil
+
+	claimed, err := persistence.NewFeedDeliveries(newFeedDB(t)).ClaimParty(context.Background(), claim)
+
+	require.NoError(t, err)
+	assert.NotNil(t, claimed)
+	assert.Empty(t, claimed)
+	assert.False(t, chooseCalled)
+}
+
+func TestFeedDeliveries_ClaimPartyConcurrentMembersNeverPassTheCap(t *testing.T) {
+	db := newFeedDB(t)
+	ctx := context.Background()
+	const members = 8
+	tokenIDs := make([]string, 0, members)
+	for member := 1; member <= members; member++ {
+		tokenID := fmt.Sprintf("t%d", member)
+		if member > 2 {
+			seedToken(t, db, tokenID, accessBaseTime)
+		}
+		subscribe(t, db, tokenID, "party", "acme/api")
+		recordPoll(t, db, tokenID, partyBaseTime)
+		tokenIDs = append(tokenIDs, tokenID)
+	}
+	capped := feedPullRequest("acme/api", 1, partyBaseTime)
+	capped.PartyReviewers = 2
+	upsertAll(t, persistence.NewFeedPullRequests(db), capped)
+	deliveries := persistence.NewFeedDeliveries(db)
+	type outcome struct {
+		claimed []persistence.FeedPullRequest
+		err     error
+	}
+	outcomes := make([]outcome, members)
+	start := make(chan struct{})
+	var group sync.WaitGroup
+	for index, tokenID := range tokenIDs {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			<-start
+			claimed, err := deliveries.ClaimParty(ctx, newPartyClaim(tokenID, takeBelowTheCap))
+			outcomes[index] = outcome{claimed: claimed, err: err}
+		}()
+	}
+
+	close(start)
+	group.Wait()
+
+	delivered := 0
+	for _, result := range outcomes {
+		require.NoError(t, result.err)
+		delivered += len(result.claimed)
+	}
+	assert.Equal(t, 2, delivered)
+	assert.EqualValues(t, 2, countTable(t, db, "feed_deliveries", "repository = ? AND number = ? AND party = ?", "acme/api", 1, true))
+}

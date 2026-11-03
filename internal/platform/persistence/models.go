@@ -207,3 +207,28 @@ type FeedClaim struct {
 	Repositories []string
 	DeliveredAt  time.Time
 }
+
+// FeedPullRequestKey names one feed pull request.
+type FeedPullRequestKey struct {
+	Repository string
+	Number     int
+}
+
+// FeedPartySnapshot is what a party claim reads before Choose: the waiting pull requests in feed order,
+// every delivery of them, the other active party members per repository, and the loads of the day.
+type FeedPartySnapshot struct {
+	Waiting    []FeedPullRequest
+	Deliveries []FeedDelivery
+	Members    map[string][]string
+	Loads      []FeedPartyLoad
+}
+
+// FeedPartyClaim asks for the party pull requests that Choose picks for a token.
+type FeedPartyClaim struct {
+	TokenID      string
+	Repositories []string
+	DeliveredAt  time.Time
+	Day          string
+	ActiveSince  time.Time
+	Choose       func(FeedPartySnapshot) []FeedPullRequestKey
+}
