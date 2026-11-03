@@ -11,6 +11,7 @@ var (
 	ErrTooManySubscriptions = errors.New("feed: too many subscriptions")
 	ErrNoRepositories       = errors.New("feed: no repositories")
 	ErrInvalidType          = errors.New("feed: invalid subscription type")
+	ErrMalformedRepository  = errors.New("feed: repository is not owner/name")
 )
 
 // NotSubscribedError lists named repositories the token does not follow.
