@@ -618,8 +618,7 @@ func TestConfigPartySettings_ReturnsTheGlobalSettings(t *testing.T) {
 	settings := domain.Settings{Party: domain.PartySettings{Reviewers: 2, Deadline: 90 * time.Minute}}
 	resolver := infrastructure.NewConfigPartySettings(settings)
 
-	got, err := resolver.Resolve(context.Background(), domain.PullRequestKey{Repository: "acme/api", Number: 7})
+	got := resolver.Resolve(context.Background(), domain.PullRequestKey{Repository: "acme/api", Number: 7})
 
-	require.NoError(t, err)
-	assert.Equal(t, settings.Party, got)
+	assert.Equal(t, domain.PartyResolution{Settings: settings.Party}, got)
 }

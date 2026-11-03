@@ -19,6 +19,6 @@ func NewConfigPartySettings(settings domain.Settings) *ConfigPartySettings {
 }
 
 // Resolve implements domain.PartySettingsResolver.
-func (resolver *ConfigPartySettings) Resolve(context.Context, domain.PullRequestKey) (domain.PartySettings, error) {
-	return resolver.settings.Party, nil
+func (resolver *ConfigPartySettings) Resolve(context.Context, domain.PullRequestKey) domain.PartyResolution {
+	return domain.PartyResolution{Settings: resolver.settings.Party}
 }

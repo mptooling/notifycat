@@ -151,6 +151,13 @@ type PartySettings struct {
 	Deadline  time.Duration
 }
 
+// PartyResolution is the outcome of resolving the party settings of one pull request.
+type PartyResolution struct {
+	Settings PartySettings
+	// Fallback is true when the changed files could not be read and Settings holds the repository's values.
+	Fallback bool
+}
+
 // Settings are the feed settings built from the config.
 type Settings struct {
 	Party    PartySettings

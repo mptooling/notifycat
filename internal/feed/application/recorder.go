@@ -64,18 +64,19 @@ func (recorder *Recorder) partyState(ctx context.Context, key domain.PullRequest
 	if err != nil {
 		return domain.PartyState{}, fmt.Errorf("find feed pull request: %w", err)
 	}
+	hasRecordTime := found && !stored.Party.RecordedAt.IsZero()
+	resolution := recorder.partySettings.Resolve(ctx, key)
+	if resolution.Fallback && hasRecordTime {
+		return stored.Party, nil
+	}
 	recordedAt := now
-	if found && !stored.Party.RecordedAt.IsZero() {
+	if hasRecordTime {
 		recordedAt = stored.Party.RecordedAt
 	}
-	settings, err := recorder.partySettings.Resolve(ctx, key)
-	if err != nil {
-		return domain.PartyState{}, fmt.Errorf("resolve party settings: %w", err)
-	}
 	return domain.PartyState{
-		Reviewers:  settings.Reviewers,
+		Reviewers:  resolution.Settings.Reviewers,
 		RecordedAt: recordedAt,
-		DeadlineAt: recorder.calendar.AddWorkingTime(recordedAt, settings.Deadline),
+		DeadlineAt: recorder.calendar.AddWorkingTime(recordedAt, resolution.Settings.Deadline),
 	}, nil
 }
 

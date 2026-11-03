@@ -55,8 +55,10 @@ type PollStore interface {
 }
 
 // PartySettingsResolver gives the party settings that apply to a pull request.
+// It never fails. If it cannot read the changed files, it returns the
+// repository's values and sets Fallback.
 type PartySettingsResolver interface {
-	Resolve(ctx context.Context, key PullRequestKey) (PartySettings, error)
+	Resolve(ctx context.Context, key PullRequestKey) PartyResolution
 }
 
 // RepositoryCatalog answers which repositories the operator configured.

@@ -332,16 +332,20 @@ func (catalog *fakeCatalog) Configured(repositories []string) []string {
 }
 
 type fakePartySettings struct {
-	settings domain.PartySettings
-	err      error
-	calls    int
-	keys     []domain.PullRequestKey
+	resolution domain.PartyResolution
+	// onlyForKey, when set, makes the fake answer any other key with an empty resolution.
+	onlyForKey *domain.PullRequestKey
+	calls      int
+	keys       []domain.PullRequestKey
 }
 
-func (resolver *fakePartySettings) Resolve(_ context.Context, key domain.PullRequestKey) (domain.PartySettings, error) {
+func (resolver *fakePartySettings) Resolve(_ context.Context, key domain.PullRequestKey) domain.PartyResolution {
 	resolver.calls++
 	resolver.keys = append(resolver.keys, key)
-	return resolver.settings, resolver.err
+	if resolver.onlyForKey != nil && *resolver.onlyForKey != key {
+		return domain.PartyResolution{}
+	}
+	return resolver.resolution
 }
 
 type fakeClock struct {
