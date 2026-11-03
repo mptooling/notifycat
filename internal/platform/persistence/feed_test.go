@@ -778,11 +778,19 @@ func seedPartyLoads(t *testing.T, db *gorm.DB, loads ...persistence.FeedPartyLoa
 	}
 }
 
-func partyLoadTaken(t *testing.T, db *gorm.DB, tokenID string) int {
+func partyLoadTaken(t *testing.T, db *gorm.DB, tokenID string, repository string) int {
 	t.Helper()
 	var load persistence.FeedPartyLoad
-	require.NoError(t, db.Where("token_id = ? AND repository = ? AND day = ?", tokenID, "acme/api", partyDay).Take(&load).Error)
+	require.NoError(t, db.Where("token_id = ? AND repository = ? AND day = ?", tokenID, repository, partyDay).Take(&load).Error)
 	return load.Taken
+}
+
+func pullRequestLabels(items []persistence.FeedPullRequest) []string {
+	labels := make([]string, 0, len(items))
+	for _, item := range items {
+		labels = append(labels, fmt.Sprintf("%s#%d", item.Repository, item.Number))
+	}
+	return labels
 }
 
 func deliveryLabels(deliveries []persistence.FeedDelivery) []string {
@@ -880,16 +888,16 @@ func TestFeedDeliveries_ClaimPartyRecordsDeliveriesAndLoad(t *testing.T) {
 	claim.DeliveredAt = partyBaseTime.In(time.FixedZone("plus2", 2*60*60))
 
 	first, firstErr := deliveries.ClaimParty(ctx, claim)
-	takenAfterFirst := partyLoadTaken(t, db, "t1")
+	require.NoError(t, firstErr)
+	takenAfterFirst := partyLoadTaken(t, db, "t1", "acme/api")
 	second, secondErr := deliveries.ClaimParty(ctx, claim)
-	takenAfterSecond := partyLoadTaken(t, db, "t1")
+	require.NoError(t, secondErr)
+	takenAfterSecond := partyLoadTaken(t, db, "t1", "acme/api")
 	partyRows := countTable(t, db, "feed_deliveries", "token_id = ? AND party = ? AND delivered_at = ?", "t1", true, partyBaseTime)
 	require.NoError(t, pullRequests.Delete(ctx, "acme/api", 1))
 	require.NoError(t, pullRequests.Delete(ctx, "acme/api", 2))
-	takenAfterDelete := partyLoadTaken(t, db, "t1")
+	takenAfterDelete := partyLoadTaken(t, db, "t1", "acme/api")
 
-	require.NoError(t, firstErr)
-	require.NoError(t, secondErr)
 	assert.Equal(t, []int{1}, pullRequestNumbers(first))
 	assert.Equal(t, []int{2}, pullRequestNumbers(second))
 	assert.EqualValues(t, 2, partyRows, "party rows store delivered_at in UTC")
@@ -919,9 +927,77 @@ func TestFeedDeliveries_ClaimPartySkipsDeliveredKeysAndKeepsTheChosenOrder(t *te
 
 	require.NoError(t, err)
 	assert.Equal(t, []int{2, 1}, pullRequestNumbers(claimed))
-	assert.Equal(t, 2, partyLoadTaken(t, db, "t1"), "only inserted rows add to the load")
+	assert.Equal(t, 2, partyLoadTaken(t, db, "t1", "acme/api"), "only inserted rows add to the load")
 	assert.EqualValues(t, 2, countTable(t, db, "feed_deliveries", "token_id = ? AND party = ?", "t1", true),
 		"an earlier solo delivery stays solo")
+}
+
+func TestFeedDeliveries_ClaimPartyDeliversOnlyWaitingKeys(t *testing.T) {
+	db := newFeedDB(t)
+	upsertAll(t, persistence.NewFeedPullRequests(db),
+		feedPullRequest("acme/api", 1, partyBaseTime),
+		feedPullRequest("acme/web", 2, partyBaseTime),
+	)
+	claim := newPartyClaim("t1", func(persistence.FeedPartySnapshot) []persistence.FeedPullRequestKey {
+		return []persistence.FeedPullRequestKey{
+			{Repository: "acme/api", Number: 1},
+			{Repository: "acme/web", Number: 2},
+			{Repository: "acme/api", Number: 99},
+		}
+	})
+
+	claimed, err := persistence.NewFeedDeliveries(db).ClaimParty(context.Background(), claim)
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"acme/api#1"}, pullRequestLabels(claimed))
+	assert.EqualValues(t, 1, countTable(t, db, "feed_deliveries", "token_id = ?", "t1"),
+		"a key outside the claimant's waiting set is never delivered")
+	assert.Zero(t, countTable(t, db, "feed_party_loads", "repository = ?", "acme/web"))
+	assert.Equal(t, 1, partyLoadTaken(t, db, "t1", "acme/api"))
+}
+
+func TestFeedDeliveries_ClaimPartyAcrossRepositories(t *testing.T) {
+	db := newFeedDB(t)
+	for _, tokenID := range []string{"t3", "t4"} {
+		seedToken(t, db, tokenID, accessBaseTime)
+	}
+	subscribe(t, db, "t2", "party", "acme/api")
+	subscribe(t, db, "t3", "party", "*")
+	subscribe(t, db, "t4", "party", "acme/web")
+	for _, tokenID := range []string{"t2", "t3", "t4"} {
+		recordPoll(t, db, tokenID, partyBaseTime)
+	}
+	upsertAll(t, persistence.NewFeedPullRequests(db),
+		feedPullRequest("acme/web", 1, partyBaseTime),
+		feedPullRequest("acme/api", 3, partyBaseTime),
+		feedPullRequest("acme/api", 2, partyBaseTime),
+		feedPullRequest("acme/web", 4, partyBaseTime.Add(-time.Minute)),
+		feedPullRequest("acme/api", 9, partyBaseTime.Add(time.Minute)),
+	)
+	seedPartyLoads(t, db,
+		persistence.FeedPartyLoad{TokenID: "t1", Repository: "acme/api", Day: partyDay, Taken: 1},
+		persistence.FeedPartyLoad{TokenID: "t1", Repository: "acme/web", Day: partyDay, Taken: 5},
+	)
+	var snapshot persistence.FeedPartySnapshot
+	claim := newPartyClaim("t1", func(seen persistence.FeedPartySnapshot) []persistence.FeedPullRequestKey {
+		snapshot = seen
+		return []persistence.FeedPullRequestKey{
+			{Repository: "acme/api", Number: 2},
+			{Repository: "acme/web", Number: 1},
+			{Repository: "acme/api", Number: 3},
+		}
+	})
+	claim.Repositories = []string{"acme/api", "acme/web"}
+
+	claimed, err := persistence.NewFeedDeliveries(db).ClaimParty(context.Background(), claim)
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"acme/web#4", "acme/api#2", "acme/api#3", "acme/web#1", "acme/api#9"}, pullRequestLabels(snapshot.Waiting),
+		"ordered by updated_at, then repository, then number")
+	assert.Equal(t, map[string][]string{"acme/api": {"t2", "t3"}, "acme/web": {"t3", "t4"}}, snapshot.Members)
+	assert.Equal(t, []string{"acme/api#2", "acme/web#1", "acme/api#3"}, pullRequestLabels(claimed))
+	assert.Equal(t, 3, partyLoadTaken(t, db, "t1", "acme/api"))
+	assert.Equal(t, 6, partyLoadTaken(t, db, "t1", "acme/web"))
 }
 
 func TestFeedDeliveries_ClaimPartyRemovesEarlierDays(t *testing.T) {

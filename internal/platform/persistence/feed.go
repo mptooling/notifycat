@@ -2,6 +2,7 @@ package persistence
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -265,7 +266,7 @@ func (r *FeedDeliveries) Claim(ctx context.Context, claim FeedClaim) ([]FeedPull
 	}
 	claimed := []FeedPullRequest{}
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var inserted []FeedDelivery
+		var inserted []FeedPullRequestKey
 		insertErr := tx.Raw(
 			`INSERT INTO feed_deliveries (token_id, repository, number, delivered_at)
 			 SELECT ?, repository, number, ? FROM feed_pull_requests WHERE repository IN ?
@@ -278,11 +279,7 @@ func (r *FeedDeliveries) Claim(ctx context.Context, claim FeedClaim) ([]FeedPull
 		if len(inserted) == 0 {
 			return nil
 		}
-		keys := make([][]any, 0, len(inserted))
-		for _, delivery := range inserted {
-			keys = append(keys, []any{delivery.Repository, delivery.Number})
-		}
-		readErr := tx.Where("(repository, number) IN ?", keys).
+		readErr := tx.Where("(repository, number) IN ?", keyArguments(inserted)).
 			Order("updated_at, repository, number").
 			Find(&claimed).Error
 		if readErr != nil {
@@ -296,15 +293,27 @@ func (r *FeedDeliveries) Claim(ctx context.Context, claim FeedClaim) ([]FeedPull
 	return claimed, nil
 }
 
-const partySubscriptionType = "party"
+const (
+	partySubscriptionType = "party"
+	wildcardRepository    = "*"
+)
 
-const partyMembersSQL = `SELECT DISTINCT subscription.token_id FROM feed_subscriptions subscription
+const partyMembersSQL = `WITH claim_repositories(repository) AS (SELECT value FROM json_each(?))
+	SELECT DISTINCT claim_repositories.repository AS repository, subscription.token_id AS token_id
+	FROM claim_repositories
+	JOIN feed_subscriptions subscription ON subscription.repository = claim_repositories.repository
+		OR (subscription.repository = ? AND NOT EXISTS (
+			SELECT 1 FROM feed_subscriptions own_subscription
+			WHERE own_subscription.token_id = subscription.token_id
+			AND own_subscription.repository = claim_repositories.repository))
 	JOIN feed_polls poll ON poll.token_id = subscription.token_id AND poll.polled_at >= ?
 	WHERE subscription.type = ? AND subscription.token_id <> ?
-	AND (subscription.repository = ? OR (subscription.repository = '*' AND NOT EXISTS (
-		SELECT 1 FROM feed_subscriptions own_subscription
-		WHERE own_subscription.token_id = subscription.token_id AND own_subscription.repository = ?)))
-	ORDER BY subscription.token_id`
+	ORDER BY claim_repositories.repository, subscription.token_id`
+
+type partyMemberRow struct {
+	Repository string
+	TokenID    string
+}
 
 // ClaimParty reads the snapshot and records what Choose picks in one transaction that writes first,
 // so members that poll at the same moment never pass the cap.
@@ -322,7 +331,11 @@ func (r *FeedDeliveries) ClaimParty(ctx context.Context, claim FeedPartyClaim) (
 		if snapshotErr != nil {
 			return snapshotErr
 		}
-		inserted, insertErr := insertPartyDeliveries(tx, claim, claim.Choose(snapshot))
+		chosen := keepWaitingKeys(snapshot.Waiting, claim.Choose(snapshot))
+		if len(chosen) == 0 {
+			return nil
+		}
+		inserted, insertErr := insertPartyDeliveries(tx, claim, chosen)
 		if insertErr != nil {
 			return insertErr
 		}
@@ -381,36 +394,57 @@ func readPartySnapshot(tx *gorm.DB, claim FeedPartyClaim) (FeedPartySnapshot, er
 }
 
 func readPartyMembers(tx *gorm.DB, claim FeedPartyClaim) (map[string][]string, error) {
-	activeSince := claim.ActiveSince.UTC()
+	repositories, encodeErr := json.Marshal(claim.Repositories)
+	if encodeErr != nil {
+		return nil, fmt.Errorf("encode party repositories: %w", encodeErr)
+	}
+	var rows []partyMemberRow
+	readErr := tx.Raw(partyMembersSQL,
+		string(repositories), wildcardRepository, claim.ActiveSince.UTC(), partySubscriptionType, claim.TokenID,
+	).Scan(&rows).Error
+	if readErr != nil {
+		return nil, fmt.Errorf("read party members: %w", readErr)
+	}
 	membersByRepository := map[string][]string{}
-	for _, repository := range claim.Repositories {
-		var members []string
-		err := tx.Raw(partyMembersSQL, activeSince, partySubscriptionType, claim.TokenID, repository, repository).
-			Scan(&members).Error
-		if err != nil {
-			return nil, fmt.Errorf("read party members: %w", err)
-		}
-		if len(members) > 0 {
-			membersByRepository[repository] = members
-		}
+	for _, row := range rows {
+		membersByRepository[row.Repository] = append(membersByRepository[row.Repository], row.TokenID)
 	}
 	return membersByRepository, nil
 }
 
-func insertPartyDeliveries(tx *gorm.DB, claim FeedPartyClaim, chosen []FeedPullRequestKey) ([]FeedPullRequestKey, error) {
-	deliveredAt := claim.DeliveredAt.UTC()
-	inserted := make([]FeedPullRequestKey, 0, len(chosen))
+func keepWaitingKeys(waiting []FeedPullRequest, chosen []FeedPullRequestKey) []FeedPullRequestKey {
+	notYetKept := make(map[FeedPullRequestKey]bool, len(waiting))
+	for _, pullRequest := range waiting {
+		notYetKept[pullRequestKey(pullRequest)] = true
+	}
+	kept := make([]FeedPullRequestKey, 0, len(chosen))
 	for _, key := range chosen {
-		var insertedRows []FeedDelivery
-		insertErr := tx.Raw(
-			`INSERT INTO feed_deliveries (token_id, repository, number, delivered_at, party) VALUES (?, ?, ?, ?, 1)
-			 ON CONFLICT DO NOTHING RETURNING repository, number`,
-			claim.TokenID, key.Repository, key.Number, deliveredAt,
-		).Scan(&insertedRows).Error
-		if insertErr != nil {
-			return nil, fmt.Errorf("insert party delivery: %w", insertErr)
+		if notYetKept[key] {
+			kept = append(kept, key)
+			delete(notYetKept, key)
 		}
-		if len(insertedRows) > 0 {
+	}
+	return kept
+}
+
+func insertPartyDeliveries(tx *gorm.DB, claim FeedPartyClaim, chosen []FeedPullRequestKey) ([]FeedPullRequestKey, error) {
+	var insertedKeys []FeedPullRequestKey
+	insertErr := tx.Raw(
+		`INSERT INTO feed_deliveries (token_id, repository, number, delivered_at, party)
+		 SELECT ?, repository, number, ?, 1 FROM feed_pull_requests WHERE (repository, number) IN ?
+		 ON CONFLICT DO NOTHING RETURNING repository, number`,
+		claim.TokenID, claim.DeliveredAt.UTC(), keyArguments(chosen),
+	).Scan(&insertedKeys).Error
+	if insertErr != nil {
+		return nil, fmt.Errorf("insert party deliveries: %w", insertErr)
+	}
+	isInserted := make(map[FeedPullRequestKey]bool, len(insertedKeys))
+	for _, key := range insertedKeys {
+		isInserted[key] = true
+	}
+	inserted := make([]FeedPullRequestKey, 0, len(insertedKeys))
+	for _, key := range chosen {
+		if isInserted[key] {
 			inserted = append(inserted, key)
 		}
 	}
