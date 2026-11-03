@@ -1,6 +1,6 @@
 # Agent PR feed — review parties — design
 
-> **Status (2026-11-03): ready for Pavlo's review (round 2: review timer and days off).** Builds on [Agent PR feed — design (v1)](2026-10-27-agent-pr-feed-design.md).
+> **Status (2026-11-03): approved by Pavlo.** Builds on [Agent PR feed — design (v1)](2026-10-27-agent-pr-feed-design.md).
 
 ## Why
 
