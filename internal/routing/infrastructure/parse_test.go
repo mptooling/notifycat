@@ -92,3 +92,69 @@ func TestParse_PathListChannelInvalidID(t *testing.T) {
 
 	require.Error(t, err)
 }
+
+func TestParse_PartyOnlyTierUnderRoutingStar(t *testing.T) {
+	_, err := parseMappings(`
+mappings:
+  acme:
+    "*":
+      channel: C0STAR00000
+    web:
+      party_reviewers: 3
+`)
+
+	require.NoError(t, err)
+}
+
+func TestParse_PartyOnlyTierWithoutRoutingStarRejected(t *testing.T) {
+	_, err := parseMappings(`
+mappings:
+  acme:
+    api:
+      channel: C0API000000
+    web:
+      party_reviewers: 3
+`)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `repo "web": sets only party keys, but no tier routes this repository`)
+}
+
+func TestParse_PartyOnlyStarRoutesNothingRejected(t *testing.T) {
+	_, err := parseMappings(`
+mappings:
+  acme:
+    "*":
+      party_reviewers: 2
+`)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `the "*" entry sets only party keys`)
+}
+
+func TestParse_PartyOnlyStarWithRoutedRepository(t *testing.T) {
+	_, err := parseMappings(`
+mappings:
+  acme:
+    "*":
+      party_deadline: 2h
+    api:
+      channel: C0API000000
+`)
+
+	require.NoError(t, err)
+}
+
+func TestParse_PartyPathOnStarRejected(t *testing.T) {
+	_, err := parseMappings(`
+mappings:
+  acme:
+    "*":
+      channel: C0STAR00000
+      paths:
+        billing: {party_reviewers: 2}
+`)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `paths are not allowed on the "*" tier`)
+}

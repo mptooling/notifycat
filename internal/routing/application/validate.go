@@ -26,6 +26,9 @@ func ValidateMappings(m map[string]domain.Org) error {
 		}
 		star, hasStar := o[domain.WildcardKey]
 		starHasChannel := hasStar && tierHasChannel(&star)
+		if hasStar && star.PartyOnly() && !hasRoutedNamedTier(o) {
+			return fmt.Errorf("mappings: org %q: the \"*\" entry sets only party keys, but no tier of the org routes a repository", org)
+		}
 		for repo, rc := range o {
 			if repo != domain.WildcardKey && !repoPattern.MatchString(repo) {
 				return fmt.Errorf("mappings: org %q: invalid repo key %q (use a bare repo name or \"*\")", org, repo)
@@ -40,7 +43,11 @@ func ValidateMappings(m map[string]domain.Org) error {
 			}
 			// Every resolvable path must yield a channel: this tier sets one
 			// (single or list), or org/* supplies it.
-			if !tierHasChannel(&rc) && !starHasChannel {
+			if rc.PartyOnly() {
+				if repo != domain.WildcardKey && !starHasChannel {
+					return fmt.Errorf("mappings: org %q repo %q: sets only party keys, but no tier routes this repository (set a channel here or in the org's \"*\" entry)", org, repo)
+				}
+			} else if !tierHasChannel(&rc) && !starHasChannel {
 				return fmt.Errorf("mappings: org %q repo %q: no channel (set channel here or in the org's \"*\" entry)", org, repo)
 			}
 			if err := validatePaths(org, repo, rc.Paths); err != nil {
@@ -79,4 +86,13 @@ func validatePaths(org, repo string, paths []domain.PathRule) error {
 // tierHasChannel reports whether a tier declares a channel in either form.
 func tierHasChannel(rc *domain.RepoConfig) bool {
 	return rc != nil && (rc.Channel != "" || len(rc.Channels) > 0)
+}
+
+func hasRoutedNamedTier(org domain.Org) bool {
+	for repo, tier := range org {
+		if repo != domain.WildcardKey && !tier.PartyOnly() {
+			return true
+		}
+	}
+	return false
 }
