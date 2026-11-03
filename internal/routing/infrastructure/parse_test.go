@@ -116,8 +116,7 @@ mappings:
       party_reviewers: 3
 `)
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), `repo "web": sets only party keys, but no tier routes this repository`)
+	require.ErrorContains(t, err, `mappings: org "acme" repo "web": sets only party keys, but no tier routes this repository`)
 }
 
 func TestParse_PartyOnlyStarRoutesNothingRejected(t *testing.T) {
@@ -128,8 +127,7 @@ mappings:
       party_reviewers: 2
 `)
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), `the "*" entry sets only party keys`)
+	require.ErrorContains(t, err, `mappings: org "acme": the "*" entry sets only party keys, but no tier of the org routes a repository`)
 }
 
 func TestParse_PartyOnlyStarWithRoutedRepository(t *testing.T) {
@@ -150,11 +148,11 @@ func TestParse_PartyPathOnStarRejected(t *testing.T) {
 mappings:
   acme:
     "*":
-      channel: C0STAR00000
       paths:
         billing: {party_reviewers: 2}
+    api:
+      channel: C0API000000
 `)
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), `paths are not allowed on the "*" tier`)
+	require.ErrorContains(t, err, `mappings: org "acme": paths are not allowed on the "*" tier`)
 }

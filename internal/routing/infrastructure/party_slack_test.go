@@ -86,7 +86,28 @@ func TestProvider_PartyOnlyEntriesLeaveSlackRoutingUnchanged(t *testing.T) {
 	for index := range slackEntries {
 		assert.Equal(t, slackEntries[index].Hash(), partyEntries[index].Hash(), "config.lock hash of %s", slackEntries[index].Key())
 	}
+}
 
-	_, err := partyProvider.Get(ctx, "beta/other")
+func TestProvider_PartyOnlyStarRoutesNothing(t *testing.T) {
+	partyProvider := providerFromDoc(t, partyDocument)
+
+	_, err := partyProvider.Get(context.Background(), "beta/other")
+
 	require.ErrorIs(t, err, domain.ErrNotFound, "a party-only star must route nothing")
+}
+
+func TestProvider_PartyOnlyPathRulesLeaveNoPathRouting(t *testing.T) {
+	provider := providerFromDoc(t, `
+mappings:
+  acme:
+    api:
+      channel: C0API000000
+      paths:
+        billing: {party_reviewers: 2}
+        tools: {party_deadline: 30m}
+`)
+
+	assert.False(t, provider.RepoHasPathRules("acme/api"))
+	assert.False(t, provider.HasPathRules())
+	assert.Equal(t, provider.BaseTargets("acme/api"), provider.TargetsForFiles("acme/api", []string{"billing/x.go"}))
 }
