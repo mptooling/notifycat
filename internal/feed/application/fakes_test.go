@@ -334,10 +334,9 @@ func (catalog *fakeCatalog) Configured(repositories []string) []string {
 type fakePartySettings struct {
 	resolution domain.PartyResolution
 	// onlyForKey, when set, makes the fake answer any other key with an empty resolution.
-	onlyForKey *domain.PullRequestKey
-	calls      int
-	keys       []domain.PullRequestKey
-	// beforeAnswer runs when the resolver is called, before it answers.
+	onlyForKey   *domain.PullRequestKey
+	calls        int
+	keys         []domain.PullRequestKey
 	beforeAnswer func()
 }
 
