@@ -613,12 +613,3 @@ func TestPollRepo_RecordWritesAtMostOncePerResolution(t *testing.T) {
 		})
 	}
 }
-
-func TestConfigPartySettings_ReturnsTheGlobalSettings(t *testing.T) {
-	settings := domain.Settings{Party: domain.PartySettings{Reviewers: 2, Deadline: 90 * time.Minute}}
-	resolver := infrastructure.NewConfigPartySettings(settings)
-
-	got := resolver.Resolve(context.Background(), domain.PullRequestKey{Repository: "acme/api", Number: 7})
-
-	assert.Equal(t, domain.PartyResolution{Settings: settings.Party}, got)
-}

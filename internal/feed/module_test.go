@@ -23,6 +23,14 @@ type noDaysOff struct{}
 
 func (noDaysOff) IsDayOff(time.Time) bool { return false }
 
+type noPartyRules struct{}
+
+func (noPartyRules) HasPartyPathRules(string) bool { return false }
+
+func (noPartyRules) PartySettings(string, []string) routingdomain.PartySettings {
+	return routingdomain.PartySettings{}
+}
+
 func TestModule_GraphResolves(t *testing.T) {
 	db := persistence.NewTestDB(t)
 
@@ -37,6 +45,8 @@ func TestModule_GraphResolves(t *testing.T) {
 			func() domain.Settings { return domain.Settings{Location: time.UTC} },
 			func() domain.DayOffCalendar { return noDaysOff{} },
 			func() routingdomain.EntryLister { return noMappings{} },
+			func() routingdomain.PartyRules { return noPartyRules{} },
+			func() routingdomain.ChangedFilesReader { return nil },
 			func() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) },
 		),
 		fx.Invoke(func(domain.Subscriptions, domain.PullRequests, domain.Recorder, domain.PullRequestCleaner, domain.WorkCalendar, domain.PollStore, domain.PartySettingsResolver) {

@@ -160,7 +160,6 @@ type PartyResolution struct {
 
 // Settings are the feed settings built from the config.
 type Settings struct {
-	Party    PartySettings
 	Location *time.Location
 }
 

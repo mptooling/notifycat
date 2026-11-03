@@ -93,18 +93,11 @@ func provideFeedSettings(cfg config.Config) feeddomain.Settings {
 	if location == nil {
 		location = time.UTC
 	}
-	reviewers := cfg.PartyReviewers
-	if reviewers < routingdomain.MinPartyReviewers {
-		reviewers = routingdomain.DefaultPartyReviewers
-	}
-	deadline := cfg.PartyDeadline
-	if deadline < routingdomain.MinPartyDeadline {
-		deadline = routingdomain.DefaultPartyDeadline
-	}
-	return feeddomain.Settings{
-		Party:    feeddomain.PartySettings{Reviewers: reviewers, Deadline: deadline},
-		Location: location,
-	}
+	return feeddomain.Settings{Location: location}
+}
+
+func providePartyRules(provider *routingapp.Provider) routingdomain.PartyRules {
+	return provider
 }
 
 func provideFeedDayOffCalendar(provider *routingapp.Provider) feeddomain.DayOffCalendar {

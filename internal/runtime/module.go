@@ -86,6 +86,8 @@ var Module = fx.Module("runtime",
 		provideEntryLister,
 		provideFeedSettings,
 		provideFeedDayOffCalendar,
+		providerFilesFetcher,
+		providePartyRules,
 		buildRouter,
 		buildDispatcher,
 		buildWebhookDispatcher,
@@ -138,6 +140,7 @@ func buildProvider(cfg config.Config, logger *slog.Logger) *routingapp.Provider 
 		DependabotFormat: cfg.DependabotFormat,
 		DeleteOnClose:    cfg.DeleteOnClose,
 		GitProvider:      cfg.GitProvider,
+		Party:            routingdomain.PartySettings{Reviewers: cfg.PartyReviewers, Deadline: cfg.PartyDeadline},
 	}
 	provider := routingapp.NewProvider(defaults, cfg.Mappings, cfg.Digest)
 	if provider.HasPathRules() && cfg.ProviderToken().Reveal() == "" {
@@ -296,8 +299,8 @@ func digestCountry(provider *routingapp.Provider) string {
 // token to read a PR's changed files; without one the router has no fetcher and
 // resolves to the repo/org tier. The validation client is scoped to startup, so
 // this builds a dedicated long-lived files fetcher.
-func buildRouter(httpClient *http.Client, cfg config.Config, provider *routingapp.Provider, logger *slog.Logger) *routingapp.Router {
-	return routingapp.NewRouter(provider, providerFilesFetcher(httpClient, cfg), logger)
+func buildRouter(provider *routingapp.Provider, files routingdomain.ChangedFilesReader, logger *slog.Logger) *routingapp.Router {
+	return routingapp.NewRouter(provider, files, logger)
 }
 
 // providerFilesFetcher builds the changed-files reader for the configured git
