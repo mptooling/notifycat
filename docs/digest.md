@@ -38,7 +38,7 @@ Both the firing time and the "stuck since before today" cutoff are evaluated in 
 
 ## Weekends and holidays
 
-**Weekends are always skipped.** Saturday and Sunday never get a digest, whatever the schedule says — there is no key to turn this off. A digest nobody reads is worse than no digest: the same PRs are still stuck on Monday and get announced then. If your cron spec deliberately targets a weekend (`0 9 * * 6`), it will never fire.
+**Weekends are always skipped.** Saturday and Sunday never get a digest, whatever the schedule says. No key turns this off. A digest nobody reads is worse than no digest: the same PRs are still stuck on Monday and get announced then. If your cron spec deliberately targets a weekend (`0 9 * * 6`), it will never fire.
 
 Public holidays need a country, because holidays vary by country and there is no sane default:
 
@@ -48,9 +48,9 @@ digest:
   country: DE               # ISO 3166-1 alpha-2; case-insensitive
 ```
 
-Both checks are evaluated in `digest.timezone`, so "Saturday" means Saturday where the team is, not in UTC.
+Notifycat evaluates both checks in `digest.timezone`, so "Saturday" means Saturday where the team is, not in UTC.
 
-**With no `country` set, holidays are not skipped** — only weekends. The server says so once at boot:
+**With no `country` set, holidays are not skipped**, only weekends. The server says so once at boot:
 
 ```
 WARN digest holidays not configured detail="digest.country is unset; weekends are skipped but public holidays are not"

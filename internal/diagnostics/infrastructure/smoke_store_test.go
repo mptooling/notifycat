@@ -33,7 +33,7 @@ func TestStoreSmokeCleanup_DeletePRRemovesTheFeedPullRequest(t *testing.T) {
 	require.NoError(t, err)
 	_, messagesErr := pullRequests.Messages(ctx, "Acme/API", smokePullRequestNumber)
 	assert.ErrorIs(t, messagesErr, persistence.ErrNotFound)
-	remaining, listErr := feedPullRequests.ChangedSince(ctx, []string{"acme/api"}, updatedAt.Add(-time.Hour))
+	remaining, listErr := feedPullRequests.ChangedSince(ctx, persistence.FeedSinceQuery{Repositories: []string{"acme/api"}, Since: updatedAt.Add(-time.Hour)})
 	require.NoError(t, listErr)
 	require.Len(t, remaining, 1, "the smoke pull request never stays in an agent's feed")
 	assert.Equal(t, 7, remaining[0].Number)

@@ -18,6 +18,8 @@ type SubscriptionStore interface {
 	DeleteRepositories(ctx context.Context, repositories []string) (int, error)
 	// Repositories returns every repository that has a subscription.
 	Repositories(ctx context.Context) ([]string, error)
+	// SetType returns how many subscriptions changed type; subscriptions that already have the type do not count.
+	SetType(ctx context.Context, tokenID string, change TypeChange) (int, error)
 }
 
 // PullRequestStore persists open pull requests for the feed.
@@ -30,13 +32,31 @@ type PullRequestStore interface {
 	DeleteRepositories(ctx context.Context, repositories []string) (int, error)
 	// Repositories returns every repository that has a stored pull request.
 	Repositories(ctx context.Context) ([]string, error)
-	ChangedSince(ctx context.Context, repositories []string, since time.Time) ([]PullRequest, error)
+	// ChangedSince returns pull requests that changed at or after Since, and those delivered to the token at or after Since.
+	ChangedSince(ctx context.Context, query SinceQuery) ([]PullRequest, error)
+	// Find returns false when the pull request is not stored.
+	Find(ctx context.Context, key PullRequestKey) (PullRequest, bool, error)
+	// ReceivedSince returns pull requests the token received, solo or party, that changed or reached it at or after Since.
+	ReceivedSince(ctx context.Context, query SinceQuery) ([]PullRequest, error)
 }
 
 // DeliveryStore records which pull requests were delivered to which token.
 type DeliveryStore interface {
 	// Claim returns only pull requests not yet delivered to the token, marking them delivered at most once.
 	Claim(ctx context.Context, claim Claim) ([]PullRequest, error)
+	// ClaimParty delivers the pull requests the turn rule lets the token take, at most once each, in one atomic step.
+	ClaimParty(ctx context.Context, claim PartyClaim) (PartyClaimResult, error)
+}
+
+// FetchStore records when tokens fetch their pull requests.
+type FetchStore interface {
+	// Record stores the fetch time of the token. It keeps a stored time that is less than FetchResolution older.
+	Record(ctx context.Context, tokenID string, fetchedAt time.Time) error
+}
+
+// PartySettingsResolver gives the party settings that apply to a pull request.
+type PartySettingsResolver interface {
+	Resolve(ctx context.Context, key PullRequestKey) (PartySettings, error)
 }
 
 // RepositoryCatalog answers which repositories the operator configured.
@@ -58,8 +78,11 @@ type Clock interface {
 // Subscriptions manages a token's repository subscriptions.
 type Subscriptions interface {
 	List(ctx context.Context, subscriber Subscriber) ([]Subscription, error)
-	// Add subscribes to the repositories and returns the full list; it adds nothing when any request is rejected.
-	Add(ctx context.Context, subscriber Subscriber, repositories []string) ([]Subscription, error)
+	// Add subscribes to the repositories with the requested type and returns the full list; it adds nothing when any request is rejected.
+	Add(ctx context.Context, subscriber Subscriber, request SubscriptionRequest) ([]Subscription, error)
+	// ChangeType sets the type of the subscriber's subscriptions (nil Repositories: every one) and returns the full list.
+	// It returns ErrInvalidType for an unknown type, ErrNoRepositories for a non-nil empty list and NotSubscribedError when a named repository is not subscribed; nothing changes then.
+	ChangeType(ctx context.Context, subscriber Subscriber, change TypeChange) ([]Subscription, error)
 	// Remove returns ErrSubscriptionNotFound when the id is not the subscriber's.
 	Remove(ctx context.Context, subscriber Subscriber, id int64) error
 	// Available returns the repositories and organizations a subscriber can subscribe to.
@@ -68,9 +91,11 @@ type Subscriptions interface {
 
 // PullRequests serves a token's feed of open pull requests.
 type PullRequests interface {
-	// Next returns pull requests not yet delivered to the subscriber and marks them delivered.
+	// Next returns pull requests not yet delivered to the subscriber and marks them delivered. It delivers party
+	// repositories by the turn rule within the cap, and records the fetch.
 	Next(ctx context.Context, subscriber Subscriber) ([]PullRequest, error)
 	// Since returns pull requests changed after the given time without marking anything delivered.
+	// On party repositories it returns only pull requests the token received.
 	Since(ctx context.Context, subscriber Subscriber, since time.Time) ([]PullRequest, error)
 }
 
@@ -92,4 +117,11 @@ type SubscriptionCleaner interface {
 // Recorder keeps the feed's pull-request store in sync with provider events.
 type Recorder interface {
 	Record(ctx context.Context, event kernel.Event) error
+}
+
+// TurnPolicy decides which waiting pull requests the fetcher may take in a party round.
+type TurnPolicy interface {
+	// Choose keeps the input order in Take. Taken counts pull requests at their cap; Waiting counts those
+	// where another member has the turn. The caller's Loads map is not changed.
+	Choose(round PartyRound) PartyDecision
 }

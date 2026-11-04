@@ -10,7 +10,7 @@ import (
 	"github.com/mptooling/notifycat/internal/feed/domain"
 )
 
-var now = time.Date(2026, 10, 28, 9, 0, 0, 0, time.UTC)
+var now = time.Date(2026, 11, 3, 10, 0, 0, 0, time.UTC)
 
 const tokenID = "fedcba9876543210fedcba9876543210"
 
@@ -19,6 +19,8 @@ var subscriber = domain.Subscriber{TokenID: tokenID, User: "alice"}
 type fakeSubscriptionStore struct {
 	subscriptions []domain.Subscription
 	addCalls      []domain.NewSubscriptions
+	setTypeCalls  []domain.TypeChange
+	setTypeErr    error
 	deleteErr     error
 	listErr       error
 	addErr        error
@@ -55,10 +57,14 @@ func (store *fakeSubscriptionStore) DeleteRepositories(_ context.Context, reposi
 }
 
 func (store *fakeSubscriptionStore) seed(repositories ...string) {
+	store.seedOfType(domain.SubscriptionTypeSolo, repositories...)
+}
+
+func (store *fakeSubscriptionStore) seedOfType(subscriptionType domain.SubscriptionType, repositories ...string) {
 	for _, repository := range repositories {
 		store.nextID++
 		store.subscriptions = append(store.subscriptions, domain.Subscription{
-			ID: store.nextID, TokenID: tokenID, Repository: repository, CreatedAt: now,
+			ID: store.nextID, TokenID: tokenID, Repository: repository, Type: subscriptionType, CreatedAt: now,
 		})
 	}
 }
@@ -108,6 +114,22 @@ func (store *fakeSubscriptionStore) Delete(_ context.Context, token string, id i
 	return domain.Subscription{}, domain.ErrSubscriptionNotFound
 }
 
+func (store *fakeSubscriptionStore) SetType(_ context.Context, token string, change domain.TypeChange) (int, error) {
+	store.setTypeCalls = append(store.setTypeCalls, change)
+	if store.setTypeErr != nil {
+		return 0, store.setTypeErr
+	}
+	changed := 0
+	for index, subscription := range store.subscriptions {
+		matches := subscription.TokenID == token && (change.Repositories == nil || slices.Contains(change.Repositories, subscription.Repository))
+		if matches && subscription.Type != change.Type {
+			store.subscriptions[index].Type = change.Type
+			changed++
+		}
+	}
+	return changed, nil
+}
+
 type deleteCall struct {
 	repository string
 	number     int
@@ -118,7 +140,9 @@ type fakePullRequestStore struct {
 	deletes               []deleteCall
 	repositories          []string
 	changed               []domain.PullRequest
-	changedCalls          []changedCall
+	changedCalls          []domain.SinceQuery
+	received              []domain.PullRequest
+	receivedCalls         []domain.SinceQuery
 	deleteAllCalls        int
 	deletedRepositories   [][]string
 	removedCount          int
@@ -127,11 +151,27 @@ type fakePullRequestStore struct {
 	repositoryErr         error
 	deleteAllErr          error
 	deleteRepositoriesErr error
+	stored                *domain.PullRequest
+	findErr               error
+	findCalls             int
+	findKeys              []domain.PullRequestKey
 }
 
-type changedCall struct {
-	repositories []string
-	since        time.Time
+func (store *fakePullRequestStore) Find(_ context.Context, key domain.PullRequestKey) (domain.PullRequest, bool, error) {
+	store.findCalls++
+	store.findKeys = append(store.findKeys, key)
+	if store.findErr != nil {
+		return domain.PullRequest{}, false, store.findErr
+	}
+	if store.stored == nil {
+		return domain.PullRequest{}, false, nil
+	}
+	return *store.stored, true, nil
+}
+
+func (store *fakePullRequestStore) ReceivedSince(_ context.Context, query domain.SinceQuery) ([]domain.PullRequest, error) {
+	store.receivedCalls = append(store.receivedCalls, query)
+	return store.received, nil
 }
 
 func (store *fakePullRequestStore) Upsert(_ context.Context, pullRequest domain.PullRequest) error {
@@ -170,19 +210,67 @@ func (store *fakePullRequestStore) Repositories(context.Context) ([]string, erro
 	return store.repositories, store.repositoryErr
 }
 
-func (store *fakePullRequestStore) ChangedSince(_ context.Context, repositories []string, since time.Time) ([]domain.PullRequest, error) {
-	store.changedCalls = append(store.changedCalls, changedCall{repositories: repositories, since: since})
+func (store *fakePullRequestStore) ChangedSince(_ context.Context, query domain.SinceQuery) ([]domain.PullRequest, error) {
+	store.changedCalls = append(store.changedCalls, query)
 	return store.changed, nil
 }
 
+type callLog struct {
+	calls []string
+}
+
+func (recorded *callLog) add(call string) {
+	if recorded != nil {
+		recorded.calls = append(recorded.calls, call)
+	}
+}
+
 type fakeDeliveryStore struct {
-	claims  []domain.Claim
-	claimed []domain.PullRequest
+	claims      []domain.Claim
+	claimed     []domain.PullRequest
+	claimErr    error
+	partyClaims []domain.PartyClaim
+	partyResult domain.PartyClaimResult
+	partyErr    error
+	calls       *callLog
 }
 
 func (store *fakeDeliveryStore) Claim(_ context.Context, claim domain.Claim) ([]domain.PullRequest, error) {
+	store.calls.add("claim")
 	store.claims = append(store.claims, claim)
+	if store.claimErr != nil {
+		return nil, store.claimErr
+	}
 	return store.claimed, nil
+}
+
+func (store *fakeDeliveryStore) ClaimParty(_ context.Context, claim domain.PartyClaim) (domain.PartyClaimResult, error) {
+	store.calls.add("claim party")
+	store.partyClaims = append(store.partyClaims, claim)
+	if store.partyErr != nil {
+		return domain.PartyClaimResult{}, store.partyErr
+	}
+	return store.partyResult, nil
+}
+
+type fetchRecord struct {
+	tokenID   string
+	fetchedAt time.Time
+}
+
+type fakeFetchStore struct {
+	records []fetchRecord
+	err     error
+	calls   *callLog
+}
+
+func (store *fakeFetchStore) Record(_ context.Context, token string, fetchedAt time.Time) error {
+	store.calls.add("record fetch")
+	if store.err != nil {
+		return store.err
+	}
+	store.records = append(store.records, fetchRecord{tokenID: token, fetchedAt: fetchedAt})
+	return nil
 }
 
 type fakeCatalog struct {
@@ -211,13 +299,36 @@ func (catalog *fakeCatalog) Configured(repositories []string) []string {
 	return configured
 }
 
-type fakeClock struct {
-	now time.Time
+type fakePartySettings struct {
+	settings domain.PartySettings
+	err      error
+	calls    int
+	keys     []domain.PullRequestKey
 }
 
-func (clock *fakeClock) Now() time.Time { return clock.now }
+func (resolver *fakePartySettings) Resolve(_ context.Context, key domain.PullRequestKey) (domain.PartySettings, error) {
+	resolver.calls++
+	resolver.keys = append(resolver.keys, key)
+	return resolver.settings, resolver.err
+}
+
+type fakeClock struct {
+	now  time.Time
+	tick time.Duration
+}
+
+func (clock *fakeClock) Now() time.Time {
+	current := clock.now
+	clock.now = clock.now.Add(clock.tick)
+	return current
+}
 
 func captureLogger() (*slog.Logger, *bytes.Buffer) {
 	buffer := &bytes.Buffer{}
 	return slog.New(slog.NewTextHandler(buffer, nil)), buffer
+}
+
+func captureDebugLogger() (*slog.Logger, *bytes.Buffer) {
+	buffer := &bytes.Buffer{}
+	return slog.New(slog.NewTextHandler(buffer, &slog.HandlerOptions{Level: slog.LevelDebug})), buffer
 }

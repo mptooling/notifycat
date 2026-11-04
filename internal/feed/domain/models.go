@@ -16,6 +16,7 @@ type Subscription struct {
 	ID         int64
 	TokenID    string
 	Repository string
+	Type       SubscriptionType
 	CreatedAt  time.Time
 }
 
@@ -32,6 +33,7 @@ type PullRequest struct {
 	HeadSHA      string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+	Party        PartyState
 }
 
 // ConfiguredRepositories is what a token can subscribe to.
@@ -42,10 +44,17 @@ type ConfiguredRepositories struct {
 	Organizations []string
 }
 
+// SubscriptionRequest asks to subscribe to repositories; an empty Type means solo.
+type SubscriptionRequest struct {
+	Repositories []string
+	Type         SubscriptionType
+}
+
 // NewSubscriptions asks the store to subscribe a token to repositories.
 type NewSubscriptions struct {
 	TokenID      string
 	Repositories []string
+	Type         SubscriptionType
 	CreatedAt    time.Time
 }
 
@@ -69,9 +78,18 @@ type PullRequestsParams struct {
 	Subscriptions SubscriptionStore
 	PullRequests  PullRequestStore
 	Deliveries    DeliveryStore
+	Fetches       FetchStore
 	Catalog       RepositoryCatalog
 	Clock         Clock
 	Logger        *slog.Logger
+}
+
+// RecorderParams are the dependencies of the recorder.
+type RecorderParams struct {
+	PullRequests  PullRequestStore
+	Catalog       RepositoryCatalog
+	Clock         Clock
+	PartySettings PartySettingsResolver
 }
 
 // RemovedSubscriptions reports what a subscription cleanup removed.
@@ -80,4 +98,92 @@ type RemovedSubscriptions struct {
 	Count int
 	// Repositories are the repositories whose subscriptions were removed, sorted.
 	Repositories []string
+}
+
+// PullRequestKey names one pull request.
+type PullRequestKey struct {
+	Repository string
+	Number     int
+}
+
+// PartyState is the party record of a pull request. A zero DeadlineAt means the timer ran out.
+type PartyState struct {
+	Reviewers  int
+	RecordedAt time.Time
+	DeadlineAt time.Time
+}
+
+// PartyMember is one token inside one repository.
+type PartyMember struct {
+	TokenID    string
+	Repository string
+}
+
+// WaitingPullRequest is a pull request a party fetcher could take.
+type WaitingPullRequest struct {
+	Key             PullRequestKey
+	Party           PartyState
+	PartyDeliveries int
+	// Candidates are the other members of the repository, not away, without a delivery of this pull request.
+	Candidates []string
+}
+
+// PartyRound is the input of one party claim.
+type PartyRound struct {
+	TokenID      string
+	Now          time.Time
+	PullRequests []WaitingPullRequest
+	Loads        map[PartyMember]int
+}
+
+// PartyDecision is the outcome of one party claim.
+type PartyDecision struct {
+	Take    []PullRequestKey
+	Taken   int
+	Waiting int
+}
+
+// PartySettings are the global review party settings.
+type PartySettings struct {
+	Reviewers int
+	Deadline  time.Duration
+}
+
+// Settings are the feed settings built from the config.
+type Settings struct {
+	Party PartySettings
+}
+
+// TypeChange sets the type of a token's subscriptions; nil Repositories means every subscription.
+type TypeChange struct {
+	Repositories []string
+	Type         SubscriptionType
+}
+
+// SinceQuery asks for the pull requests of the repositories that changed, or reached the token, at or after Since.
+type SinceQuery struct {
+	TokenID      string
+	Repositories []string
+	Since        time.Time
+}
+
+// PartyClaim asks the store to deliver party pull requests to a token.
+type PartyClaim struct {
+	TokenID      string
+	Repositories []string
+	DeliveredAt  time.Time
+	Day          string
+	ActiveSince  time.Time
+}
+
+// LoadDay returns the UTC date of the moment, so the party loads start again at 00:00 UTC.
+func LoadDay(moment time.Time) string {
+	return moment.UTC().Format(DayLayout)
+}
+
+// PartyClaimResult is what a party claim delivered and how the turn rule judged the rest.
+type PartyClaimResult struct {
+	Delivered []PullRequest
+	Taken     int
+	Waiting   int
 }

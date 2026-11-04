@@ -18,16 +18,18 @@ import (
 func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
 
 type fakeSubscriptions struct {
-	subscriptions   []domain.Subscription
-	available       domain.ConfiguredRepositories
-	err             error
-	listCalls       int
-	addCalls        int
-	removeCalls     int
-	availableCalls  int
-	gotSubscriber   domain.Subscriber
-	gotRepositories []string
-	gotID           int64
+	subscriptions  []domain.Subscription
+	available      domain.ConfiguredRepositories
+	err            error
+	listCalls      int
+	addCalls       int
+	removeCalls    int
+	availableCalls int
+	gotSubscriber  domain.Subscriber
+	gotRequest     domain.SubscriptionRequest
+	gotChange      domain.TypeChange
+	changeCalls    int
+	gotID          int64
 }
 
 func (fake *fakeSubscriptions) List(_ context.Context, subscriber domain.Subscriber) ([]domain.Subscription, error) {
@@ -36,10 +38,17 @@ func (fake *fakeSubscriptions) List(_ context.Context, subscriber domain.Subscri
 	return fake.subscriptions, fake.err
 }
 
-func (fake *fakeSubscriptions) Add(_ context.Context, subscriber domain.Subscriber, repositories []string) ([]domain.Subscription, error) {
+func (fake *fakeSubscriptions) Add(_ context.Context, subscriber domain.Subscriber, request domain.SubscriptionRequest) ([]domain.Subscription, error) {
 	fake.addCalls++
 	fake.gotSubscriber = subscriber
-	fake.gotRepositories = repositories
+	fake.gotRequest = request
+	return fake.subscriptions, fake.err
+}
+
+func (fake *fakeSubscriptions) ChangeType(_ context.Context, subscriber domain.Subscriber, change domain.TypeChange) ([]domain.Subscription, error) {
+	fake.changeCalls++
+	fake.gotSubscriber = subscriber
+	fake.gotChange = change
 	return fake.subscriptions, fake.err
 }
 

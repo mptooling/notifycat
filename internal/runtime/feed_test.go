@@ -16,6 +16,7 @@ import (
 	"github.com/mptooling/notifycat/internal/kernel"
 	notificationapp "github.com/mptooling/notifycat/internal/notification/application"
 	"github.com/mptooling/notifycat/internal/platform/config"
+	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
 )
 
 var (
@@ -267,4 +268,16 @@ func TestCleanFeed_SubscriptionFailureDoesNotSkipPullRequests(t *testing.T) {
 	cleanFeed(config.Config{AgentAPIEnabled: true}, pullRequests, &fakeSubscriptionCleaner{err: errRecord}, discardLogger())
 
 	assert.Equal(t, []string{"remove_unconfigured"}, pullRequests.calls)
+}
+
+func TestProvideFeedSettings_UsesTheConfiguredPartySettings(t *testing.T) {
+	settings := provideFeedSettings(config.Config{PartyReviewers: 2, PartyDeadline: 30 * time.Minute})
+
+	assert.Equal(t, feeddomain.PartySettings{Reviewers: 2, Deadline: 30 * time.Minute}, settings.Party)
+}
+
+func TestProvideFeedSettings_FallsBackToPartyDefaults(t *testing.T) {
+	settings := provideFeedSettings(config.Config{})
+
+	assert.Equal(t, feeddomain.PartySettings{Reviewers: routingdomain.DefaultPartyReviewers, Deadline: routingdomain.DefaultPartyDeadline}, settings.Party)
 }

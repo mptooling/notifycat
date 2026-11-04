@@ -58,7 +58,7 @@ Nine domains live under `internal/<domain>/`, each with three layers (`domain/`,
 | `maintenance` | Background housekeeping: delete stale message rows; reconcile closed PRs; relocate messages after a channel change |
 | `diagnostics` | Operator tooling: `notifycat-doctor`, `notifycat-config`, smoke test |
 | `access` | Agent API access: admin key, one-hour single-use invites, bcrypt-hashed agent tokens |
-| `feed` | Agent PR feed: records open PRs from webhooks, per-token subscriptions, serves undelivered open PRs under `/api/v1/subs*`; removes stale feed PRs and subscriptions to unmapped repositories (except `*`) at startup |
+| `feed` | Agent PR feed: records open PRs from webhooks, per-token subscriptions, serves undelivered open PRs under `/api/v1/subs*`, and removes stale feed PRs and subscriptions to unmapped repositories (except `*`) at startup. Review parties: party tokens of one repository share its PRs by a cap, turns, a daily load and a timer |
 
 The shared kernel (`internal/kernel`) holds pure value objects (`PR`, `Event`, `Sender`, `Review`) and GitHub event/action/review-state enums — stdlib only. The shared platform (`internal/platform/`) holds domain-agnostic clients: `config`, `persistence` (GORM/SQLite), `slack`, `github`, `httpx`, and `security` (HMAC `SignatureVerifier` with `GitHubVerifier`/`SlackVerifier` adapters).
 
@@ -108,7 +108,7 @@ Routing comes from the **`mappings:` section of the declarative `config.yaml`**,
 
 ### Persistence
 
-`internal/platform/persistence` is GORM over SQLite. Tables: `pull_requests` (one row per PR) and `slack_messages` (PR ↔ Slack message timestamp), plus `code_reviews` (review sessions), `scheduled_notifications` (the queue of the `scheduled` notification strategy, one row per (PR, channel)), and `access_invites` / `access_tokens` (bcrypt-hashed agent invites and tokens). It also has `feed_subscriptions`, `feed_pull_requests` and `feed_deliveries` (the agent PR feed). Migrations are embedded goose SQL applied at server startup (or via `notifycat-migrate`).
+`internal/platform/persistence` is GORM over SQLite. Tables: `pull_requests` (one row per PR) and `slack_messages` (PR ↔ Slack message timestamp), plus `code_reviews` (review sessions), `scheduled_notifications` (the queue of the `scheduled` notification strategy, one row per (PR, channel)), and `access_invites` / `access_tokens` (bcrypt-hashed agent invites and tokens). The agent PR feed has `feed_subscriptions`, `feed_pull_requests`, and `feed_deliveries`. It also has `feed_party_loads` (party deliveries per token, repository, and day) and `feed_fetches` (the last fetch of each token). Migrations are embedded goose SQL applied at server startup (or via `notifycat-migrate`).
 
 The `maintenance` domain deletes stale `slack_messages` rows older than `cleanup.message_ttl_days` (config.yaml) once at startup and every 24h. It only deletes the DB row — never the Slack message.
 

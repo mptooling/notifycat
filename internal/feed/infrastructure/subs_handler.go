@@ -14,11 +14,18 @@ import (
 
 type addSubscriptionsRequest struct {
 	Repositories []string `json:"repositories"`
+	Type         string   `json:"type"`
+}
+
+type changeSubscriptionsRequest struct {
+	Repositories json.RawMessage `json:"repositories"`
+	Type         string          `json:"type"`
 }
 
 type subscriptionResponse struct {
 	ID         int64  `json:"id"`
 	Repository string `json:"repository"`
+	Type       string `json:"type"`
 	CreatedAt  string `json:"created_at"`
 }
 
@@ -26,7 +33,7 @@ type listSubscriptionsResponse struct {
 	Subscriptions []subscriptionResponse `json:"subscriptions"`
 }
 
-type unknownRepositoryResponse struct {
+type repositoriesErrorResponse struct {
 	Error        string   `json:"error"`
 	Repositories []string `json:"repositories"`
 }
@@ -56,30 +63,65 @@ func (handler *subsHandler) add(w http.ResponseWriter, request *http.Request) {
 		writeUnauthorized(w)
 		return
 	}
-	body, ok := decodeAddSubscriptions(w, request)
+	body, ok := decodeSubscriptionsBody[addSubscriptionsRequest](w, request)
 	if !ok {
 		httpx.WriteError(w, http.StatusBadRequest, string(domain.ErrorCodeInvalidBody))
 		return
 	}
-	subscriptions, err := handler.subscriptions.Add(request.Context(), subscriber, body.Repositories)
-	if handler.writeAddError(w, request, err) {
+	subscriptions, err := handler.subscriptions.Add(request.Context(), subscriber, domain.SubscriptionRequest{
+		Repositories: body.Repositories,
+		Type:         domain.SubscriptionType(body.Type),
+	})
+	if handler.writeSubscriptionsError(w, request, err) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, toListSubscriptionsResponse(subscriptions))
 }
 
-func (handler *subsHandler) writeAddError(w http.ResponseWriter, request *http.Request, err error) bool {
+func (handler *subsHandler) change(w http.ResponseWriter, request *http.Request) {
+	subscriber, ok := subscriberFrom(request)
+	if !ok {
+		writeUnauthorized(w)
+		return
+	}
+	body, ok := decodeSubscriptionsBody[changeSubscriptionsRequest](w, request)
+	if !ok {
+		httpx.WriteError(w, http.StatusBadRequest, string(domain.ErrorCodeInvalidBody))
+		return
+	}
+	repositories, ok := decodeChangeRepositories(body.Repositories)
+	if !ok {
+		httpx.WriteError(w, http.StatusBadRequest, string(domain.ErrorCodeInvalidBody))
+		return
+	}
+	change := domain.TypeChange{Repositories: repositories, Type: domain.SubscriptionType(body.Type)}
+	subscriptions, err := handler.subscriptions.ChangeType(request.Context(), subscriber, change)
+	if handler.writeSubscriptionsError(w, request, err) {
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toListSubscriptionsResponse(subscriptions))
+}
+
+func (handler *subsHandler) writeSubscriptionsError(w http.ResponseWriter, request *http.Request, err error) bool {
 	var unknown *domain.UnknownRepositoriesError
+	var notSubscribed *domain.NotSubscribedError
 	switch {
 	case err == nil:
 		return false
 	case errors.Is(err, domain.ErrNoRepositories):
 		httpx.WriteError(w, http.StatusBadRequest, string(domain.ErrorCodeInvalidBody))
 	case errors.As(err, &unknown):
-		httpx.WriteJSON(w, http.StatusBadRequest, unknownRepositoryResponse{
+		httpx.WriteJSON(w, http.StatusBadRequest, repositoriesErrorResponse{
 			Error:        string(domain.ErrorCodeUnknownRepository),
 			Repositories: unknown.Repositories,
 		})
+	case errors.As(err, &notSubscribed):
+		httpx.WriteJSON(w, http.StatusBadRequest, repositoriesErrorResponse{
+			Error:        string(domain.ErrorCodeNotSubscribed),
+			Repositories: notSubscribed.Repositories,
+		})
+	case errors.Is(err, domain.ErrInvalidType):
+		httpx.WriteError(w, http.StatusBadRequest, string(domain.ErrorCodeInvalidType))
 	case errors.Is(err, domain.ErrTooManySubscriptions):
 		httpx.WriteError(w, http.StatusBadRequest, string(domain.ErrorCodeTooManySubscriptions))
 	default:
@@ -111,8 +153,19 @@ func (handler *subsHandler) remove(w http.ResponseWriter, request *http.Request)
 	httpx.WriteNoContent(w)
 }
 
-func decodeAddSubscriptions(w http.ResponseWriter, request *http.Request) (addSubscriptionsRequest, bool) {
-	var body addSubscriptionsRequest
+func decodeChangeRepositories(raw json.RawMessage) ([]string, bool) {
+	if raw == nil {
+		return nil, true
+	}
+	var repositories []string
+	if err := json.Unmarshal(raw, &repositories); err != nil || repositories == nil {
+		return nil, false
+	}
+	return repositories, true
+}
+
+func decodeSubscriptionsBody[Body any](w http.ResponseWriter, request *http.Request) (Body, bool) {
+	var body Body
 	decoder := json.NewDecoder(http.MaxBytesReader(w, request.Body, domain.MaxRequestBodyBytes))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&body); err != nil {
@@ -130,6 +183,7 @@ func toListSubscriptionsResponse(subscriptions []domain.Subscription) listSubscr
 		response.Subscriptions = append(response.Subscriptions, subscriptionResponse{
 			ID:         subscription.ID,
 			Repository: subscription.Repository,
+			Type:       string(subscription.Type),
 			CreatedAt:  formatTime(subscription.CreatedAt),
 		})
 	}

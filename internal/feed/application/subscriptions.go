@@ -35,8 +35,15 @@ func (subscriptions *Subscriptions) List(ctx context.Context, subscriber domain.
 }
 
 // Add implements domain.Subscriptions.
-func (subscriptions *Subscriptions) Add(ctx context.Context, subscriber domain.Subscriber, repositories []string) ([]domain.Subscription, error) {
-	requested := normalizeRepositories(repositories)
+func (subscriptions *Subscriptions) Add(ctx context.Context, subscriber domain.Subscriber, request domain.SubscriptionRequest) ([]domain.Subscription, error) {
+	subscriptionType := request.Type
+	if subscriptionType == "" {
+		subscriptionType = domain.SubscriptionTypeSolo
+	}
+	if !subscriptionType.Valid() {
+		return nil, domain.ErrInvalidType
+	}
+	requested := normalizeRepositories(request.Repositories)
 	if len(requested) == 0 {
 		return nil, domain.ErrNoRepositories
 	}
@@ -55,6 +62,7 @@ func (subscriptions *Subscriptions) Add(ctx context.Context, subscriber domain.S
 		added, err := subscriptions.store.Add(ctx, domain.NewSubscriptions{
 			TokenID:      subscriber.TokenID,
 			Repositories: newRepositories,
+			Type:         subscriptionType,
 			CreatedAt:    subscriptions.clock.Now().UTC(),
 		})
 		if err != nil {
@@ -63,6 +71,35 @@ func (subscriptions *Subscriptions) Add(ctx context.Context, subscriber domain.S
 		if added > 0 {
 			subscriptions.logger.InfoContext(ctx, "feed subscriptions added", "user", subscriber.User, "token_id", subscriber.TokenID, "count", added)
 		}
+	}
+	return subscriptions.List(ctx, subscriber)
+}
+
+// ChangeType implements domain.Subscriptions.
+func (subscriptions *Subscriptions) ChangeType(ctx context.Context, subscriber domain.Subscriber, change domain.TypeChange) ([]domain.Subscription, error) {
+	if !change.Type.Valid() {
+		return nil, domain.ErrInvalidType
+	}
+	if change.Repositories != nil {
+		change.Repositories = normalizeRepositories(change.Repositories)
+		if len(change.Repositories) == 0 {
+			return nil, domain.ErrNoRepositories
+		}
+		existing, err := subscriptions.store.List(ctx, subscriber.TokenID)
+		if err != nil {
+			return nil, fmt.Errorf("list subscriptions: %w", err)
+		}
+		if missing := repositoriesNotSubscribed(change.Repositories, existing); len(missing) > 0 {
+			slices.Sort(missing)
+			return nil, &domain.NotSubscribedError{Repositories: missing}
+		}
+	}
+	changed, err := subscriptions.store.SetType(ctx, subscriber.TokenID, change)
+	if err != nil {
+		return nil, fmt.Errorf("change subscription type: %w", err)
+	}
+	if changed > 0 {
+		subscriptions.logger.InfoContext(ctx, "feed subscriptions changed", "user", subscriber.User, "token_id", subscriber.TokenID, "type", string(change.Type), "count", changed)
 	}
 	return subscriptions.List(ctx, subscriber)
 }

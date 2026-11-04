@@ -19,10 +19,12 @@ import (
 	"gorm.io/gorm"
 
 	accessdomain "github.com/mptooling/notifycat/internal/access/domain"
+	feeddomain "github.com/mptooling/notifycat/internal/feed/domain"
 	"github.com/mptooling/notifycat/internal/platform/config"
 	"github.com/mptooling/notifycat/internal/platform/persistence"
 	routingapp "github.com/mptooling/notifycat/internal/routing/application"
 	routingdomain "github.com/mptooling/notifycat/internal/routing/domain"
+	"github.com/mptooling/notifycat/internal/runtime"
 )
 
 const (
@@ -48,6 +50,30 @@ func (locked *lockedBuffer) String() string {
 	return locked.buffer.String()
 }
 
+type movingClock struct {
+	start   time.Time
+	started time.Time
+}
+
+func (clock *movingClock) Now() time.Time {
+	return clock.start.Add(time.Since(clock.started)).UTC()
+}
+
+func weekdayClock() *movingClock {
+	return &movingClock{start: time.Date(2026, 11, 3, 10, 0, 0, 0, time.UTC), started: time.Now()}
+}
+
+func buildFeedApp(t *testing.T, cfg config.Config, clock feeddomain.Clock, options ...fx.Option) (*httptest.Server, *runtime.AdminServer) {
+	t.Helper()
+
+	feedClock := fx.Decorate(func(feeddomain.Clock) feeddomain.Clock { return clock })
+	return buildAgentAPIApp(t, cfg, append([]fx.Option{feedClock}, options...)...)
+}
+
+func sinceQuery(clock feeddomain.Clock) string {
+	return "?since=" + clock.Now().Truncate(time.Second).Format(time.RFC3339)
+}
+
 type feedPullRequest struct {
 	Repository string `json:"repository"`
 	Number     int    `json:"number"`
@@ -71,18 +97,22 @@ func feedConfig(t *testing.T, agentAPIEnabled bool) config.Config {
 }
 
 func pullRequestEvent(action, headSHA string) string {
+	return numberedPullRequestEvent(action, 42, headSHA)
+}
+
+func numberedPullRequestEvent(action string, number int, headSHA string) string {
 	return fmt.Sprintf(`{
 		"action": %q,
 		"repository": {"full_name": %q},
 		"pull_request": {
-			"number": 42, "title": "Retry failed deliveries", "body": "Adds a retry loop.",
-			"html_url": "https://github.com/acme/api/pull/42",
+			"number": %d, "title": "Retry failed deliveries", "body": "Adds a retry loop.",
+			"html_url": %q,
 			"user": {"login": "bob", "id": 1001}, "draft": false, "merged": false,
 			"created_at": "2026-10-28T09:00:00Z",
 			"head": {"sha": %q, "ref": "feature/retries"},
 			"base": {"ref": "main"}
 		}
-	}`, action, feedRepository, headSHA)
+	}`, action, feedRepository, number, fmt.Sprintf("https://github.com/%s/pull/%d", feedRepository, number), headSHA)
 }
 
 func deliverPullRequestEvent(t *testing.T, public *httptest.Server, cfg config.Config, payload string) int {
@@ -108,10 +138,18 @@ func listFeed(t *testing.T, public *httptest.Server, query string, tokenAuth map
 	return listed.PullRequests
 }
 
-func redeemAgentToken(t *testing.T, public, admin *httptest.Server, adminAuth map[string]string) string {
+func pullRequestNumbers(pullRequests []feedPullRequest) []int {
+	numbers := make([]int, 0, len(pullRequests))
+	for _, pullRequest := range pullRequests {
+		numbers = append(numbers, pullRequest.Number)
+	}
+	return numbers
+}
+
+func redeemAgentToken(t *testing.T, public, admin *httptest.Server, adminAuth map[string]string, user string) string {
 	t.Helper()
 
-	createStatus, createBody := request(t, admin, http.MethodPost, "/admin/v1/invites", `{"user":"alice"}`, adminAuth)
+	createStatus, createBody := request(t, admin, http.MethodPost, "/admin/v1/invites", fmt.Sprintf(`{"user":%q}`, user), adminAuth)
 	require.Equal(t, http.StatusCreated, createStatus)
 	var invite struct {
 		Invite string `json:"invite"`
@@ -132,13 +170,14 @@ func TestIntegration_AgentFeedFlow(t *testing.T) {
 	cfg := feedConfig(t, true)
 	logged := &lockedBuffer{}
 	debugLogger := slog.New(slog.NewTextHandler(logged, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	public, adminServer := buildAgentAPIApp(t, cfg, fx.Replace(debugLogger))
+	clock := weekdayClock()
+	public, adminServer := buildFeedApp(t, cfg, clock, fx.Replace(debugLogger))
 	require.NotNil(t, adminServer)
 	admin := httptest.NewServer(adminServer.Handler)
 	t.Cleanup(admin.Close)
 	adminAuth := map[string]string{"Authorization": "Bearer " + testAdminKey}
 
-	token := redeemAgentToken(t, public, admin, adminAuth)
+	token := redeemAgentToken(t, public, admin, adminAuth, "alice")
 	credential, err := accessdomain.ParseCredential(token, accessdomain.TokenPrefix)
 	require.NoError(t, err)
 	tokenAuth := map[string]string{"Authorization": "Bearer " + token}
@@ -151,7 +190,7 @@ func TestIntegration_AgentFeedFlow(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(subscribeBody), &subscribed))
 	require.Len(t, subscribed.Subscriptions, 1)
 	require.Equal(t, feedRepository, subscribed.Subscriptions[0].Repository)
-	sinceBeforeOpenedQuery := "?since=" + time.Now().UTC().Truncate(time.Second).Format(time.RFC3339)
+	sinceBeforeOpenedQuery := sinceQuery(clock)
 
 	require.Equal(t, http.StatusOK, deliverPullRequestEvent(t, public, cfg, pullRequestEvent("opened", openedHeadSHA)))
 	opened := listFeed(t, public, "", tokenAuth)
@@ -184,6 +223,129 @@ func TestIntegration_AgentFeedFlow(t *testing.T) {
 	assert.NotContains(t, logged.String(), credential.Secret)
 }
 
+func TestIntegration_ReviewPartyDeliversWithinTheCap(t *testing.T) {
+	cfg := feedConfig(t, true)
+	logged := &lockedBuffer{}
+	clock := weekdayClock()
+	var db *gorm.DB
+	public, adminServer := buildFeedApp(t, cfg, clock, fx.Replace(slog.New(slog.NewTextHandler(logged, nil))), fx.Populate(&db))
+	require.NotNil(t, adminServer)
+	admin := httptest.NewServer(adminServer.Handler)
+	t.Cleanup(admin.Close)
+	adminAuth := map[string]string{"Authorization": "Bearer " + testAdminKey}
+	firstMember := map[string]string{"Authorization": "Bearer " + redeemAgentToken(t, public, admin, adminAuth, "alice")}
+	secondMember := map[string]string{"Authorization": "Bearer " + redeemAgentToken(t, public, admin, adminAuth, "bob")}
+	for _, member := range []map[string]string{firstMember, secondMember} {
+		status, _ := request(t, public, http.MethodPost, "/api/v1/subs", `{"repositories":["acme/api"],"type":"party"}`, member)
+		require.Equal(t, http.StatusOK, status)
+		require.Empty(t, listFeed(t, public, "", member))
+	}
+	sinceBeforeOpenedQuery := sinceQuery(clock)
+	require.Equal(t, http.StatusOK, deliverPullRequestEvent(t, public, cfg, pullRequestEvent("opened", openedHeadSHA)))
+
+	firstDelivered := listFeed(t, public, "", firstMember)
+	secondDelivered := listFeed(t, public, "", secondMember)
+	firstReceived := listFeed(t, public, sinceBeforeOpenedQuery, firstMember)
+	secondReceived := listFeed(t, public, sinceBeforeOpenedQuery, secondMember)
+
+	opened := []feedPullRequest{{Repository: feedRepository, Number: 42, HeadSHA: openedHeadSHA}}
+	assert.Equal(t, opened, firstDelivered)
+	assert.Empty(t, secondDelivered, "the cap of one party review is taken")
+	assert.Equal(t, opened, firstReceived)
+	assert.Empty(t, secondReceived, "a since read on a party repository returns only what the token received")
+	var fetchedTokens int64
+	require.NoError(t, db.Table("feed_fetches").Count(&fetchedTokens).Error)
+	assert.Equal(t, int64(2), fetchedTokens)
+	assert.Regexp(t, `msg="feed pull requests delivered" user=alice token_id=[0-9a-f]+ count=1 party=1`, logged.String())
+}
+
+func TestIntegration_ReviewPartyFlow(t *testing.T) {
+	cfg := feedConfig(t, true)
+	logged := &lockedBuffer{}
+	clock := weekdayClock()
+	public, adminServer := buildFeedApp(t, cfg, clock, fx.Replace(slog.New(slog.NewTextHandler(logged, nil))))
+	require.NotNil(t, adminServer)
+	admin := httptest.NewServer(adminServer.Handler)
+	t.Cleanup(admin.Close)
+	adminAuth := map[string]string{"Authorization": "Bearer " + testAdminKey}
+	alice := map[string]string{"Authorization": "Bearer " + redeemAgentToken(t, public, admin, adminAuth, "alice")}
+	bob := map[string]string{"Authorization": "Bearer " + redeemAgentToken(t, public, admin, adminAuth, "bob")}
+	carol := map[string]string{"Authorization": "Bearer " + redeemAgentToken(t, public, admin, adminAuth, "carol")}
+	subscribeBodies := []struct {
+		auth map[string]string
+		body string
+	}{
+		{alice, `{"repositories":["acme/api"],"type":"party"}`},
+		{bob, `{"repositories":["acme/api"],"type":"party"}`},
+		{carol, `{"repositories":["acme/api"]}`},
+	}
+	for _, subscribe := range subscribeBodies {
+		status, _ := request(t, public, http.MethodPost, "/api/v1/subs", subscribe.body, subscribe.auth)
+		require.Equal(t, http.StatusOK, status)
+		require.Empty(t, listFeed(t, public, "", subscribe.auth))
+	}
+	sinceBeforeOpenedQuery := sinceQuery(clock)
+
+	require.Equal(t, http.StatusOK, deliverPullRequestEvent(t, public, cfg, numberedPullRequestEvent("opened", 42, openedHeadSHA)))
+	aliceFirst := pullRequestNumbers(listFeed(t, public, "", alice))
+	bobFirst := pullRequestNumbers(listFeed(t, public, "", bob))
+	carolFirst := pullRequestNumbers(listFeed(t, public, "", carol))
+	require.Equal(t, http.StatusOK, deliverPullRequestEvent(t, public, cfg, numberedPullRequestEvent("opened", 43, openedHeadSHA)))
+	aliceSecond := pullRequestNumbers(listFeed(t, public, "", alice))
+	bobSecond := pullRequestNumbers(listFeed(t, public, "", bob))
+	aliceReceived := pullRequestNumbers(listFeed(t, public, sinceBeforeOpenedQuery, alice))
+	patchStatus, patchBody := request(t, public, http.MethodPatch, "/api/v1/subs", `{"repositories":["acme/api"],"type":"solo"}`, alice)
+	aliceSolo := pullRequestNumbers(listFeed(t, public, "", alice))
+
+	assert.Equal(t, []int{42}, aliceFirst)
+	assert.Empty(t, bobFirst, "the cap of one party review is taken by alice")
+	assert.Equal(t, []int{42}, carolFirst, "a solo subscriber still gets every pull request")
+	assert.Equal(t, []int{}, aliceSecond, "alice has load 1 and bob has load 0, so it is bob's turn")
+	assert.Equal(t, []int{43}, bobSecond)
+	assert.Equal(t, []int{42}, aliceReceived, "a since read returns only what alice received")
+	assert.Equal(t, http.StatusOK, patchStatus)
+	assert.Contains(t, patchBody, `"type":"solo"`)
+	assert.Equal(t, []int{43}, aliceSolo, "a solo subscriber gets the pull request the party gave to bob")
+	assert.Regexp(t, `msg="feed pull requests delivered" user=alice token_id=[0-9a-f]+ count=1 party=1`, logged.String())
+}
+
+func TestIntegration_FeedDeliversOnAWeekend(t *testing.T) {
+	cfg := feedConfig(t, true)
+	saturdayClock := &movingClock{start: time.Date(2026, 11, 7, 10, 0, 0, 0, time.UTC), started: time.Now()}
+	var db *gorm.DB
+	public, adminServer := buildFeedApp(t, cfg, saturdayClock, fx.Populate(&db))
+	require.NotNil(t, adminServer)
+	admin := httptest.NewServer(adminServer.Handler)
+	t.Cleanup(admin.Close)
+	adminAuth := map[string]string{"Authorization": "Bearer " + testAdminKey}
+	partyMember := map[string]string{"Authorization": "Bearer " + redeemAgentToken(t, public, admin, adminAuth, "alice")}
+	soloSubscriber := map[string]string{"Authorization": "Bearer " + redeemAgentToken(t, public, admin, adminAuth, "carol")}
+	subscribeBodies := []struct {
+		auth map[string]string
+		body string
+	}{
+		{partyMember, `{"repositories":["acme/api"],"type":"party"}`},
+		{soloSubscriber, `{"repositories":["acme/api"]}`},
+	}
+	for _, subscribe := range subscribeBodies {
+		status, _ := request(t, public, http.MethodPost, "/api/v1/subs", subscribe.body, subscribe.auth)
+		require.Equal(t, http.StatusOK, status)
+	}
+	require.Equal(t, http.StatusOK, deliverPullRequestEvent(t, public, cfg, pullRequestEvent("opened", openedHeadSHA)))
+
+	partyDelivered := pullRequestNumbers(listFeed(t, public, "", partyMember))
+	soloDelivered := pullRequestNumbers(listFeed(t, public, "", soloSubscriber))
+	var stored persistence.FeedPullRequest
+	storedErr := db.Take(&stored, "repository = ? AND number = ?", feedRepository, 42).Error
+
+	require.NoError(t, storedErr)
+	require.NotNil(t, stored.RecordedAt)
+	require.NotNil(t, stored.PartyDeadlineAt)
+	assert.Equal(t, []int{42}, partyDelivered)
+	assert.Equal(t, []int{42}, soloDelivered)
+	assert.Equal(t, time.Hour, stored.PartyDeadlineAt.Sub(*stored.RecordedAt), "the party timer counts weekend hours")
+}
+
 func TestIntegration_AgentAPIDisabled_NothingTracked(t *testing.T) {
 	cfg := feedConfig(t, false)
 	var db *gorm.DB
@@ -212,7 +374,7 @@ func TestIntegration_SubscribeToAnOrgTierIsUnknownRepository(t *testing.T) {
 	require.NotNil(t, adminServer)
 	admin := httptest.NewServer(adminServer.Handler)
 	t.Cleanup(admin.Close)
-	token := redeemAgentToken(t, public, admin, map[string]string{"Authorization": "Bearer " + testAdminKey})
+	token := redeemAgentToken(t, public, admin, map[string]string{"Authorization": "Bearer " + testAdminKey}, "alice")
 
 	status, body := request(t, public, http.MethodPost, "/api/v1/subs", `{"repositories":["acme/*"]}`,
 		map[string]string{"Authorization": "Bearer " + token})
@@ -232,7 +394,7 @@ func TestIntegration_ListRepositories(t *testing.T) {
 	require.NotNil(t, adminServer)
 	admin := httptest.NewServer(adminServer.Handler)
 	t.Cleanup(admin.Close)
-	token := redeemAgentToken(t, public, admin, map[string]string{"Authorization": "Bearer " + testAdminKey})
+	token := redeemAgentToken(t, public, admin, map[string]string{"Authorization": "Bearer " + testAdminKey}, "alice")
 
 	status, body := request(t, public, http.MethodGet, "/api/v1/repos", "", map[string]string{"Authorization": "Bearer " + token})
 

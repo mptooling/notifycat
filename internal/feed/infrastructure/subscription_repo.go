@@ -40,6 +40,7 @@ func (repo *SubscriptionRepo) Add(ctx context.Context, newSubscriptions domain.N
 		TokenID:      newSubscriptions.TokenID,
 		Repositories: newSubscriptions.Repositories,
 		CreatedAt:    newSubscriptions.CreatedAt,
+		Type:         string(newSubscriptions.Type),
 	})
 	if err != nil {
 		return 0, fmt.Errorf("feed: add subscriptions: %w", err)
@@ -77,11 +78,25 @@ func (repo *SubscriptionRepo) Repositories(ctx context.Context) ([]string, error
 	return repositories, nil
 }
 
+// SetType implements domain.SubscriptionStore.
+func (repo *SubscriptionRepo) SetType(ctx context.Context, tokenID string, change domain.TypeChange) (int, error) {
+	changed, err := repo.subscriptions.SetType(ctx, persistence.FeedTypeChange{
+		TokenID:      tokenID,
+		Repositories: change.Repositories,
+		Type:         string(change.Type),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("feed: set subscription type: %w", err)
+	}
+	return changed, nil
+}
+
 func subscriptionFromRow(row persistence.FeedSubscription) domain.Subscription {
 	return domain.Subscription{
 		ID:         row.ID,
 		TokenID:    row.TokenID,
 		Repository: row.Repository,
+		Type:       domain.SubscriptionType(row.Type),
 		CreatedAt:  row.CreatedAt,
 	}
 }

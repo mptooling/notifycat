@@ -28,10 +28,13 @@ func TestModule_GraphResolves(t *testing.T) {
 			func() *persistence.FeedSubscriptions { return persistence.NewFeedSubscriptions(db) },
 			func() *persistence.FeedPullRequests { return persistence.NewFeedPullRequests(db) },
 			func() *persistence.FeedDeliveries { return persistence.NewFeedDeliveries(db) },
+			func() *persistence.FeedFetches { return persistence.NewFeedFetches(db) },
+			func() domain.Settings { return domain.Settings{} },
 			func() routingdomain.EntryLister { return noMappings{} },
 			func() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) },
 		),
-		fx.Invoke(func(domain.Subscriptions, domain.PullRequests, domain.Recorder, domain.PullRequestCleaner) {}),
+		fx.Invoke(func(domain.Subscriptions, domain.PullRequests, domain.Recorder, domain.PullRequestCleaner, domain.FetchStore, domain.PartySettingsResolver) {
+		}),
 	)
 
 	assert.NoError(t, app.Err())

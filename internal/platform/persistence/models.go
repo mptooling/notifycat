@@ -118,6 +118,7 @@ type FeedSubscription struct {
 	ID         int64     `gorm:"primaryKey;autoIncrement"`
 	TokenID    string    `gorm:"column:token_id;not null"`
 	Repository string    `gorm:"column:repository;not null"`
+	Type       string    `gorm:"column:type;not null;default:solo"`
 	CreatedAt  time.Time `gorm:"column:created_at;not null;autoCreateTime:false"`
 }
 
@@ -137,6 +138,10 @@ type FeedPullRequest struct {
 	HeadSHA      string     `gorm:"column:head_sha;not null"`
 	CreatedAt    *time.Time `gorm:"column:created_at;autoCreateTime:false"`
 	UpdatedAt    time.Time  `gorm:"column:updated_at;not null;autoUpdateTime:false"`
+
+	PartyReviewers  int        `gorm:"column:party_reviewers;not null;default:1"`
+	RecordedAt      *time.Time `gorm:"column:recorded_at;autoCreateTime:false"`
+	PartyDeadlineAt *time.Time `gorm:"column:party_deadline_at;autoCreateTime:false"`
 }
 
 // TableName pins the table name.
@@ -148,6 +153,7 @@ type FeedDelivery struct {
 	Repository  string    `gorm:"column:repository;primaryKey"`
 	Number      int       `gorm:"column:number;primaryKey"`
 	DeliveredAt time.Time `gorm:"column:delivered_at;not null;autoCreateTime:false"`
+	Party       bool      `gorm:"column:party;not null;default:false"`
 }
 
 // TableName pins the table name.
@@ -158,6 +164,48 @@ type FeedSubscriptionBatch struct {
 	TokenID      string
 	Repositories []string
 	CreatedAt    time.Time
+	Type         string
+}
+
+// FeedTypeChange sets the type of a token's subscriptions; nil Repositories means every subscription.
+type FeedTypeChange struct {
+	TokenID      string
+	Repositories []string
+	Type         string
+}
+
+// FeedFetch is the last time a token fetched its pull requests.
+type FeedFetch struct {
+	TokenID   string    `gorm:"column:token_id;primaryKey"`
+	FetchedAt time.Time `gorm:"column:fetched_at;not null"`
+}
+
+// TableName pins the table name.
+func (FeedFetch) TableName() string { return "feed_fetches" }
+
+// FeedFetchRecord is a fetch time to store. A stored fetch time at or after ReplaceBefore stays.
+type FeedFetchRecord struct {
+	TokenID       string
+	FetchedAt     time.Time
+	ReplaceBefore time.Time
+}
+
+// FeedPartyLoad counts the party deliveries of a token for a repository on a day.
+type FeedPartyLoad struct {
+	TokenID    string `gorm:"column:token_id;primaryKey"`
+	Repository string `gorm:"column:repository;primaryKey"`
+	Day        string `gorm:"column:day;primaryKey"`
+	Taken      int    `gorm:"column:taken;not null"`
+}
+
+// TableName pins the table name.
+func (FeedPartyLoad) TableName() string { return "feed_party_loads" }
+
+// FeedSinceQuery asks for the pull requests of the repositories that changed, or reached the token, at or after Since.
+type FeedSinceQuery struct {
+	TokenID      string
+	Repositories []string
+	Since        time.Time
 }
 
 // FeedClaim asks for the pull requests a token has not received yet.
@@ -165,4 +213,46 @@ type FeedClaim struct {
 	TokenID      string
 	Repositories []string
 	DeliveredAt  time.Time
+}
+
+// FeedPullRequestKey names one feed pull request.
+type FeedPullRequestKey struct {
+	Repository string `json:"repository"`
+	Number     int    `json:"number"`
+}
+
+// FeedWaitingPullRequest holds the columns of a waiting pull request that the turn rule reads.
+type FeedWaitingPullRequest struct {
+	Repository      string
+	Number          int
+	UpdatedAt       time.Time
+	PartyReviewers  int
+	PartyDeadlineAt *time.Time
+}
+
+// FeedPartySnapshot is what a party claim reads before Choose: the pull requests the token did not
+// receive that are below their cap, in feed order, every delivery of them, and the other active party
+// members and the loads of the day for their repositories.
+type FeedPartySnapshot struct {
+	Waiting    []FeedWaitingPullRequest
+	Deliveries []FeedDelivery
+	Members    map[string][]string
+	Loads      []FeedPartyLoad
+}
+
+// FeedPartyClaimResult is what a party claim delivered, and how many pull requests the token did not
+// receive are already at their cap.
+type FeedPartyClaimResult struct {
+	Claimed []FeedPullRequest
+	Taken   int
+}
+
+// FeedPartyClaim asks for the party pull requests that Choose picks for a token.
+type FeedPartyClaim struct {
+	TokenID      string
+	Repositories []string
+	DeliveredAt  time.Time
+	Day          string
+	ActiveSince  time.Time
+	Choose       func(FeedPartySnapshot) []FeedPullRequestKey
 }

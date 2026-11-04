@@ -20,6 +20,7 @@ func TestNewRoutes_Patterns(t *testing.T) {
 	assert.ElementsMatch(t, []string{
 		domain.ListSubscriptionsPattern,
 		domain.AddSubscriptionsPattern,
+		domain.ChangeSubscriptionsPattern,
 		domain.RemoveSubscriptionPattern,
 		domain.PullRequestsPattern,
 		domain.RepositoriesPattern,

@@ -9,6 +9,8 @@ const (
 	ErrorCodeInvalidBody          ErrorCode = "invalid_body"
 	ErrorCodeUnknownRepository    ErrorCode = "unknown_repository"
 	ErrorCodeTooManySubscriptions ErrorCode = "too_many_subscriptions"
+	ErrorCodeInvalidType          ErrorCode = "invalid_type"
+	ErrorCodeNotSubscribed        ErrorCode = "not_subscribed"
 	ErrorCodeInvalidSince         ErrorCode = "invalid_since"
 	ErrorCodeNotFound             ErrorCode = "not_found"
 	ErrorCodeInternal             ErrorCode = "internal_error"
@@ -23,3 +25,17 @@ const (
 	CleanupReasonAgentAPIOff CleanupReason = "agent_api_off"
 	CleanupReasonUnmapped    CleanupReason = "unmapped"
 )
+
+// SubscriptionType says whether a subscription receives every pull request or shares review turns with a party.
+type SubscriptionType string
+
+// Subscription types.
+const (
+	SubscriptionTypeSolo  SubscriptionType = "solo"
+	SubscriptionTypeParty SubscriptionType = "party"
+)
+
+// Valid reports whether the type is one of the known subscription types.
+func (subscriptionType SubscriptionType) Valid() bool {
+	return subscriptionType == SubscriptionTypeSolo || subscriptionType == SubscriptionTypeParty
+}

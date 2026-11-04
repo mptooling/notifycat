@@ -13,21 +13,24 @@ import (
 )
 
 // Module binds the feed ports to their adapters and the use cases. It
-// expects the composition root to supply *persistence.FeedSubscriptions,
-// *persistence.FeedPullRequests, *persistence.FeedDeliveries,
+// expects the composition root to supply a domain.Settings, *persistence.FeedSubscriptions,
+// *persistence.FeedPullRequests, *persistence.FeedDeliveries, *persistence.FeedFetches,
 // routingdomain.EntryLister and a *slog.Logger.
 var Module = fx.Module("feed",
 	fx.Provide(
 		fx.Annotate(infrastructure.NewSubscriptionRepo, fx.As(new(domain.SubscriptionStore))),
 		fx.Annotate(infrastructure.NewPullRequestRepo, fx.As(new(domain.PullRequestStore))),
 		fx.Annotate(infrastructure.NewDeliveryRepo, fx.As(new(domain.DeliveryStore))),
+		fx.Annotate(infrastructure.NewFetchRepo, fx.As(new(domain.FetchStore))),
+		fx.Annotate(infrastructure.NewConfigPartySettings, fx.As(new(domain.PartySettingsResolver))),
 		fx.Annotate(infrastructure.NewRoutingCatalog, fx.As(new(domain.RepositoryCatalog))),
 		fx.Annotate(infrastructure.NewSystemClock, fx.As(new(domain.Clock))),
 		fx.Annotate(provideSubscriptions, fx.As(new(domain.Subscriptions))),
 		fx.Annotate(providePullRequests, fx.As(new(domain.PullRequests))),
-		fx.Annotate(application.NewRecorder, fx.As(new(domain.Recorder))),
+		fx.Annotate(provideRecorder, fx.As(new(domain.Recorder))),
 		fx.Annotate(application.NewPullRequestCleaner, fx.As(new(domain.PullRequestCleaner))),
 		fx.Annotate(application.NewSubscriptionCleaner, fx.As(new(domain.SubscriptionCleaner))),
+		fx.Annotate(application.NewTurnPolicy, fx.As(new(domain.TurnPolicy))),
 	),
 )
 
@@ -53,6 +56,7 @@ type pullRequestsParams struct {
 	Subscriptions domain.SubscriptionStore
 	PullRequests  domain.PullRequestStore
 	Deliveries    domain.DeliveryStore
+	Fetches       domain.FetchStore
 	Catalog       domain.RepositoryCatalog
 	Clock         domain.Clock
 	Logger        *slog.Logger
@@ -63,8 +67,26 @@ func providePullRequests(params pullRequestsParams) *application.PullRequests {
 		Subscriptions: params.Subscriptions,
 		PullRequests:  params.PullRequests,
 		Deliveries:    params.Deliveries,
+		Fetches:       params.Fetches,
 		Catalog:       params.Catalog,
 		Clock:         params.Clock,
 		Logger:        params.Logger,
+	})
+}
+
+type recorderParams struct {
+	fx.In
+	PullRequests  domain.PullRequestStore
+	Catalog       domain.RepositoryCatalog
+	Clock         domain.Clock
+	PartySettings domain.PartySettingsResolver
+}
+
+func provideRecorder(params recorderParams) *application.Recorder {
+	return application.NewRecorder(domain.RecorderParams{
+		PullRequests:  params.PullRequests,
+		Catalog:       params.Catalog,
+		Clock:         params.Clock,
+		PartySettings: params.PartySettings,
 	})
 }

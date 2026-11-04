@@ -1,6 +1,6 @@
 # Agent API
 
-The agent API lets a coding agent, such as Claude Code, review the pull requests of your teammates. The agent polls notifycat over HTTPS. Each poll returns the open pull requests (PRs) it has not seen yet. Notifycat never calls the agent.
+The agent API lets a coding agent, such as Claude Code, review the pull requests of your teammates. The agent polls notifycat over HTTPS. Each fetch returns the open pull requests (PRs) it has not seen yet. Notifycat never calls the agent.
 
 The API serves PR metadata only: title, description, link, branch names, author id, and head commit SHA. It serves no code. The agent reads the diff from your git host with its own credentials.
 
@@ -67,7 +67,7 @@ curl --fail-with-body -sS -X POST -H @- "$NOTIFYCAT_URL/api/v1/subs" \
 
 The header comes from stdin (`-H @-`), so the token is not in the process list or the shell history. `--fail-with-body` needs curl 7.76 or newer. On a 4xx or 5xx it makes curl fail and still prints the JSON error.
 
-Poll for new pull requests:
+Fetch new pull requests:
 
 ```sh
 curl --fail-with-body -sS -H @- "$NOTIFYCAT_URL/api/v1/subs/prs" <<<"Authorization: Bearer $NOTIFYCAT_TOKEN"
@@ -81,8 +81,9 @@ All routes need `Authorization: Bearer nct_<id>_<secret>`. Every feed response w
 
 | Route | Result |
 | --- | --- |
-| `GET /api/v1/subs` | `200 {"subscriptions":[{"id":17,"repository":"acme/api","created_at":"2026-10-27T16:40:12Z"}]}`, ordered by `id`. |
+| `GET /api/v1/subs` | `200 {"subscriptions":[{"id":17,"repository":"acme/api","type":"solo","created_at":"2026-10-27T16:40:12Z"}]}`, ordered by `id`. `type` is `solo` or `party`. |
 | `POST /api/v1/subs` | Adds repositories. `200` with the full list, in the same shape as `GET`. |
+| `PATCH /api/v1/subs` | Changes the type of subscriptions. `200` with the full list, in the same shape as `GET`. See below. |
 | `DELETE /api/v1/subs/{id}` | `204`. `404 not_found` if the id is unknown, belongs to another token, or is not a positive integer. |
 | `GET /api/v1/subs/prs` | The pull requests. See below. |
 | `GET /api/v1/repos` | The repositories you can subscribe to. See below. |
@@ -102,6 +103,36 @@ The body is `{"repositories":["acme/api","acme/web"]}`. Use `["*"]` to subscribe
 - An org tier such as `acme/*` cannot be subscribed to. It gives `400 unknown_repository`. Use `*` for all repositories, or list them.
 - More than 200 subscriptions for one token gives `400 too_many_subscriptions`. Nothing is added. Repositories you already follow do not count.
 - The body can be at most 16 KiB.
+- The body can also have `"type":"solo"` or `"type":"party"`. The default is `solo`. The type applies only to the repositories that this call adds. A repository you already follow keeps its type. Any other value gives `400 invalid_type`, and nothing is added.
+
+### Change the type
+
+`PATCH /api/v1/subs` changes the type of subscriptions that already exist. Use it to join or leave a party without a delete. There are two body forms.
+
+To change every subscription of the token, send only `type`:
+
+```json
+{"type": "party"}
+```
+
+To change some subscriptions, add `repositories`:
+
+```json
+{"repositories": ["acme/api"], "type": "solo"}
+```
+
+- Only an absent `repositories` key means every subscription. `"repositories": []`, `"repositories": null`, and a list that is empty after trimming, such as `[""]`, give `400 invalid_body`.
+- Names are trimmed, lower-cased, and de-duplicated, as in `POST`. `"*"` means your `*` subscription.
+- A missing or unknown `type` gives `400 invalid_type`.
+- A repository that you do not follow gives `400 not_subscribed` with the list of these names, lower case and sorted. Nothing changes.
+
+    ```json
+    {"error":"not_subscribed","repositories":["acme/web"]}
+    ```
+
+- An unknown field, data after the JSON object, or invalid JSON gives `400 invalid_body`.
+- The body can be at most 16 KiB.
+- A change of type never sends a PR again and never takes one back. See [Switch the type](#switch-the-type).
 
 ### List repositories
 
@@ -141,9 +172,14 @@ The body is `{"repositories":["acme/api","acme/web"]}`. Use `["*"]` to subscribe
 - The list is ordered by `updated_at` (oldest first), then repository, then number.
 - Nothing new, or no subscriptions, gives an empty list.
 
-A call without a query returns the open, non-draft PRs of your subscribed repositories that your token has not received yet. Notifycat marks them as received in the same step.
+A call without a query is a normal fetch. It returns the open, non-draft PRs of your subscribed repositories that your token has not received yet. Notifycat marks them as received in the same step. On a party repository, the [party rule](#review-as-a-party) decides which PRs you get.
 
-`?since=<time>` returns every open PR of those repositories with `updated_at` at or after that time, whether you received it or not. It marks nothing as received.
+`?since=<time>` reads PRs again. It returns each open PR that matches one of these rules:
+
+- The PR changed at or after that time (`updated_at`). On a solo repository, this rule applies whether you received the PR or not.
+- Your token received the PR at or after that time.
+
+On a party repository, it returns only the PRs that your token received, solo or party. It marks nothing as received.
 
 `since` must be RFC 3339. Use the `Z` form, or write `+` as `%2B`. An unencoded `+` turns into a space and gives `400 invalid_since`. Let curl encode it:
 
@@ -154,7 +190,7 @@ curl --fail-with-body -sS --get --data-urlencode "since=2026-10-28T09:00:00Z" \
 
 An empty `since`, a value that is not RFC 3339, or a query that cannot be parsed (for example `?since=%zz`) gives `400 invalid_since`. Other query parameters are ignored.
 
-`HEAD /api/v1/subs/prs` gives `405 method_not_allowed` with `Allow: GET`. A request that fails never marks PRs as received. But once the server has answered, its PRs are marked, even if the response is lost on the way to you. See [Recover a lost list](#recover-a-lost-list).
+`HEAD /api/v1/subs/prs` gives `405 method_not_allowed` with `Allow: GET`. A `4xx` error never marks PRs as received. A `5xx` error can come after the server marked PRs. Once the server answers, its PRs stay marked, even if the response is lost on the way to you. See [Recover a lost list](#recover-a-lost-list).
 
 ## Errors
 
@@ -163,8 +199,10 @@ The feed routes answer errors as `{"error":"<code>"}` with `Cache-Control: no-st
 | Code | Status | When |
 | --- | --- | --- |
 | `unauthorized` | 401 | The token is missing, malformed, unknown, or wrong. The response has `WWW-Authenticate: Bearer`. |
-| `invalid_body` | 400 | The `POST /subs` body is not valid. |
+| `invalid_body` | 400 | The `POST /subs` or `PATCH /subs` body is not valid. |
+| `invalid_type` | 400 | `type` is not `solo` or `party`. On `PATCH`, a missing `type` gives this code too. |
 | `unknown_repository` | 400 | A repository is not configured. The body adds a `repositories` list. |
+| `not_subscribed` | 400 | A `PATCH` names a repository that the token does not follow. The body adds a `repositories` list. |
 | `too_many_subscriptions` | 400 | The token would pass 200 subscriptions. |
 | `invalid_since` | 400 | `since` or the query is not valid. |
 | `not_found` | 404 | The subscription id is unknown or not yours. |
@@ -181,21 +219,84 @@ A path that is not a feed route gets the plain-text 404 or 405 of the Go HTTP se
 - New commits on a PR do not send it again. Use `?since=` to read a PR again.
 - A draft PR is never delivered.
 - `?since=` re-reads and records nothing.
-- The first poll after you subscribe returns every open PR that notifycat knows for those repositories. There is no paging: they all come in one response.
+- On a party repository, the party rule limits who gets a PR. See [Review as a party](#review-as-a-party).
+- The first fetch after you subscribe returns every open PR that notifycat knows for those repositories. There is no paging: they all come in one response.
 - If you unsubscribe and subscribe again, PRs you already received are not sent again. You get only the PRs that are new to your token.
 
 ### Recover a lost list
 
-If a run crashed after the poll and before it finished the reviews, the PRs are already marked as received. The same is true when the response was lost on the way to you. Ask for them again with `?since=`.
+If a run crashed after the fetch and before it finished the reviews, the PRs are already marked as received. The same is true when the response was lost on the way to you. Ask for them again with `?since=`.
 
-`since` matches a PR's last change (`updated_at`), not the time it was delivered. So use a time a few minutes before the last good poll that came before the lost one, or any earlier time. Do not use the exact time: `updated_at` comes from the notifycat server's clock, and a webhook can still be recording while you poll. An earlier time only returns more PRs. The time of the lost poll itself is too late: it misses the PRs that changed before it.
+If a normal fetch returns a 5xx error, the server may have marked PRs before it failed. Call `GET /api/v1/subs/prs?since=<time of the last good fetch>` to get the PRs that the failed fetch may have marked. On a party repository, `since` returns only PRs that this token received.
+
+`since` matches the time that notifycat delivered a PR to your token. The lost fetch came after the last good fetch. So the time of the last good fetch, on the server clock, returns every PR that the lost fetch marked. This includes a PR that changed long before the lost fetch. An example is a PR that waited for a party turn.
+
+`since` also matches the last change of a PR (`updated_at`). A webhook can still record a change while you fetch. Both times come from the clock of the notifycat server, and your clock can differ from it. To get these changes, use a time a few minutes before the last good fetch. This time also covers a clock difference. An earlier time only returns more PRs.
 
 ```sh
 curl --fail-with-body -sS --get --data-urlencode "since=2026-10-28T09:00:00Z" \
   -H @- "$NOTIFYCAT_URL/api/v1/subs/prs" <<<"Authorization: Bearer $NOTIFYCAT_TOKEN"
 ```
 
-If the lost poll was your first one, or your first after a new subscription, use an old time such as `1970-01-01T00:00:00Z`. Then skip the PRs you already reviewed.
+If the lost fetch was your first one, or your first after a new subscription, use an old time such as `1970-01-01T00:00:00Z`. Then skip the PRs you already reviewed.
+
+## Review as a party
+
+By default every subscription is `solo`. A solo agent gets every PR, as described above. Solo deliveries never count toward a party.
+
+Many agents can follow the same repository. A team can limit how many agents review each PR. For this, the agents subscribe with the type `party`.
+
+- **Party**: all tokens with a `party` subscription to one repository. A repository has one party. Parties have no names.
+- **Member**: a token. Two tokens of one person are two members.
+- **Cap**: the number of party members that get each PR. The setting is [`agent_api.party_reviewers`](configuration.md#agent_api). The default is 1.
+- **Load**: the number of PRs that a member got through the party of that repository today. Load counts per repository. Load stays when a PR closes. It starts again at 0 each day at 00:00 UTC.
+- **Away**: a token that has not fetched its PRs yet, or has not fetched them for 24 hours. Only a normal fetch counts. A `since` call does not change the away state. An away member is not a candidate and never holds PRs back.
+- **Timer**: the setting [`agent_api.party_deadline`](configuration.md#agent_api). The default is 1 hour. The timer of a PR starts when notifycat first records the PR. A push does not restart it. The timer counts clock time.
+
+A normal fetch treats each open PR that you have not received on a party repository in this order. The oldest `updated_at` comes first.
+
+1. If the PR already went to as many members as the cap allows, skip it.
+2. If the timer of the PR ran out, turns stop. You get the PR, within the cap.
+3. Find the candidates. These are you and the other members that are not away and have not received the PR.
+4. Count the free slots. This is the cap minus the members that already got the PR.
+5. If the candidates with a lower load than yours could fill all free slots, skip the PR. It is not your turn.
+6. Otherwise you get the PR, and your load goes up by 1. This also counts for the other PRs in the same fetch.
+
+Notifycat does all of this in one atomic step. Two members that fetch at the same moment never pass the cap. With a cap of 1, notifycat skips a PR when any candidate has a lower load.
+
+A party with one candidate has no real cap. That member gets every PR at once.
+
+### Example
+
+The cap is 1 and the timer is 30 minutes. Alice, Bob, and Carol are not away. Their loads today are 3, 1, and 1. PR 42 opens on Tuesday at 10:00.
+
+| Time | Who fetches | Result |
+| --- | --- | --- |
+| 10:00 | Alice | Skipped. Bob and Carol have a lower load. |
+| 10:05 | Bob | Gets PR 42. His load is now 2. |
+| 10:06 | Carol | Skipped. PR 42 is taken. |
+
+If Bob and Carol are busy with long reviews and do not fetch, notifycat skips Alice until 10:30. At 10:30 the timer runs out, and Alice gets PR 42 on her next fetch.
+
+If Bob and Carol are away, Alice is the only candidate. She gets PR 42 at 10:00.
+
+With a cap of 3, Alice gets PR 42 at once. Only two candidates have a lower load, and three slots are free.
+
+### Switch the type
+
+- The most specific subscription sets the type. The type of a subscription to `acme/api` is the type for that repository. Your `*` subscription sets the type only for repositories that you have no own subscription for.
+- Party to solo: you then get every PR that you have not received yet. This includes PRs that the party gave to other members.
+- Solo to party: the PRs that you got as solo do not count toward the cap or your load.
+- A reopened PR goes to the party again. Closing a PR removes its deliveries, but its count for the day stays.
+
+### Limits of a party
+
+- The feed does not know which token belongs to the author of a PR. An agent can get a PR of its own user.
+- A member that gets a PR and never reviews it keeps the slot. The timer only ends the turns. It never takes a PR back.
+- A revoked token frees its party slots. Another member can then get those PRs.
+- A member that joins during the day starts with load 0. It gets most party PRs until its load reaches the others.
+- When parties first go live, no token has fetched yet, so every member is away until its first fetch. The first agent that fetches can take the PRs that waited. The same happens when the members return after 24 hours without a fetch.
+- Party settings change nothing in Slack.
 
 ## Review with Claude Code
 
@@ -242,4 +343,4 @@ The agent needs a credential for your git host. That is separate from the notify
 
 ## Logs
 
-The feed logs `feed subscriptions added`, `feed subscription removed`, `feed pull requests delivered`, `feed pull request not recorded`, `feed pull requests removed`, `feed subscriptions removed`, and `feed cleanup failed`. See [Operations](operations.md#logging).
+The feed logs `feed subscriptions added`, `feed subscriptions changed`, `feed subscription removed`, `feed pull requests delivered`, `feed party pull requests held`, `feed pull request not recorded`, `feed pull requests removed`, `feed subscriptions removed`, and `feed cleanup failed`. See [Operations](operations.md#logging).

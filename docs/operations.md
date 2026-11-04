@@ -70,8 +70,10 @@ The agent API logs these lines. None of them carries a credential or an `Authori
 | `agent api request failed` | error | An internal error on a public agent route. |
 | `admin request failed` | error | An internal error on an admin route. |
 | `feed subscriptions added` | info | A token subscribed to new repositories (`user`, `token_id`, `count`). |
+| `feed subscriptions changed` | info | A token changed the type of subscriptions (`user`, `token_id`, `type`, `count`). Logged only when `count` is above 0. |
 | `feed subscription removed` | info | A token removed a subscription (`user`, `token_id`, `repository`). |
-| `feed pull requests delivered` | info | A poll returned new PRs (`user`, `token_id`, `count`). Logged only when `count` is above 0. |
+| `feed pull requests delivered` | info | A fetch returned new PRs (`user`, `token_id`, `count`, `party`). `party` is the number of party PRs in that response. Logged only when `count` is above 0. |
+| `feed party pull requests held` | debug | A fetch held back party PRs (`token_id`, `taken`, `waiting`). The `taken` field is the number of PRs held because their cap is full. The `waiting` field is the number of PRs held because another member has the turn. Logged only when one of them is above 0. |
 | `feed pull request not recorded` | warn | A webhook PR could not be stored for the feed (`repository`, `pr`, `kind`, `err`). The webhook response does not change. |
 | `feed pull requests removed` | info | At startup, notifycat removed stored feed PRs (`count`, `reason`). `reason` is `agent_api_off` (the agent API is off, so every stored PR goes) or `unmapped` (the PRs of repositories that left `mappings:`). Logged only when `count` is above 0. |
 | `feed subscriptions removed` | info | At startup, notifycat removed the subscriptions of every token to repositories that left `mappings:` (`count`, `reason`, `repositories`). `reason` is `unmapped`, and `repositories` lists the removed repository names, sorted. The `*` subscription stays, and so does every subscription when `mappings:` has no repository. Logged on every start, with the API on or off, only when `count` is above 0. |
