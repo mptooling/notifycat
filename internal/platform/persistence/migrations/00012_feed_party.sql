@@ -14,7 +14,7 @@ CREATE TABLE feed_party_loads (
 );
 
 CREATE TABLE feed_fetches (
-    token_id  TEXT     PRIMARY KEY REFERENCES access_tokens(id) ON DELETE CASCADE,
+    token_id   TEXT     PRIMARY KEY REFERENCES access_tokens(id) ON DELETE CASCADE,
     fetched_at DATETIME NOT NULL
 );
 

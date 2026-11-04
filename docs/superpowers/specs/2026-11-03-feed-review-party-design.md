@@ -27,7 +27,7 @@ Alice, Bob and Carol subscribe their agents to `cover42/billingservice` as a **p
 - **The timer counts clock time.**
 - **The feed has no days off.** A normal fetch returns PRs on every day, for solo and party.
 - **Away comes from fetch events only.** A token is away until its first fetch. The first fetch makes it active at once. A token that does not fetch its PRs for 24 hours of clock time is away again.
-- **Load is a counter per day.** Each day it starts again at 0, at 00:00 UTC.
+- **Load is a counter per day.** Each day it starts again at 0.
 - **A party with one member has no real cap.** That member gets every PR.
 - **A new endpoint changes a subscription's type**, so a developer can join or leave a party without deleting the subscription.
 - The git host's "default reviewer" rule is out of scope. The team decides how it uses parties.
