@@ -174,19 +174,19 @@ type FeedTypeChange struct {
 	Type         string
 }
 
-// FeedPoll is the last time a token polled the feed.
-type FeedPoll struct {
-	TokenID  string    `gorm:"column:token_id;primaryKey"`
-	PolledAt time.Time `gorm:"column:polled_at;not null"`
+// FeedFetch is the last time a token fetched its pull requests.
+type FeedFetch struct {
+	TokenID   string    `gorm:"column:token_id;primaryKey"`
+	FetchedAt time.Time `gorm:"column:fetched_at;not null"`
 }
 
 // TableName pins the table name.
-func (FeedPoll) TableName() string { return "feed_polls" }
+func (FeedFetch) TableName() string { return "feed_fetches" }
 
-// FeedPollRecord is a poll time to store. A stored poll time at or after ReplaceBefore stays.
-type FeedPollRecord struct {
+// FeedFetchRecord is a fetch time to store. A stored fetch time at or after ReplaceBefore stays.
+type FeedFetchRecord struct {
 	TokenID       string
-	PolledAt      time.Time
+	FetchedAt     time.Time
 	ReplaceBefore time.Time
 }
 

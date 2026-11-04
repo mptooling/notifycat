@@ -48,10 +48,10 @@ type DeliveryStore interface {
 	ClaimParty(ctx context.Context, claim PartyClaim) (PartyClaimResult, error)
 }
 
-// PollStore records when tokens poll the feed.
-type PollStore interface {
-	// Record stores the poll time of the token. It keeps a stored time that is less than PollResolution older.
-	Record(ctx context.Context, tokenID string, polledAt time.Time) error
+// FetchStore records when tokens fetch their pull requests.
+type FetchStore interface {
+	// Record stores the fetch time of the token. It keeps a stored time that is less than FetchResolution older.
+	Record(ctx context.Context, tokenID string, fetchedAt time.Time) error
 }
 
 // PartySettingsResolver gives the party settings that apply to a pull request.
@@ -92,7 +92,7 @@ type Subscriptions interface {
 // PullRequests serves a token's feed of open pull requests.
 type PullRequests interface {
 	// Next returns pull requests not yet delivered to the subscriber and marks them delivered. It delivers party
-	// repositories by the turn rule within the cap, and records the poll.
+	// repositories by the turn rule within the cap, and records the fetch.
 	Next(ctx context.Context, subscriber Subscriber) ([]PullRequest, error)
 	// Since returns pull requests changed after the given time without marking anything delivered.
 	// On party repositories it returns only pull requests the token received.
@@ -119,7 +119,7 @@ type Recorder interface {
 	Record(ctx context.Context, event kernel.Event) error
 }
 
-// TurnPolicy decides which waiting pull requests the poller may take in a party round.
+// TurnPolicy decides which waiting pull requests the fetcher may take in a party round.
 type TurnPolicy interface {
 	// Choose keeps the input order in Take. Taken counts pull requests at their cap; Waiting counts those
 	// where another member has the turn. The caller's Loads map is not changed.

@@ -78,7 +78,7 @@ type PullRequestsParams struct {
 	Subscriptions SubscriptionStore
 	PullRequests  PullRequestStore
 	Deliveries    DeliveryStore
-	Polls         PollStore
+	Fetches       FetchStore
 	Catalog       RepositoryCatalog
 	Clock         Clock
 	Logger        *slog.Logger
@@ -119,7 +119,7 @@ type PartyMember struct {
 	Repository string
 }
 
-// WaitingPullRequest is a pull request a party poller could take.
+// WaitingPullRequest is a pull request a party fetcher could take.
 type WaitingPullRequest struct {
 	Key             PullRequestKey
 	Party           PartyState

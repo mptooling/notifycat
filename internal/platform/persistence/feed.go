@@ -312,7 +312,7 @@ const partyMembersSQL = `WITH claim_repositories(repository) AS (SELECT value FR
 			SELECT 1 FROM feed_subscriptions own_subscription
 			WHERE own_subscription.token_id = subscription.token_id
 			AND own_subscription.repository = claim_repositories.repository))
-	JOIN feed_polls poll ON poll.token_id = subscription.token_id AND poll.polled_at >= ?
+	JOIN feed_fetches last_fetch ON last_fetch.token_id = subscription.token_id AND last_fetch.fetched_at >= ?
 	WHERE subscription.type = ? AND subscription.token_id <> ?
 	ORDER BY claim_repositories.repository, subscription.token_id`
 
@@ -333,7 +333,7 @@ type partyMemberRow struct {
 }
 
 // ClaimParty reads the snapshot and records what Choose picks in one transaction that writes first,
-// so members that poll at the same moment never pass the cap.
+// so members that fetch at the same moment never pass the cap.
 func (r *FeedDeliveries) ClaimParty(ctx context.Context, claim FeedPartyClaim) (FeedPartyClaimResult, error) {
 	result := FeedPartyClaimResult{Claimed: []FeedPullRequest{}}
 	if len(claim.Repositories) == 0 {
@@ -584,29 +584,29 @@ func keyArguments(keys []FeedPullRequestKey) [][]any {
 	return arguments
 }
 
-// FeedPolls records when each token last polled the feed.
-type FeedPolls struct {
+// FeedFetches records when each token last fetched its pull requests.
+type FeedFetches struct {
 	db *gorm.DB
 }
 
-// NewFeedPolls constructs a FeedPolls repository bound to db.
-func NewFeedPolls(db *gorm.DB) *FeedPolls {
-	return &FeedPolls{db: db}
+// NewFeedFetches constructs a FeedFetches repository bound to db.
+func NewFeedFetches(db *gorm.DB) *FeedFetches {
+	return &FeedFetches{db: db}
 }
 
-// Record stores the poll time of the token, replacing a stored time before ReplaceBefore.
-func (r *FeedPolls) Record(ctx context.Context, record FeedPollRecord) error {
+// Record stores the fetch time of the token, replacing a stored time before ReplaceBefore.
+func (r *FeedFetches) Record(ctx context.Context, record FeedFetchRecord) error {
 	err := r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "token_id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"polled_at"}),
+			DoUpdates: clause.AssignmentColumns([]string{"fetched_at"}),
 			Where: clause.Where{Exprs: []clause.Expression{
-				clause.Expr{SQL: "feed_polls.polled_at < ?", Vars: []any{record.ReplaceBefore.UTC()}},
+				clause.Expr{SQL: "feed_fetches.fetched_at < ?", Vars: []any{record.ReplaceBefore.UTC()}},
 			}},
 		}).
-		Create(&FeedPoll{TokenID: record.TokenID, PolledAt: record.PolledAt.UTC()}).Error
+		Create(&FeedFetch{TokenID: record.TokenID, FetchedAt: record.FetchedAt.UTC()}).Error
 	if err != nil {
-		return fmt.Errorf("store: record feed poll: %w", err)
+		return fmt.Errorf("store: record feed fetch: %w", err)
 	}
 	return nil
 }

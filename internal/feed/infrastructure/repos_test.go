@@ -369,7 +369,7 @@ func TestDeliveryRepo_ClaimPartyBuildsTheRound(t *testing.T) {
 	ctx := context.Background()
 	subscriptions := infrastructure.NewSubscriptionRepo(persistence.NewFeedSubscriptions(db))
 	pullRequests := infrastructure.NewPullRequestRepo(persistence.NewFeedPullRequests(db))
-	polls := persistence.NewFeedPolls(db)
+	fetches := persistence.NewFeedFetches(db)
 	policy := &recordingTurnPolicy{}
 	deliveries := infrastructure.NewDeliveryRepo(persistence.NewFeedDeliveries(db), policy)
 	for _, memberID := range []string{"t1", "t2", "t3", "t4"} {
@@ -377,7 +377,7 @@ func TestDeliveryRepo_ClaimPartyBuildsTheRound(t *testing.T) {
 			TokenID: memberID, Repositories: []string{"acme/api"}, Type: domain.SubscriptionTypeParty, CreatedAt: repoBaseTime,
 		})
 		require.NoError(t, addErr)
-		require.NoError(t, polls.Record(ctx, persistence.FeedPollRecord{TokenID: memberID, PolledAt: repoBaseTime}))
+		require.NoError(t, fetches.Record(ctx, persistence.FeedFetchRecord{TokenID: memberID, FetchedAt: repoBaseTime}))
 	}
 	firstPullRequest := partyPullRequest(7, repoBaseTime, 2)
 	secondPullRequest := partyPullRequest(8, repoBaseTime.Add(time.Minute), 1)
@@ -458,20 +458,20 @@ func TestDeliveryRepo_ClaimPartyWithoutRepositoriesSkipsThePolicy(t *testing.T) 
 	assert.Zero(t, policy.calls, "the policy is not asked without repositories")
 }
 
-func seedPartyMembers(t *testing.T, db *gorm.DB, polledAt time.Time, tokenIDs ...string) {
+func seedPartyMembers(t *testing.T, db *gorm.DB, fetchedAt time.Time, tokenIDs ...string) {
 	t.Helper()
 	ctx := context.Background()
 	subscriptions := infrastructure.NewSubscriptionRepo(persistence.NewFeedSubscriptions(db))
-	polls := infrastructure.NewPollRepo(persistence.NewFeedPolls(db))
+	fetches := infrastructure.NewFetchRepo(persistence.NewFeedFetches(db))
 	for _, tokenID := range tokenIDs {
 		if tokenID != "t1" {
 			addToken(t, db, tokenID)
 		}
 		_, addErr := subscriptions.Add(ctx, domain.NewSubscriptions{
-			TokenID: tokenID, Repositories: []string{"acme/api"}, Type: domain.SubscriptionTypeParty, CreatedAt: polledAt,
+			TokenID: tokenID, Repositories: []string{"acme/api"}, Type: domain.SubscriptionTypeParty, CreatedAt: fetchedAt,
 		})
 		require.NoError(t, addErr)
-		require.NoError(t, polls.Record(ctx, tokenID, polledAt))
+		require.NoError(t, fetches.Record(ctx, tokenID, fetchedAt))
 	}
 }
 
@@ -517,7 +517,7 @@ func TestDeliveryRepo_ClaimPartyConcurrentMembersFollowTheTurnRule(t *testing.T)
 			receivers = append(receivers, tokenID)
 		}
 	}
-	assert.ElementsMatch(t, lightestMembers, receivers, "the two members with the lowest load fill the cap, whatever the poll order")
+	assert.ElementsMatch(t, lightestMembers, receivers, "the two members with the lowest load fill the cap, whatever the fetch order")
 	var partyDeliveries int64
 	require.NoError(t, db.Model(&persistence.FeedDelivery{}).Where("party").Count(&partyDeliveries).Error)
 	assert.EqualValues(t, 2, partyDeliveries)
@@ -563,46 +563,46 @@ func deliveredNumbers(pullRequests []domain.PullRequest) []int {
 	return numbers
 }
 
-func TestPollRepo_RecordWritesAtMostOncePerResolution(t *testing.T) {
+func TestFetchRepo_RecordWritesAtMostOncePerResolution(t *testing.T) {
 	testCases := []struct {
-		name         string
-		earlierPolls []time.Time
-		polledAt     time.Time
-		want         time.Time
+		name           string
+		earlierFetches []time.Time
+		fetchedAt      time.Time
+		want           time.Time
 	}{
 		{
-			name:     "the first poll inserts",
-			polledAt: repoBaseTime,
-			want:     repoBaseTime,
+			name:      "the first fetch inserts",
+			fetchedAt: repoBaseTime,
+			want:      repoBaseTime,
 		},
 		{
-			name:         "a poll within the resolution keeps the stored time",
-			earlierPolls: []time.Time{repoBaseTime},
-			polledAt:     repoBaseTime.Add(domain.PollResolution - time.Second),
-			want:         repoBaseTime,
+			name:           "a fetch within the resolution keeps the stored time",
+			earlierFetches: []time.Time{repoBaseTime},
+			fetchedAt:      repoBaseTime.Add(domain.FetchResolution - time.Second),
+			want:           repoBaseTime,
 		},
 		{
-			name:         "a poll after the resolution replaces the stored time",
-			earlierPolls: []time.Time{repoBaseTime},
-			polledAt:     repoBaseTime.Add(domain.PollResolution + time.Second),
-			want:         repoBaseTime.Add(domain.PollResolution + time.Second),
+			name:           "a fetch after the resolution replaces the stored time",
+			earlierFetches: []time.Time{repoBaseTime},
+			fetchedAt:      repoBaseTime.Add(domain.FetchResolution + time.Second),
+			want:           repoBaseTime.Add(domain.FetchResolution + time.Second),
 		},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			db := newFeedDB(t)
-			repo := infrastructure.NewPollRepo(persistence.NewFeedPolls(db))
+			repo := infrastructure.NewFetchRepo(persistence.NewFeedFetches(db))
 			ctx := context.Background()
-			for _, earlierPoll := range testCase.earlierPolls {
-				require.NoError(t, repo.Record(ctx, "t1", earlierPoll))
+			for _, earlierFetch := range testCase.earlierFetches {
+				require.NoError(t, repo.Record(ctx, "t1", earlierFetch))
 			}
 
-			err := repo.Record(ctx, "t1", testCase.polledAt)
+			err := repo.Record(ctx, "t1", testCase.fetchedAt)
 
 			require.NoError(t, err)
-			var row persistence.FeedPoll
+			var row persistence.FeedFetch
 			require.NoError(t, db.Where("token_id = ?", "t1").Take(&row).Error)
-			assert.WithinDuration(t, testCase.want, row.PolledAt, 0)
+			assert.WithinDuration(t, testCase.want, row.FetchedAt, 0)
 		})
 	}
 }

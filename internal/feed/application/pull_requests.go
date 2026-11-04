@@ -16,7 +16,7 @@ type PullRequests struct {
 	subscriptions domain.SubscriptionStore
 	pullRequests  domain.PullRequestStore
 	deliveries    domain.DeliveryStore
-	polls         domain.PollStore
+	fetches       domain.FetchStore
 	catalog       domain.RepositoryCatalog
 	clock         domain.Clock
 	logger        *slog.Logger
@@ -30,7 +30,7 @@ func NewPullRequests(params domain.PullRequestsParams) *PullRequests {
 		subscriptions: params.Subscriptions,
 		pullRequests:  params.PullRequests,
 		deliveries:    params.Deliveries,
-		polls:         params.Polls,
+		fetches:       params.Fetches,
 		catalog:       params.Catalog,
 		clock:         params.Clock,
 		logger:        params.Logger,
@@ -57,7 +57,7 @@ func (feed *PullRequests) Next(ctx context.Context, subscriber domain.Subscriber
 	if err != nil {
 		return nil, err
 	}
-	if err := feed.recordPoll(ctx, subscriber, now); err != nil {
+	if err := feed.recordFetch(ctx, subscriber, now); err != nil {
 		return nil, err
 	}
 	feed.logDelivery(ctx, subscriber, solo, party)
@@ -96,9 +96,9 @@ func (feed *PullRequests) claimParty(ctx context.Context, subscriber domain.Subs
 	return result, nil
 }
 
-func (feed *PullRequests) recordPoll(ctx context.Context, subscriber domain.Subscriber, now time.Time) error {
-	if err := feed.polls.Record(ctx, subscriber.TokenID, now); err != nil {
-		return fmt.Errorf("record poll: %w", err)
+func (feed *PullRequests) recordFetch(ctx context.Context, subscriber domain.Subscriber, now time.Time) error {
+	if err := feed.fetches.Record(ctx, subscriber.TokenID, now); err != nil {
+		return fmt.Errorf("record fetch: %w", err)
 	}
 	return nil
 }

@@ -253,9 +253,9 @@ func TestIntegration_ReviewPartyDeliversWithinTheCap(t *testing.T) {
 	assert.Empty(t, secondDelivered, "the cap of one party review is taken")
 	assert.Equal(t, opened, firstReceived)
 	assert.Empty(t, secondReceived, "a since read on a party repository returns only what the token received")
-	var polledTokens int64
-	require.NoError(t, db.Table("feed_polls").Count(&polledTokens).Error)
-	assert.Equal(t, int64(2), polledTokens)
+	var fetchedTokens int64
+	require.NoError(t, db.Table("feed_fetches").Count(&fetchedTokens).Error)
+	assert.Equal(t, int64(2), fetchedTokens)
 	assert.Regexp(t, `msg="feed pull requests delivered" user=alice token_id=[0-9a-f]+ count=1 party=1`, logged.String())
 }
 

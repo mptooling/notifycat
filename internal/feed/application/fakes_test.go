@@ -253,23 +253,23 @@ func (store *fakeDeliveryStore) ClaimParty(_ context.Context, claim domain.Party
 	return store.partyResult, nil
 }
 
-type pollRecord struct {
-	tokenID  string
-	polledAt time.Time
+type fetchRecord struct {
+	tokenID   string
+	fetchedAt time.Time
 }
 
-type fakePollStore struct {
-	records []pollRecord
+type fakeFetchStore struct {
+	records []fetchRecord
 	err     error
 	calls   *callLog
 }
 
-func (store *fakePollStore) Record(_ context.Context, token string, polledAt time.Time) error {
-	store.calls.add("record poll")
+func (store *fakeFetchStore) Record(_ context.Context, token string, fetchedAt time.Time) error {
+	store.calls.add("record fetch")
 	if store.err != nil {
 		return store.err
 	}
-	store.records = append(store.records, pollRecord{tokenID: token, polledAt: polledAt})
+	store.records = append(store.records, fetchRecord{tokenID: token, fetchedAt: fetchedAt})
 	return nil
 }
 

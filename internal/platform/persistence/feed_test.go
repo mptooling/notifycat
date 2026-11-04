@@ -145,16 +145,16 @@ func TestFeedTables_TokenDeleteCascades(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, 1, countTable(t, db, "feed_subscriptions", "token_id = ?", "t1"))
 	require.EqualValues(t, 1, countTable(t, db, "feed_deliveries", "token_id = ?", "t1"))
-	require.NoError(t, persistence.NewFeedPolls(db).Record(ctx, persistence.FeedPollRecord{TokenID: "t1", PolledAt: accessBaseTime}))
+	require.NoError(t, persistence.NewFeedFetches(db).Record(ctx, persistence.FeedFetchRecord{TokenID: "t1", FetchedAt: accessBaseTime}))
 	require.NoError(t, db.Create(&persistence.FeedPartyLoad{TokenID: "t1", Repository: "acme/api", Day: "2026-10-28", Taken: 1}).Error)
-	require.EqualValues(t, 1, countTable(t, db, "feed_polls", "token_id = ?", "t1"))
+	require.EqualValues(t, 1, countTable(t, db, "feed_fetches", "token_id = ?", "t1"))
 	require.EqualValues(t, 1, countTable(t, db, "feed_party_loads", "token_id = ?", "t1"))
 
 	require.NoError(t, persistence.NewAccessTokens(db).Delete(ctx, "t1"))
 
 	assert.Zero(t, countTable(t, db, "feed_subscriptions", "token_id = ?", "t1"))
 	assert.Zero(t, countTable(t, db, "feed_deliveries", "token_id = ?", "t1"))
-	assert.Zero(t, countTable(t, db, "feed_polls", "token_id = ?", "t1"))
+	assert.Zero(t, countTable(t, db, "feed_fetches", "token_id = ?", "t1"))
 	assert.Zero(t, countTable(t, db, "feed_party_loads", "token_id = ?", "t1"))
 }
 
@@ -382,7 +382,7 @@ func TestMigration00011_DownDropsFeedTables(t *testing.T) {
 func TestMigration00012_DownRemovesPartyTablesAndColumns(t *testing.T) {
 	db := persistence.NewTestDB(t)
 	ctx := context.Background()
-	const tablesSQL = "SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('feed_polls','feed_party_loads')"
+	const tablesSQL = "SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('feed_fetches','feed_party_loads')"
 	const typeColumnSQL = "SELECT count(*) FROM pragma_table_info('feed_subscriptions') WHERE name = 'type'"
 	const typeIndexSQL = "SELECT count(*) FROM sqlite_master WHERE type='index' AND name = 'feed_subscriptions_repository_type'"
 	var tableCount, typeColumnCount, typeIndexCount int
@@ -502,47 +502,47 @@ func TestFeedSubscriptions_SetTypeWithoutRepositoriesChangesEveryRow(t *testing.
 	assert.Equal(t, map[string]string{"acme/api": "solo"}, subscriptionTypes(t, subscriptions, "t2"))
 }
 
-func TestFeedPolls_RecordReplacesOnlyATimeBeforeReplaceBefore(t *testing.T) {
+func TestFeedFetches_RecordReplacesOnlyATimeBeforeReplaceBefore(t *testing.T) {
 	storedAt := accessBaseTime
-	polledAt := storedAt.Add(30 * time.Second)
+	fetchedAt := storedAt.Add(30 * time.Second)
 	testCases := []struct {
 		name          string
 		replaceBefore time.Time
 		want          time.Time
 	}{
-		{name: "a stored time before ReplaceBefore is replaced", replaceBefore: storedAt.Add(time.Second), want: polledAt},
+		{name: "a stored time before ReplaceBefore is replaced", replaceBefore: storedAt.Add(time.Second), want: fetchedAt},
 		{name: "a stored time at ReplaceBefore stays", replaceBefore: storedAt, want: storedAt},
 		{name: "a stored time after ReplaceBefore stays", replaceBefore: storedAt.Add(-time.Second), want: storedAt},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			db := newFeedDB(t)
-			polls := persistence.NewFeedPolls(db)
+			fetches := persistence.NewFeedFetches(db)
 			ctx := context.Background()
-			require.NoError(t, polls.Record(ctx, persistence.FeedPollRecord{TokenID: "t1", PolledAt: storedAt}))
+			require.NoError(t, fetches.Record(ctx, persistence.FeedFetchRecord{TokenID: "t1", FetchedAt: storedAt}))
 
-			err := polls.Record(ctx, persistence.FeedPollRecord{TokenID: "t1", PolledAt: polledAt, ReplaceBefore: testCase.replaceBefore})
+			err := fetches.Record(ctx, persistence.FeedFetchRecord{TokenID: "t1", FetchedAt: fetchedAt, ReplaceBefore: testCase.replaceBefore})
 
 			require.NoError(t, err)
-			var stored []persistence.FeedPoll
+			var stored []persistence.FeedFetch
 			require.NoError(t, db.Find(&stored).Error)
 			require.Len(t, stored, 1)
 			assert.Equal(t, "t1", stored[0].TokenID)
-			assert.WithinDuration(t, testCase.want, stored[0].PolledAt, 0)
+			assert.WithinDuration(t, testCase.want, stored[0].FetchedAt, 0)
 		})
 	}
 }
 
-func TestFeedPolls_RecordStoresNonUTCTimesInUTC(t *testing.T) {
+func TestFeedFetches_RecordStoresNonUTCTimesInUTC(t *testing.T) {
 	db := newFeedDB(t)
-	polls := persistence.NewFeedPolls(db)
+	fetches := persistence.NewFeedFetches(db)
 	offset := time.FixedZone("plus2", 2*60*60)
 
-	require.NoError(t, polls.Record(context.Background(), persistence.FeedPollRecord{
-		TokenID: "t1", PolledAt: time.Date(2026, 10, 28, 12, 0, 0, 0, offset),
+	require.NoError(t, fetches.Record(context.Background(), persistence.FeedFetchRecord{
+		TokenID: "t1", FetchedAt: time.Date(2026, 10, 28, 12, 0, 0, 0, offset),
 	}))
 
-	assert.EqualValues(t, 1, countTable(t, db, "feed_polls", "polled_at = ?", time.Date(2026, 10, 28, 10, 0, 0, 0, time.UTC)),
+	assert.EqualValues(t, 1, countTable(t, db, "feed_fetches", "fetched_at = ?", time.Date(2026, 10, 28, 10, 0, 0, 0, time.UTC)),
 		"12:00+02:00 is stored as 10:00Z")
 }
 
@@ -741,13 +741,13 @@ func TestFeedPullRequests_ReceivedSinceReturnsAPartyPullRequestDeliveredAfterIts
 	db := newFeedDB(t)
 	pullRequests := persistence.NewFeedPullRequests(db)
 	openedAt := time.Date(2026, 11, 3, 10, 0, 0, 0, time.UTC)
-	lastGoodPoll := openedAt.Add(30 * time.Minute)
+	lastGoodFetch := openedAt.Add(30 * time.Minute)
 	upsertAll(t, pullRequests,
 		feedPullRequest("acme/api", 1, openedAt),
 		feedPullRequest("acme/api", 2, openedAt),
 		feedPullRequest("acme/api", 3, openedAt),
 	)
-	deliveredAt := map[int]time.Time{1: openedAt.Add(35 * time.Minute), 2: lastGoodPoll, 3: lastGoodPoll.Add(-time.Second)}
+	deliveredAt := map[int]time.Time{1: openedAt.Add(35 * time.Minute), 2: lastGoodFetch, 3: lastGoodFetch.Add(-time.Second)}
 	for number, at := range deliveredAt {
 		require.NoError(t, db.Create(&persistence.FeedDelivery{
 			TokenID: "t1", Repository: "acme/api", Number: number, DeliveredAt: at, Party: true,
@@ -755,7 +755,7 @@ func TestFeedPullRequests_ReceivedSinceReturnsAPartyPullRequestDeliveredAfterIts
 	}
 
 	received, err := pullRequests.ReceivedSince(context.Background(), persistence.FeedSinceQuery{
-		TokenID: "t1", Repositories: []string{"acme/api"}, Since: lastGoodPoll,
+		TokenID: "t1", Repositories: []string{"acme/api"}, Since: lastGoodFetch,
 	})
 
 	require.NoError(t, err)
@@ -847,10 +847,10 @@ func subscribe(t *testing.T, db *gorm.DB, tokenID string, subscriptionType strin
 	require.NoError(t, err)
 }
 
-func recordPoll(t *testing.T, db *gorm.DB, tokenID string, polledAt time.Time) {
+func recordFetch(t *testing.T, db *gorm.DB, tokenID string, fetchedAt time.Time) {
 	t.Helper()
-	require.NoError(t, persistence.NewFeedPolls(db).Record(context.Background(), persistence.FeedPollRecord{
-		TokenID: tokenID, PolledAt: polledAt, ReplaceBefore: polledAt,
+	require.NoError(t, persistence.NewFeedFetches(db).Record(context.Background(), persistence.FeedFetchRecord{
+		TokenID: tokenID, FetchedAt: fetchedAt, ReplaceBefore: fetchedAt,
 	}))
 }
 
@@ -921,9 +921,9 @@ func TestFeedDeliveries_ClaimPartySnapshotMembers(t *testing.T) {
 	subscribe(t, db, "t7", "party", "*")
 	subscribe(t, db, "t7", "solo", "acme/api")
 	for _, tokenID := range []string{"t1", "t2", "t5", "t6", "t7"} {
-		recordPoll(t, db, tokenID, partyBaseTime)
+		recordFetch(t, db, tokenID, partyBaseTime)
 	}
-	recordPoll(t, db, "t3", partyBaseTime.Add(-time.Second))
+	recordFetch(t, db, "t3", partyBaseTime.Add(-time.Second))
 	upsertAll(t, persistence.NewFeedPullRequests(db), feedPullRequest("acme/api", 1, partyBaseTime))
 	var snapshot persistence.FeedPartySnapshot
 	claim := newPartyClaim("t1", captureSnapshot(&snapshot))
@@ -933,7 +933,7 @@ func TestFeedDeliveries_ClaimPartySnapshotMembers(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, map[string][]string{"acme/api": {"t2", "t6"}}, snapshot.Members,
-		"a poll at ActiveSince counts, and an offset ActiveSince is compared in UTC")
+		"a fetch at ActiveSince counts, and an offset ActiveSince is compared in UTC")
 }
 
 func TestFeedDeliveries_ClaimPartySnapshotWaiting(t *testing.T) {
@@ -1127,7 +1127,7 @@ func TestFeedDeliveries_ClaimPartyAcrossRepositories(t *testing.T) {
 	subscribe(t, db, "t3", "party", "*")
 	subscribe(t, db, "t4", "party", "acme/web")
 	for _, tokenID := range []string{"t2", "t3", "t4"} {
-		recordPoll(t, db, tokenID, partyBaseTime)
+		recordFetch(t, db, tokenID, partyBaseTime)
 	}
 	upsertAll(t, persistence.NewFeedPullRequests(db),
 		feedPullRequest("acme/web", 1, partyBaseTime),
@@ -1205,7 +1205,7 @@ func TestFeedDeliveries_ClaimPartyConcurrentMembersNeverPassTheCap(t *testing.T)
 			seedToken(t, db, tokenID, accessBaseTime)
 		}
 		subscribe(t, db, tokenID, "party", "acme/api")
-		recordPoll(t, db, tokenID, partyBaseTime)
+		recordFetch(t, db, tokenID, partyBaseTime)
 		tokenIDs = append(tokenIDs, tokenID)
 	}
 	capped := feedPullRequest("acme/api", 1, partyBaseTime)

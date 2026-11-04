@@ -17,7 +17,7 @@ type pullRequestsFixture struct {
 	subscriptions *fakeSubscriptionStore
 	pullRequests  *fakePullRequestStore
 	deliveries    *fakeDeliveryStore
-	polls         *fakePollStore
+	fetches       *fakeFetchStore
 	catalog       *fakeCatalog
 	clock         *fakeClock
 	calls         *callLog
@@ -31,7 +31,7 @@ func newPullRequestsFixture(subscribed ...string) pullRequestsFixture {
 		subscriptions: &fakeSubscriptionStore{},
 		pullRequests:  &fakePullRequestStore{},
 		deliveries:    &fakeDeliveryStore{calls: calls},
-		polls:         &fakePollStore{calls: calls},
+		fetches:       &fakeFetchStore{calls: calls},
 		catalog:       &fakeCatalog{repositories: []string{"acme/api", "acme/new", "acme/web", "acme/lib"}},
 		clock:         &fakeClock{now: now},
 		calls:         calls,
@@ -43,7 +43,7 @@ func newPullRequestsFixture(subscribed ...string) pullRequestsFixture {
 		Subscriptions: fixture.subscriptions,
 		PullRequests:  fixture.pullRequests,
 		Deliveries:    fixture.deliveries,
-		Polls:         fixture.polls,
+		Fetches:       fixture.fetches,
 		Catalog:       fixture.catalog,
 		Clock:         fixture.clock,
 		Logger:        logger,
@@ -82,7 +82,7 @@ func TestPullRequests_Next(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Empty(t, fixture.deliveries.partyClaims)
-			assert.Equal(t, []pollRecord{{tokenID: tokenID, polledAt: now}}, fixture.polls.records, "every poll counts, also one with nothing to claim")
+			assert.Equal(t, []fetchRecord{{tokenID: tokenID, fetchedAt: now}}, fixture.fetches.records, "every fetch counts, also one with nothing to claim")
 			if testCase.wantNoClaim {
 				assert.Empty(t, fixture.deliveries.claims)
 				assert.Empty(t, delivered)
@@ -286,18 +286,18 @@ func TestPullRequests_NextLogsHeldPartyPullRequests(t *testing.T) {
 	}
 }
 
-func TestPullRequests_NextRecordsThePollAfterClaiming(t *testing.T) {
+func TestPullRequests_NextRecordsTheFetchAfterClaiming(t *testing.T) {
 	fixture := newPullRequestsFixture("acme/api")
 	fixture.subscriptions.seedOfType(domain.SubscriptionTypeParty, "acme/web")
 
 	_, err := fixture.useCase.Next(t.Context(), subscriber)
 
 	require.NoError(t, err)
-	assert.Equal(t, []string{"claim", "claim party", "record poll"}, fixture.calls.calls)
-	assert.Equal(t, []pollRecord{{tokenID: tokenID, polledAt: now}}, fixture.polls.records)
+	assert.Equal(t, []string{"claim", "claim party", "record fetch"}, fixture.calls.calls)
+	assert.Equal(t, []fetchRecord{{tokenID: tokenID, fetchedAt: now}}, fixture.fetches.records)
 }
 
-func TestPullRequests_NextClaimErrorRecordsNoPoll(t *testing.T) {
+func TestPullRequests_NextClaimErrorRecordsNoFetch(t *testing.T) {
 	errClaim := errors.New("database is locked")
 	testCases := []struct {
 		name      string
@@ -320,19 +320,19 @@ func TestPullRequests_NextClaimErrorRecordsNoPoll(t *testing.T) {
 			require.ErrorIs(t, err, errClaim)
 			assert.Nil(t, delivered)
 			assert.Equal(t, testCase.wantCalls, fixture.calls.calls)
-			assert.Empty(t, fixture.polls.records)
+			assert.Empty(t, fixture.fetches.records)
 		})
 	}
 }
 
-func TestPullRequests_NextReturnsPollError(t *testing.T) {
-	errPoll := errors.New("database is locked")
+func TestPullRequests_NextReturnsFetchError(t *testing.T) {
+	errFetch := errors.New("database is locked")
 	fixture := newPullRequestsFixture("acme/api")
-	fixture.polls.err = errPoll
+	fixture.fetches.err = errFetch
 
 	delivered, err := fixture.useCase.Next(t.Context(), subscriber)
 
-	require.ErrorIs(t, err, errPoll)
+	require.ErrorIs(t, err, errFetch)
 	assert.Nil(t, delivered)
 }
 
@@ -357,7 +357,7 @@ func TestPullRequests_Since(t *testing.T) {
 		assert.Empty(t, fixture.pullRequests.receivedCalls)
 		assert.Empty(t, fixture.deliveries.claims)
 		assert.Empty(t, fixture.deliveries.partyClaims)
-		assert.Empty(t, fixture.polls.records)
+		assert.Empty(t, fixture.fetches.records)
 	})
 
 	t.Run("nothing resolves", func(t *testing.T) {
@@ -400,7 +400,7 @@ func TestPullRequests_SinceOnPartyRepositories(t *testing.T) {
 	assert.Equal(t, []string{"acme/web"}, received.Repositories)
 	assert.Equal(t, time.UTC, received.Since.Location())
 	assert.True(t, since.Equal(received.Since))
-	assert.Empty(t, fixture.polls.records, "a since read is not a poll")
+	assert.Empty(t, fixture.fetches.records, "a since read is not a fetch")
 	assert.Empty(t, fixture.deliveries.claims)
 	assert.Empty(t, fixture.deliveries.partyClaims)
 }
