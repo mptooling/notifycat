@@ -27,7 +27,7 @@ func newRecorderFixture(partySettings domain.PartySettings) recorderFixture {
 	fixture := recorderFixture{
 		store:    &fakePullRequestStore{},
 		clock:    &fakeClock{now: now, tick: time.Minute},
-		settings: &fakePartySettings{settings: partySettings},
+		settings: &fakePartySettings{resolution: domain.PartyResolution{Settings: partySettings}},
 	}
 	fixture.recorder = application.NewRecorder(domain.RecorderParams{
 		PullRequests:  fixture.store,
@@ -43,7 +43,7 @@ func newRecorder(store *fakePullRequestStore, catalog *fakeCatalog) *application
 		PullRequests:  store,
 		Catalog:       catalog,
 		Clock:         &fakeClock{now: now},
-		PartySettings: &fakePartySettings{settings: defaultPartySettings},
+		PartySettings: &fakePartySettings{resolution: domain.PartyResolution{Settings: defaultPartySettings}},
 	})
 }
 
@@ -222,19 +222,98 @@ func TestRecorder_ReturnsFindError(t *testing.T) {
 	err := fixture.recorder.Record(t.Context(), openEvent)
 
 	require.ErrorIs(t, err, findErr)
-	assert.Zero(t, fixture.settings.calls, "a failed lookup never resolves settings")
 	assert.Empty(t, fixture.store.upserts)
 }
 
-func TestRecorder_ReturnsResolverError(t *testing.T) {
-	resolveErr := errors.New("no settings")
+func TestRecorder_FallbackKeepsTheStoredPartyState(t *testing.T) {
 	fixture := newRecorderFixture(defaultPartySettings)
-	fixture.settings.err = resolveErr
+	storedParty := domain.PartyState{Reviewers: 4, RecordedAt: now.Add(-2 * time.Hour), DeadlineAt: now.Add(time.Hour)}
+	fixture.store.stored = &domain.PullRequest{Party: storedParty}
+	fixture.settings.resolution = domain.PartyResolution{Settings: domain.PartySettings{Reviewers: 1, Deadline: time.Hour}, Fallback: true}
 
 	err := fixture.recorder.Record(t.Context(), openEvent)
 
-	require.ErrorIs(t, err, resolveErr)
-	assert.Empty(t, fixture.store.upserts)
+	require.NoError(t, err)
+	require.Len(t, fixture.store.upserts, 1)
+	assert.Equal(t, storedParty, fixture.store.upserts[0].Party, "a failed files read never lowers a stored cap or moves the timer")
+}
+
+func TestRecorder_ReadsTheStoredRowAfterTheSettingsResolve(t *testing.T) {
+	fixture := newRecorderFixture(defaultPartySettings)
+	storedParty := domain.PartyState{Reviewers: 4, RecordedAt: now.Add(-2 * time.Hour), DeadlineAt: now.Add(time.Hour)}
+	fixture.settings.resolution = domain.PartyResolution{Settings: domain.PartySettings{Reviewers: 1, Deadline: time.Hour}, Fallback: true}
+	fixture.settings.beforeAnswer = func() { fixture.store.stored = &domain.PullRequest{Party: storedParty} }
+
+	err := fixture.recorder.Record(t.Context(), openEvent)
+
+	require.NoError(t, err)
+	require.Len(t, fixture.store.upserts, 1)
+	assert.Equal(t, storedParty, fixture.store.upserts[0].Party, "a row written while the files were read is the one the recorder keeps")
+}
+
+func TestRecorder_FlagsAFallbackSoTheStoreKeepsTheStoredParty(t *testing.T) {
+	testCases := []struct {
+		name     string
+		fallback bool
+	}{
+		{name: "fallback", fallback: true},
+		{name: "resolved", fallback: false},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := newRecorderFixture(defaultPartySettings)
+			fixture.settings.resolution = domain.PartyResolution{Settings: defaultPartySettings, Fallback: testCase.fallback}
+
+			err := fixture.recorder.Record(t.Context(), openEvent)
+
+			require.NoError(t, err)
+			require.Len(t, fixture.store.upserts, 1)
+			assert.Equal(t, testCase.fallback, fixture.store.upserts[0].KeepStoredParty)
+		})
+	}
+}
+
+func TestRecorder_FallbackOnANewPullRequestUsesTheResolvedSettings(t *testing.T) {
+	fixture := newRecorderFixture(defaultPartySettings)
+	fixture.settings.resolution = domain.PartyResolution{Settings: domain.PartySettings{Reviewers: 2, Deadline: 30 * time.Minute}, Fallback: true}
+
+	err := fixture.recorder.Record(t.Context(), openEvent)
+
+	require.NoError(t, err)
+	require.Len(t, fixture.store.upserts, 1)
+	party := fixture.store.upserts[0].Party
+	assert.Equal(t, 2, party.Reviewers)
+	assert.WithinDuration(t, now, party.RecordedAt, 0)
+	assert.WithinDuration(t, now.Add(30*time.Minute), party.DeadlineAt, 0)
+}
+
+func TestRecorder_FallbackOnARowWithoutRecordTimeUsesTheResolvedSettings(t *testing.T) {
+	fixture := newRecorderFixture(defaultPartySettings)
+	fixture.store.stored = &domain.PullRequest{Party: domain.PartyState{Reviewers: 4}}
+	fixture.settings.resolution = domain.PartyResolution{Settings: domain.PartySettings{Reviewers: 2, Deadline: 30 * time.Minute}, Fallback: true}
+
+	err := fixture.recorder.Record(t.Context(), openEvent)
+
+	require.NoError(t, err)
+	require.Len(t, fixture.store.upserts, 1)
+	party := fixture.store.upserts[0].Party
+	assert.Equal(t, 2, party.Reviewers)
+	assert.WithinDuration(t, now, party.RecordedAt, 0)
+	assert.WithinDuration(t, now.Add(30*time.Minute), party.DeadlineAt, 0)
+}
+
+func TestRecorder_ResolvesWithTheLowerCasedKey(t *testing.T) {
+	fixture := newRecorderFixture(defaultPartySettings)
+	wantKey := domain.PullRequestKey{Repository: "acme/api", Number: 42}
+	fixture.settings.onlyForKey = &wantKey
+	fixture.settings.resolution = domain.PartyResolution{Settings: domain.PartySettings{Reviewers: 3, Deadline: 20 * time.Minute}}
+
+	err := fixture.recorder.Record(t.Context(), openEvent)
+
+	require.NoError(t, err)
+	require.Len(t, fixture.store.upserts, 1)
+	assert.Equal(t, 3, fixture.store.upserts[0].Party.Reviewers, "the resolver answers only for the lower-cased key")
 }
 
 func TestRecorder_CloseEventNeitherFindsNorResolves(t *testing.T) {

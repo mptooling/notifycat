@@ -25,7 +25,7 @@ type Config struct {
 // domain.ChangedFilesReader (the GitHub client), a *slog.Logger, and a Config.
 var Module = fx.Module("routing",
 	fx.Provide(
-		fx.Annotate(provideProvider, fx.As(new(domain.RoutingProvider))),
+		fx.Annotate(provideProvider, fx.As(new(domain.RoutingProvider)), fx.As(new(domain.PartyRules))),
 		fx.Annotate(application.NewRouter, fx.As(new(domain.TargetResolver))),
 	),
 )

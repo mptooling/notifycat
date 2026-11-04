@@ -515,3 +515,143 @@ func TestIntegration_StartupRemovesSubscriptionsToUnmappedRepositories(t *testin
 		})
 	}
 }
+
+const billingFilesPath = "/repos/acme/api/pulls/42/files"
+
+type githubFilesFake struct {
+	*httptest.Server
+	mu    sync.Mutex
+	paths []string
+}
+
+func newGitHubFilesFake(t *testing.T, filesStatus int) *githubFilesFake {
+	t.Helper()
+
+	fake := &githubFilesFake{}
+	fake.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fake.mu.Lock()
+		fake.paths = append(fake.paths, r.URL.Path)
+		fake.mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path != billingFilesPath {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(filesStatus)
+		if filesStatus == http.StatusOK {
+			_, _ = w.Write([]byte(`[{"filename":"billing/x.go"}]`))
+		}
+	}))
+	t.Cleanup(fake.Close)
+	return fake
+}
+
+func (fake *githubFilesFake) requestedPaths() []string {
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	return append([]string(nil), fake.paths...)
+}
+
+func intPointer(value int) *int { return &value }
+
+func partyPathConfig(t *testing.T) (config.Config, *slackFake) {
+	t.Helper()
+
+	cfg := feedConfig(t, true)
+	slackFake := newSlackFake(t)
+	cfg.SlackBaseURL = slackFake.URL
+	apiTier := cfg.Mappings["acme"]["api"]
+	apiTier.Party = routingdomain.PartyOverride{Reviewers: intPointer(1)}
+	apiTier.Paths = []routingdomain.PathRule{{Dir: "billing", Party: routingdomain.PartyOverride{Reviewers: intPointer(2)}}}
+	cfg.Mappings["acme"]["api"] = apiTier
+	cfg.Mappings["acme"]["*"] = routingdomain.RepoConfig{Party: routingdomain.PartyOverride{Deadline: durationPointer(2 * time.Hour)}}
+	return cfg, slackFake
+}
+
+func durationPointer(value time.Duration) *time.Duration { return &value }
+
+type partyMembers struct {
+	alice, bob map[string]string
+}
+
+func subscribePartyMembers(t *testing.T, public *httptest.Server, adminServer *runtime.AdminServer) partyMembers {
+	t.Helper()
+
+	admin := httptest.NewServer(adminServer.Handler)
+	t.Cleanup(admin.Close)
+	adminAuth := map[string]string{"Authorization": "Bearer " + testAdminKey}
+	members := partyMembers{
+		alice: map[string]string{"Authorization": "Bearer " + redeemAgentToken(t, public, admin, adminAuth, "alice")},
+		bob:   map[string]string{"Authorization": "Bearer " + redeemAgentToken(t, public, admin, adminAuth, "bob")},
+	}
+	for _, member := range []map[string]string{members.alice, members.bob} {
+		status, _ := request(t, public, http.MethodPost, "/api/v1/subs", `{"repositories":["acme/api"],"type":"party"}`, member)
+		require.Equal(t, http.StatusOK, status)
+		require.Empty(t, listFeed(t, public, "", member))
+	}
+	return members
+}
+
+func TestIntegration_PartySettingsFromMappings(t *testing.T) {
+	cfg, slackFake := partyPathConfig(t)
+	githubFake := newGitHubFilesFake(t, http.StatusOK)
+	cfg.GitHubBaseURL = githubFake.URL
+	cfg.GitHubToken = config.Secret("gh-read-only")
+	public, adminServer := buildFeedApp(t, cfg, weekdayClock())
+	require.NotNil(t, adminServer)
+	members := subscribePartyMembers(t, public, adminServer)
+	require.Equal(t, http.StatusOK, deliverPullRequestEvent(t, public, cfg, pullRequestEvent("opened", openedHeadSHA)))
+
+	aliceDelivered := pullRequestNumbers(listFeed(t, public, "", members.alice))
+	bobDelivered := pullRequestNumbers(listFeed(t, public, "", members.bob))
+	starStatus, starBody := request(t, public, http.MethodPost, "/api/v1/subs", `{"repositories":["acme/other"]}`, members.alice)
+
+	assert.Equal(t, []int{42}, aliceDelivered)
+	assert.Equal(t, []int{42}, bobDelivered, "the billing path sets a cap of 2")
+	assert.Equal(t, http.StatusBadRequest, starStatus, "a party-only star adds no repository")
+	assert.Contains(t, starBody, "unknown_repository")
+	assert.Equal(t, []string{billingFilesPath}, githubFake.requestedPaths(), "the Slack router read no files")
+	postCall, posted := slackFake.findCall("/api/chat.postMessage")
+	require.True(t, posted)
+	assert.Equal(t, "C123ABCDE", postCall.Body["channel"])
+}
+
+func TestIntegration_PartyFilesReadFailureFallsBack(t *testing.T) {
+	cfg, slackFake := partyPathConfig(t)
+	githubFake := newGitHubFilesFake(t, http.StatusBadGateway)
+	cfg.GitHubBaseURL = githubFake.URL
+	cfg.GitHubToken = config.Secret("gh-read-only")
+	logged := &lockedBuffer{}
+	public, adminServer := buildFeedApp(t, cfg, weekdayClock(), fx.Replace(slog.New(slog.NewTextHandler(logged, nil))))
+	require.NotNil(t, adminServer)
+	members := subscribePartyMembers(t, public, adminServer)
+	require.Equal(t, http.StatusOK, deliverPullRequestEvent(t, public, cfg, pullRequestEvent("opened", openedHeadSHA)))
+
+	aliceDelivered := pullRequestNumbers(listFeed(t, public, "", members.alice))
+	bobDelivered := pullRequestNumbers(listFeed(t, public, "", members.bob))
+
+	assert.Equal(t, []int{42}, aliceDelivered)
+	assert.Equal(t, []int{}, bobDelivered, "the fallback takes the repository cap of 1")
+	assert.Regexp(t, `msg="feed party settings fallback".*repository=acme/api.*number=42`, logged.String())
+	assert.NotContains(t, logged.String(), "gh-read-only", "the read token never reaches the log")
+	_, posted := slackFake.findCall("/api/chat.postMessage")
+	assert.True(t, posted)
+}
+
+func TestIntegration_PartyPathRuleWithoutReadTokenUsesTheRepositoryValues(t *testing.T) {
+	cfg, slackFake := partyPathConfig(t)
+	cfg.GitHubToken = config.Secret("")
+	public, adminServer := buildFeedApp(t, cfg, weekdayClock())
+	require.NotNil(t, adminServer)
+	members := subscribePartyMembers(t, public, adminServer)
+
+	status := deliverPullRequestEvent(t, public, cfg, pullRequestEvent("opened", openedHeadSHA))
+	aliceDelivered := pullRequestNumbers(listFeed(t, public, "", members.alice))
+	bobDelivered := pullRequestNumbers(listFeed(t, public, "", members.bob))
+
+	assert.Equal(t, http.StatusOK, status)
+	assert.Equal(t, []int{42}, aliceDelivered)
+	assert.Equal(t, []int{}, bobDelivered, "without a read token the repository cap of 1 applies")
+	_, posted := slackFake.findCall("/api/chat.postMessage")
+	assert.True(t, posted)
+}

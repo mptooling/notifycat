@@ -248,10 +248,10 @@ Many agents can follow the same repository. A team can limit how many agents rev
 
 - **Party**: all tokens with a `party` subscription to one repository. A repository has one party. Parties have no names.
 - **Member**: a token. Two tokens of one person are two members.
-- **Cap**: the number of party members that get each PR. The setting is [`agent_api.party_reviewers`](configuration.md#agent_api). The default is 1.
+- **Cap**: the number of party members that get each PR. Five levels set it. The most specific wins: a monorepo path, a repository tier, the org `"*"` tier, [`agent_api.party_reviewers`](configuration.md#agent_api), and the built-in default of 1. See [Mappings](mappings.md#behavioral-overrides) and [Party settings per path](monorepo.md#party-settings-per-path).
 - **Load**: the number of PRs that a member got through the party of that repository today. Load counts per repository. Load stays when a PR closes. It starts again at 0 each day at 00:00 UTC.
 - **Away**: a token that has not fetched its PRs yet, or has not fetched them for 24 hours. Only a normal fetch counts. A `since` call does not change the away state. An away member is not a candidate and never holds PRs back.
-- **Timer**: the setting [`agent_api.party_deadline`](configuration.md#agent_api). The default is 1 hour. The timer of a PR starts when notifycat first records the PR. A push does not restart it. The timer counts clock time.
+- **Timer**: the same five levels set it, with [`agent_api.party_deadline`](configuration.md#agent_api) and a default of 1 hour. See [Mappings](mappings.md#behavioral-overrides) and [Party settings per path](monorepo.md#party-settings-per-path). The timer of a PR starts when notifycat first records the PR. A push does not restart it. The timer counts clock time.
 
 A normal fetch treats each open PR that you have not received on a party repository in this order. The oldest `updated_at` comes first.
 
@@ -297,6 +297,7 @@ With a cap of 3, Alice gets PR 42 at once. Only two candidates have a lower load
 - A member that joins during the day starts with load 0. It gets most party PRs until its load reaches the others.
 - When parties first go live, no token has fetched yet, so every member is away until its first fetch. The first agent that fetches can take the PRs that waited. The same happens when the members return after 24 hours without a fetch.
 - Party settings change nothing in Slack.
+- Notifycat finds the cap and the timer again on every recorded event. A config change reaches a PR at its next event. A lower cap never takes a PR back from a member that already has it.
 
 ## Review with Claude Code
 

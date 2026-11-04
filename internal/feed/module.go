@@ -13,16 +13,17 @@ import (
 )
 
 // Module binds the feed ports to their adapters and the use cases. It
-// expects the composition root to supply a domain.Settings, *persistence.FeedSubscriptions,
+// expects the composition root to supply *persistence.FeedSubscriptions,
 // *persistence.FeedPullRequests, *persistence.FeedDeliveries, *persistence.FeedFetches,
-// routingdomain.EntryLister and a *slog.Logger.
+// routingdomain.EntryLister, routingdomain.PartyRules, routingdomain.ChangedFilesReader
+// (nil when no read token is set) and a *slog.Logger.
 var Module = fx.Module("feed",
 	fx.Provide(
 		fx.Annotate(infrastructure.NewSubscriptionRepo, fx.As(new(domain.SubscriptionStore))),
 		fx.Annotate(infrastructure.NewPullRequestRepo, fx.As(new(domain.PullRequestStore))),
 		fx.Annotate(infrastructure.NewDeliveryRepo, fx.As(new(domain.DeliveryStore))),
 		fx.Annotate(infrastructure.NewFetchRepo, fx.As(new(domain.FetchStore))),
-		fx.Annotate(infrastructure.NewConfigPartySettings, fx.As(new(domain.PartySettingsResolver))),
+		fx.Annotate(infrastructure.NewRoutingPartySettings, fx.As(new(domain.PartySettingsResolver))),
 		fx.Annotate(infrastructure.NewRoutingCatalog, fx.As(new(domain.RepositoryCatalog))),
 		fx.Annotate(infrastructure.NewSystemClock, fx.As(new(domain.Clock))),
 		fx.Annotate(provideSubscriptions, fx.As(new(domain.Subscriptions))),

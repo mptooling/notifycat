@@ -52,7 +52,7 @@ Nine domains live under `internal/<domain>/`, each with three layers (`domain/`,
 | --- | --- |
 | `notification` | Core: receive a GitHub PR event, keep one Slack message per (PR, channel) in sync |
 | `review` | Interactive "Start review" Slack flow; records reviewers; decorates the message |
-| `routing` | Resolve a repo (and changed files) to the Slack channel(s) and behavioral config |
+| `routing` | Resolve a repo (and changed files) to the Slack channel(s) and behavioral config, and to the party cap and timer per repository and path |
 | `validation` | Validate mapping entries against Slack + GitHub; cache results in `config.lock` |
 | `digest` | Periodic stuck-PR digest per cron schedule |
 | `maintenance` | Background housekeeping: delete stale message rows; reconcile closed PRs; relocate messages after a channel change |
@@ -104,7 +104,7 @@ Every silent no-op logs `ignored webhook event` with a `reason` field (`no_handl
 
 ### Mappings & startup validation
 
-Routing comes from the **`mappings:` section of the declarative `config.yaml`**, not the DB. The `routing` domain builds a `Provider` from it; the `validation` domain runs per-entry checks against Slack and (optionally) GitHub. On boot, `internal/runtime` diffs entries against `config.lock` and only revalidates changed ones — successful entries are merged back into the lock. Empty mappings boot fine. A check reports one of four statuses: `OK`, `SKIP` (the operator opted out — no read token), `WARN`, and `FAIL`. Any entry with a `FAIL` check aborts startup with the failing details logged. `WARN` is **advisory**: the `webhook` coverage check and wildcard `org-repos` expansion probe external state, so a missing hook or a 403 from the hooks listing logs `startup validate warning` and the server keeps serving. Warned entries are deliberately **not** merged into `config.lock` (`EntryResult.Cacheable()`), so they are re-probed and the warning re-logged on every boot until they turn `OK`. The same code path powers `notifycat-config validate` and `notifycat-doctor owner/repo`.
+Routing comes from the **`mappings:` section of the declarative `config.yaml`**, not the DB. The `routing` domain builds a `Provider` from it; the `validation` domain runs per-entry checks against Slack and (optionally) GitHub. On boot, `internal/runtime` diffs entries against `config.lock` and only revalidates changed ones — successful entries are merged back into the lock. Empty mappings boot fine. A check reports one of four statuses: `OK`, `SKIP` (the operator opted out — no read token), `WARN`, and `FAIL`. Any entry with a `FAIL` check aborts startup with the failing details logged. `WARN` is **advisory**: the `webhook` coverage check and wildcard `org-repos` expansion probe external state, so a missing hook or a 403 from the hooks listing logs `startup validate warning` and the server keeps serving. Warned entries are deliberately **not** merged into `config.lock` (`EntryResult.Cacheable()`), so they are re-probed and the warning re-logged on every boot until they turn `OK`. The same code path powers `notifycat-config validate` and `notifycat-doctor owner/repo`. Entries that set only party keys stay out of Slack routing, `config.lock`, and validation.
 
 ### Persistence
 

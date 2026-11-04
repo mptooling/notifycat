@@ -129,7 +129,7 @@ func (c *Client) listHooks(ctx context.Context, owner, repo string) ([]Hook, err
 
 	var hooks []Hook
 	if err := json.Unmarshal(body, &hooks); err != nil {
-		return nil, fmt.Errorf("github: list-hooks: decode: %w (body=%q)", err, string(body))
+		return nil, fmt.Errorf("github: list-hooks: decode: %w", err)
 	}
 	return hooks, nil
 }

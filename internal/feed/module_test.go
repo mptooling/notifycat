@@ -18,6 +18,14 @@ type noMappings struct{}
 
 func (noMappings) Entries() []routingdomain.Entry { return nil }
 
+type noPartyRules struct{}
+
+func (noPartyRules) HasPartyPathRules(string) bool { return false }
+
+func (noPartyRules) PartySettings(string, []string) routingdomain.PartySettings {
+	return routingdomain.PartySettings{}
+}
+
 func TestModule_GraphResolves(t *testing.T) {
 	db := persistence.NewTestDB(t)
 
@@ -29,8 +37,9 @@ func TestModule_GraphResolves(t *testing.T) {
 			func() *persistence.FeedPullRequests { return persistence.NewFeedPullRequests(db) },
 			func() *persistence.FeedDeliveries { return persistence.NewFeedDeliveries(db) },
 			func() *persistence.FeedFetches { return persistence.NewFeedFetches(db) },
-			func() domain.Settings { return domain.Settings{} },
 			func() routingdomain.EntryLister { return noMappings{} },
+			func() routingdomain.PartyRules { return noPartyRules{} },
+			func() routingdomain.ChangedFilesReader { return nil },
 			func() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) },
 		),
 		fx.Invoke(func(domain.Subscriptions, domain.PullRequests, domain.Recorder, domain.PullRequestCleaner, domain.FetchStore, domain.PartySettingsResolver) {

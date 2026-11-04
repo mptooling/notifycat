@@ -3,6 +3,7 @@ package domain
 import (
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/mptooling/notifycat/internal/kernel"
 )
@@ -65,6 +66,9 @@ type RepoConfig struct {
 	// base). Mutually exclusive with Channel/Mentions — exactly one form is
 	// populated per tier, enforced at decode. Nil means the single Channel form.
 	Channels []ChannelSpec
+
+	// Party is the tier's review-party override; the Slack routing ignores it.
+	Party PartyOverride
 }
 
 // PathRule is one entry in a repo tier's `paths:` block: a normalized
@@ -80,6 +84,55 @@ type PathRule struct {
 	// with Channel/Mentions (enforced at decode); nil means the single Channel
 	// form. List entries default absent mentions to ChannelMention.
 	Channels []ChannelSpec
+
+	// Party is the path rule's review-party override.
+	Party PartyOverride
+}
+
+// PartyOverride is the optional party cap and timer a tier or path sets; a nil
+// field inherits from a less specific level.
+type PartyOverride struct {
+	Reviewers *int
+	Deadline  *time.Duration
+	// Declared is true when the entry names a party key, even with an empty value.
+	Declared bool
+}
+
+// IsSet reports whether the override sets a cap or a timer.
+func (override PartyOverride) IsSet() bool {
+	return override.Reviewers != nil || override.Deadline != nil
+}
+
+func (override PartyOverride) isPartyEntry() bool {
+	return override.IsSet() || override.Declared
+}
+
+// PartySettings is the resolved party cap and timer of a repository.
+type PartySettings struct {
+	Reviewers int
+	Deadline  time.Duration
+}
+
+// PartyOnly reports whether the rule sets party keys and no Slack routing.
+func (rule PathRule) PartyOnly() bool {
+	return rule.Party.isPartyEntry() && rule.Channel == "" && !rule.MentionsPresent && len(rule.Channels) == 0
+}
+
+// PartyOnly reports whether the tier and all its path rules set party keys and
+// no Slack routing, so the tier routes nothing to Slack.
+func (tier RepoConfig) PartyOnly() bool {
+	setsSlackKey := tier.Channel != "" || len(tier.Channels) > 0 || tier.MentionsPresent ||
+		tier.Reactions != nil || tier.IgnoreAIReviews != nil || tier.DependabotFormat != nil ||
+		tier.DeleteOnClose != nil || tier.Digest != nil || tier.Notifications != nil
+	if setsSlackKey {
+		return false
+	}
+	for _, rule := range tier.Paths {
+		if !rule.PartyOnly() {
+			return false
+		}
+	}
+	return tier.Party.isPartyEntry() || len(tier.Paths) > 0
 }
 
 // ChannelSpec is one entry in a tier's or path rule's `channels:` list: a Slack
@@ -208,6 +261,7 @@ type Defaults struct {
 	IgnoreAIReviews  bool
 	DependabotFormat bool
 	DeleteOnClose    bool
+	Party            PartySettings
 	// GitProvider is the deployment's single git_provider; the Provider stamps it
 	// on every entry so it hashes into the lock (see Entry.Provider).
 	GitProvider kernel.Provider

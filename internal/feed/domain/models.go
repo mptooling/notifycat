@@ -34,6 +34,8 @@ type PullRequest struct {
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 	Party        PartyState
+	// KeepStoredParty tells the store not to overwrite the party columns of a row that has a record time.
+	KeepStoredParty bool
 }
 
 // ConfiguredRepositories is what a token can subscribe to.
@@ -149,9 +151,11 @@ type PartySettings struct {
 	Deadline  time.Duration
 }
 
-// Settings are the feed settings built from the config.
-type Settings struct {
-	Party PartySettings
+// PartyResolution is the outcome of resolving the party settings of one pull request.
+type PartyResolution struct {
+	Settings PartySettings
+	// Fallback is true when the changed files could not be read and Settings holds the repository's values.
+	Fallback bool
 }
 
 // TypeChange sets the type of a token's subscriptions; nil Repositories means every subscription.

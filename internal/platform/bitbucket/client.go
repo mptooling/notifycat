@@ -382,7 +382,7 @@ func (c *Client) getPaginatedWith(ctx context.Context, doer *http.Client, target
 		Next   string          `json:"next"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
-		return nil, "", fmt.Errorf("bitbucket: %s: decode: %w (body=%q)", method, err, string(body))
+		return nil, "", fmt.Errorf("bitbucket: %s: decode: %w", method, err)
 	}
 	return envelope.Values, envelope.Next, nil
 }

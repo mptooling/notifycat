@@ -40,11 +40,12 @@ func (recorder *Recorder) Record(ctx context.Context, event kernel.Event) error 
 	case kernel.KindOpened, kernel.KindReadyForReview, kernel.KindUpdated, kernel.KindReopened:
 		moment := recorder.clock.Now().UTC()
 		feedPullRequest := recorder.feedPullRequest(repository, event.PR, moment)
-		party, err := recorder.partyState(ctx, domain.PullRequestKey{Repository: repository, Number: event.PR.Number}, moment)
+		party, keepStoredParty, err := recorder.partyState(ctx, domain.PullRequestKey{Repository: repository, Number: event.PR.Number}, moment)
 		if err != nil {
 			return err
 		}
 		feedPullRequest.Party = party
+		feedPullRequest.KeepStoredParty = keepStoredParty
 		if err := recorder.pullRequests.Upsert(ctx, feedPullRequest); err != nil {
 			return fmt.Errorf("upsert feed pull request: %w", err)
 		}
@@ -57,24 +58,25 @@ func (recorder *Recorder) Record(ctx context.Context, event kernel.Event) error 
 	return nil
 }
 
-func (recorder *Recorder) partyState(ctx context.Context, key domain.PullRequestKey, now time.Time) (domain.PartyState, error) {
+func (recorder *Recorder) partyState(ctx context.Context, key domain.PullRequestKey, now time.Time) (domain.PartyState, bool, error) {
+	resolution := recorder.partySettings.Resolve(ctx, key)
 	stored, found, err := recorder.pullRequests.Find(ctx, key)
 	if err != nil {
-		return domain.PartyState{}, fmt.Errorf("find feed pull request: %w", err)
+		return domain.PartyState{}, false, fmt.Errorf("find feed pull request: %w", err)
+	}
+	hasRecordTime := found && !stored.Party.RecordedAt.IsZero()
+	if resolution.Fallback && hasRecordTime {
+		return stored.Party, true, nil
 	}
 	recordedAt := now
-	if found && !stored.Party.RecordedAt.IsZero() {
+	if hasRecordTime {
 		recordedAt = stored.Party.RecordedAt
 	}
-	settings, err := recorder.partySettings.Resolve(ctx, key)
-	if err != nil {
-		return domain.PartyState{}, fmt.Errorf("resolve party settings: %w", err)
-	}
 	return domain.PartyState{
-		Reviewers:  settings.Reviewers,
+		Reviewers:  resolution.Settings.Reviewers,
 		RecordedAt: recordedAt,
-		DeadlineAt: recordedAt.Add(settings.Deadline),
-	}, nil
+		DeadlineAt: recordedAt.Add(resolution.Settings.Deadline),
+	}, resolution.Fallback, nil
 }
 
 func (recorder *Recorder) feedPullRequest(repository string, pullRequest kernel.PR, now time.Time) domain.PullRequest {

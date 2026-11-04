@@ -84,16 +84,6 @@ func provideEntryLister(provider *routingapp.Provider) routingdomain.EntryLister
 	return provider
 }
 
-func provideFeedSettings(cfg config.Config) feeddomain.Settings {
-	reviewers := cfg.PartyReviewers
-	if reviewers < routingdomain.MinPartyReviewers {
-		reviewers = routingdomain.DefaultPartyReviewers
-	}
-	deadline := cfg.PartyDeadline
-	if deadline < routingdomain.MinPartyDeadline {
-		deadline = routingdomain.DefaultPartyDeadline
-	}
-	return feeddomain.Settings{
-		Party: feeddomain.PartySettings{Reviewers: reviewers, Deadline: deadline},
-	}
+func providePartyRules(provider *routingapp.Provider) routingdomain.PartyRules {
+	return provider
 }

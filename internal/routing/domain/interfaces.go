@@ -36,3 +36,13 @@ type TargetResolver interface {
 type EntryLister interface {
 	Entries() []Entry
 }
+
+// PartyRules answers the party cap and timer of a repository from the mappings.
+// Repository names match in any case.
+type PartyRules interface {
+	// HasPartyPathRules reports whether a path rule of the repository sets party_reviewers or party_deadline.
+	HasPartyPathRules(repository string) bool
+	// PartySettings returns the highest cap and the shortest timer over the files.
+	// No files give the repository's values.
+	PartySettings(repository string, files []string) PartySettings
+}

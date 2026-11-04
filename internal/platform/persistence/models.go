@@ -142,6 +142,7 @@ type FeedPullRequest struct {
 	PartyReviewers  int        `gorm:"column:party_reviewers;not null;default:1"`
 	RecordedAt      *time.Time `gorm:"column:recorded_at;autoCreateTime:false"`
 	PartyDeadlineAt *time.Time `gorm:"column:party_deadline_at;autoCreateTime:false"`
+	KeepStoredParty bool       `gorm:"-"`
 }
 
 // TableName pins the table name.

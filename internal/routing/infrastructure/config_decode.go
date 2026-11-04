@@ -222,6 +222,7 @@ type repoConfigWire struct {
 	Notifications    *domain.NotificationsConfig
 	Paths            []domain.PathRule
 	Channels         []domain.ChannelSpec
+	Party            domain.PartyOverride
 }
 
 // UnmarshalYAML walks the mapping node by hand so we can keep the mentions
@@ -295,6 +296,10 @@ func (rc *repoConfigWire) UnmarshalYAML(node *yaml.Node) error {
 			rc.Digest = d
 		case "notifications":
 			if err := decodeNotifications(rc, valNode); err != nil {
+				return err
+			}
+		case "party_reviewers", "party_deadline":
+			if err := decodePartyKey(keyNode.Value, valNode, &rc.Party); err != nil {
 				return err
 			}
 		case "paths":
@@ -608,6 +613,10 @@ func decodePathRule(rule *domain.PathRule, node *yaml.Node) error {
 				return fmt.Errorf("mentions: %w", err)
 			}
 			rule.Mentions = ms
+		case "party_reviewers", "party_deadline":
+			if err := decodePartyKey(keyNode.Value, valNode, &rule.Party); err != nil {
+				return err
+			}
 		default:
 			return fmt.Errorf("unknown field %q", keyNode.Value)
 		}
@@ -619,6 +628,35 @@ func decodePathRule(rule *domain.PathRule, node *yaml.Node) error {
 		if rule.MentionsPresent {
 			return fmt.Errorf("mentions: is not allowed alongside channels: (put mentions inside each entry)")
 		}
+	}
+	return nil
+}
+
+func decodePartyKey(key string, node *yaml.Node, party *domain.PartyOverride) error {
+	if node.Kind != yaml.ScalarNode {
+		return fmt.Errorf("%s: must be a single value", key)
+	}
+	party.Declared = true
+	var text string
+	if err := node.Decode(&text); err != nil {
+		return fmt.Errorf("%s: %w", key, err)
+	}
+	if text == "" {
+		return nil
+	}
+	switch key {
+	case "party_reviewers":
+		reviewers, err := domain.ParsePartyReviewers(text)
+		if err != nil {
+			return fmt.Errorf("%s: %w", key, err)
+		}
+		party.Reviewers = &reviewers
+	case "party_deadline":
+		deadline, err := domain.ParsePartyDeadline(text)
+		if err != nil {
+			return fmt.Errorf("%s: %w", key, err)
+		}
+		party.Deadline = &deadline
 	}
 	return nil
 }
@@ -682,6 +720,7 @@ func (rc repoConfigWire) toDomain() domain.RepoConfig {
 		Notifications:    rc.Notifications,
 		Paths:            rc.Paths,
 		Channels:         rc.Channels,
+		Party:            rc.Party,
 	}
 	if rc.Reactions != nil {
 		v := rc.Reactions.toDomain()

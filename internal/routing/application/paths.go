@@ -183,7 +183,7 @@ func unionContributions(contribs []mentionContribution, baseMentions []string) [
 func matchedRules(paths []domain.PathRule, files []string) []domain.PathRule {
 	chosen := make([]bool, len(paths))
 	for _, f := range files {
-		f = strings.TrimPrefix(strings.TrimSpace(f), "/")
+		f = normalizeChangedFile(f)
 		best := -1
 		for i := range paths {
 			if fileUnder(f, paths[i].Dir) && (best == -1 || len(paths[i].Dir) > len(paths[best].Dir)) {
@@ -207,4 +207,8 @@ func matchedRules(paths []domain.PathRule, files []string) []domain.PathRule {
 // matches "modules/acme/x.go" but not "modules/acmexyz/x.go".
 func fileUnder(file, dir string) bool {
 	return strings.HasPrefix(file, dir+"/")
+}
+
+func normalizeChangedFile(file string) string {
+	return strings.TrimPrefix(strings.TrimSpace(file), "/")
 }

@@ -116,6 +116,18 @@ func TestGetRepository_ResponseCapTruncation(t *testing.T) {
 	assert.NotErrorAs(t, err, &apiErr, "truncation is a decode error, not an API error")
 }
 
+func TestListPullRequestFiles_DecodeErrorKeepsTheBodyOut(t *testing.T) {
+	const marker = "body-marker-7731"
+	client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"values":[{"new":{"path":"`+marker)
+	})
+
+	_, err := client.ListPullRequestFiles(context.Background(), "acme", "web", 7)
+
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), marker, "a response body never reaches an error or a log")
+}
+
 func TestListWorkspaceRepos_SinglePage(t *testing.T) {
 	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/repositories/acme", r.URL.Path)

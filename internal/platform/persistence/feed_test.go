@@ -685,6 +685,48 @@ func TestFeedPullRequests_UpsertReplacesPartySettings(t *testing.T) {
 		time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)), "14:00+02:00 is stored as 12:00Z")
 }
 
+func TestFeedPullRequests_UpsertKeepStoredPartyGuardsARecordedRow(t *testing.T) {
+	recordedAt := accessBaseTime
+	storedDeadline := accessBaseTime.Add(time.Hour)
+	newDeadline := accessBaseTime.Add(2 * time.Hour)
+	testCases := []struct {
+		name            string
+		firstRecordedAt *time.Time
+		keepStoredParty bool
+		wantReviewers   int
+		wantDeadlineAt  time.Time
+	}{
+		{name: "flag keeps a recorded row", firstRecordedAt: &recordedAt, keepStoredParty: true, wantReviewers: 4, wantDeadlineAt: storedDeadline},
+		{name: "flag lets a row without record time take the new values", firstRecordedAt: nil, keepStoredParty: true, wantReviewers: 2, wantDeadlineAt: newDeadline},
+		{name: "no flag replaces the values", firstRecordedAt: &recordedAt, keepStoredParty: false, wantReviewers: 2, wantDeadlineAt: newDeadline},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			pullRequests := persistence.NewFeedPullRequests(newFeedDB(t))
+			first := feedPullRequest("acme/api", 1, accessBaseTime)
+			first.PartyReviewers = 4
+			first.RecordedAt = testCase.firstRecordedAt
+			first.PartyDeadlineAt = &storedDeadline
+			second := feedPullRequest("acme/api", 1, accessBaseTime.Add(time.Minute))
+			second.PartyReviewers = 2
+			second.RecordedAt = &recordedAt
+			second.PartyDeadlineAt = &newDeadline
+			second.KeepStoredParty = testCase.keepStoredParty
+			upsertAll(t, pullRequests, first, second)
+
+			stored, err := pullRequests.Find(context.Background(), "acme/api", 1)
+
+			require.NoError(t, err)
+			require.NotNil(t, stored.PartyDeadlineAt)
+			assert.Equal(t, testCase.wantReviewers, stored.PartyReviewers)
+			assert.WithinDuration(t, testCase.wantDeadlineAt, *stored.PartyDeadlineAt, 0)
+			assert.Equal(t, "PR 1", stored.Title, "the flag guards only the party columns")
+			assert.WithinDuration(t, accessBaseTime.Add(time.Minute), stored.UpdatedAt, 0, "the flag guards only the party columns")
+		})
+	}
+}
+
 func TestFeedPullRequests_FindMissingIsErrNotFound(t *testing.T) {
 	pullRequests := persistence.NewFeedPullRequests(newFeedDB(t))
 

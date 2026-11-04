@@ -270,14 +270,20 @@ func TestCleanFeed_SubscriptionFailureDoesNotSkipPullRequests(t *testing.T) {
 	assert.Equal(t, []string{"remove_unconfigured"}, pullRequests.calls)
 }
 
-func TestProvideFeedSettings_UsesTheConfiguredPartySettings(t *testing.T) {
-	settings := provideFeedSettings(config.Config{PartyReviewers: 2, PartyDeadline: 30 * time.Minute})
-
-	assert.Equal(t, feeddomain.PartySettings{Reviewers: 2, Deadline: 30 * time.Minute}, settings.Party)
+func partyMappings() map[string]routingdomain.Org {
+	return map[string]routingdomain.Org{"acme": {"api": routingdomain.RepoConfig{Channel: "C123ABCDE"}}}
 }
 
-func TestProvideFeedSettings_FallsBackToPartyDefaults(t *testing.T) {
-	settings := provideFeedSettings(config.Config{})
+func TestBuildProvider_GlobalPartySettings(t *testing.T) {
+	cfg := config.Config{PartyReviewers: 2, PartyDeadline: 30 * time.Minute, Mappings: partyMappings()}
 
-	assert.Equal(t, feeddomain.PartySettings{Reviewers: routingdomain.DefaultPartyReviewers, Deadline: routingdomain.DefaultPartyDeadline}, settings.Party)
+	provider := buildProvider(cfg, discardLogger())
+
+	assert.Equal(t, routingdomain.PartySettings{Reviewers: 2, Deadline: 30 * time.Minute}, provider.PartySettings("acme/api", nil))
+}
+
+func TestBuildProvider_ZeroPartySettingsUseTheDefaults(t *testing.T) {
+	provider := buildProvider(config.Config{Mappings: partyMappings()}, discardLogger())
+
+	assert.Equal(t, routingdomain.PartySettings{Reviewers: routingdomain.DefaultPartyReviewers, Deadline: routingdomain.DefaultPartyDeadline}, provider.PartySettings("acme/api", nil))
 }

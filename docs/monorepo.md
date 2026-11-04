@@ -48,9 +48,52 @@ Later events — reviews, close, merge, draft — act on **every** message the P
 
 With the config above, a PR changing both `modules/acme/handler.go` and `src/AuthBundle/auth.go` produces **two** messages: one in `C0MONO00000` pinging `<!subteam^S0TEAMA>`, one in `C0AUTH00000` pinging `<!subteam^S0AUTH>`. An approval later adds the ✅ reaction to both. A PR touching only `README.md` matches nothing and posts once to `C0MONO00000` with the base mentions.
 
+## Party settings per path
+
+A path rule can also set `party_reviewers` and `party_deadline`. These keys control the [review party](agent-api.md#review-as-a-party) of the agent API. Slack ignores them. A path that sets only party keys never takes files away from a Slack rule.
+
+```yaml
+mappings:
+  acme:
+    protorepo:
+      channel: C0PROTO000
+      party_reviewers: 2
+      paths:
+        docs:
+          party_reviewers: 1
+        services:
+          party_reviewers: 4
+          party_deadline: 30m
+        services/billing:
+          party_deadline: 15m
+```
+
+The levels, most specific first, are the path, the repository tier, the org `"*"` tier, `agent_api`, and the built-in default (`1` and `1h`). Notifycat resolves each key for each changed file.
+
+1. **The most specific path rule that sets the key wins.** A nested rule without the key takes the value of its parent rule.
+2. **A file outside every path rule takes the repository's value.**
+3. **The PR takes the highest cap and the shortest timer over its files.** This is per key.
+
+Example 1: the repository cap is 2 and `docs` sets 1. A PR changes `docs/a.md` and `README.md`. The cap of the PR is 2.
+
+Example 2: `services` sets 4 and `services/billing` sets no cap. A PR changes `services/billing/x.go`. The cap of the PR is 4. Its timer is 15 minutes.
+
+### When notifycat reads the files
+
+Notifycat reads the changed files only when a path rule of that repository sets a party key. The read has a limit of 2 seconds.
+
+- Without a read token, the PR takes the repository's values. Notifycat logs nothing.
+- When the read fails, a PR that is already stored keeps its cap and timer. A new PR takes the repository's values. Notifycat logs [`feed party settings fallback`](operations.md#logging).
+
+A PR with many changed files can need more than 2 seconds to read. The read then fails and the PR keeps the repository values.
+
+A fallback never lowers a stored cap.
+
 ## The token requirement
 
 Reading a PR's changed files takes an API call, so path routing needs a read token in `.env` — `GITHUB_TOKEN` on GitHub, `BITBUCKET_TOKEN` on Bitbucket ([scopes](bitbucket-webhook.md#access-token-scopes)). **Without one, path rules are inert**: every PR routes to the base tier as if `paths:` weren't there. This degradation is announced three ways — the [doctor](doctor.md) reports `SKIP` on its `path routing` check, `notifycat-config` prints a warning, and the server logs one at startup.
+
+Party path rules also need the token. Without it they are inert, and notifycat does not announce it. See [Party settings per path](#party-settings-per-path).
 
 The token is the only API read the server ever performs at webhook time; plain (non-`paths`) routing is resolved entirely in memory.
 

@@ -115,7 +115,7 @@ func NewFeedPullRequests(db *gorm.DB) *FeedPullRequests {
 }
 
 // Upsert inserts or updates the pull request in place, keeping its deliveries, a known created_at and
-// the first recorded_at, and replacing the party settings.
+// the first recorded_at, and replacing the party settings unless KeepStoredParty guards a recorded row.
 func (r *FeedPullRequests) Upsert(ctx context.Context, pullRequest FeedPullRequest) error {
 	pullRequest.UpdatedAt = pullRequest.UpdatedAt.UTC()
 	if pullRequest.CreatedAt != nil {
@@ -130,11 +130,13 @@ func (r *FeedPullRequests) Upsert(ctx context.Context, pullRequest FeedPullReque
 		partyDeadlineAt := pullRequest.PartyDeadlineAt.UTC()
 		pullRequest.PartyDeadlineAt = &partyDeadlineAt
 	}
+	partyColumns := []string{"party_reviewers", "party_deadline_at"}
+	replacedColumns := []string{"title", "description", "url", "author_id", "source_branch", "target_branch", "head_sha", "updated_at"}
+	if !pullRequest.KeepStoredParty {
+		replacedColumns = append(replacedColumns, partyColumns...)
+	}
 	assignments := append(
-		clause.AssignmentColumns([]string{
-			"title", "description", "url", "author_id", "source_branch",
-			"target_branch", "head_sha", "updated_at", "party_reviewers", "party_deadline_at",
-		}),
+		clause.AssignmentColumns(replacedColumns),
 		clause.Assignment{
 			Column: clause.Column{Name: "created_at"},
 			Value:  gorm.Expr("COALESCE(excluded.created_at, feed_pull_requests.created_at)"),
@@ -144,6 +146,14 @@ func (r *FeedPullRequests) Upsert(ctx context.Context, pullRequest FeedPullReque
 			Value:  gorm.Expr("COALESCE(feed_pull_requests.recorded_at, excluded.recorded_at)"),
 		},
 	)
+	if pullRequest.KeepStoredParty {
+		for _, column := range partyColumns {
+			assignments = append(assignments, clause.Assignment{
+				Column: clause.Column{Name: column},
+				Value:  gorm.Expr("CASE WHEN feed_pull_requests.recorded_at IS NULL THEN excluded." + column + " ELSE feed_pull_requests." + column + " END"),
+			})
+		}
+	}
 	err := r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "repository"}, {Name: "number"}},
