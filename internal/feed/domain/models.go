@@ -80,7 +80,6 @@ type PullRequestsParams struct {
 	Deliveries    DeliveryStore
 	Polls         PollStore
 	Catalog       RepositoryCatalog
-	Calendar      WorkCalendar
 	Clock         Clock
 	Logger        *slog.Logger
 }
@@ -90,7 +89,6 @@ type RecorderParams struct {
 	PullRequests  PullRequestStore
 	Catalog       RepositoryCatalog
 	Clock         Clock
-	Calendar      WorkCalendar
 	PartySettings PartySettingsResolver
 }
 
@@ -153,14 +151,7 @@ type PartySettings struct {
 
 // Settings are the feed settings built from the config.
 type Settings struct {
-	Party    PartySettings
-	Location *time.Location
-}
-
-// WorkCalendarParams are the dependencies of the work calendar.
-type WorkCalendarParams struct {
-	DaysOff  DayOffCalendar
-	Location *time.Location
+	Party PartySettings
 }
 
 // TypeChange sets the type of a token's subscriptions; nil Repositories means every subscription.
@@ -183,6 +174,11 @@ type PartyClaim struct {
 	DeliveredAt  time.Time
 	Day          string
 	ActiveSince  time.Time
+}
+
+// LoadDay returns the UTC date of the moment, so the party loads start again at 00:00 UTC.
+func LoadDay(moment time.Time) string {
+	return moment.UTC().Format(DayLayout)
 }
 
 // PartyClaimResult is what a party claim delivered and how the turn rule judged the rest.

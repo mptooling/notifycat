@@ -523,37 +523,30 @@ func TestDeliveryRepo_ClaimPartyConcurrentMembersFollowTheTurnRule(t *testing.T)
 	assert.EqualValues(t, 2, partyDeliveries)
 }
 
-type noDaysOff struct{}
-
-func (noDaysOff) IsDayOff(time.Time) bool { return false }
-
-func TestDeliveryRepo_ClaimPartyStartsTheLoadsAtLocalMidnight(t *testing.T) {
-	berlin, err := time.LoadLocation("Europe/Berlin")
-	require.NoError(t, err)
-	tuesdayEveningUTC := time.Date(2026, 11, 3, 22, 0, 0, 0, time.UTC)
+func TestDeliveryRepo_ClaimPartyStartsTheLoadsAtUTCMidnight(t *testing.T) {
+	tuesdayEvening := time.Date(2026, 11, 3, 22, 0, 0, 0, time.UTC)
 	testCases := []struct {
 		name          string
 		now           time.Time
 		wantDelivered []int
 	}{
-		{name: "before midnight in Berlin the load of the day holds the turn", now: time.Date(2026, 11, 3, 22, 30, 0, 0, time.UTC), wantDelivered: []int{}},
-		{name: "after midnight in Berlin the loads start again", now: time.Date(2026, 11, 3, 23, 30, 0, 0, time.UTC), wantDelivered: []int{7}},
+		{name: "at 23:59 UTC the load of the day holds the turn", now: time.Date(2026, 11, 3, 23, 59, 0, 0, time.UTC), wantDelivered: []int{}},
+		{name: "at 00:00 UTC the loads start again", now: time.Date(2026, 11, 4, 0, 0, 0, 0, time.UTC), wantDelivered: []int{7}},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			db := newFeedDB(t)
 			ctx := context.Background()
-			seedPartyMembers(t, db, tuesdayEveningUTC, "t1", "t2")
+			seedPartyMembers(t, db, tuesdayEvening, "t1", "t2")
 			require.NoError(t, db.Create(&persistence.FeedPartyLoad{TokenID: "t1", Repository: "acme/api", Day: "2026-11-03", Taken: 1}).Error)
-			pullRequest := partyPullRequest(7, tuesdayEveningUTC, 1)
-			pullRequest.Party.DeadlineAt = tuesdayEveningUTC.Add(12 * time.Hour)
+			pullRequest := partyPullRequest(7, tuesdayEvening, 1)
+			pullRequest.Party.DeadlineAt = tuesdayEvening.Add(12 * time.Hour)
 			require.NoError(t, infrastructure.NewPullRequestRepo(persistence.NewFeedPullRequests(db)).Upsert(ctx, pullRequest))
-			calendar := application.NewWorkCalendar(domain.WorkCalendarParams{DaysOff: noDaysOff{}, Location: berlin})
 			deliveries := infrastructure.NewDeliveryRepo(persistence.NewFeedDeliveries(db), application.NewTurnPolicy())
 
 			result, claimErr := deliveries.ClaimParty(ctx, domain.PartyClaim{
 				TokenID: "t1", Repositories: []string{"acme/api"}, DeliveredAt: testCase.now,
-				Day: calendar.Day(testCase.now), ActiveSince: testCase.now.Add(-domain.AwayAfter),
+				Day: domain.LoadDay(testCase.now), ActiveSince: testCase.now.Add(-domain.AwayAfter),
 			})
 
 			require.NoError(t, claimErr)

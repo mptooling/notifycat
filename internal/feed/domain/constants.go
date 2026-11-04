@@ -28,8 +28,5 @@ const (
 	SinceQueryParameter        = "since"
 )
 
-// Work calendar format and search limit.
-const (
-	DayLayout                = "2006-01-02"
-	MaxWorkingTimeSearchDays = 31
-)
+// DayLayout formats the day of the party loads.
+const DayLayout = "2006-01-02"

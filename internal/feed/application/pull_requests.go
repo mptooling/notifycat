@@ -18,7 +18,6 @@ type PullRequests struct {
 	deliveries    domain.DeliveryStore
 	polls         domain.PollStore
 	catalog       domain.RepositoryCatalog
-	calendar      domain.WorkCalendar
 	clock         domain.Clock
 	logger        *slog.Logger
 }
@@ -33,7 +32,6 @@ func NewPullRequests(params domain.PullRequestsParams) *PullRequests {
 		deliveries:    params.Deliveries,
 		polls:         params.Polls,
 		catalog:       params.Catalog,
-		calendar:      params.Calendar,
 		clock:         params.Clock,
 		logger:        params.Logger,
 	}
@@ -47,13 +45,6 @@ type subscribedRepositories struct {
 // Next implements domain.PullRequests.
 func (feed *PullRequests) Next(ctx context.Context, subscriber domain.Subscriber) ([]domain.PullRequest, error) {
 	now := feed.clock.Now().UTC()
-	if feed.calendar.IsDayOff(now) {
-		if err := feed.recordPoll(ctx, subscriber, now); err != nil {
-			return nil, err
-		}
-		feed.logger.DebugContext(ctx, "feed day off", "token_id", subscriber.TokenID)
-		return []domain.PullRequest{}, nil
-	}
 	repositories, err := feed.resolveRepositories(ctx, subscriber)
 	if err != nil {
 		return nil, err
@@ -96,7 +87,7 @@ func (feed *PullRequests) claimParty(ctx context.Context, subscriber domain.Subs
 		TokenID:      subscriber.TokenID,
 		Repositories: repositories,
 		DeliveredAt:  now,
-		Day:          feed.calendar.Day(now),
+		Day:          domain.LoadDay(now),
 		ActiveSince:  now.Add(-domain.AwayAfter),
 	})
 	if err != nil {

@@ -762,24 +762,24 @@ func TestFeedPullRequests_ReceivedSinceReturnsAPartyPullRequestDeliveredAfterIts
 	assert.Equal(t, []int{1, 2}, pullRequestNumbers(received), "a delivery at or after since counts even when the pull request changed before it")
 }
 
-func TestFeedPullRequests_ChangedSinceReturnsAPullRequestDeliveredAfterTheWeekend(t *testing.T) {
+func TestFeedPullRequests_ChangedSinceReturnsAPullRequestDeliveredAfterItsChange(t *testing.T) {
 	db := newFeedDB(t)
 	pullRequests := persistence.NewFeedPullRequests(db)
 	ctx := context.Background()
-	openedOnSaturday := time.Date(2026, 10, 31, 15, 0, 0, 0, time.UTC)
-	mondayPoll := time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)
-	upsertAll(t, pullRequests, feedPullRequest("acme/api", 1, openedOnSaturday))
+	changedAt := time.Date(2026, 10, 31, 15, 0, 0, 0, time.UTC)
+	deliveredAt := time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)
+	upsertAll(t, pullRequests, feedPullRequest("acme/api", 1, changedAt))
 	_, claimErr := persistence.NewFeedDeliveries(db).Claim(ctx, persistence.FeedClaim{
-		TokenID: "t1", Repositories: []string{"acme/api"}, DeliveredAt: mondayPoll,
+		TokenID: "t1", Repositories: []string{"acme/api"}, DeliveredAt: deliveredAt,
 	})
 	require.NoError(t, claimErr)
-	beforeMondayPoll := mondayPoll.Add(-time.Minute)
+	beforeDelivery := deliveredAt.Add(-time.Minute)
 
 	delivered, err := pullRequests.ChangedSince(ctx, persistence.FeedSinceQuery{
-		TokenID: "t1", Repositories: []string{"acme/api"}, Since: beforeMondayPoll,
+		TokenID: "t1", Repositories: []string{"acme/api"}, Since: beforeDelivery,
 	})
 	notDelivered, notDeliveredErr := pullRequests.ChangedSince(ctx, persistence.FeedSinceQuery{
-		TokenID: "t2", Repositories: []string{"acme/api"}, Since: beforeMondayPoll,
+		TokenID: "t2", Repositories: []string{"acme/api"}, Since: beforeDelivery,
 	})
 
 	require.NoError(t, err)

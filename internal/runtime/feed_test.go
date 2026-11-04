@@ -270,10 +270,9 @@ func TestCleanFeed_SubscriptionFailureDoesNotSkipPullRequests(t *testing.T) {
 	assert.Equal(t, []string{"remove_unconfigured"}, pullRequests.calls)
 }
 
-func TestProvideFeedSettings_NilTimezoneIsUTC(t *testing.T) {
+func TestProvideFeedSettings_UsesTheConfiguredPartySettings(t *testing.T) {
 	settings := provideFeedSettings(config.Config{PartyReviewers: 2, PartyDeadline: 30 * time.Minute})
 
-	assert.Equal(t, time.UTC, settings.Location)
 	assert.Equal(t, feeddomain.PartySettings{Reviewers: 2, Deadline: 30 * time.Minute}, settings.Party)
 }
 

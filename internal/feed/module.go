@@ -13,8 +13,7 @@ import (
 )
 
 // Module binds the feed ports to their adapters and the use cases. It
-// expects the composition root to supply a domain.Settings, a
-// domain.DayOffCalendar, *persistence.FeedSubscriptions,
+// expects the composition root to supply a domain.Settings, *persistence.FeedSubscriptions,
 // *persistence.FeedPullRequests, *persistence.FeedDeliveries, *persistence.FeedPolls,
 // routingdomain.EntryLister and a *slog.Logger.
 var Module = fx.Module("feed",
@@ -32,13 +31,8 @@ var Module = fx.Module("feed",
 		fx.Annotate(application.NewPullRequestCleaner, fx.As(new(domain.PullRequestCleaner))),
 		fx.Annotate(application.NewSubscriptionCleaner, fx.As(new(domain.SubscriptionCleaner))),
 		fx.Annotate(application.NewTurnPolicy, fx.As(new(domain.TurnPolicy))),
-		fx.Annotate(provideWorkCalendar, fx.As(new(domain.WorkCalendar))),
 	),
 )
-
-func provideWorkCalendar(settings domain.Settings, daysOff domain.DayOffCalendar) *application.WorkCalendar {
-	return application.NewWorkCalendar(domain.WorkCalendarParams{DaysOff: daysOff, Location: settings.Location})
-}
 
 type subscriptionsParams struct {
 	fx.In
@@ -64,7 +58,6 @@ type pullRequestsParams struct {
 	Deliveries    domain.DeliveryStore
 	Polls         domain.PollStore
 	Catalog       domain.RepositoryCatalog
-	Calendar      domain.WorkCalendar
 	Clock         domain.Clock
 	Logger        *slog.Logger
 }
@@ -76,7 +69,6 @@ func providePullRequests(params pullRequestsParams) *application.PullRequests {
 		Deliveries:    params.Deliveries,
 		Polls:         params.Polls,
 		Catalog:       params.Catalog,
-		Calendar:      params.Calendar,
 		Clock:         params.Clock,
 		Logger:        params.Logger,
 	})
@@ -87,7 +79,6 @@ type recorderParams struct {
 	PullRequests  domain.PullRequestStore
 	Catalog       domain.RepositoryCatalog
 	Clock         domain.Clock
-	Calendar      domain.WorkCalendar
 	PartySettings domain.PartySettingsResolver
 }
 
@@ -96,7 +87,6 @@ func provideRecorder(params recorderParams) *application.Recorder {
 		PullRequests:  params.PullRequests,
 		Catalog:       params.Catalog,
 		Clock:         params.Clock,
-		Calendar:      params.Calendar,
 		PartySettings: params.PartySettings,
 	})
 }

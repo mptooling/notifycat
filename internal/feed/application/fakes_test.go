@@ -273,38 +273,6 @@ func (store *fakePollStore) Record(_ context.Context, token string, polledAt tim
 	return nil
 }
 
-type fakeWorkCalendar struct {
-	dayOff       bool
-	day          string
-	dayOffChecks []time.Time
-	dayMoments   []time.Time
-	deadline     time.Time
-	addCalls     []addWorkingTimeCall
-}
-
-type addWorkingTimeCall struct {
-	start       time.Time
-	workingTime time.Duration
-}
-
-func (calendar *fakeWorkCalendar) IsDayOff(moment time.Time) bool {
-	calendar.dayOffChecks = append(calendar.dayOffChecks, moment)
-	return calendar.dayOff
-}
-
-func (calendar *fakeWorkCalendar) Day(moment time.Time) string {
-	calendar.dayMoments = append(calendar.dayMoments, moment)
-	return calendar.day
-}
-
-func (calendar *fakeWorkCalendar) AddWorkingTime(start time.Time, workingTime time.Duration) time.Time {
-	calendar.addCalls = append(calendar.addCalls, addWorkingTimeCall{start: start, workingTime: workingTime})
-	if !calendar.deadline.IsZero() {
-		return calendar.deadline
-	}
-	return start.Add(workingTime)
-}
-
 type fakeCatalog struct {
 	repositories []string
 	calls        int

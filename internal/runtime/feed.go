@@ -3,12 +3,8 @@ package runtime
 import (
 	"context"
 	"log/slog"
-	"time"
 
-	digestapp "github.com/mptooling/notifycat/internal/digest/application"
-	digestdomain "github.com/mptooling/notifycat/internal/digest/domain"
 	feeddomain "github.com/mptooling/notifycat/internal/feed/domain"
-	feedinfra "github.com/mptooling/notifycat/internal/feed/infrastructure"
 	"github.com/mptooling/notifycat/internal/kernel"
 	notificationapp "github.com/mptooling/notifycat/internal/notification/application"
 	notificationdomain "github.com/mptooling/notifycat/internal/notification/domain"
@@ -89,10 +85,6 @@ func provideEntryLister(provider *routingapp.Provider) routingdomain.EntryLister
 }
 
 func provideFeedSettings(cfg config.Config) feeddomain.Settings {
-	location := cfg.DigestTimezone
-	if location == nil {
-		location = time.UTC
-	}
 	reviewers := cfg.PartyReviewers
 	if reviewers < routingdomain.MinPartyReviewers {
 		reviewers = routingdomain.DefaultPartyReviewers
@@ -102,11 +94,6 @@ func provideFeedSettings(cfg config.Config) feeddomain.Settings {
 		deadline = routingdomain.DefaultPartyDeadline
 	}
 	return feeddomain.Settings{
-		Party:    feeddomain.PartySettings{Reviewers: reviewers, Deadline: deadline},
-		Location: location,
+		Party: feeddomain.PartySettings{Reviewers: reviewers, Deadline: deadline},
 	}
-}
-
-func provideFeedDayOffCalendar(provider *routingapp.Provider) feeddomain.DayOffCalendar {
-	return feedinfra.NewDigestDayOffCalendar(digestapp.NewCalendar(digestdomain.CalendarParams{Country: digestCountry(provider)}))
 }
