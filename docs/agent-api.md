@@ -1,6 +1,6 @@
 # Agent API
 
-The agent API lets a coding agent, such as Claude Code, review the pull requests of your teammates. The agent polls notifycat over HTTPS. Each poll returns the open pull requests (PRs) it has not seen yet. Notifycat never calls the agent.
+The agent API lets a coding agent, such as Claude Code, review the pull requests of your teammates. The agent polls notifycat over HTTPS. Each fetch returns the open pull requests (PRs) it has not seen yet. Notifycat never calls the agent.
 
 The API serves PR metadata only: title, description, link, branch names, author id, and head commit SHA. It serves no code. The agent reads the diff from your git host with its own credentials.
 
@@ -67,7 +67,7 @@ curl --fail-with-body -sS -X POST -H @- "$NOTIFYCAT_URL/api/v1/subs" \
 
 The header comes from stdin (`-H @-`), so the token is not in the process list or the shell history. `--fail-with-body` needs curl 7.76 or newer. On a 4xx or 5xx it makes curl fail and still prints the JSON error.
 
-Poll for new pull requests:
+Fetch new pull requests:
 
 ```sh
 curl --fail-with-body -sS -H @- "$NOTIFYCAT_URL/api/v1/subs/prs" <<<"Authorization: Bearer $NOTIFYCAT_TOKEN"
@@ -172,7 +172,7 @@ To change some subscriptions, add `repositories`:
 - The list is ordered by `updated_at` (oldest first), then repository, then number.
 - Nothing new, or no subscriptions, gives an empty list.
 
-A call without a query is a normal poll. It returns the open, non-draft PRs of your subscribed repositories that your token has not received yet. Notifycat marks them as received in the same step. On a party repository, the [party rule](#review-as-a-party) decides which PRs you get. On a day off, a normal poll returns an empty list. See [Days off](#days-off).
+A call without a query is a normal fetch. It returns the open, non-draft PRs of your subscribed repositories that your token has not received yet. Notifycat marks them as received in the same step. On a party repository, the [party rule](#review-as-a-party) decides which PRs you get.
 
 `?since=<time>` reads PRs again. It returns each open PR that matches one of these rules:
 
@@ -220,31 +220,25 @@ A path that is not a feed route gets the plain-text 404 or 405 of the Go HTTP se
 - A draft PR is never delivered.
 - `?since=` re-reads and records nothing.
 - On a party repository, the party rule limits who gets a PR. See [Review as a party](#review-as-a-party).
-- The first poll after you subscribe returns every open PR that notifycat knows for those repositories. There is no paging: they all come in one response.
+- The first fetch after you subscribe returns every open PR that notifycat knows for those repositories. There is no paging: they all come in one response.
 - If you unsubscribe and subscribe again, PRs you already received are not sent again. You get only the PRs that are new to your token.
-
-### Days off
-
-On Saturday and Sunday, a normal poll returns an empty list and marks no PR as received. It still records the poll time, so the poll counts for the away check. This is true for solo and party subscriptions. When `digest.country` is set, public holidays are days off too. A day off is a whole calendar day in `digest.timezone`, or in UTC when that key is not set. The [digest calendar](digest.md#weekends-and-holidays) decides this.
-
-A PR that opens on a day off waits for the next working day. `?since=` still works on a day off, because it is a manual read.
 
 ### Recover a lost list
 
-If a run crashed after the poll and before it finished the reviews, the PRs are already marked as received. The same is true when the response was lost on the way to you. Ask for them again with `?since=`.
+If a run crashed after the fetch and before it finished the reviews, the PRs are already marked as received. The same is true when the response was lost on the way to you. Ask for them again with `?since=`.
 
-If a normal poll returns a 5xx error, the server may have marked PRs before it failed. Call `GET /api/v1/subs/prs?since=<time of the last good poll>` to get the PRs that the failed poll may have marked. On a party repository, `since` returns only PRs that this token received.
+If a normal fetch returns a 5xx error, the server may have marked PRs before it failed. Call `GET /api/v1/subs/prs?since=<time of the last good fetch>` to get the PRs that the failed fetch may have marked. On a party repository, `since` returns only PRs that this token received.
 
-`since` matches the time that notifycat delivered a PR to your token. The lost poll came after the last good poll. So the time of the last good poll, on the server clock, returns every PR that the lost poll marked. This includes a PR that changed long before the lost poll. An example is a PR that waited for a party turn or a working day.
+`since` matches the time that notifycat delivered a PR to your token. The lost fetch came after the last good fetch. So the time of the last good fetch, on the server clock, returns every PR that the lost fetch marked. This includes a PR that changed long before the lost fetch. An example is a PR that waited for a party turn.
 
-`since` also matches the last change of a PR (`updated_at`). A webhook can still record a change while you poll. Both times come from the clock of the notifycat server, and your clock can differ from it. To get these changes, use a time a few minutes before the last good poll. This time also covers a clock difference. An earlier time only returns more PRs.
+`since` also matches the last change of a PR (`updated_at`). A webhook can still record a change while you fetch. Both times come from the clock of the notifycat server, and your clock can differ from it. To get these changes, use a time a few minutes before the last good fetch. This time also covers a clock difference. An earlier time only returns more PRs.
 
 ```sh
 curl --fail-with-body -sS --get --data-urlencode "since=2026-10-28T09:00:00Z" \
   -H @- "$NOTIFYCAT_URL/api/v1/subs/prs" <<<"Authorization: Bearer $NOTIFYCAT_TOKEN"
 ```
 
-If the lost poll was your first one, or your first after a new subscription, use an old time such as `1970-01-01T00:00:00Z`. Then skip the PRs you already reviewed.
+If the lost fetch was your first one, or your first after a new subscription, use an old time such as `1970-01-01T00:00:00Z`. Then skip the PRs you already reviewed.
 
 ## Review as a party
 
@@ -255,20 +249,20 @@ Many agents can follow the same repository. A team can limit how many agents rev
 - **Party**: all tokens with a `party` subscription to one repository. A repository has one party. Parties have no names.
 - **Member**: a token. Two tokens of one person are two members.
 - **Cap**: the number of party members that get each PR. Five levels set it. The most specific wins: a monorepo path, a repository tier, the org `"*"` tier, [`agent_api.party_reviewers`](configuration.md#agent_api), and the built-in default of 1. See [Mappings](mappings.md#behavioral-overrides) and [Party settings per path](monorepo.md#party-settings-per-path).
-- **Load**: the number of PRs that a member got through the party of that repository today. Load counts per repository. Load stays when a PR closes. It starts again at 0 each day.
-- **Away**: a token that has not polled yet, or has not polled for 24 hours. Only a normal poll counts. A `since` call does not change the away state. An away member is not a candidate and never holds PRs back.
-- **Timer**: the same five levels set it, with [`agent_api.party_deadline`](configuration.md#agent_api) and a default of 1 hour. See [Mappings](mappings.md#behavioral-overrides) and [Party settings per path](monorepo.md#party-settings-per-path). The timer of a PR starts when notifycat first records the PR. A push does not restart it. Days off do not count.
+- **Load**: the number of PRs that a member got through the party of that repository today. Load counts per repository. Load stays when a PR closes. It starts again at 0 each day at 00:00 UTC.
+- **Away**: a token that has not fetched its PRs yet, or has not fetched them for 24 hours. Only a normal fetch counts. A `since` call does not change the away state. An away member is not a candidate and never holds PRs back.
+- **Timer**: the same five levels set it, with [`agent_api.party_deadline`](configuration.md#agent_api) and a default of 1 hour. See [Mappings](mappings.md#behavioral-overrides) and [Party settings per path](monorepo.md#party-settings-per-path). The timer of a PR starts when notifycat first records the PR. A push does not restart it. The timer counts clock time.
 
-A normal poll treats each open PR that you have not received on a party repository in this order. The oldest `updated_at` comes first.
+A normal fetch treats each open PR that you have not received on a party repository in this order. The oldest `updated_at` comes first.
 
 1. If the PR already went to as many members as the cap allows, skip it.
 2. If the timer of the PR ran out, turns stop. You get the PR, within the cap.
 3. Find the candidates. These are you and the other members that are not away and have not received the PR.
 4. Count the free slots. This is the cap minus the members that already got the PR.
 5. If the candidates with a lower load than yours could fill all free slots, skip the PR. It is not your turn.
-6. Otherwise you get the PR, and your load goes up by 1. This also counts for the other PRs in the same poll.
+6. Otherwise you get the PR, and your load goes up by 1. This also counts for the other PRs in the same fetch.
 
-Notifycat does all of this in one atomic step. Two members that poll at the same moment never pass the cap. With a cap of 1, a PR is skipped when any candidate has a lower load.
+Notifycat does all of this in one atomic step. Two members that fetch at the same moment never pass the cap. With a cap of 1, notifycat skips a PR when any candidate has a lower load.
 
 A party with one candidate has no real cap. That member gets every PR at once.
 
@@ -276,19 +270,17 @@ A party with one candidate has no real cap. That member gets every PR at once.
 
 The cap is 1 and the timer is 30 minutes. Alice, Bob, and Carol are not away. Their loads today are 3, 1, and 1. PR 42 opens on Tuesday at 10:00.
 
-| Time | Who polls | Result |
+| Time | Who fetches | Result |
 | --- | --- | --- |
 | 10:00 | Alice | Skipped. Bob and Carol have a lower load. |
 | 10:05 | Bob | Gets PR 42. His load is now 2. |
 | 10:06 | Carol | Skipped. PR 42 is taken. |
 
-If Bob and Carol are busy with long reviews and do not poll, Alice is skipped until 10:30. At 10:30 the timer runs out, and Alice gets PR 42 on her next poll.
+If Bob and Carol are busy with long reviews and do not fetch, notifycat skips Alice until 10:30. At 10:30 the timer runs out, and Alice gets PR 42 on her next fetch.
 
 If Bob and Carol are away, Alice is the only candidate. She gets PR 42 at 10:00.
 
 With a cap of 3, Alice gets PR 42 at once. Only two candidates have a lower load, and three slots are free.
-
-PR 43 opens on Friday at 23:50 with a 30-minute timer. The weekend does not count, so its timer runs out on Monday at 00:20. No agent gets it on Saturday or Sunday.
 
 ### Switch the type
 
@@ -303,7 +295,7 @@ PR 43 opens on Friday at 23:50 with a 30-minute timer. The weekend does not coun
 - A member that gets a PR and never reviews it keeps the slot. The timer only ends the turns. It never takes a PR back.
 - A revoked token frees its party slots. Another member can then get those PRs.
 - A member that joins during the day starts with load 0. It gets most party PRs until its load reaches the others.
-- When parties first go live, no token has polled yet, so every member is away until its first poll. The first agent that polls can take the PRs that waited. The same happens on Monday morning, after a weekend without polls.
+- When parties first go live, no token has fetched yet, so every member is away until its first fetch. The first agent that fetches can take the PRs that waited. The same happens when the members return after 24 hours without a fetch.
 - Party settings change nothing in Slack.
 - Notifycat finds the cap and the timer again on every recorded event. A config change reaches a PR at its next event. A lower cap never takes a PR back from a member that already has it.
 
@@ -352,4 +344,4 @@ The agent needs a credential for your git host. That is separate from the notify
 
 ## Logs
 
-The feed logs `feed subscriptions added`, `feed subscriptions changed`, `feed subscription removed`, `feed pull requests delivered`, `feed party pull requests held`, `feed day off`, `feed pull request not recorded`, `feed pull requests removed`, `feed subscriptions removed`, and `feed cleanup failed`. See [Operations](operations.md#logging).
+The feed logs `feed subscriptions added`, `feed subscriptions changed`, `feed subscription removed`, `feed pull requests delivered`, `feed party pull requests held`, `feed pull request not recorded`, `feed pull requests removed`, `feed subscriptions removed`, and `feed cleanup failed`. See [Operations](operations.md#logging).

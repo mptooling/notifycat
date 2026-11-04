@@ -8,11 +8,11 @@ const RecordTimeout = 3 * time.Second
 // PartyFilesReadTimeout caps how long the party settings wait for the changed files of a pull request.
 const PartyFilesReadTimeout = 2 * time.Second
 
-// AwayAfter is how long a party member stays a candidate after its last poll.
+// AwayAfter is how long a party member stays a candidate after its last fetch.
 const AwayAfter = 24 * time.Hour
 
-// PollResolution is how old a stored poll time must be before a poll writes a new one.
-const PollResolution = time.Minute
+// FetchResolution is how old a stored fetch time must be before a fetch writes a new one.
+const FetchResolution = time.Minute
 
 // Feed limits, the repository name rule, routes and parameter names.
 const (
@@ -31,8 +31,5 @@ const (
 	SinceQueryParameter        = "since"
 )
 
-// Work calendar format and search limit.
-const (
-	DayLayout                = "2006-01-02"
-	MaxWorkingTimeSearchDays = 31
-)
+// DayLayout formats the day of the party loads.
+const DayLayout = "2006-01-02"

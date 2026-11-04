@@ -17,9 +17,9 @@ type pullRequestsFixture struct {
 	subscriptions *fakeSubscriptionStore
 	pullRequests  *fakePullRequestStore
 	deliveries    *fakeDeliveryStore
-	polls         *fakePollStore
+	fetches       *fakeFetchStore
 	catalog       *fakeCatalog
-	calendar      *fakeWorkCalendar
+	clock         *fakeClock
 	calls         *callLog
 	logs          *bytes.Buffer
 	useCase       *application.PullRequests
@@ -31,9 +31,9 @@ func newPullRequestsFixture(subscribed ...string) pullRequestsFixture {
 		subscriptions: &fakeSubscriptionStore{},
 		pullRequests:  &fakePullRequestStore{},
 		deliveries:    &fakeDeliveryStore{calls: calls},
-		polls:         &fakePollStore{calls: calls},
+		fetches:       &fakeFetchStore{calls: calls},
 		catalog:       &fakeCatalog{repositories: []string{"acme/api", "acme/new", "acme/web", "acme/lib"}},
-		calendar:      &fakeWorkCalendar{day: "2026-11-03"},
+		clock:         &fakeClock{now: now},
 		calls:         calls,
 	}
 	fixture.subscriptions.seed(subscribed...)
@@ -43,10 +43,9 @@ func newPullRequestsFixture(subscribed ...string) pullRequestsFixture {
 		Subscriptions: fixture.subscriptions,
 		PullRequests:  fixture.pullRequests,
 		Deliveries:    fixture.deliveries,
-		Polls:         fixture.polls,
+		Fetches:       fixture.fetches,
 		Catalog:       fixture.catalog,
-		Calendar:      fixture.calendar,
-		Clock:         &fakeClock{now: now},
+		Clock:         fixture.clock,
 		Logger:        logger,
 	})
 	return fixture
@@ -83,7 +82,7 @@ func TestPullRequests_Next(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Empty(t, fixture.deliveries.partyClaims)
-			assert.Equal(t, []pollRecord{{tokenID: tokenID, polledAt: now}}, fixture.polls.records, "every poll counts, also one with nothing to claim")
+			assert.Equal(t, []fetchRecord{{tokenID: tokenID, fetchedAt: now}}, fixture.fetches.records, "every fetch counts, also one with nothing to claim")
 			if testCase.wantNoClaim {
 				assert.Empty(t, fixture.deliveries.claims)
 				assert.Empty(t, delivered)
@@ -98,22 +97,45 @@ func TestPullRequests_Next(t *testing.T) {
 	}
 }
 
-func TestPullRequests_NextOnADayOff(t *testing.T) {
+func TestPullRequests_NextOnASaturday(t *testing.T) {
+	saturday := time.Date(2026, 11, 7, 10, 0, 0, 0, time.UTC)
 	fixture := newPullRequestsFixture("acme/api")
 	fixture.subscriptions.seedOfType(domain.SubscriptionTypeParty, "acme/web")
-	fixture.calendar.dayOff = true
+	fixture.clock.now = saturday
 	fixture.deliveries.claimed = []domain.PullRequest{{Repository: "acme/api", Number: 1}}
+	fixture.deliveries.partyResult = domain.PartyClaimResult{Delivered: []domain.PullRequest{{Repository: "acme/web", Number: 2}}}
 
 	delivered, err := fixture.useCase.Next(t.Context(), subscriber)
 
 	require.NoError(t, err)
-	assert.NotNil(t, delivered)
-	assert.Empty(t, delivered)
-	assert.Empty(t, fixture.deliveries.claims)
-	assert.Empty(t, fixture.deliveries.partyClaims)
-	assert.Equal(t, []time.Time{now}, fixture.calendar.dayOffChecks)
-	assert.Equal(t, []pollRecord{{tokenID: tokenID, polledAt: now}}, fixture.polls.records)
-	assert.Contains(t, fixture.logs.String(), `level=DEBUG msg="feed day off" token_id=`+tokenID+"\n")
+	assert.Equal(t, []domain.PullRequestKey{{Repository: "acme/api", Number: 1}, {Repository: "acme/web", Number: 2}}, pullRequestKeys(delivered))
+	require.Len(t, fixture.deliveries.partyClaims, 1)
+	assert.Equal(t, "2026-11-07", fixture.deliveries.partyClaims[0].Day)
+}
+
+func TestPullRequests_NextCountsLoadsPerUTCDay(t *testing.T) {
+	plusTwo := time.FixedZone("plus2", 2*60*60)
+	testCases := []struct {
+		name    string
+		now     time.Time
+		wantDay string
+	}{
+		{name: "23:59 UTC is still the day before", now: time.Date(2026, 11, 4, 1, 59, 0, 0, plusTwo), wantDay: "2026-11-03"},
+		{name: "00:00 UTC starts the next day", now: time.Date(2026, 11, 4, 2, 0, 0, 0, plusTwo), wantDay: "2026-11-04"},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := newPullRequestsFixture()
+			fixture.subscriptions.seedOfType(domain.SubscriptionTypeParty, "acme/web")
+			fixture.clock.now = testCase.now
+
+			_, err := fixture.useCase.Next(t.Context(), subscriber)
+
+			require.NoError(t, err)
+			require.Len(t, fixture.deliveries.partyClaims, 1)
+			assert.Equal(t, testCase.wantDay, fixture.deliveries.partyClaims[0].Day)
+		})
+	}
 }
 
 func TestPullRequests_NextSplitsSoloAndParty(t *testing.T) {
@@ -132,7 +154,6 @@ func TestPullRequests_NextSplitsSoloAndParty(t *testing.T) {
 	assert.Equal(t, tokenID, partyClaim.TokenID)
 	assert.Equal(t, now, partyClaim.DeliveredAt)
 	assert.Equal(t, "2026-11-03", partyClaim.Day)
-	assert.Equal(t, []time.Time{now}, fixture.calendar.dayMoments)
 	assert.Equal(t, now.Add(-24*time.Hour), partyClaim.ActiveSince)
 }
 
@@ -265,18 +286,18 @@ func TestPullRequests_NextLogsHeldPartyPullRequests(t *testing.T) {
 	}
 }
 
-func TestPullRequests_NextRecordsThePollAfterClaiming(t *testing.T) {
+func TestPullRequests_NextRecordsTheFetchAfterClaiming(t *testing.T) {
 	fixture := newPullRequestsFixture("acme/api")
 	fixture.subscriptions.seedOfType(domain.SubscriptionTypeParty, "acme/web")
 
 	_, err := fixture.useCase.Next(t.Context(), subscriber)
 
 	require.NoError(t, err)
-	assert.Equal(t, []string{"claim", "claim party", "record poll"}, fixture.calls.calls)
-	assert.Equal(t, []pollRecord{{tokenID: tokenID, polledAt: now}}, fixture.polls.records)
+	assert.Equal(t, []string{"claim", "claim party", "record fetch"}, fixture.calls.calls)
+	assert.Equal(t, []fetchRecord{{tokenID: tokenID, fetchedAt: now}}, fixture.fetches.records)
 }
 
-func TestPullRequests_NextClaimErrorRecordsNoPoll(t *testing.T) {
+func TestPullRequests_NextClaimErrorRecordsNoFetch(t *testing.T) {
 	errClaim := errors.New("database is locked")
 	testCases := []struct {
 		name      string
@@ -299,32 +320,20 @@ func TestPullRequests_NextClaimErrorRecordsNoPoll(t *testing.T) {
 			require.ErrorIs(t, err, errClaim)
 			assert.Nil(t, delivered)
 			assert.Equal(t, testCase.wantCalls, fixture.calls.calls)
-			assert.Empty(t, fixture.polls.records)
+			assert.Empty(t, fixture.fetches.records)
 		})
 	}
 }
 
-func TestPullRequests_NextReturnsPollError(t *testing.T) {
-	errPoll := errors.New("database is locked")
-	testCases := []struct {
-		name   string
-		dayOff bool
-	}{
-		{name: "working day"},
-		{name: "day off", dayOff: true},
-	}
-	for _, testCase := range testCases {
-		t.Run(testCase.name, func(t *testing.T) {
-			fixture := newPullRequestsFixture("acme/api")
-			fixture.calendar.dayOff = testCase.dayOff
-			fixture.polls.err = errPoll
+func TestPullRequests_NextReturnsFetchError(t *testing.T) {
+	errFetch := errors.New("database is locked")
+	fixture := newPullRequestsFixture("acme/api")
+	fixture.fetches.err = errFetch
 
-			delivered, err := fixture.useCase.Next(t.Context(), subscriber)
+	delivered, err := fixture.useCase.Next(t.Context(), subscriber)
 
-			require.ErrorIs(t, err, errPoll)
-			assert.Nil(t, delivered)
-		})
-	}
+	require.ErrorIs(t, err, errFetch)
+	assert.Nil(t, delivered)
 }
 
 func TestPullRequests_Since(t *testing.T) {
@@ -348,7 +357,7 @@ func TestPullRequests_Since(t *testing.T) {
 		assert.Empty(t, fixture.pullRequests.receivedCalls)
 		assert.Empty(t, fixture.deliveries.claims)
 		assert.Empty(t, fixture.deliveries.partyClaims)
-		assert.Empty(t, fixture.polls.records)
+		assert.Empty(t, fixture.fetches.records)
 	})
 
 	t.Run("nothing resolves", func(t *testing.T) {
@@ -369,7 +378,6 @@ func TestPullRequests_SinceOnPartyRepositories(t *testing.T) {
 	late := now.Add(-time.Hour)
 	fixture := newPullRequestsFixture("acme/api")
 	fixture.subscriptions.seedOfType(domain.SubscriptionTypeParty, "acme/web")
-	fixture.calendar.dayOff = true
 	fixture.pullRequests.changed = []domain.PullRequest{{Repository: "acme/api", Number: 2, UpdatedAt: late}}
 	fixture.pullRequests.received = []domain.PullRequest{
 		{Repository: "acme/web", Number: 1, UpdatedAt: late},
@@ -392,8 +400,7 @@ func TestPullRequests_SinceOnPartyRepositories(t *testing.T) {
 	assert.Equal(t, []string{"acme/web"}, received.Repositories)
 	assert.Equal(t, time.UTC, received.Since.Location())
 	assert.True(t, since.Equal(received.Since))
-	assert.Empty(t, fixture.polls.records, "a since read is not a poll")
-	assert.Empty(t, fixture.calendar.dayOffChecks, "a since read is a recovery read and works on a day off")
+	assert.Empty(t, fixture.fetches.records, "a since read is not a fetch")
 	assert.Empty(t, fixture.deliveries.claims)
 	assert.Empty(t, fixture.deliveries.partyClaims)
 }

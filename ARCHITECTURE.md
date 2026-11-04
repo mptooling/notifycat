@@ -92,7 +92,6 @@ flowchart TB
   feed --> kernel
   feed --> routing
   feed --> access
-  feed --> digest
   feed --> platform
   domains --> platform
 ```
@@ -107,7 +106,7 @@ flowchart TB
 | **maintenance** | Background housekeeping: delete stale message rows past their TTL; reconcile closed PRs; relocate messages after a channel change. | `cleanup`, `reconcile`, `relocate` |
 | **diagnostics** | Operator tooling: the preflight doctor, the `notifycat-config` CLI (list/validate), and the smoke-test delivery. | `doctor`, `mappingcli`, `smoke` |
 | **access** | Agent API access: an admin key guards a private admin port where invites are issued (one hour, single use) and tokens listed or deleted; a redeemed invite yields a bcrypt-hashed agent token checked as a Bearer credential. | — (new) |
-| **feed** | The agent PR feed: records the open PRs of configured repositories from webhook events, keeps each token's subscriptions, and serves each token the open PRs it has not received yet under `/api/v1/subs*`. Tokens that subscribe as a party share a repository's PRs. A cap and turns decide which member gets each PR. The digest calendar sets days off and the review timer. When the feed records a PR, it gets the cap and timer from `routing`. At startup it removes stored PRs it can no longer keep in sync: all of them when the agent API is off, those of unmapped repositories when it is on. On every start it also removes the subscriptions to unmapped repositories, except `*`. | — (new) |
+| **feed** | The agent PR feed: records the open PRs of configured repositories from webhook events, keeps each token's subscriptions, and serves each token the open PRs it has not received yet under `/api/v1/subs*`. Tokens that subscribe as a party share the PRs of a repository. A cap and turns decide which member gets each PR. When the feed records a PR, it gets the cap and timer from `routing`. At startup it removes stored PRs it can no longer keep in sync: all of them when the agent API is off, those of unmapped repositories when it is on. On every start it also removes the subscriptions to unmapped repositories, except `*`. | — (new) |
 
 `internal/app` (the old hand-written composition root) has been deleted: its wiring is per-domain fx modules, and its lifecycle orchestration is `fx.Lifecycle` hooks composed in `internal/runtime` and each `cmd/*/main.go`.
 

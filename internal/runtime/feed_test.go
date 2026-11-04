@@ -270,12 +270,6 @@ func TestCleanFeed_SubscriptionFailureDoesNotSkipPullRequests(t *testing.T) {
 	assert.Equal(t, []string{"remove_unconfigured"}, pullRequests.calls)
 }
 
-func TestProvideFeedSettings_NilTimezoneIsUTC(t *testing.T) {
-	settings := provideFeedSettings(config.Config{})
-
-	assert.Equal(t, time.UTC, settings.Location)
-}
-
 func partyMappings() map[string]routingdomain.Org {
 	return map[string]routingdomain.Org{"acme": {"api": routingdomain.RepoConfig{Channel: "C123ABCDE"}}}
 }

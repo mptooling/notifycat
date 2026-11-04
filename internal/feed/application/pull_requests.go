@@ -16,9 +16,8 @@ type PullRequests struct {
 	subscriptions domain.SubscriptionStore
 	pullRequests  domain.PullRequestStore
 	deliveries    domain.DeliveryStore
-	polls         domain.PollStore
+	fetches       domain.FetchStore
 	catalog       domain.RepositoryCatalog
-	calendar      domain.WorkCalendar
 	clock         domain.Clock
 	logger        *slog.Logger
 }
@@ -31,9 +30,8 @@ func NewPullRequests(params domain.PullRequestsParams) *PullRequests {
 		subscriptions: params.Subscriptions,
 		pullRequests:  params.PullRequests,
 		deliveries:    params.Deliveries,
-		polls:         params.Polls,
+		fetches:       params.Fetches,
 		catalog:       params.Catalog,
-		calendar:      params.Calendar,
 		clock:         params.Clock,
 		logger:        params.Logger,
 	}
@@ -47,13 +45,6 @@ type subscribedRepositories struct {
 // Next implements domain.PullRequests.
 func (feed *PullRequests) Next(ctx context.Context, subscriber domain.Subscriber) ([]domain.PullRequest, error) {
 	now := feed.clock.Now().UTC()
-	if feed.calendar.IsDayOff(now) {
-		if err := feed.recordPoll(ctx, subscriber, now); err != nil {
-			return nil, err
-		}
-		feed.logger.DebugContext(ctx, "feed day off", "token_id", subscriber.TokenID)
-		return []domain.PullRequest{}, nil
-	}
 	repositories, err := feed.resolveRepositories(ctx, subscriber)
 	if err != nil {
 		return nil, err
@@ -66,7 +57,7 @@ func (feed *PullRequests) Next(ctx context.Context, subscriber domain.Subscriber
 	if err != nil {
 		return nil, err
 	}
-	if err := feed.recordPoll(ctx, subscriber, now); err != nil {
+	if err := feed.recordFetch(ctx, subscriber, now); err != nil {
 		return nil, err
 	}
 	feed.logDelivery(ctx, subscriber, solo, party)
@@ -96,7 +87,7 @@ func (feed *PullRequests) claimParty(ctx context.Context, subscriber domain.Subs
 		TokenID:      subscriber.TokenID,
 		Repositories: repositories,
 		DeliveredAt:  now,
-		Day:          feed.calendar.Day(now),
+		Day:          domain.LoadDay(now),
 		ActiveSince:  now.Add(-domain.AwayAfter),
 	})
 	if err != nil {
@@ -105,9 +96,9 @@ func (feed *PullRequests) claimParty(ctx context.Context, subscriber domain.Subs
 	return result, nil
 }
 
-func (feed *PullRequests) recordPoll(ctx context.Context, subscriber domain.Subscriber, now time.Time) error {
-	if err := feed.polls.Record(ctx, subscriber.TokenID, now); err != nil {
-		return fmt.Errorf("record poll: %w", err)
+func (feed *PullRequests) recordFetch(ctx context.Context, subscriber domain.Subscriber, now time.Time) error {
+	if err := feed.fetches.Record(ctx, subscriber.TokenID, now); err != nil {
+		return fmt.Errorf("record fetch: %w", err)
 	}
 	return nil
 }

@@ -13,16 +13,16 @@ CREATE TABLE feed_party_loads (
     PRIMARY KEY (day, repository, token_id)
 );
 
-CREATE TABLE feed_polls (
-    token_id  TEXT     PRIMARY KEY REFERENCES access_tokens(id) ON DELETE CASCADE,
-    polled_at DATETIME NOT NULL
+CREATE TABLE feed_fetches (
+    token_id   TEXT     PRIMARY KEY REFERENCES access_tokens(id) ON DELETE CASCADE,
+    fetched_at DATETIME NOT NULL
 );
 
 CREATE INDEX feed_subscriptions_repository_type ON feed_subscriptions(repository, type, token_id);
 
 -- +goose Down
 DROP INDEX feed_subscriptions_repository_type;
-DROP TABLE feed_polls;
+DROP TABLE feed_fetches;
 DROP TABLE feed_party_loads;
 ALTER TABLE feed_deliveries DROP COLUMN party;
 ALTER TABLE feed_pull_requests DROP COLUMN party_deadline_at;

@@ -59,7 +59,6 @@ func (clock *movingClock) Now() time.Time {
 	return clock.start.Add(time.Since(clock.started)).UTC()
 }
 
-// weekdayClock starts on a Tuesday morning, so a feed poll never lands on a day off.
 func weekdayClock() *movingClock {
 	return &movingClock{start: time.Date(2026, 11, 3, 10, 0, 0, 0, time.UTC), started: time.Now()}
 }
@@ -254,9 +253,9 @@ func TestIntegration_ReviewPartyDeliversWithinTheCap(t *testing.T) {
 	assert.Empty(t, secondDelivered, "the cap of one party review is taken")
 	assert.Equal(t, opened, firstReceived)
 	assert.Empty(t, secondReceived, "a since read on a party repository returns only what the token received")
-	var polledTokens int64
-	require.NoError(t, db.Table("feed_polls").Count(&polledTokens).Error)
-	assert.Equal(t, int64(2), polledTokens)
+	var fetchedTokens int64
+	require.NoError(t, db.Table("feed_fetches").Count(&fetchedTokens).Error)
+	assert.Equal(t, int64(2), fetchedTokens)
 	assert.Regexp(t, `msg="feed pull requests delivered" user=alice token_id=[0-9a-f]+ count=1 party=1`, logged.String())
 }
 
@@ -310,26 +309,41 @@ func TestIntegration_ReviewPartyFlow(t *testing.T) {
 	assert.Regexp(t, `msg="feed pull requests delivered" user=alice token_id=[0-9a-f]+ count=1 party=1`, logged.String())
 }
 
-func TestIntegration_FeedDayOff(t *testing.T) {
+func TestIntegration_FeedDeliversOnAWeekend(t *testing.T) {
 	cfg := feedConfig(t, true)
-	logged := &lockedBuffer{}
-	clock := &movingClock{start: time.Date(2026, 11, 7, 10, 0, 0, 0, time.UTC), started: time.Now()}
-	public, adminServer := buildFeedApp(t, cfg, clock, fx.Replace(slog.New(slog.NewTextHandler(logged, &slog.HandlerOptions{Level: slog.LevelDebug}))))
+	saturdayClock := &movingClock{start: time.Date(2026, 11, 7, 10, 0, 0, 0, time.UTC), started: time.Now()}
+	var db *gorm.DB
+	public, adminServer := buildFeedApp(t, cfg, saturdayClock, fx.Populate(&db))
 	require.NotNil(t, adminServer)
 	admin := httptest.NewServer(adminServer.Handler)
 	t.Cleanup(admin.Close)
-	token := map[string]string{"Authorization": "Bearer " + redeemAgentToken(t, public, admin, map[string]string{"Authorization": "Bearer " + testAdminKey}, "alice")}
-	status, _ := request(t, public, http.MethodPost, "/api/v1/subs", `{"repositories":["acme/api"]}`, token)
-	require.Equal(t, http.StatusOK, status)
-	sinceBeforeOpenedQuery := sinceQuery(clock)
+	adminAuth := map[string]string{"Authorization": "Bearer " + testAdminKey}
+	partyMember := map[string]string{"Authorization": "Bearer " + redeemAgentToken(t, public, admin, adminAuth, "alice")}
+	soloSubscriber := map[string]string{"Authorization": "Bearer " + redeemAgentToken(t, public, admin, adminAuth, "carol")}
+	subscribeBodies := []struct {
+		auth map[string]string
+		body string
+	}{
+		{partyMember, `{"repositories":["acme/api"],"type":"party"}`},
+		{soloSubscriber, `{"repositories":["acme/api"]}`},
+	}
+	for _, subscribe := range subscribeBodies {
+		status, _ := request(t, public, http.MethodPost, "/api/v1/subs", subscribe.body, subscribe.auth)
+		require.Equal(t, http.StatusOK, status)
+	}
 	require.Equal(t, http.StatusOK, deliverPullRequestEvent(t, public, cfg, pullRequestEvent("opened", openedHeadSHA)))
 
-	polled := listFeed(t, public, "", token)
-	received := listFeed(t, public, sinceBeforeOpenedQuery, token)
+	partyDelivered := pullRequestNumbers(listFeed(t, public, "", partyMember))
+	soloDelivered := pullRequestNumbers(listFeed(t, public, "", soloSubscriber))
+	var stored persistence.FeedPullRequest
+	storedErr := db.Take(&stored, "repository = ? AND number = ?", feedRepository, 42).Error
 
-	assert.Empty(t, polled, "a day off delivers nothing")
-	assert.Equal(t, []int{42}, pullRequestNumbers(received))
-	assert.Contains(t, logged.String(), "feed day off")
+	require.NoError(t, storedErr)
+	require.NotNil(t, stored.RecordedAt)
+	require.NotNil(t, stored.PartyDeadlineAt)
+	assert.Equal(t, []int{42}, partyDelivered)
+	assert.Equal(t, []int{42}, soloDelivered)
+	assert.Equal(t, time.Hour, stored.PartyDeadlineAt.Sub(*stored.RecordedAt), "the party timer counts weekend hours")
 }
 
 func TestIntegration_AgentAPIDisabled_NothingTracked(t *testing.T) {

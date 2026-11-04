@@ -15,7 +15,6 @@ type Recorder struct {
 	pullRequests  domain.PullRequestStore
 	catalog       domain.RepositoryCatalog
 	clock         domain.Clock
-	calendar      domain.WorkCalendar
 	partySettings domain.PartySettingsResolver
 }
 
@@ -27,7 +26,6 @@ func NewRecorder(params domain.RecorderParams) *Recorder {
 		pullRequests:  params.PullRequests,
 		catalog:       params.Catalog,
 		clock:         params.Clock,
-		calendar:      params.Calendar,
 		partySettings: params.PartySettings,
 	}
 }
@@ -77,7 +75,7 @@ func (recorder *Recorder) partyState(ctx context.Context, key domain.PullRequest
 	return domain.PartyState{
 		Reviewers:  resolution.Settings.Reviewers,
 		RecordedAt: recordedAt,
-		DeadlineAt: recorder.calendar.AddWorkingTime(recordedAt, resolution.Settings.Deadline),
+		DeadlineAt: recordedAt.Add(resolution.Settings.Deadline),
 	}, resolution.Fallback, nil
 }
 

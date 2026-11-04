@@ -253,56 +253,24 @@ func (store *fakeDeliveryStore) ClaimParty(_ context.Context, claim domain.Party
 	return store.partyResult, nil
 }
 
-type pollRecord struct {
-	tokenID  string
-	polledAt time.Time
+type fetchRecord struct {
+	tokenID   string
+	fetchedAt time.Time
 }
 
-type fakePollStore struct {
-	records []pollRecord
+type fakeFetchStore struct {
+	records []fetchRecord
 	err     error
 	calls   *callLog
 }
 
-func (store *fakePollStore) Record(_ context.Context, token string, polledAt time.Time) error {
-	store.calls.add("record poll")
+func (store *fakeFetchStore) Record(_ context.Context, token string, fetchedAt time.Time) error {
+	store.calls.add("record fetch")
 	if store.err != nil {
 		return store.err
 	}
-	store.records = append(store.records, pollRecord{tokenID: token, polledAt: polledAt})
+	store.records = append(store.records, fetchRecord{tokenID: token, fetchedAt: fetchedAt})
 	return nil
-}
-
-type fakeWorkCalendar struct {
-	dayOff       bool
-	day          string
-	dayOffChecks []time.Time
-	dayMoments   []time.Time
-	deadline     time.Time
-	addCalls     []addWorkingTimeCall
-}
-
-type addWorkingTimeCall struct {
-	start       time.Time
-	workingTime time.Duration
-}
-
-func (calendar *fakeWorkCalendar) IsDayOff(moment time.Time) bool {
-	calendar.dayOffChecks = append(calendar.dayOffChecks, moment)
-	return calendar.dayOff
-}
-
-func (calendar *fakeWorkCalendar) Day(moment time.Time) string {
-	calendar.dayMoments = append(calendar.dayMoments, moment)
-	return calendar.day
-}
-
-func (calendar *fakeWorkCalendar) AddWorkingTime(start time.Time, workingTime time.Duration) time.Time {
-	calendar.addCalls = append(calendar.addCalls, addWorkingTimeCall{start: start, workingTime: workingTime})
-	if !calendar.deadline.IsZero() {
-		return calendar.deadline
-	}
-	return start.Add(workingTime)
 }
 
 type fakeCatalog struct {

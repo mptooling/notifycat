@@ -13,9 +13,8 @@ import (
 )
 
 // Module binds the feed ports to their adapters and the use cases. It
-// expects the composition root to supply a domain.Settings, a
-// domain.DayOffCalendar, *persistence.FeedSubscriptions,
-// *persistence.FeedPullRequests, *persistence.FeedDeliveries, *persistence.FeedPolls,
+// expects the composition root to supply *persistence.FeedSubscriptions,
+// *persistence.FeedPullRequests, *persistence.FeedDeliveries, *persistence.FeedFetches,
 // routingdomain.EntryLister, routingdomain.PartyRules, routingdomain.ChangedFilesReader
 // (nil when no read token is set) and a *slog.Logger.
 var Module = fx.Module("feed",
@@ -23,7 +22,7 @@ var Module = fx.Module("feed",
 		fx.Annotate(infrastructure.NewSubscriptionRepo, fx.As(new(domain.SubscriptionStore))),
 		fx.Annotate(infrastructure.NewPullRequestRepo, fx.As(new(domain.PullRequestStore))),
 		fx.Annotate(infrastructure.NewDeliveryRepo, fx.As(new(domain.DeliveryStore))),
-		fx.Annotate(infrastructure.NewPollRepo, fx.As(new(domain.PollStore))),
+		fx.Annotate(infrastructure.NewFetchRepo, fx.As(new(domain.FetchStore))),
 		fx.Annotate(infrastructure.NewRoutingPartySettings, fx.As(new(domain.PartySettingsResolver))),
 		fx.Annotate(infrastructure.NewRoutingCatalog, fx.As(new(domain.RepositoryCatalog))),
 		fx.Annotate(infrastructure.NewSystemClock, fx.As(new(domain.Clock))),
@@ -33,13 +32,8 @@ var Module = fx.Module("feed",
 		fx.Annotate(application.NewPullRequestCleaner, fx.As(new(domain.PullRequestCleaner))),
 		fx.Annotate(application.NewSubscriptionCleaner, fx.As(new(domain.SubscriptionCleaner))),
 		fx.Annotate(application.NewTurnPolicy, fx.As(new(domain.TurnPolicy))),
-		fx.Annotate(provideWorkCalendar, fx.As(new(domain.WorkCalendar))),
 	),
 )
-
-func provideWorkCalendar(settings domain.Settings, daysOff domain.DayOffCalendar) *application.WorkCalendar {
-	return application.NewWorkCalendar(domain.WorkCalendarParams{DaysOff: daysOff, Location: settings.Location})
-}
 
 type subscriptionsParams struct {
 	fx.In
@@ -63,9 +57,8 @@ type pullRequestsParams struct {
 	Subscriptions domain.SubscriptionStore
 	PullRequests  domain.PullRequestStore
 	Deliveries    domain.DeliveryStore
-	Polls         domain.PollStore
+	Fetches       domain.FetchStore
 	Catalog       domain.RepositoryCatalog
-	Calendar      domain.WorkCalendar
 	Clock         domain.Clock
 	Logger        *slog.Logger
 }
@@ -75,9 +68,8 @@ func providePullRequests(params pullRequestsParams) *application.PullRequests {
 		Subscriptions: params.Subscriptions,
 		PullRequests:  params.PullRequests,
 		Deliveries:    params.Deliveries,
-		Polls:         params.Polls,
+		Fetches:       params.Fetches,
 		Catalog:       params.Catalog,
-		Calendar:      params.Calendar,
 		Clock:         params.Clock,
 		Logger:        params.Logger,
 	})
@@ -88,7 +80,6 @@ type recorderParams struct {
 	PullRequests  domain.PullRequestStore
 	Catalog       domain.RepositoryCatalog
 	Clock         domain.Clock
-	Calendar      domain.WorkCalendar
 	PartySettings domain.PartySettingsResolver
 }
 
@@ -97,7 +88,6 @@ func provideRecorder(params recorderParams) *application.Recorder {
 		PullRequests:  params.PullRequests,
 		Catalog:       params.Catalog,
 		Clock:         params.Clock,
-		Calendar:      params.Calendar,
 		PartySettings: params.PartySettings,
 	})
 }

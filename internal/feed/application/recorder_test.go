@@ -18,7 +18,7 @@ var defaultPartySettings = domain.PartySettings{Reviewers: 1, Deadline: time.Hou
 
 type recorderFixture struct {
 	store    *fakePullRequestStore
-	calendar *fakeWorkCalendar
+	clock    *fakeClock
 	settings *fakePartySettings
 	recorder *application.Recorder
 }
@@ -26,14 +26,13 @@ type recorderFixture struct {
 func newRecorderFixture(partySettings domain.PartySettings) recorderFixture {
 	fixture := recorderFixture{
 		store:    &fakePullRequestStore{},
-		calendar: &fakeWorkCalendar{},
+		clock:    &fakeClock{now: now, tick: time.Minute},
 		settings: &fakePartySettings{resolution: domain.PartyResolution{Settings: partySettings}},
 	}
 	fixture.recorder = application.NewRecorder(domain.RecorderParams{
 		PullRequests:  fixture.store,
 		Catalog:       &fakeCatalog{repositories: []string{"acme/api"}},
-		Clock:         &fakeClock{now: now, tick: time.Minute},
-		Calendar:      fixture.calendar,
+		Clock:         fixture.clock,
 		PartySettings: fixture.settings,
 	})
 	return fixture
@@ -44,7 +43,6 @@ func newRecorder(store *fakePullRequestStore, catalog *fakeCatalog) *application
 		PullRequests:  store,
 		Catalog:       catalog,
 		Clock:         &fakeClock{now: now},
-		Calendar:      &fakeWorkCalendar{},
 		PartySettings: &fakePartySettings{resolution: domain.PartyResolution{Settings: defaultPartySettings}},
 	})
 }
@@ -165,8 +163,6 @@ var openEvent = kernel.Event{Kind: kernel.KindOpened, Repository: "Acme/API", PR
 
 func TestRecorder_StoresThePartyState(t *testing.T) {
 	fixture := newRecorderFixture(domain.PartySettings{Reviewers: 2, Deadline: 30 * time.Minute})
-	deadline := now.Add(3 * time.Hour)
-	fixture.calendar.deadline = deadline
 
 	err := fixture.recorder.Record(t.Context(), openEvent)
 
@@ -176,13 +172,21 @@ func TestRecorder_StoresThePartyState(t *testing.T) {
 	assert.Equal(t, 2, party.Reviewers)
 	assert.WithinDuration(t, now, party.RecordedAt, 0)
 	assert.WithinDuration(t, fixture.store.upserts[0].UpdatedAt, party.RecordedAt, 0, "a first record reads the clock once")
-	assert.WithinDuration(t, deadline, party.DeadlineAt, 0)
+	assert.WithinDuration(t, now.Add(30*time.Minute), party.DeadlineAt, 0)
 	wantKey := domain.PullRequestKey{Repository: "acme/api", Number: 42}
 	assert.Equal(t, []domain.PullRequestKey{wantKey}, fixture.store.findKeys)
 	assert.Equal(t, []domain.PullRequestKey{wantKey}, fixture.settings.keys)
-	require.Len(t, fixture.calendar.addCalls, 1)
-	assert.WithinDuration(t, now, fixture.calendar.addCalls[0].start, 0)
-	assert.Equal(t, 30*time.Minute, fixture.calendar.addCalls[0].workingTime)
+}
+
+func TestRecorder_DeadlineIsClockTimeAcrossAWeekend(t *testing.T) {
+	fixture := newRecorderFixture(defaultPartySettings)
+	fixture.clock.now = time.Date(2026, 11, 6, 23, 30, 0, 0, time.UTC)
+
+	err := fixture.recorder.Record(t.Context(), openEvent)
+
+	require.NoError(t, err)
+	require.Len(t, fixture.store.upserts, 1)
+	assert.WithinDuration(t, time.Date(2026, 11, 7, 0, 30, 0, 0, time.UTC), fixture.store.upserts[0].Party.DeadlineAt, 0)
 }
 
 func TestRecorder_KeepsTheFirstRecordTime(t *testing.T) {
@@ -195,8 +199,7 @@ func TestRecorder_KeepsTheFirstRecordTime(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, fixture.store.upserts, 1)
 	assert.WithinDuration(t, firstRecordedAt, fixture.store.upserts[0].Party.RecordedAt, 0)
-	require.Len(t, fixture.calendar.addCalls, 1)
-	assert.WithinDuration(t, firstRecordedAt, fixture.calendar.addCalls[0].start, 0)
+	assert.WithinDuration(t, firstRecordedAt.Add(time.Hour), fixture.store.upserts[0].Party.DeadlineAt, 0, "a push never restarts the timer")
 }
 
 func TestRecorder_StoredRowWithoutRecordTimeStartsNow(t *testing.T) {
@@ -208,8 +211,7 @@ func TestRecorder_StoredRowWithoutRecordTimeStartsNow(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, fixture.store.upserts, 1)
 	assert.WithinDuration(t, now, fixture.store.upserts[0].Party.RecordedAt, 0)
-	require.Len(t, fixture.calendar.addCalls, 1)
-	assert.WithinDuration(t, now, fixture.calendar.addCalls[0].start, 0)
+	assert.WithinDuration(t, now.Add(time.Hour), fixture.store.upserts[0].Party.DeadlineAt, 0)
 }
 
 func TestRecorder_ReturnsFindError(t *testing.T) {
@@ -234,7 +236,6 @@ func TestRecorder_FallbackKeepsTheStoredPartyState(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, fixture.store.upserts, 1)
 	assert.Equal(t, storedParty, fixture.store.upserts[0].Party, "a failed files read never lowers a stored cap or moves the timer")
-	assert.Empty(t, fixture.calendar.addCalls)
 }
 
 func TestRecorder_ReadsTheStoredRowAfterTheSettingsResolve(t *testing.T) {
@@ -275,8 +276,6 @@ func TestRecorder_FlagsAFallbackSoTheStoreKeepsTheStoredParty(t *testing.T) {
 
 func TestRecorder_FallbackOnANewPullRequestUsesTheResolvedSettings(t *testing.T) {
 	fixture := newRecorderFixture(defaultPartySettings)
-	deadline := now.Add(time.Hour)
-	fixture.calendar.deadline = deadline
 	fixture.settings.resolution = domain.PartyResolution{Settings: domain.PartySettings{Reviewers: 2, Deadline: 30 * time.Minute}, Fallback: true}
 
 	err := fixture.recorder.Record(t.Context(), openEvent)
@@ -286,9 +285,7 @@ func TestRecorder_FallbackOnANewPullRequestUsesTheResolvedSettings(t *testing.T)
 	party := fixture.store.upserts[0].Party
 	assert.Equal(t, 2, party.Reviewers)
 	assert.WithinDuration(t, now, party.RecordedAt, 0)
-	assert.WithinDuration(t, deadline, party.DeadlineAt, 0)
-	require.Len(t, fixture.calendar.addCalls, 1)
-	assert.Equal(t, 30*time.Minute, fixture.calendar.addCalls[0].workingTime)
+	assert.WithinDuration(t, now.Add(30*time.Minute), party.DeadlineAt, 0)
 }
 
 func TestRecorder_FallbackOnARowWithoutRecordTimeUsesTheResolvedSettings(t *testing.T) {
@@ -303,9 +300,7 @@ func TestRecorder_FallbackOnARowWithoutRecordTimeUsesTheResolvedSettings(t *test
 	party := fixture.store.upserts[0].Party
 	assert.Equal(t, 2, party.Reviewers)
 	assert.WithinDuration(t, now, party.RecordedAt, 0)
-	require.Len(t, fixture.calendar.addCalls, 1)
-	assert.Equal(t, 30*time.Minute, fixture.calendar.addCalls[0].workingTime)
-	assert.WithinDuration(t, now, fixture.calendar.addCalls[0].start, 0)
+	assert.WithinDuration(t, now.Add(30*time.Minute), party.DeadlineAt, 0)
 }
 
 func TestRecorder_ResolvesWithTheLowerCasedKey(t *testing.T) {
