@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.32.0](https://github.com/mptooling/notifycat/compare/v0.31.0...v0.32.0) (2026-11-04)
+
+
+### 🚀 Features
+
+* **feed:** party settings per repository and monorepo path ([#227](https://github.com/mptooling/notifycat/issues/227)) ([51ed413](https://github.com/mptooling/notifycat/commit/51ed41334fe9f42524b6ac00234b40a8a84a5de9))
+* **feed:** review parties for shared repositories ([#226](https://github.com/mptooling/notifycat/issues/226)) ([233a02e](https://github.com/mptooling/notifycat/commit/233a02eaf3aa1364caec4ddcf247c8adef33717b))
+
 ## [0.31.0](https://github.com/mptooling/notifycat/compare/v0.30.0...v0.31.0) (2026-10-28)
 
 
