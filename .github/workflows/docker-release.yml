@@ -58,6 +58,36 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # Dispatched from here rather than from docker-edge.yml: both workflows
+      # trigger on the same release: published event, and docker-edge.yml
+      # reaches its own dispatch step long before this arm/amd64 build (run
+      # under QEMU) finishes pushing. Dispatching only after the push above
+      # completes is what actually removes the race, rather than papering
+      # over it with a wait.
+      - name: Ask the integration suite to run
+        env:
+          GH_TOKEN: ${{ secrets.INTEGRATION_DISPATCH_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -eu
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::warning::INTEGRATION_DISPATCH_TOKEN is unset — skipping the dispatch"
+            exit 0
+          fi
+          # Git tags are vX.Y.Z, but the metadata-action step above uses
+          # type=semver,pattern={{version}}, which strips the leading v when
+          # it publishes to GHCR — so the tag dispatched here must be
+          # stripped too, or the integration suite's docker pull 404s
+          # against a tag that was never published.
+          tag="${RELEASE_TAG#v}"
+          case "$tag" in
+            *[!A-Za-z0-9._-]*|'') echo "::error::invalid image tag '${tag}'"; exit 1 ;;
+          esac
+          gh api -X POST repos/mptooling/notifycat-integration-tests/dispatches \
+            -f event_type=notifycat-image \
+            -F "client_payload[tag]=${tag}"
+          echo "dispatched integration run for ${tag}"
+
   assets:
     name: Attach install bundle to release
     runs-on: ubuntu-latest
